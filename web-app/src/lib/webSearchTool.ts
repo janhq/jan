@@ -5,6 +5,23 @@ import { TRUNCATION_MARKER } from '@/lib/toolPresentation'
 
 export const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch'])
 
+/**
+ * How a call to a built-in web tool name is served. While web search is on the
+ * built-in tools are what the model was offered, so they serve the call. While
+ * it is off nothing is offered, so an MCP tool of the same name belongs to the
+ * user and is an MCP call; with none, the call is refused rather than reaching
+ * the provider the user switched off. Any other name is not a web tool.
+ */
+export function webToolRoute(
+  toolName: string,
+  webSearchEnabled: boolean,
+  mcpToolNames: ReadonlySet<string>
+): 'builtin' | 'disabled' | 'other' {
+  if (!WEB_TOOL_NAMES.has(toolName)) return 'other'
+  if (webSearchEnabled) return 'builtin'
+  return mcpToolNames.has(toolName) ? 'other' : 'disabled'
+}
+
 export const WEB_SEARCH_DESCRIPTION =
   'Search the web and return a ranked list of results (title, URL, snippet, and optional publish date). Use this to find current information, documentation, or sources you can then read with web_fetch. Cite the URLs you rely on.'
 

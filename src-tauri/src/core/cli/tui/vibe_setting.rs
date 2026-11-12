@@ -40,6 +40,11 @@ pub(super) const RELOAD_CONFIG_KEYS: &[&str] = &[
     "send_reasoning",
 ];
 
+/// `/settings` keys the running session re-reads on every use, so a written one
+/// applies at once: no `/reload config`, no restart. `bell` is read on each
+/// agent-status transition (`agent_status::BellMode::configured`).
+pub(super) const LIVE_KEYS: &[&str] = &["bell"];
+
 /// The keys a proposal may name, in `/settings` order.
 pub(super) fn catalog() -> impl Iterator<Item = &'static AgentSettingDef> {
     AGENT_SETTINGS
@@ -449,6 +454,7 @@ fn apply(app: &mut App) {
     };
     let toml_path = app.agent_dir.join("agent.toml");
     let mut written: Vec<String> = Vec::new();
+    let mut live: Vec<String> = Vec::new();
     let mut reloadable: Vec<String> = Vec::new();
     let mut restart: Vec<String> = Vec::new();
     let mut failed: Vec<String> = Vec::new();
@@ -456,7 +462,9 @@ fn apply(app: &mut App) {
         match write_setting(change.def, &toml_path, change.item.clone()) {
             Ok(()) => {
                 let key = change.def.key.to_string();
-                if RELOAD_CONFIG_KEYS.contains(&change.def.key) {
+                if LIVE_KEYS.contains(&change.def.key) {
+                    live.push(key);
+                } else if RELOAD_CONFIG_KEYS.contains(&change.def.key) {
                     reloadable.push(key);
                 } else {
                     restart.push(key);
@@ -473,7 +481,7 @@ fn apply(app: &mut App) {
             )),
         }
     }
-    let when = apply_when(&reloadable, &restart);
+    let when = apply_when(&live, &reloadable, &restart);
     if !written.is_empty() {
         app.note(&format!(
             "◈ vibe-setting · wrote {} setting(s); {when}",
@@ -489,8 +497,12 @@ fn apply(app: &mut App) {
 }
 
 /// The "when does it apply" half of the result note, one clause per bucket.
-fn apply_when(reloadable: &[String], restart: &[String]) -> String {
+fn apply_when(live: &[String], reloadable: &[String], restart: &[String]) -> String {
     let mut parts: Vec<String> = Vec::new();
+    if !live.is_empty() {
+        let verb = if live.len() == 1 { "applies" } else { "apply" };
+        parts.push(format!("{} {verb} now", live.join(", ")));
+    }
     if !reloadable.is_empty() {
         parts.push(format!("run /reload config to apply {}", reloadable.join(", ")));
     }
@@ -603,16 +615,20 @@ mod tests {
     fn apply_when_names_each_bucket() {
         let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         assert_eq!(
-            apply_when(&v(&["context_window", "max_tokens"]), &[]),
+            apply_when(&[], &v(&["context_window", "max_tokens"]), &[]),
             "run /reload config to apply context_window, max_tokens"
         );
         assert_eq!(
-            apply_when(&[], &v(&["show_reasoning", "tools.default"])),
+            apply_when(&[], &[], &v(&["show_reasoning", "tools.default"])),
             "show_reasoning, tools.default apply when jan restarts"
         );
         assert_eq!(
-            apply_when(&v(&["max_tokens"]), &v(&["show_reasoning"])),
+            apply_when(&[], &v(&["max_tokens"]), &v(&["show_reasoning"])),
             "run /reload config to apply max_tokens; show_reasoning applies when jan restarts"
+        );
+        assert_eq!(
+            apply_when(&v(&["bell"]), &[], &v(&["show_reasoning"])),
+            "bell applies now; show_reasoning applies when jan restarts"
         );
     }
 

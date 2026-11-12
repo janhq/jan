@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { observeChatWork, trackChat } from '@/lib/chatClose'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
@@ -49,6 +50,7 @@ export function useChat(
   // Get serviceHub and model metadata from app state
   const mcpToolNames = useAppState((state) => state.mcpToolNames)
   const ragToolNames = useAppState((state) => state.ragToolNames)
+  const extensionTools = useAppState((state) => state.extensionTools)
 
   const existingSessionTransport = sessionId
     ? useChatSessions.getState().sessions[sessionId]?.transport
@@ -84,7 +86,19 @@ export function useChat(
     return ensureSession(
       sessionId,
       transportRef.current,
-      () => new Chat({ ...chatInitOptions, transport: transportRef.current }),
+      () => {
+        // The close barrier stops this chat and waits for its onFinish work
+        // (message persistence) before the window may go away.
+        const pending = new Set<Promise<unknown>>()
+        const instance = new Chat({
+          ...chatInitOptions,
+          transport: transportRef.current,
+          onFinish: (event) =>
+            observeChatWork(pending, () => chatInitOptions.onFinish?.(event)),
+        })
+        trackChat(instance, pending)
+        return instance
+      },
       sessionTitle
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,14 +124,15 @@ export function useChat(
     }
   }, [sessionId, chatResult.status, updateStatus])
 
-  // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
+  // Refresh tools when MCP, RAG or extension tools change (e.g., when MCP
+  // servers start/stop or an extension is loaded)
   useEffect(() => {
     if (transportRef.current) {
       // Use forceRefreshTools to update the transport's tool cache
       // This ensures the transport has the latest tools when MCP server status changes
       transportRef.current.refreshTools()
     }
-  }, [mcpToolNames, ragToolNames])
+  }, [mcpToolNames, ragToolNames, extensionTools])
 
   const setContinueFromContent = useCallback(
     (content: string | ContinuationContent) => {

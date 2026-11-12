@@ -11,14 +11,21 @@ import {
 } from '@/lib/toolPresentation'
 import { faviconForUrl, hostOf } from '@/lib/webUrl'
 import { ToolBar } from './ToolBar'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
+import { useRemoteImagesAllowed } from '@/lib/extensions/remoteImages'
 
-const Favicon = ({ url }: { url: string }) => (
-  <img
-    src={faviconForUrl(url)}
-    alt=""
-    className="size-4 shrink-0 rounded-full border border-border/60 bg-white object-contain"
-  />
-)
+// The favicon service is asked about the URL's host, so in a message an
+// extension authored even the address being typed would reach the network.
+const Favicon = ({ url }: { url: string }) =>
+  useRemoteImagesAllowed() ? (
+    <img
+      src={faviconForUrl(url)}
+      alt=""
+      className="size-4 shrink-0 rounded-full border border-border/60 bg-white object-contain"
+    />
+  ) : (
+    <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
+  )
 
 const ResultRow = ({
   url,
@@ -27,10 +34,8 @@ const ResultRow = ({
   url: string
   title?: string
 }) => (
-  <a
+  <ExternalAnchor
     href={url}
-    target="_blank"
-    rel="noreferrer noopener"
     className="flex items-center gap-2 rounded-md px-2 py-1.5 no-underline transition-colors hover:bg-secondary"
     title={url}
   >
@@ -41,7 +46,7 @@ const ResultRow = ({
     <span className="shrink-0 text-xs text-muted-foreground/70">
       {hostOf(url)}
     </span>
-  </a>
+  </ExternalAnchor>
 )
 
 export type WebToolWidgetProps = {

@@ -24,15 +24,43 @@ use super::{mcp::helpers::run_mcp_commands, state::AppState};
 /// migration silently.
 pub const CURRENT_MCP_SCHEMA_VERSION: i64 = 5;
 
+/// The schema version a profile's MCP migration starts from.
+///
+/// Every step in `migrate_mcp_servers` upgrades an entry of an existing
+/// `mcp_config.json`. With no file - a first start, or a deleted config - none
+/// of them has anything to act on and each would only log an error for the
+/// missing file, burying a real first-run failure. `setup_mcp` writes the
+/// current default config right after, so such a profile starts at the current
+/// schema instead.
+///
+/// `pub` for the upgrade-compat fixture test.
+pub fn mcp_migration_start(stored: i64, config_exists: bool) -> i64 {
+    if config_exists {
+        stored
+    } else {
+        CURRENT_MCP_SCHEMA_VERSION
+    }
+}
+
 // Migrate MCP servers configuration
 pub fn migrate_mcp_servers(
     app_handle: tauri::AppHandle,
     store: Arc<Store<Wry>>,
 ) -> Result<(), String> {
-    let mcp_version = store
-        .get("mcp_version")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    // `exists()` reads a stat error as "missing", which would pin the current
+    // schema for a profile that does have a config. An inconclusive check counts
+    // as present so the steps run and a failed read retries at the next start.
+    let config_exists = get_jan_data_folder_path(app_handle.clone())
+        .join("mcp_config.json")
+        .try_exists()
+        .unwrap_or(true);
+    let mcp_version = mcp_migration_start(
+        store
+            .get("mcp_version")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        config_exists,
+    );
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
@@ -376,6 +404,38 @@ pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Id of the macOS app menu's Quit item (see `setup_app_menu_quit`).
+#[cfg(feature = "desktop")]
+const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+
+/// Replace the default macOS app menu's native Quit (Cmd+Q) with one that calls
+/// `app.exit`. The native item terminates the process without an exit request,
+/// so the web app never gets to save; `app.exit` goes through `ExitRequested`,
+/// which holds the exit for that save. Dock Quit and logout still terminate
+/// natively.
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub fn setup_app_menu_quit<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    use tauri::menu::MenuItemKind;
+    let menu = Menu::default(app)?;
+    let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() else {
+        return Ok(());
+    };
+    let Some(native_quit) = app_menu.items()?.into_iter().last() else {
+        return Ok(());
+    };
+    app_menu.remove(&native_quit)?;
+    let label = format!("Quit {}", app.package_info().name);
+    let quit = MenuItem::with_id(app, APP_MENU_QUIT_ID, label, true, Some("CmdOrCtrl+Q"))?;
+    app_menu.append(&quit)?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app, event| {
+        if event.id.as_ref() == APP_MENU_QUIT_ID {
+            app.exit(0);
+        }
+    });
+    Ok(())
+}
+
 #[cfg(feature = "desktop")]
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
     let show_i = MenuItem::with_id(app, "open", "Open Jan", true, None::<&str>)?;
@@ -403,6 +463,8 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> 
             "quit" => {
                 app.exit(0);
             }
+            // The macOS app menu's Quit, handled by its own listener.
+            APP_MENU_QUIT_ID => {}
             other => {
                 println!("menu item {other} not handled");
             }

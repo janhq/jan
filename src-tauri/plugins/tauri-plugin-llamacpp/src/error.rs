@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::diagnostics::LoadDiagnostics;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
@@ -12,6 +14,10 @@ pub enum ErrorCode {
 
     // --- Memory Errors ---
     OutOfMemory,
+    /// The load failed although auto-fit owned the layers and the context, so
+    /// no split fits this device's memory. Distinct from `OutOfMemory`:
+    /// lowering the context will not help, because fit already tried that.
+    ModelDoesNotFit,
 
     // --- Engine Process Errors ---
     /// The worker process exited on its own: a crash, or something killed it.
@@ -41,6 +47,9 @@ pub struct LlamacppError {
     /// install advice instead of showing raw engine output.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missing_libraries: Option<Vec<String>>,
+    /// The request, machine, engine and log of a failed load, for a bug report.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<Box<LoadDiagnostics>>,
 }
 
 impl LlamacppError {
@@ -50,7 +59,19 @@ impl LlamacppError {
             message,
             details,
             missing_libraries: None,
+            diagnostics: None,
         }
+    }
+
+    /// A load that failed with auto-fit already doing all it could: the model
+    /// does not fit this device at any context fit may choose. `details` keeps
+    /// what llama.cpp said, which is the evidence.
+    pub fn model_does_not_fit(details: String) -> Self {
+        Self::new(
+            ErrorCode::ModelDoesNotFit,
+            "The model does not fit on this device.".into(),
+            Some(details),
+        )
     }
 
     /// Classifies engine output from a failed model load. An unrecognized
@@ -273,6 +294,7 @@ mod tests {
             (ErrorCode::UnsupportedCpu, "UNSUPPORTED_CPU"),
             (ErrorCode::GpuDriverTooOld, "GPU_DRIVER_TOO_OLD"),
             (ErrorCode::OutOfMemory, "OUT_OF_MEMORY"),
+            (ErrorCode::ModelDoesNotFit, "MODEL_DOES_NOT_FIT"),
             (ErrorCode::EngineStopped, "ENGINE_STOPPED"),
             (ErrorCode::EngineUnreachable, "ENGINE_UNREACHABLE"),
             (ErrorCode::InvalidArgument, "INVALID_ARGUMENT"),
@@ -309,6 +331,31 @@ mod tests {
 
         assert!(json.get("details").is_none(), "{json}");
         assert!(json.get("missing_libraries").is_none(), "{json}");
+        assert!(json.get("diagnostics").is_none(), "{json}");
+    }
+
+    #[test]
+    fn diagnostics_cross_the_boundary_under_their_own_key() {
+        let mut err = LlamacppError::new(ErrorCode::ModelLoadFailed, "x".into(), None);
+        err.diagnostics = Some(Box::new(LoadDiagnostics {
+            model_file: Some("m.gguf".into()),
+            architecture: Some("qwen3".into()),
+            quantization: Some("Q4_K_M".into()),
+            request: Default::default(),
+            gpus: vec![],
+            backends: vec!["CPU (libggml-cpu.so)".into()],
+            engine: crate::diagnostics::EngineBuild {
+                version: "0.9.0".into(),
+                tag: "b1".into(),
+                commit: "abc".into(),
+            },
+            log: "boom".into(),
+            log_truncated: false,
+        }));
+        let json: serde_json::Value = serde_json::to_value(&err).unwrap();
+        assert_eq!(json["diagnostics"]["model_file"], "m.gguf");
+        assert_eq!(json["diagnostics"]["backends"][0], "CPU (libggml-cpu.so)");
+        assert_eq!(json["diagnostics"]["log"], "boom");
     }
 
     #[test]

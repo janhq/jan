@@ -9,9 +9,12 @@
 //! available in both configurations; only `init()` and the IPC shims in
 //! `commands` are gated.
 
+pub mod artifact;
+pub mod consent;
 pub mod memory;
 pub mod permissions;
 pub mod preview;
+pub mod screenshot_pages;
 pub mod skills;
 pub mod tools;
 pub mod workspace;
@@ -26,6 +29,12 @@ mod commands;
     any(target_os = "linux", target_os = "macos", target_os = "windows")
 ))]
 mod webview_shot;
+
+/// Label prefix of the hidden windows the webview `screenshot` renderer opens.
+/// The app's navigation guard keys on it: those windows load their target as a
+/// `file:` URL, which no other webview may, and only the files
+/// [`screenshot_pages`] records for them.
+pub const SCREENSHOT_WINDOW_LABEL_PREFIX: &str = "jan-shot-";
 
 /// Runs the confined-spawn helper and exits, when this process was re-exec'd as
 /// one by the Windows sandbox backend. A no-op on every other platform and on a
@@ -47,6 +56,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::thread_workspace_delete,
             commands::thread_workspace_sweep,
             commands::session_workspace_path,
+            commands::session_workspace_copy_to_thread,
             commands::session_workspace_delete,
             commands::session_workspace_sweep,
             commands::skill_list,
@@ -74,7 +84,15 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::stop_session_monitors,
             commands::cancel_thread_bash,
             commands::preview_register_root,
-            commands::preview_unregister_root
+            commands::preview_unregister_root,
+            commands::open_artifact,
+            commands::consent_request,
+            commands::consent_answer,
+            commands::consent_consume,
+            commands::consent_cancel_thread,
+            commands::consent_saved,
+            commands::consent_revoke,
+            commands::consent_set_allow_all_mcp
         ])
         .setup(|app, _api| {
             use tauri::Manager;

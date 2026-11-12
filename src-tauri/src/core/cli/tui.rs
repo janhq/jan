@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::future::pending;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,6 +32,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+mod transcript_event;
 mod find;
 mod highlight;
 mod markdown;
@@ -41,6 +41,8 @@ mod theme;
 pub(super) use theme::fg_sgr;
 mod vibe_setting;
 
+use crate::core::agent::events::MAIN_AGENT;
+use transcript_event::{tree_lines, Child, EventRow, Fit, TranscriptEvent};
 use markdown::{
     answer_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
     reasoning_tail_lines,
@@ -48,7 +50,9 @@ use markdown::{
 
 use super::agent_status::AgentStatusReporter;
 use super::brand;
-use super::journal::{self, DisplayEntry, ReasoningSeg};
+use crate::core::agent::session_log::{
+    self, DisplayEntry, NoteLevel, NoteTone, ReasoningSeg, SessionWriter,
+};
 use super::mcp::McpServerEntry;
 use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
@@ -57,7 +61,9 @@ use super::{
     SessionBudgetSource, SessionLimits,
 };
 use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
-use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
+use crate::core::agent::events::{
+    describe_finished_tool_call, describe_tool_call, StreamEvent, Usage,
+};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
     run_orchestration_steered, OrchestrationArgs, PermissionRegistry, SteeringRequest,
@@ -222,11 +228,36 @@ fn suspend_to_shell(mouse: bool) -> io::Result<()> {
             "no job-control shell above jan (ssh -t, docker exec); nothing could resume it",
         ));
     }
-    restore_terminal_modes();
+    // After a SIGTTIN stop the modes are already off (an external SIGTSTP can
+    // land while jan sits in the background): restoring again would pop the
+    // shell's own kitty entry. This path re-enters the modes itself, so the
+    // render loop must not re-arm them a second time.
+    let modes_off = TTY_REARM.swap(false, std::sync::atomic::Ordering::SeqCst);
+    if !modes_off {
+        restore_terminal_modes();
+    }
     let stopped = kill(Pid::from_raw(0), Signal::SIGSTOP).map_err(io::Error::from);
-    enable_raw_mode()?;
+    // Resumed with `bg`, the `tcsetattr`s below stop jan with SIGTTOU; after
+    // `fg` they fail with EINTR, which must not leave the TUI in cooked mode.
+    if modes_off {
+        // crossterm's enable is a no-op while it believes raw mode is on.
+        let _ = retry_interrupted(disable_raw_mode);
+    }
+    retry_interrupted(enable_raw_mode)?;
     enter_terminal_modes(&mut io::stdout(), mouse)?;
     stopped
+}
+
+/// Run a terminal call again while it fails with EINTR. A `tcsetattr` from the
+/// background stops jan with SIGTTOU and, once continued, returns EINTR on
+/// macOS. Bounded in practice: each retry needs another stop and continue.
+fn retry_interrupted(mut f: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    loop {
+        match f() {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            other => return other,
+        }
+    }
 }
 
 /// POSIX: a process group is orphaned when no member has a parent in another
@@ -334,6 +365,220 @@ async fn await_stop_signal(signal: &mut StopSignal) {
     pending().await
 }
 
+/// Set by `on_tty_input_stop` when it writes the restore bytes; cleared by
+/// whatever turns the modes back on (`rearm_after_tty_stop`, `suspend_to_shell`).
+/// While set the modes are off, so a second stop writes nothing: a second
+/// kitty pop would pop the shell's own entry.
+#[cfg(unix)]
+static TTY_REARM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `on_tty_input_stop` is running, possibly stopped inside: the render loop
+/// must not re-arm under it.
+#[cfg(unix)]
+static TTY_STOPPING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The SIGTTIN disposition jan inherited, while its own handler is installed.
+#[cfg(unix)]
+static TTY_INHERITED_TTIN: std::sync::Mutex<Option<nix::sys::signal::SigAction>> =
+    std::sync::Mutex::new(None);
+
+/// A read from the background (another group took the terminal's foreground)
+/// stops jan with SIGTTIN, and by default with every mode still on: the shell
+/// prompt then fills with mouse reports. A plain `sigaction` handler rather
+/// than a tokio stream like SIGTSTP's: that registration is permanent, and a
+/// caught SIGTTIN no longer stops anything, so a background read outside
+/// `chat_loop` (startup, shutdown) would re-raise it in a tight loop forever.
+/// Installed once the modes are on, so a stop before then has nothing to
+/// restore and nothing to re-arm; `release_terminal` puts the inherited
+/// disposition back. A parent that ignores SIGTTIN (a background read then
+/// fails with EIO instead of stopping) is left alone.
+#[cfg(unix)]
+fn install_tty_input_stop_handler() {
+    use nix::sys::signal::{sigaction, SigHandler, Signal};
+    // SAFETY: the handler only makes async-signal-safe calls.
+    let Ok(old) = (unsafe { sigaction(Signal::SIGTTIN, &tty_input_stop_action()) }) else {
+        return;
+    };
+    if old.handler() == SigHandler::SigIgn {
+        // SAFETY: putting back what was there a moment ago.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &old) };
+        return;
+    }
+    *TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()) = Some(old);
+}
+
+#[cfg(unix)]
+fn tty_input_stop_action() -> nix::sys::signal::SigAction {
+    use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet};
+    SigAction::new(
+        SigHandler::Handler(on_tty_input_stop),
+        SaFlags::SA_RESTART,
+        SigSet::empty(),
+    )
+}
+
+#[cfg(unix)]
+fn reset_tty_input_stop_handler() {
+    let old = TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if let Some(old) = old {
+        // SAFETY: restoring the disposition jan started with.
+        let _ = unsafe { nix::sys::signal::sigaction(nix::sys::signal::Signal::SIGTTIN, &old) };
+    }
+}
+
+#[cfg(unix)]
+fn tty_input_stop_installed() -> bool {
+    TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
+/// Whether jan's group is, positively, the terminal's foreground. Async-signal-
+/// safe (`tcgetpgrp`, `getpgrp`); an unreadable answer is a no, so the handler
+/// only skips the stop on evidence.
+#[cfg(unix)]
+fn tty_foreground_is_ours() -> bool {
+    // libc directly: nix's wrapper sits behind its `term` feature.
+    // SAFETY: plain queries.
+    unsafe {
+        let fg = nix::libc::tcgetpgrp(nix::libc::STDOUT_FILENO);
+        fg >= 0 && fg == nix::libc::getpgrp()
+    }
+}
+
+/// Async-signal-safe only: one write of the restore bytes, then the real stop.
+/// No `disable_raw_mode`: from the background a `tcsetattr` raises SIGTTOU, and
+/// the termios is the new foreground's anyway -- a job-control shell restores
+/// its own when it takes the terminal back. SIGTTOU is ignored around the
+/// write, so under `stty tostop` the restore still lands before the stop
+/// instead of the write stopping jan first. `raise`, not the group-wide `kill`
+/// Ctrl-Z uses: the SIGTTIN that got here (the kernel's on a background read,
+/// or `stop_if_terminal_taken`'s) already went to the whole group, so a
+/// wrapper got its own copy; only this process caught it. The shell still
+/// reports `suspended (tty input)`. Once jan is back in the foreground the
+/// render loop re-arms the modes.
+#[cfg(unix)]
+extern "C" fn on_tty_input_stop(_: nix::libc::c_int) {
+    use nix::errno::Errno;
+    use nix::sys::signal::{
+        pthread_sigmask, raise, sigaction, SaFlags, SigAction, SigHandler, SigSet, SigmaskHow,
+        Signal,
+    };
+    use std::sync::atomic::Ordering;
+    let saved = Errno::last_raw();
+    // The foreground came back before the handler ran, or the signal did not
+    // come from a background read at all: nothing to hand back.
+    if tty_foreground_is_ours() {
+        Errno::set_raw(saved);
+        return;
+    }
+    TTY_STOPPING.store(true, Ordering::SeqCst);
+    if !TTY_REARM.load(Ordering::SeqCst) {
+        let ignore = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+        // SAFETY: async-signal-safe; put back right after the write.
+        let ttou = unsafe { sigaction(Signal::SIGTTOU, &ignore) };
+        let mut rest: &[u8] = &RESTORE_BYTES;
+        // Bounded: an EIO or a closed terminal ends it rather than looping.
+        for _ in 0..8 {
+            if rest.is_empty() {
+                break;
+            }
+            // SAFETY: writes from a static buffer.
+            let n = unsafe {
+                nix::libc::write(nix::libc::STDOUT_FILENO, rest.as_ptr().cast(), rest.len())
+            };
+            if n > 0 {
+                // Modes are (being) turned off: a re-arm is owed. Not before
+                // the first byte lands -- on a terminal that refuses every
+                // write nothing was restored, and a re-arm would stack the
+                // modes a second time.
+                TTY_REARM.store(true, Ordering::SeqCst);
+                rest = &rest[n as usize..];
+            } else if n == 0 || Errno::last() != Errno::EINTR {
+                break;
+            }
+        }
+        if let Ok(ttou) = ttou {
+            // SAFETY: as above.
+            let _ = unsafe { sigaction(Signal::SIGTTOU, &ttou) };
+        }
+    }
+    // Re-checked: the foreground may have come back during the write, and a
+    // stop then would need a second `fg` for nothing.
+    if !tty_foreground_is_ours() {
+        let default = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+        // SAFETY: async-signal-safe; the default action is what stops the process.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &default) };
+        let _ = raise(Signal::SIGTTIN);
+        // SIGTTIN is blocked while its handler runs; unblocking delivers the
+        // pending one, and the process stops here until SIGCONT.
+        let mut ttin = SigSet::empty();
+        ttin.add(Signal::SIGTTIN);
+        let _ = pthread_sigmask(SigmaskHow::SIG_UNBLOCK, Some(&ttin), None);
+        // SAFETY: as above.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &tty_input_stop_action()) };
+    }
+    TTY_STOPPING.store(false, Ordering::SeqCst);
+    Errno::set_raw(saved);
+}
+
+/// After a SIGTTIN stop, take the modes back as `suspend_to_shell` does after
+/// its SIGSTOP, but only once jan is the terminal's foreground again: a resume
+/// into the background (`bg`) leaves it pending. Returns whether the terminal
+/// is still not jan's, so the caller neither reads (that would only stop again)
+/// nor paints over the shell.
+#[cfg(unix)]
+fn rearm_after_tty_stop(app: &mut App, mouse: bool) -> bool {
+    use std::sync::atomic::Ordering;
+    if !TTY_REARM.load(Ordering::SeqCst) {
+        return false;
+    }
+    if TTY_STOPPING.load(Ordering::SeqCst) || !owns_terminal_foreground() {
+        return true;
+    }
+    TTY_REARM.store(false, Ordering::SeqCst);
+    // crossterm's enable is a no-op while it believes raw mode is on, and the
+    // handler could not turn it off; disable first so the termios is re-read.
+    let _ = retry_interrupted(disable_raw_mode);
+    if let Err(e) = retry_interrupted(enable_raw_mode)
+        .and_then(|()| enter_terminal_modes(&mut io::stdout(), mouse))
+    {
+        app.note(&format!("could not restore the terminal after a stop: {e}"));
+    }
+    app.request_repaint();
+    false
+}
+
+/// Another group holds the terminal's foreground: stop now, from the render
+/// loop, instead of on the next read. A stop inside crossterm's blocking read
+/// resumes into that same read, so after `fg` the TUI would stay off-screen
+/// until a key arrived; stopped here, the next pass re-arms at once. Sent to
+/// the whole group, as the kernel's own SIGTTIN is, so a wrapper stops too;
+/// jan's copy goes through the handler, so the same restore and the same
+/// `suspended (tty input)`. Returns whether it stopped (or tried to: in an
+/// orphaned group the stop is discarded, and `TTY_REARM` keeps the loop from
+/// trying again).
+#[cfg(unix)]
+fn stop_if_terminal_taken() -> bool {
+    use nix::sys::signal::{kill, Signal};
+    // Without the handler (an ignored SIGTTIN) the signal would do nothing,
+    // every tick.
+    if !tty_input_stop_installed() || owns_terminal_foreground() {
+        return false;
+    }
+    let _ = kill(nix::unistd::Pid::from_raw(0), Signal::SIGTTIN);
+    true
+}
+
+/// Whether jan's group is the foreground of the terminal it draws to. An
+/// unreadable answer counts as yes: re-arming wrongly only means the next read
+/// stops again, where waiting wrongly would freeze the session.
+#[cfg(unix)]
+fn owns_terminal_foreground() -> bool {
+    // libc directly: nix's wrapper sits behind its `term` feature.
+    // SAFETY: a plain query on stdout's descriptor.
+    let fg = unsafe { nix::libc::tcgetpgrp(nix::libc::STDOUT_FILENO) };
+    fg < 0 || fg == nix::unistd::getpgrp().as_raw()
+}
+
 /// Raw escape sequences standing in for the `crossterm::Command` types used
 /// elsewhere (`DisableBracketedPaste`, `DisableMouseCapture`,
 /// `LeaveAlternateScreen`, cursor show): `restore_terminal_modes` has no
@@ -349,6 +594,46 @@ const DISABLE_BRACKETED_PASTE: &str = "\x1b[?2004l";
 const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
 const SHOW_CURSOR: &str = "\x1b[?25h";
+
+/// What `write_restore` writes, as one static buffer for the SIGTTIN handler,
+/// which cannot format or allocate. Built from the same constants; a test
+/// pins the two together. Unix only, like the handler (Windows omits the
+/// alternate-scroll restore).
+#[cfg(unix)]
+const RESTORE_PARTS: [&str; 7] = [
+    END_SYNC_UPDATE,
+    DISABLE_BRACKETED_PASTE,
+    DISABLE_MOUSE_CAPTURE,
+    KITTY_KEYS_OFF,
+    ALT_SCROLL_RESTORE,
+    LEAVE_ALT_SCREEN,
+    SHOW_CURSOR,
+];
+#[cfg(unix)]
+const RESTORE_LEN: usize = {
+    let (mut n, mut i) = (0, 0);
+    while i < RESTORE_PARTS.len() {
+        n += RESTORE_PARTS[i].len();
+        i += 1;
+    }
+    n
+};
+#[cfg(unix)]
+static RESTORE_BYTES: [u8; RESTORE_LEN] = {
+    let mut out = [0u8; RESTORE_LEN];
+    let (mut at, mut i) = (0, 0);
+    while i < RESTORE_PARTS.len() {
+        let part = RESTORE_PARTS[i].as_bytes();
+        let mut j = 0;
+        while j < part.len() {
+            out[at] = part[j];
+            at += 1;
+            j += 1;
+        }
+        i += 1;
+    }
+    out
+};
 
 /// The thread running the render loop while it owns the terminal's modes, or
 /// `None` once they have been restored. Panic hooks are process-wide, but only
@@ -367,6 +652,10 @@ fn release_terminal() -> bool {
     let mut owner = TERMINAL_OWNER.lock().unwrap_or_else(|e| e.into_inner());
     if *owner == Some(std::thread::current().id()) {
         *owner = None;
+        // Back to the default stop, so whatever runs after the session (the
+        // resume hint, a panic message) behaves like any other program.
+        #[cfg(unix)]
+        reset_tty_input_stop_handler();
         true
     } else {
         false
@@ -468,8 +757,9 @@ enum Status {
     /// A run is open. There is no parked state: the session owns its
     /// subagents, monitors and background shells, so the loop never waits on
     /// one still running -- it parks only to deliver a notice already queued,
-    /// and resumes at once. Work that outlives the turn shows over the idle
-    /// input instead (`subagent_rows`, `bg_shells_row`).
+    /// and resumes at once. Background work shows in one block over the input
+    /// whether a run is open or not (`background_rows`), so it can outlive the
+    /// turn without a state of its own.
     Running,
 }
 
@@ -496,7 +786,7 @@ const SYSTEM_GLYPH: &str = "•";
 const WARN_GLYPH: &str = "⚠";
 const ERROR_GLYPH: &str = "■";
 
-/// Gutter glyph for a monitor: the dock, `/monitors` and a match row share it.
+/// Gutter glyph for a monitor: `/monitors` and a match row share it.
 const MONITOR_GLYPH: &str = "◔";
 
 /// What a background ping's headline reports, so each kind gets the row its
@@ -544,11 +834,6 @@ impl NoticeKind {
 /// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
 const GOAL_GLYPH: &str = "◎";
 
-/// Gutter for the body rows of a multi-line system block. Distinct from the tool
-/// rows' `└` tree and the reasoning rows' `┊`, so three stacked blocks stay
-/// tellable apart at a glance.
-const SYSTEM_CONT: &str = "┆";
-
 /// How loud a system line is. The only thing that varies between them, so it is
 /// a parameter rather than a colour picked at each of the ~90 call sites.
 #[derive(Copy, Clone, PartialEq)]
@@ -564,6 +849,26 @@ enum Level {
 }
 
 impl Level {
+    /// The level a recorded note keeps.
+    fn note_level(self) -> NoteLevel {
+        match self {
+            Level::Info => NoteLevel::Info,
+            Level::Warn => NoteLevel::Warn,
+            Level::Error => NoteLevel::Error,
+            Level::Good => NoteLevel::Good,
+        }
+    }
+
+    /// The level a recorded note replays at.
+    fn of_note(level: NoteLevel) -> Self {
+        match level {
+            NoteLevel::Info => Level::Info,
+            NoteLevel::Warn => Level::Warn,
+            NoteLevel::Error => Level::Error,
+            NoteLevel::Good => Level::Good,
+        }
+    }
+
     /// Gutter glyph: the shape repeats the colour's message, so an error or a
     /// warning still stands out on a terminal that drops the colour.
     fn glyph(self) -> &'static str {
@@ -618,6 +923,13 @@ struct Pending {
     justification: Option<String>,
     /// Highlighted option in the docked prompt (index into `options()`).
     selected: usize,
+    /// Whether the user moved the highlight with the arrows. Over a subagent's
+    /// `/agents` detail the prompt can land mid-sentence, so there Enter only
+    /// confirms an option the user picked (see `handle_key_input`).
+    picked: bool,
+    /// Over a subagent's detail, when the prompt next takes a key; see
+    /// `PromptPause::key_lands`.
+    pause: PromptPause,
     /// Name of the subagent that requested this, when the call originated inside
     /// a nested subagent run; `None` for the parent agent's own calls.
     subagent: Option<String>,
@@ -697,6 +1009,15 @@ impl Pending {
             vec![Span::styled(lead, dim)],
             vec![Span::raw("  ")],
         ));
+        // A command's path is the directory a `cd` left the shell in: the
+        // command runs there, so it is approved with it in view.
+        if let (Some(_), Some(dir)) = (&self.command, &self.path) {
+            out.extend(gutter_lines(
+                wrap_text(dir, Style::new().yellow(), max.saturating_sub(3).max(1)),
+                vec![Span::styled("in ", dim)],
+                vec![Span::raw("   ")],
+            ));
+        }
         // The model's own words, set apart from the command so it is read as
         // its claim rather than as part of what will run.
         if let Some(why) = &self.justification {
@@ -739,6 +1060,106 @@ impl Pending {
         let len = self.options().len() as isize;
         self.selected = (self.selected as isize + delta).rem_euclid(len) as usize;
     }
+
+    /// Up/Down on the prompt: over a subagent's detail `detail_arrow`, armed
+    /// on Deny; elsewhere it moves and wraps.
+    fn arrow(&mut self, delta: isize, over_detail: bool) {
+        if over_detail {
+            let len = self.options().len();
+            self.selected = detail_arrow(self.selected, len, len - 1, delta, self.picked);
+        } else {
+            self.move_selection(delta);
+        }
+        self.picked = true;
+    }
+}
+
+/// How long a prompt over a subagent's detail stays deaf after it appears and
+/// after each key it takes. The user was typing for the child when it landed:
+/// a recall (Up/Down) and a send (Enter) already on their way must not arm,
+/// move and confirm it. The TUI does not ask for the keyboard enhancement
+/// that reports repeats as such, so a held key's repeats arrive as ordinary
+/// presses, the first after the OS repeat delay (500 ms on GNOME and Windows,
+/// 600 ms on KDE, 660 ms for X11's `xset` default). 750 ms outlasts all of
+/// those, so holding a key cannot land its first repeat as a second press,
+/// and is still short enough that a user who stopped to read barely notices.
+const PROMPT_PAUSE: Duration = Duration::from_millis(750);
+
+/// How soon after a press of the same key another counts as its repeat, on a
+/// prompt over the detail (`PromptPause::key_lands`). Longer than
+/// `PROMPT_PAUSE`, which already covers the defaults, to reach the slower
+/// repeat delays users pick (Windows' longest is about 1 s): there a held Up
+/// would otherwise arm on Deny and its first repeat move to a grant. Only the
+/// first repeat needs it; later ones come every few tens of ms. The cost is
+/// that a deliberate second press of the same arrow waits a little longer.
+/// A repeat slower still lands each repeat as a fresh press, so the prompt
+/// also caps a run of one arrow at one step (`PromptPause::stepped`).
+const HELD_KEY_WINDOW: Duration = Duration::from_millis(1200);
+
+/// How long the arrow that last stepped an armed prompt over the detail must
+/// be left alone before it steps again (`PromptPause::stepped`). Twice the
+/// held-key window: a repeat that slow is past any setting a desktop offers.
+const STEP_AGAIN_WINDOW: Duration = HELD_KEY_WINDOW.saturating_mul(2);
+
+/// Over a subagent's detail, when a prompt next takes a key and which key it
+/// took last. Both are reset to the default whenever the prompt (re)appears
+/// there, so it is deaf until drawn and lands as new.
+#[derive(Clone, Copy, Debug, Default)]
+struct PromptPause {
+    /// When the prompt next takes a key; `None`: not drawn over the detail
+    /// yet, so it has not appeared and takes none.
+    until: Option<Instant>,
+    /// The last key pressed on the prompt and when, to tell a held key's
+    /// repeats from a fresh press.
+    last_key: Option<(KeyCode, Instant)>,
+    /// The arrow that last moved the highlight of the armed prompt, and when
+    /// it was last pressed. A key held with a repeat slower than
+    /// `HELD_KEY_WINDOW` lands every repeat as a fresh press and would walk
+    /// the highlight from the safe row to the widest grant, one step each;
+    /// with this, a run of one arrow arms and moves once, and moves again only
+    /// after another key or `STEP_AGAIN_WINDOW` without it.
+    stepped: Option<(KeyCode, Instant)>,
+}
+
+impl PromptPause {
+    /// Whether `code`, pressed at `now`, reaches the prompt: only once the
+    /// pause has run out since it appeared or took its last key, and only if
+    /// it is not the repeat of a held key (the same key again within
+    /// `HELD_KEY_WINDOW` of its last press), so holding an arrow only ever
+    /// arms, nor the arrow that just moved the armed (`picked`) prompt
+    /// (`stepped`). Every key restarts all three, landed or not, so a burst of
+    /// presses or a run of repeats keeps the prompt deaf until the user lets go.
+    fn key_lands(&mut self, code: KeyCode, now: Instant, picked: bool) -> bool {
+        let repeat = self
+            .last_key
+            .is_some_and(|(last, at)| last == code && now < at + HELD_KEY_WINDOW);
+        let stepped = self.stepped.filter(|&(last, _)| last == code);
+        let steps_again = stepped.is_some_and(|(_, at)| now < at + STEP_AGAIN_WINDOW);
+        let lands = !repeat && !steps_again && self.until.is_some_and(|until| now >= until);
+        let arrow = matches!(code, KeyCode::Up | KeyCode::Down);
+        self.stepped = (stepped.is_some() || (lands && picked && arrow)).then_some((code, now));
+        self.until = Some(now + PROMPT_PAUSE);
+        self.last_key = Some((code, now));
+        lands
+    }
+
+    /// Whether Enter would confirm the highlight at `now` of a prompt armed
+    /// with an arrow (`picked`): it has been left alone for the pause.
+    fn live(&self, picked: bool, now: Instant) -> bool {
+        picked && self.until.is_some_and(|until| now >= until)
+    }
+}
+
+/// Where Up/Down takes the highlight of a prompt over a subagent's detail,
+/// among `len` rows. Up/Down is also the draft's recall key there, so the
+/// first arrow only arms the prompt, on `safe` (the row that grants nothing),
+/// and later ones stop at the ends rather than wrap: wrapping would carry a
+/// second reflex Down from Deny round to Allow once.
+fn detail_arrow(selected: usize, len: usize, safe: usize, delta: isize, picked: bool) -> usize {
+    if !picked {
+        return safe;
+    }
+    (selected as isize + delta).clamp(0, len as isize - 1) as usize
 }
 
 /// What a highlighted picker row does on Enter.
@@ -795,6 +1216,12 @@ enum PickerKind {
     ShellDetail,
     /// `/monitors`: the session's running monitors, each stoppable with `x`.
     Monitors,
+    /// `/worktrees`: this project's subagent checkouts and build cache, with
+    /// the prune actions first. Rows come from `App::worktrees`.
+    Worktrees,
+    /// Removing one checkout that holds work: what would be lost, then keep
+    /// or remove. Esc steps back to `Worktrees`.
+    WorktreeConfirm,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -860,6 +1287,8 @@ impl Picker {
             PickerKind::BackgroundShells => " background shells ",
             PickerKind::ShellDetail => " background shell ",
             PickerKind::Monitors => " monitors ",
+            PickerKind::Worktrees => " subagent worktrees ",
+            PickerKind::WorktreeConfirm => " remove worktree ",
         }
     }
 
@@ -887,13 +1316,20 @@ impl Picker {
             PickerKind::PluginSetup => " Type to search   Up/Down select   Enter set up   Esc cancel",
             PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
-            PickerKind::Agents => " ↑/↓ select   Enter view   m message   x stop   Esc close",
-            PickerKind::AgentDetail => " PgUp/PgDn scroll   m message   x stop   Esc back",
+            PickerKind::Agents => " \u{2191}/\u{2193} select   Enter view   x stop   Esc close",
+            // The input is live here, so the stop is a chord a typed letter
+            // cannot hit. Terse (`^X`, one slot for both ways out) so the
+            // location still fits beside it at 80 columns (`dock_line`).
+            PickerKind::AgentDetail => {
+                " PgUp/PgDn scroll   Enter send   ^X stop   Esc back/^C close"
+            }
             PickerKind::BackgroundShells => {
                 " \u{2191}/\u{2193} select   Enter view   x stop   Esc close"
             }
             PickerKind::ShellDetail => " x stop   Esc back",
             PickerKind::Monitors => " \u{2191}/\u{2193} select   x stop   Esc close",
+            PickerKind::Worktrees => " \u{2191}/\u{2193} select   Enter run or remove   Esc close",
+            PickerKind::WorktreeConfirm => " \u{2191}/\u{2193} select   Enter choose   Esc back",
         }
     }
 }
@@ -1562,10 +1998,12 @@ impl GroupedCall {
 /// names. See `explore_of` for which tools qualify.
 #[derive(Clone, Debug, PartialEq)]
 enum Explore {
-    /// A file (`noun` is `None`) or a memory note/skill read by name.
+    /// A file (`noun` is `None`) or a memory note/skill read by name. `span`
+    /// is the file's `read_span`, empty for a named read.
     Read {
         noun: Option<&'static str>,
         target: String,
+        span: String,
     },
     Search {
         query: String,
@@ -1586,7 +2024,7 @@ enum ExploreOutcome {
     Failed,
 }
 
-/// One command of a `Ran N commands` row, owned by the committed row.
+/// One command of a `Shell` row, owned by the committed row.
 #[derive(Clone, Debug, PartialEq)]
 struct ShellChild {
     command: String,
@@ -1635,11 +2073,10 @@ struct ToolGroup {
     idx: usize,
     /// Past-tense label shown when the group finalizes as a single call.
     first_done: String,
-    /// Per-call noun for the finalized breakdown, paired with whether it is a
-    /// read-style op ("memory note"/true, "command"/false, ...). The flag splits
-    /// the summary into a "Read ..." clause and a "ran ..." clause so the verb
-    /// always agrees with its noun.
-    nouns: Vec<(&'static str, bool)>,
+    /// Per-call noun for the finalized breakdown, paired with the `ToolOp` it
+    /// is ("memory note"/Update, "command"/Run, ...), which picks the clause
+    /// of the summary it counts in.
+    nouns: Vec<(&'static str, ToolOp)>,
     /// Per-call detail retained so the collapsed row can expand back to its
     /// individual calls/results (never discarded at fold time).
     calls: Vec<GroupedCall>,
@@ -1662,7 +2099,7 @@ impl ToolGroup {
     }
 
     /// Whether the group is a run of two or more shell commands, so it renders
-    /// as one `Ran N commands` row with each command under it. A lone command
+    /// as one `Shell` row with each command under it. A lone command
     /// keeps its own header and preview; any other call in the group (a read
     /// between two commands) ends the run, and the group keeps its counted
     /// summary, the way a mixed group never reads as `Explored`.
@@ -1670,12 +2107,19 @@ impl ToolGroup {
         self.calls.len() > 1 && self.calls.iter().all(|c| c.command.is_some())
     }
 
+    /// Whether the group folds to a `Worked` row once no call is in flight:
+    /// calls of more than one kind, neither all exploration nor all commands.
+    fn worked(&self) -> bool {
+        self.nouns.len() > 1 && !self.explored() && !self.shells()
+    }
+
     /// The bullet of a row that lists its calls as a tree (`Explored`, `Ran N
-    /// commands`): running while open with a call in flight, red when any call
-    /// failed, the background accent while a command runs on detached, else how
-    /// the group ended.
+    /// commands`): running while a call is in flight (a background notice can
+    /// commit the group before its result lands), red when any call failed, the
+    /// background accent while a command runs on detached, else how the group
+    /// ended.
     fn tree_state(&self, state: GroupRow) -> ToolState {
-        if state == GroupRow::Open && self.is_running() {
+        if state != GroupRow::Aborted && self.is_running() {
             ToolState::Running
         } else if failed_calls(&self.calls) > 0 {
             ToolState::Failure
@@ -1736,10 +2180,11 @@ impl ToolGroup {
             .unwrap_or_default()
     }
 
-    /// The group's row: present tense with a running bullet only while it is
-    /// open with a call in flight, otherwise a resolved bullet plus past-tense
-    /// summary. The label is stored untruncated; `Row::Tool` clamps it to the
-    /// current draw width.
+    /// The group's row: present tense with a running bullet while a call is in
+    /// flight, otherwise a resolved bullet plus past-tense summary. Closing the
+    /// group does not resolve its calls: a notice or a child's row can commit it
+    /// mid-call, and the late result rewrites it then. The label is stored
+    /// untruncated; `Row::Tool` clamps it to the current draw width.
     fn row(&self, state: GroupRow) -> Row {
         if self.explored() {
             return RowKind::Explored {
@@ -1754,6 +2199,7 @@ impl ToolGroup {
             // just its command; the live panel draws its clock and output.
             return RowKind::Shells {
                 state: self.tree_state(state),
+                aborted: state == GroupRow::Aborted,
                 children: self
                     .calls
                     .iter()
@@ -1765,11 +2211,10 @@ impl ToolGroup {
             }
             .into();
         }
-        if state == GroupRow::Open && self.is_running() {
+        if state != GroupRow::Aborted && self.is_running() {
             return RowKind::Tool {
                 state: ToolState::Running,
                 label: self.activity(),
-                reserve: TOOL_ROW_RESERVE,
             }
             .into();
         }
@@ -1802,7 +2247,14 @@ impl ToolGroup {
                 }
             }
         } else {
-            group_summary(&self.nouns)
+            // A mixed group folds like a finished trace: a `Worked` header
+            // counting its calls, the breakdown hung under it.
+            return RowKind::Worked {
+                state: self.outcome(state == GroupRow::Aborted),
+                calls: self.calls.len(),
+                summary: group_summary(&self.nouns),
+            }
+            .into();
         };
         RowKind::Tool {
             state: match backgrounded {
@@ -1810,7 +2262,6 @@ impl ToolGroup {
                 None => self.outcome(state == GroupRow::Aborted),
             },
             label,
-            reserve: TOOL_ROW_RESERVE,
         }
         .into()
     }
@@ -2124,27 +2575,12 @@ enum RowKind {
     /// The opening splash, re-laid out at the draw width (the wordmark is
     /// dropped and the hints re-packed on a terminal too narrow for them).
     Banner(Box<Banner>),
-    /// A line the app is saying: `glyph` in the gutter column, body wrapped at
-    /// the draw width, so the gutter owns the left edge of the whole row instead
-    /// of only its first line. `cont` is what a wrapped continuation puts in the
-    /// column: an edge glyph repeats, a marker glyph gives way to blanks (a
-    /// second `•` would read as a second note).
-    System {
-        glyph: &'static str,
-        cont: &'static str,
-        gutter: Style,
-        body: Vec<Span<'static>>,
-        /// A filled bubble background spanning the row, or `None` for the plain
-        /// gutter form. Set for the user turn so it reads as a distinct card the
-        /// way the desktop's `bg-secondary` bubble does.
-        bg: Option<Color>,
-    },
-    /// A tool call/summary row, re-truncated to `width - reserve`.
-    Tool {
-        state: ToolState,
-        label: String,
-        reserve: u16,
-    },
+    /// A user turn: the `USER_GLYPH` gutter and the body wrapped beside it,
+    /// in the filled bubble that reads as a distinct card the way the
+    /// desktop's `bg-secondary` bubble does.
+    User { body: Vec<Span<'static>> },
+    /// A tool call/summary row, re-wrapped at the draw width.
+    Tool { state: ToolState, label: String },
     /// A group of read-only exploration calls: an `Explored` header over one
     /// child row per action (see `explored_lines`).
     Explored {
@@ -2152,11 +2588,22 @@ enum RowKind {
         failed: usize,
         actions: Vec<ExploreAction>,
     },
-    /// A run of shell commands: a `Ran N commands` header over one child per
+    /// A run of shell commands: a `Shell` header over one child per
     /// command with its output preview (see `shell_group_lines`).
     Shells {
         state: ToolState,
+        /// The run was cut short, so a command without a result is
+        /// interrupted. Held apart from `state`, where a failed or detached
+        /// sibling outranks the interruption.
+        aborted: bool,
         children: Vec<ShellChild>,
+    },
+    /// A closed group of mixed calls: `Worked · N tool calls` over the
+    /// `group_summary` breakdown (see `worked_lines`).
+    Worked {
+        state: ToolState,
+        calls: usize,
+        summary: String,
     },
     /// A tool result summary plus its optional diff body, hung off the
     /// call row above as its first child. `content` is `None` when the call row
@@ -2174,23 +2621,43 @@ enum RowKind {
     Resolved { call: Box<RowKind>, result: Box<RowKind> },
     /// A row about subagents: a dispatch or a finished child.
     Agent(Box<AgentRow>),
+    /// Any other transcript event (a note, an error, a compaction, a memory
+    /// tidy, a message between agents, a turn receipt), laid out by the shared
+    /// `event` renderer: open while `live`, else folded to its name and summary.
+    Event(Box<EventRow>),
 }
 
-/// `• Dispatched kv-review, docs-writer` or `• Finished kv-review · 3 tools`:
-/// a tool row whose subjects are subagents, named the way the dock and
-/// `/agents` name them, with its detail -- the briefs, or how the child ended --
-/// hung under it as a tree.
+/// A row about subagents: one `dispatch_subagent` call, drawn as one
+/// `• Dispatched <name>` block per child with the first line of its task
+/// under it, or `• Finished <name> · 3 tools` for a child that ended, with how
+/// it ended under it. Neither is rewritten as the child runs: the dock and
+/// `/agents` show where a child stands, and its end is an event of its own.
+/// A child a later plan phase holds back reads `Queued <name>` with its
+/// phase instead, since the call did not start it.
 #[derive(Clone)]
 struct AgentRow {
     state: ToolState,
     verb: AgentVerb,
-    names: Vec<String>,
-    /// Dim text after the names, e.g. the child's tool count.
+    /// Each child the row names, with the first line of its task (empty for a
+    /// finished child's row, which has its status instead).
+    children: Vec<RowChild>,
+    /// Dim text after a finished child's name: its tool count and run time.
     stats: Option<String>,
-    /// One child row per brief, under the tree's corner.
-    briefs: Vec<Vec<Span<'static>>>,
-    /// How a finished child ended, as the last child row.
+    /// How a finished child ended, then where it worked, under its name.
     status: Option<AgentStatus>,
+    workspace: Option<String>,
+}
+
+/// One child an `AgentRow` names.
+#[derive(Clone, Default)]
+struct RowChild {
+    name: String,
+    brief: String,
+    /// The plan phase that holds this child back, for a dispatch child past
+    /// the call's first phase. Such a child is not started by the call: it
+    /// waits for the phase before it, so the row must not say it was
+    /// dispatched.
+    later_phase: Option<u32>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2200,38 +2667,130 @@ enum AgentVerb {
 }
 
 impl AgentRow {
-    /// The row's verb: present tense while the dispatch is in flight (or was
-    /// cut short before it resolved), past tense once it has.
-    fn verb(&self) -> &'static str {
-        match (self.verb, self.state) {
-            (AgentVerb::Dispatch, ToolState::Running | ToolState::Interrupted) => "Dispatching",
-            (AgentVerb::Dispatch, _) => "Dispatched",
-            (AgentVerb::Finish, _) => "Finished",
+    /// The verb for `child`: present tense while the dispatch is in flight (or
+    /// was cut short before it resolved), past tense once it has. A later-phase
+    /// child is queued by the call rather than started by it.
+    fn verb(&self, child: &RowChild) -> &'static str {
+        let in_flight = matches!(self.state, ToolState::Running | ToolState::Interrupted);
+        match (self.verb, child.later_phase.is_some(), in_flight) {
+            (AgentVerb::Dispatch, false, true) => "Dispatching",
+            (AgentVerb::Dispatch, false, false) => "Dispatched",
+            (AgentVerb::Dispatch, true, true) => "Queueing",
+            (AgentVerb::Dispatch, true, false) => "Queued",
+            (AgentVerb::Finish, ..) => "Finished",
         }
     }
 
+    /// One event per child, a dispatch's held to a title row and a row of its
+    /// brief, so a fan-out of five reads as five short blocks rather than one
+    /// tall one.
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
         let dim = Style::new().fg(theme::muted());
-        let mut head = vec![Span::styled(self.verb(), Style::new().bold())];
-        for (i, name) in self.names.iter().enumerate() {
-            head.push(Span::raw(if i == 0 { " " } else { ", " }));
-            head.push(agent_label(name));
-        }
-        if let Some(stats) = &self.stats {
-            head.push(Span::styled(format!(" \u{b7} {stats}"), dim));
-        }
-        let mut out = tool_row_spans(self.state.bullet(), head, TOOL_ROW_RESERVE, width, Vec::new());
-        let inner = width.saturating_sub(TREE_FIRST.len() as u16).max(1) as usize;
-        let status = self.status.iter().map(|s| s.spans(inner));
-        for (i, child) in self.briefs.iter().cloned().chain(status).enumerate() {
-            out.extend(gutter_lines(
-                wrap_spans_hard(child, inner),
-                vec![child_prefix(i == 0)],
-                vec![child_prefix(false)],
-            ));
+        // A dispatch that names no child it can parse keeps a bare header, so
+        // the error it is answered with still has a title above it.
+        let bare = [RowChild::default()];
+        let children = if self.children.is_empty() { &bare[..] } else { &self.children[..] };
+        let mut out = Vec::new();
+        for child in children {
+            let (name, brief) = (&child.name, &child.brief);
+            let mut head = vec![Span::styled(self.verb(child), Style::new().bold())];
+            if !name.is_empty() {
+                head.extend([Span::raw(" "), agent_label(name)]);
+            }
+            if let Some(p) = child.later_phase {
+                head.push(Span::styled(format!(" \u{b7} {}", phase_badge(p)), dim));
+            }
+            if let Some(stats) = &self.stats {
+                head.push(Span::styled(format!(" \u{b7} {stats}"), dim));
+            }
+            let brief = (!brief.is_empty()).then(|| Child::text(brief, dim.italic()));
+            let status = self
+                .status
+                .iter()
+                .map(|s| Child::Text(s.spans(STATUS_PREVIEW_WIDTH)));
+            let workspace = self.workspace.iter().map(|w| Child::text(w, dim));
+            let event = TranscriptEvent::new(self.state.bullet(), head)
+                .children(brief.into_iter().chain(status).chain(workspace));
+            // A brief is cut to its row; how a child ended wraps, since an
+            // error's text is the only account of why it failed.
+            let event = match self.verb {
+                AgentVerb::Dispatch => event.clipped(),
+                AgentVerb::Finish => event.capped(),
+            };
+            out.extend(event.lines(width));
         }
         out
     }
+}
+
+/// Columns a finished child's reply preview may take on its status line,
+/// before the row wraps it to the draw width.
+const STATUS_PREVIEW_WIDTH: usize = 72;
+
+/// A message between two agents as one event, seen from `me`, the agent whose
+/// transcript holds it: `Message to <name>` for one it sent, `Message from
+/// <name>` for one it received, the first line as its summary and the whole
+/// text as its detail. Live, so it reads in full while the step that
+/// sent or took it is in progress, then folds with that step.
+fn agent_message_row(me: &str, from: &str, to: &str, text: &str) -> EventRow {
+    let (verb, other) = if from == me { ("Message to", to) } else { ("Message from", from) };
+    message_row(verb, other, text)
+}
+
+/// `agent_message_row` once its direction is known: `verb` and the agent at
+/// the other end title it.
+fn message_row(verb: &str, other: &str, text: &str) -> EventRow {
+    let dim = Style::new().dim();
+    let mut lines = text.lines().map(str::trim_end).skip_while(|l| l.trim().is_empty());
+    let first = lines.next().unwrap_or("").trim().to_string();
+    let rest: Vec<&str> = lines.collect();
+    let marker = Span::styled(TOOL_BULLET, Style::new().fg(theme::accent()));
+    let title = vec![
+        Span::styled(format!("{verb} "), Style::new().bold()),
+        agent_label(other),
+    ];
+    EventRow {
+        event: TranscriptEvent::new(marker, title).child(Child::text(first, dim)),
+        detail: rest.into_iter().map(|l| Child::text(l, dim)).collect(),
+        live: true,
+    }
+}
+
+/// A system note's event: `text`'s first line is the title under `glyph`,
+/// the rest hangs under it as its description.
+fn note_row(glyph: &'static str, level: Level, text: &str) -> EventRow {
+    let (gutter, body) = level.styles();
+    let mut lines = text.lines();
+    let title = lines.next().unwrap_or("").to_string();
+    let rest: Vec<Child> = lines.map(|l| Child::text(l, Style::new().dim())).collect();
+    EventRow::plain(
+        TranscriptEvent::new(Span::styled(format!("{glyph} "), gutter), vec![Span::styled(
+            title, body,
+        )])
+        .children(rest),
+    )
+}
+
+/// The event for a note `agent` raised: its gutter mark in `tone`, the agent
+/// as the title, each line of `text` under it.
+fn agent_note_row(agent: &str, tone: NoteTone, text: &str) -> EventRow {
+    let (marker, body) = match tone {
+        NoteTone::Info => {
+            let (gutter, body) = Level::Info.styles();
+            (Span::styled(format!("{SYSTEM_GLYPH} "), gutter), body)
+        }
+        NoteTone::Warn => {
+            let (gutter, body) = Level::Warn.styles();
+            (Span::styled(format!("{WARN_GLYPH} "), gutter), body)
+        }
+        NoteTone::Monitor => (
+            Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
+            Style::new(),
+        ),
+        NoteTone::Finished => (ToolState::Success.bullet(), Style::new()),
+    };
+    let lines = text.lines().map(|l| Child::text(l, body));
+    EventRow::plain(TranscriptEvent::new(marker, vec![agent_label(agent)]).children(lines))
 }
 
 /// The worker names a `dispatch_subagent` call gives its children. While the
@@ -2273,39 +2832,36 @@ fn dispatched_workers<'a>(
         .collect()
 }
 
-/// The dispatch row for a `dispatch_subagent` call: every child it names, each
-/// brief's first line under it (named, when there are several). `reported` is
-/// the worker names from the dispatch result, once it has landed.
+/// The dispatch row for a `dispatch_subagent` call: every child it names with
+/// the first line of its task. `reported` is the worker names from the
+/// dispatch result, once it has landed.
 fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentRow {
-    let subagents: Vec<(String, String)> = dispatched_workers(args, reported)
+    let workers = dispatched_workers(args, reported);
+    // Read the way dispatch groups them: a missing `phase` is 0, and only the
+    // lowest phase starts with the call; the rest wait their turn.
+    let phase = |s: &serde_json::Value| {
+        s.get("phase").and_then(|v| v.as_u64()).and_then(|n| u32::try_from(n).ok()).unwrap_or(0)
+    };
+    let first = workers.iter().map(|(_, s)| phase(s)).min().unwrap_or(0);
+    let children = workers
         .into_iter()
         .map(|(name, s)| {
             let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
             let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
-            (name, brief.unwrap_or("").to_string())
-        })
-        .collect();
-    let dim = Style::new().fg(theme::muted());
-    let several = subagents.len() > 1;
-    let briefs = subagents
-        .iter()
-        .filter(|(_, brief)| !brief.is_empty())
-        .map(|(name, brief)| {
-            let mut spans = Vec::new();
-            if several {
-                spans.push(Span::styled(format!("{name}: "), dim));
+            RowChild {
+                name,
+                brief: brief.unwrap_or("").to_string(),
+                later_phase: Some(phase(s)).filter(|p| *p > first),
             }
-            spans.push(Span::styled(brief.clone(), dim.italic()));
-            spans
         })
         .collect();
     AgentRow {
         state: ToolState::Running,
         verb: AgentVerb::Dispatch,
-        names: subagents.into_iter().map(|(name, _)| name).collect(),
+        children,
         stats: None,
-        briefs,
         status: None,
+        workspace: None,
     }
 }
 
@@ -2391,45 +2947,22 @@ impl RowKind {
             RowKind::Line(line) => vec![line.clone()],
             RowKind::Markdown(text) => answer_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
-            RowKind::System {
-                glyph,
-                cont,
-                gutter,
-                body,
-                bg,
-            } => {
-                let lead = glyph.chars().count() + 1;
-                // A banded row reserves one column so the bubble keeps a right
-                // margin instead of the text touching its tinted edge.
-                let reserve = if bg.is_some() { 1 } else { 0 };
-                let max = width.saturating_sub(lead as u16 + reserve).max(8) as usize;
+            RowKind::User { body } => {
+                let lead = USER_GLYPH.chars().count() + 1;
+                // One column held back so the text keeps a margin inside the
+                // bubble instead of touching its tinted edge.
+                let max = width.saturating_sub(lead as u16 + 1).max(8) as usize;
+                let gutter = Style::new().fg(theme::accent()).bold();
                 let lines = gutter_lines(
                     wrap_spans_hard(body.clone(), max),
-                    vec![Span::styled(
-                        format!("{glyph:<width$}", width = lead),
-                        *gutter,
-                    )],
-                    vec![Span::styled(
-                        format!("{cont:<width$}", width = lead),
-                        *gutter,
-                    )],
+                    vec![Span::styled(format!("{USER_GLYPH:<lead$}"), gutter)],
+                    vec![Span::styled(" ".repeat(lead), gutter)],
                 );
-                match bg {
-                    Some(bg) => band_rows(lines, *bg, width),
-                    None => lines,
-                }
+                band_rows(lines, user_bubble_bg(), width)
             }
-            RowKind::Tool {
-                state,
-                label,
-                reserve,
-            } => tool_row_lines(
-                state.bullet(),
-                label,
-                *reserve,
-                width,
-                shells_hint(*state),
-            ),
+            RowKind::Tool { state, label } => {
+                tool_row_lines(state.bullet(), label, width, shells_hint(*state))
+            }
             RowKind::Explored {
                 state,
                 failed,
@@ -2442,9 +2975,18 @@ impl RowKind {
                 };
                 explored_lines(state.bullet(), verb, *failed, actions, Vec::new(), width)
             }
-            RowKind::Shells { state, children } => {
+            RowKind::Worked {
+                state,
+                calls,
+                summary,
+            } => worked_lines(state.bullet(), *calls, summary, width),
+            RowKind::Shells {
+                state,
+                aborted,
+                children,
+            } => {
                 let views: Vec<ShellView> = children.iter().map(ShellChild::view).collect();
-                shell_group_lines(state.bullet(), *state == ToolState::Running, &views, width)
+                shell_group_lines(state.bullet(), &views, None, *aborted, width)
             }
             RowKind::Result {
                 is_error,
@@ -2453,36 +2995,22 @@ impl RowKind {
                 lang,
             } => {
                 let max = width.saturating_sub(8).max(1) as usize;
-                let mut out: Vec<Line<'static>> = content
+                let summary = content
                     .iter()
-                    .map(|c| {
-                        Line::from(vec![
-                            Span::styled(TREE_FIRST, Style::new().dark_gray()),
-                            Span::styled(summarize_result(c, max), result_style(*is_error)),
-                        ])
-                    })
-                    .collect();
-                if let Some(diff) = diff {
-                    out.extend(diff_lines(
-                        diff,
-                        width as usize,
-                        DIFF_MAX_ROWS,
-                        TREE_REST,
-                        lang.as_deref(),
-                    ));
-                }
-                out
+                    .map(|c| Child::text(summarize_result(c, max), result_style(*is_error)));
+                let diff = diff.iter().map(|diff| Child::Diff {
+                    diff: diff.clone(),
+                    lang: lang.clone(),
+                });
+                let children: Vec<Child> = summary.chain(diff).collect();
+                tree_lines(&children, Fit::Wrap, width, true)
             }
             RowKind::Resolved { call, result } => {
                 // A resolved edit/write ends its row on the change count, so
                 // the size of the edit reads before its body does.
                 let stat = match (call.as_ref(), result.as_ref()) {
                     (
-                        RowKind::Tool {
-                            state,
-                            label,
-                            reserve,
-                        },
+                        RowKind::Tool { state, label },
                         RowKind::Result {
                             is_error: false,
                             diff: Some(diff),
@@ -2491,7 +3019,6 @@ impl RowKind {
                     ) => Some(tool_row_lines(
                         state.bullet(),
                         label,
-                        *reserve,
                         width,
                         diff_stat_spans(diff),
                     )),
@@ -2502,6 +3029,35 @@ impl RowKind {
                 out
             }
             RowKind::Agent(row) => row.lines(width),
+            RowKind::Event(row) => row.lines(width, row.live),
+        }
+    }
+
+    /// The event this row is, for a row the shared renderer lays out.
+    fn event_row(&self) -> Option<EventRow> {
+        match self {
+            RowKind::Event(row) => Some((**row).clone()),
+            _ => None,
+        }
+    }
+
+    /// What this row opens to beyond what it shows, laid out under it, or
+    /// `None` when it already shows everything (it is live, or has no detail).
+    fn event_detail(&self, width: u16) -> Option<Vec<Line<'static>>> {
+        self.event_row()
+            .filter(|row| !row.live && !row.detail.is_empty())
+            .map(|row| row.detail_lines(width))
+    }
+
+    /// The same row with its step finished, folded to its name and summary;
+    /// `None` for a row that is not live.
+    fn settled(&self) -> Option<RowKind> {
+        match self {
+            RowKind::Event(row) if row.live => Some(RowKind::Event(Box::new(EventRow {
+                live: false,
+                ..(**row).clone()
+            }))),
+            _ => None,
         }
     }
 }
@@ -2533,6 +3089,11 @@ struct Transcript {
     /// reasoning with prose in emission order, and what lets `reasoning_open`
     /// tell "still reasoning" from "prose has started".
     reasoning_segs: Vec<ReasoningSeg>,
+    /// `(reasoning, answer)` this step committed to the transcript before it
+    /// ended, when an event of its own (a child finishing, a notice) landed
+    /// mid-answer. The rows show it already; it is kept so the turn's answer
+    /// still reaches `history` whole (see `take_answer`). Cleared each step.
+    step_said: (String, String),
     /// What `assistant_buf` has said so far (answer started, think block
     /// open), folded in as tokens append; see `BufScan`. Reset wherever the
     /// buffer is cleared or replaced.
@@ -2562,6 +3123,12 @@ struct Transcript {
     /// Committed finished-subagent summary rows, each holding the child's run
     /// so Ctrl-O can expand it (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
+    /// Rows of the events the step in progress holds open (a dispatch, a
+    /// message between agents), folded by `end_step`.
+    live_events: Vec<usize>,
+    /// The subagent each in-flight `await_subagent` call waits on, by call
+    /// id, so its result reads as that agent's answer.
+    awaited: HashMap<String, String>,
     /// Start transcript index of each "trace" -- a contiguous run of
     /// reasoning-summary + tool-group rows (see `trace_runs`) -- the user has
     /// expanded. A *finished* trace (one an answer follows) folds to a single
@@ -2676,8 +3243,13 @@ impl Transcript {
         // it lands above the streaming response. Reasoning tokens must
         // not trigger this, or every call by a reasoning model splits
         // into its own row.
-        if self.tool_group.is_some() && self.answer_started() {
-            self.finalize_tool_group();
+        if self.answer_started() {
+            if self.tool_group.is_some() {
+                self.finalize_tool_group();
+            }
+            if !self.live_events.is_empty() {
+                self.end_step();
+            }
         }
     }
 
@@ -2702,6 +3274,8 @@ impl Transcript {
 
     /// A new model request began.
     fn step(&mut self) {
+        // The step that just ended went to history with its tool calls.
+        self.step_said = Default::default();
         // Only flush (and thereby close the tool group) once the model
         // has produced answer prose; a turn that only reasoned or only
         // called tools keeps the group open so the next turn's calls
@@ -2755,6 +3329,26 @@ impl Transcript {
         // is drawn at, so they survive a resize either way.
         let label = tool_activity(name, args);
         let done = tool_finished(name, args);
+        // A message is shown as what was said, at the call that sent it: the
+        // reader taking it later adds nothing (see `StreamEvent::AgentMessage`).
+        let arg = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        let to = match name {
+            "message_subagent" => Some(arg("name")),
+            "message_main_agent" => Some(MAIN_AGENT),
+            _ => None,
+        };
+        if let Some(to) = to {
+            self.finalize_tool_group();
+            self.gap(Kind::Meta);
+            self.push_event(message_row("Message to", to, arg("message")));
+            self.pending_rows.push(PendingToolRow {
+                id,
+                idx: self.rows.len() - 1,
+                label,
+                done,
+            });
+            return;
+        }
         if matches!(name, "edit" | "write" | "dispatch_subagent") {
             if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
                 self.diff_paths.insert(id.clone(), p.to_string());
@@ -2770,7 +3364,6 @@ impl Transcript {
                 self.push_row(RowKind::Tool {
                     state: ToolState::Running,
                     label: label.clone(),
-                    reserve: TOOL_ROW_RESERVE,
                 });
             }
             self.pending_rows.push(PendingToolRow {
@@ -2798,6 +3391,11 @@ impl Transcript {
         // in-flight command label and the live buffer are both dead weight.
         self.bash_commands.remove(&id);
         self.live_output.remove(&id);
+        if let Some(agent) = self.awaited.remove(&id) {
+            self.flush_assistant();
+            self.collected(&agent, &content, is_error);
+            return;
+        }
         // Grouped calls are already represented by the group row; retain
         // their result on the group so an expand can show it later.
         if self.grouped_ids.contains(&id) {
@@ -2947,6 +3545,12 @@ impl Transcript {
             // group's row is live (spinner, or lingering finished output), so it
             // can never come from the row cache.
             let seg = match self.tool_group.as_ref().filter(|g| g.idx == i) {
+                // A mixed group is drawn call by call until it folds. Drawn as
+                // its running call alone, or its commands alone, it hid every
+                // other call: a memory read vanished under the next command.
+                Some(g) if g.worked() => {
+                    Segment::eager(Some(i), self.live_worked_panel(g, spinner_frame, width), width)
+                }
                 Some(g) => {
                     // The open group's shell calls render live: a running command
                     // shows its header with elapsed and its streaming output tail; a
@@ -3130,6 +3734,7 @@ impl Transcript {
     /// Mark every edit/write row still awaiting a result as interrupted: the
     /// stream that would have resolved it is over.
     fn interrupt_pending_rows(&mut self) {
+        self.interrupt_committed_groups();
         for row in std::mem::take(&mut self.pending_rows) {
             if row.idx < self.rows.len() {
                 self.rows[row.idx] = match &self.rows[row.idx].kind {
@@ -3137,15 +3742,36 @@ impl Transcript {
                         state: ToolState::Interrupted,
                         ..(**agent).clone()
                     })),
+                    // A message was queued when its call was made; the run
+                    // ending before its receipt does not unsend it.
+                    RowKind::Event(_) => continue,
                     _ => RowKind::Tool {
                         state: ToolState::Interrupted,
                         label: row.label,
-                        reserve: TOOL_ROW_RESERVE,
                     },
                 }
                 .into();
             }
         }
+    }
+
+    /// A group committed mid-call reads as running until its result lands;
+    /// once no result can land (the stream is over, or the call is history
+    /// being replayed), it reads as interrupted instead.
+    fn interrupt_committed_groups(&mut self) {
+        for group in self.groups.iter_mut().filter(|g| g.is_running()) {
+            if group.idx < self.rows.len() {
+                group.flat = std::cell::OnceCell::new();
+                self.rows[group.idx] = group.row(GroupRow::Aborted);
+            }
+        }
+    }
+
+    /// A system note at `level` under `glyph`: the text's first line is the
+    /// event's title, any further lines hang under it as its description.
+    fn push_note(&mut self, glyph: &'static str, level: Level, text: &str) {
+        self.gap(Kind::Meta);
+        self.push_event(note_row(glyph, level, text));
     }
 
     /// Commit whatever the stream left open once it is over: the buffered
@@ -3155,6 +3781,7 @@ impl Transcript {
         self.flush_assistant();
         self.close_tool_group(interrupted);
         self.interrupt_pending_rows();
+        self.end_step();
         self.live_output.clear();
     }
 
@@ -3180,6 +3807,7 @@ impl Transcript {
             .retain_mut(|r| shift(r.idx).map(|idx| r.idx = idx).is_some());
         self.subagent_blocks
             .retain_mut(|b| shift(b.idx).map(|idx| b.idx = idx).is_some());
+        self.live_events = self.live_events.iter().filter_map(|&i| shift(i)).collect();
         self.pending_rows
             .retain_mut(|p| shift(p.idx).map(|idx| p.idx = idx).is_some());
         self.expanded = self.expanded.iter().filter_map(|&i| shift(i)).collect();
@@ -3308,6 +3936,7 @@ impl Transcript {
                 // to nothing (a bare HTML comment) still emits no row.
                 let row: Row = RowKind::Markdown(seg.to_string()).into();
                 if !row.lines(self.render_width()).is_empty() {
+                    self.end_step();
                     self.gap(Kind::Prose);
                     self.push_row(row);
                 }
@@ -3325,7 +3954,7 @@ impl Transcript {
         label: String,
         done: String,
     ) {
-        let (noun, is_read) = tool_kind(name);
+        let (noun, op) = tool_kind(name, args);
         self.grouped_ids.insert(id.to_string());
         let call = GroupedCall {
             id: id.to_string(),
@@ -3346,7 +3975,7 @@ impl Transcript {
             .is_some_and(|g| g.idx < self.rows.len());
         if extend {
             let g = self.tool_group.as_mut().expect("group checked above");
-            g.nouns.push((noun, is_read));
+            g.nouns.push((noun, op));
             g.calls.push(call);
             self.refresh_group_row();
             return;
@@ -3355,7 +3984,7 @@ impl Transcript {
         let group = ToolGroup {
             idx: self.rows.len(),
             first_done: done,
-            nouns: vec![(noun, is_read)],
+            nouns: vec![(noun, op)],
             calls: vec![call],
             started: Instant::now(),
             last_result_error: None,
@@ -3452,7 +4081,7 @@ impl Transcript {
 
     /// The breakdown nouns of every tool group in `run` (groups close in row
     /// order), so its folded header can summarize what the hidden calls did.
-    fn trace_nouns(&self, run: &TraceRun) -> Vec<(&'static str, bool)> {
+    fn trace_nouns(&self, run: &TraceRun) -> Vec<(&'static str, ToolOp)> {
         self.groups
             .iter()
             .filter(|g| (run.start..=run.end).contains(&g.idx))
@@ -3491,7 +4120,7 @@ impl Transcript {
     /// One block per command, in dispatch order: a group runs its calls in
     /// parallel, so several commands can be streaming at once and each shows its
     /// own output rather than one hiding the rest. A run of commands lists them
-    /// under one `Running N commands` row, each with its own clock and tail.
+    /// under one `Shell` row, each with its own clock and tail.
     fn live_shell_panel(
         &self,
         group: &ToolGroup,
@@ -3517,7 +4146,7 @@ impl Transcript {
             } else {
                 state.bullet()
             };
-            return shell_group_lines(bullet, state == ToolState::Running, &views, width);
+            return shell_group_lines(bullet, &views, Some(spinner_frame), false, width);
         }
         let mut out = Vec::new();
         for call in group.calls.iter().filter(|c| c.command.is_some()) {
@@ -3541,6 +4170,45 @@ impl Transcript {
                 Some(content) => {
                     out.extend(finished_shell_lines(command, content, call.is_error, width));
                 }
+            }
+        }
+        out
+    }
+
+    /// The open mixed group, one entry per call in call order: a command
+    /// with its live tail or output preview, any other call as its own row,
+    /// running with its clock until its result lands, then settled.
+    fn live_worked_panel(
+        &self,
+        group: &ToolGroup,
+        spinner_frame: usize,
+        width: u16,
+    ) -> Vec<Line<'static>> {
+        let mut out = Vec::new();
+        for call in &group.calls {
+            match (call.command.as_deref(), &call.content) {
+                (Some(command), None) => {
+                    let output = self.live_output.get(&call.id).map_or("", String::as_str);
+                    let elapsed = call.started.elapsed().as_secs();
+                    out.extend(running_shell_lines(
+                        command, output, elapsed, spinner_frame, width,
+                    ));
+                }
+                (Some(command), Some(content)) => {
+                    out.extend(finished_shell_lines(command, content, call.is_error, width));
+                }
+                (None, None) => out.extend(tool_row_lines(
+                    running_bullet(spinner_frame),
+                    &call.activity,
+                    width,
+                    vec![elapsed_badge(call.started.elapsed().as_secs())],
+                )),
+                (None, Some(_)) => out.extend(tool_row_lines(
+                    call.state().bullet(),
+                    &call.settled_label(),
+                    width,
+                    Vec::new(),
+                )),
             }
         }
         out
@@ -3620,10 +4288,22 @@ impl Transcript {
                 }
                 call
             }
+            // A message that went out says nothing more; one that could not
+            // be sent turns red and says why under what it would have said.
+            RowKind::Event(event) => {
+                if is_error {
+                    let mut event = (**event).clone();
+                    event.event.marker = ToolState::Failure.bullet();
+                    if let RowKind::Result { content: Some(why), .. } = result {
+                        event.event.children.push(Child::text(why, result_style(true)));
+                    }
+                    self.rows[row.idx] = RowKind::Event(Box::new(event)).into();
+                }
+                return None;
+            }
             _ => RowKind::Tool {
                 state: ToolState::of(is_error),
                 label,
-                reserve: TOOL_ROW_RESERVE,
             },
         };
         self.rows[row.idx] = RowKind::Resolved {
@@ -3673,12 +4353,14 @@ impl Transcript {
     /// blocks): collapse all when all are already expanded, else expand all and
     /// scroll the most-recent one into view.
     fn toggle_regions(&mut self) {
+        let events = (0..self.rows.len()).filter(|&i| self.folded_event(i));
         let all: Vec<usize> = self
             .groups
             .iter()
             .map(|g| g.idx)
             .chain(self.reasoning_blocks.iter().map(|r| r.idx))
             .chain(self.subagent_blocks.iter().map(|b| b.idx))
+            .chain(events)
             .collect();
         // Ctrl-O also unfolds every collapsed (finished) trace, so one keystroke
         // opens both the folds and the per-row detail.
@@ -3730,11 +4412,16 @@ impl Transcript {
                     .map(|&pos| self.reasoning_blocks[pos].detail.clone())
             })
             .or_else(|| {
-                index
-                    .subagents
-                    .get(&i)
-                    .map(|&pos| self.subagent_blocks[pos].detail_lines(width))
+                // A dispatch row opens to its briefs, then the run of each child
+                // that finished, in the order they ended.
+                let runs = index.subagents.get(&i)?;
+                let mut out = self.rows.get(i)?.kind.event_detail(width).unwrap_or_default();
+                for &pos in runs {
+                    out.extend(self.subagent_blocks[pos].detail_lines(width));
+                }
+                Some(out)
             })
+            .or_else(|| self.rows.get(i)?.kind.event_detail(width))
     }
 
     /// An expanded region's text before wrapping, one entry per logical line,
@@ -3762,17 +4449,28 @@ impl Transcript {
         if let Some(&pos) = index.reasoning.get(&i) {
             return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
         }
-        index
-            .subagents
-            .get(&i)
-            .map(|&pos| Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()))
+        if let Some(runs) = index.subagents.get(&i) {
+            let briefs = self.rows.get(i)?.kind.event_detail(find::FLAT_WIDTH);
+            // A finished child's own row has no briefs: its kept text is lent.
+            if let (None, [pos]) = (&briefs, runs.as_slice()) {
+                return Some(Cow::Borrowed(self.subagent_blocks[*pos].flat_detail().as_slice()));
+            }
+            let mut out = briefs.map(|d| find::flat_text(&d)).unwrap_or_default();
+            for &pos in runs {
+                out.extend(self.subagent_blocks[pos].flat_detail().iter().cloned());
+            }
+            return Some(Cow::Owned(out));
+        }
+        let detail = self.rows.get(i)?.kind.event_detail(find::FLAT_WIDTH)?;
+        Some(Cow::Owned(find::flat_text(&detail)))
     }
 
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
     /// `subagent_blocks`, so a caller asking about many rows (the search scan,
     /// a frame with many expanded rows) does one lookup per row instead of
-    /// three linear searches. The first entry for an index wins, as the
-    /// searches' `find` did.
+    /// three linear searches. The first group or reasoning entry for an index
+    /// wins, as the searches' `find` did; a dispatch row keeps every child
+    /// that ended on it.
     fn region_index(&self) -> RegionIndex {
         fn first_by_idx(idxs: impl Iterator<Item = usize>) -> HashMap<usize, usize> {
             let mut map = HashMap::new();
@@ -3784,7 +4482,13 @@ impl Transcript {
         RegionIndex {
             groups: first_by_idx(self.groups.iter().map(|g| g.idx)),
             reasoning: first_by_idx(self.reasoning_blocks.iter().map(|r| r.idx)),
-            subagents: first_by_idx(self.subagent_blocks.iter().map(|b| b.idx)),
+            subagents: self.subagent_blocks.iter().enumerate().fold(
+                HashMap::new(),
+                |mut map: HashMap<usize, Vec<usize>>, (pos, b)| {
+                    map.entry(b.idx).or_default().push(pos);
+                    map
+                },
+            ),
         }
     }
 
@@ -3808,13 +4512,92 @@ impl Transcript {
         let is_region = self.groups.iter().any(|g| g.idx == idx)
             || self.reasoning_blocks.iter().any(|r| r.idx == idx)
             || self.subagent_blocks.iter().any(|b| b.idx == idx)
-            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx);
+            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx)
+            || self.folded_event(idx);
         if !is_region {
             return;
         }
         if !self.expanded.remove(&idx) {
             self.expanded.insert(idx);
         }
+    }
+
+    /// Whether row `idx` is an event folded to its name and summary, with
+    /// detail an expand reveals.
+    fn folded_event(&self, idx: usize) -> bool {
+        self.rows
+            .get(idx)
+            .and_then(|row| row.kind.event_row())
+            .is_some_and(|row| !row.live && !row.detail.is_empty())
+    }
+
+    /// The agent's step is over: every event it held open folds to its name
+    /// and summary, as its tool group folds to `Worked`. Called when answer
+    /// prose begins and when the run ends, the two points a step finishes.
+    fn end_step(&mut self) {
+        for idx in std::mem::take(&mut self.live_events) {
+            let settled = self.rows.get(idx).and_then(|row| row.kind.settled());
+            if let Some(kind) = settled {
+                self.rows[idx] = kind.into();
+            }
+        }
+    }
+
+    /// A wait on a subagent: no row of its own (the live throbber stands in
+    /// for it), but journaled, so a resume knows what the result answers.
+    fn await_call(&mut self, id: &str, args: &serde_json::Value, agent: &str) {
+        self.log(DisplayEntry::ToolCall {
+            id: id.to_string(),
+            name: "await_subagent".to_string(),
+            args: args.clone(),
+        });
+        self.awaited.insert(id.to_string(), agent.to_string());
+    }
+
+    /// What an awaited subagent handed back, as its event: `Collected <name>`
+    /// over the answer's first line, the rest as detail.
+    fn collected(&mut self, agent: &str, content: &str, is_error: bool) {
+        let style = result_style(is_error);
+        let mut lines = content.lines().map(str::trim_end).filter(|l| !l.trim().is_empty());
+        let first = lines.next().unwrap_or("(no answer)").to_string();
+        let title = vec![
+            Span::styled("Collected ", Style::new().bold()),
+            agent_label(agent),
+        ];
+        let row = EventRow {
+            event: TranscriptEvent::new(ToolState::of(is_error).bullet(), title)
+                .child(Child::text(first, style)),
+            detail: lines.map(|l| Child::text(l, style)).collect(),
+            live: true,
+        };
+        self.gap(Kind::Tool);
+        self.push_event(row);
+    }
+
+    /// A message between agents, journaled so a resume shows it. The main
+    /// transcript records one the main agent sends when it is sent (steering
+    /// from `/agents`) and one a child sends when it is delivered; a child's
+    /// records one when it takes it. `me`
+    /// names the agent this transcript belongs to.
+    fn agent_message(&mut self, me: &str, from: &str, to: &str, text: &str) {
+        self.flush_assistant();
+        self.finalize_tool_group();
+        self.log(DisplayEntry::AgentMessage {
+            from: from.to_string(),
+            to: to.to_string(),
+            text: text.to_string(),
+        });
+        self.gap(Kind::Meta);
+        self.push_event(agent_message_row(me, from, to, text));
+    }
+
+    /// Commit an event row, holding it open until its step finishes when it
+    /// is `live`.
+    fn push_event(&mut self, row: EventRow) {
+        if row.live {
+            self.live_events.push(self.rows.len());
+        }
+        self.push_row(RowKind::Event(Box::new(row)));
     }
 
     /// Forget what `buf_scan` folded in. Every site that clears or replaces
@@ -3872,11 +4655,24 @@ impl Transcript {
         self.scan_buf().answer
     }
 
-    /// Flush the current turn and return its text as the final assistant answer.
+    /// Flush the current turn and return its text as the final assistant
+    /// answer, with whatever an event mid-answer committed early.
     fn take_answer(&mut self) -> String {
-        let answer = self.assistant_buf.trim().to_string();
+        let (_, said) = std::mem::take(&mut self.step_said);
+        let answer = format!("{said}{}", self.assistant_buf).trim().to_string();
         self.flush_assistant();
         answer
+    }
+
+    /// Commit the step's output so far, for an event that lands as a row of
+    /// its own mid-answer, while keeping what it said for `take_answer`.
+    fn commit_mid_step(&mut self) {
+        self.finalize_tool_group();
+        for seg in &self.reasoning_segs {
+            self.step_said.0.push_str(&seg.text);
+        }
+        self.step_said.1.push_str(&self.assistant_buf);
+        self.flush_assistant();
     }
 
     /// The concatenated natively-streamed reasoning text for the current turn.
@@ -3886,10 +4682,8 @@ impl Transcript {
     /// this covers the `reasoning_content` delta case, which never touches the
     /// buffer.
     fn native_reasoning_text(&self) -> String {
-        self.reasoning_segs
-            .iter()
-            .map(|s| s.text.clone())
-            .collect::<String>()
+        let live = self.reasoning_segs.iter().map(|s| s.text.as_str());
+        std::iter::once(self.step_said.0.as_str()).chain(live).collect()
     }
 
     /// Render a user turn: the prompt line, then one dotted connector row per
@@ -3997,6 +4791,11 @@ struct PendingAsk {
     custom_input: String,
     rect: Rect,
     row_hitboxes: Vec<(u16, usize)>,
+    /// Whether the user moved through the options with the arrows; see
+    /// `Pending::picked`, which this mirrors for a question.
+    picked: bool,
+    /// `Pending::pause`, for the question on screen.
+    pause: PromptPause,
     /// When the `ask` loop auto-selects the recommended option if unanswered.
     /// `Some` only when a timeout was configured; drives the live countdown in
     /// the prompt title. Anchored here at event receipt, a hair before the
@@ -4031,6 +4830,8 @@ impl PendingAsk {
             custom_input: String::new(),
             rect: Rect::default(),
             row_hitboxes: Vec::new(),
+            picked: false,
+            pause: PromptPause::default(),
             deadline: timeout.map(|d| std::time::Instant::now() + d),
         }
     }
@@ -4141,12 +4942,33 @@ impl PendingAsk {
             (self.selected as isize + delta).rem_euclid(self.row_count() as isize) as usize;
     }
 
+    /// Up/Down on the question; `Pending::arrow`'s rule, armed on "Other",
+    /// which only opens the free-text field and so chooses nothing.
+    fn arrow(&mut self, delta: isize, over_detail: bool) {
+        if over_detail {
+            let other = self.question().options.len();
+            self.selected = detail_arrow(self.selected, self.row_count(), other, delta, self.picked);
+        } else {
+            self.move_selection(delta);
+        }
+        self.picked = true;
+    }
+
     fn move_question(&mut self, delta: isize) {
         let last = self.request.questions.len().saturating_sub(1) as isize;
-        self.question_index = (self.question_index as isize + delta).clamp(0, last) as usize;
-        self.selected = 0;
+        self.show_question((self.question_index as isize + delta).clamp(0, last) as usize);
         self.editing_custom = false;
         self.custom_input.clear();
+    }
+
+    /// A new question is a new prompt: over the detail it opens unarmed and
+    /// with the pause restarted, or the second Enter of a double press would
+    /// answer it on whatever row it happened to land on.
+    fn show_question(&mut self, index: usize) {
+        self.question_index = index;
+        self.selected = 0;
+        self.picked = false;
+        self.pause = PromptPause::default();
     }
 
     fn all_answered(&self) -> bool {
@@ -4209,15 +5031,24 @@ impl PendingAsk {
         if self.all_answered() {
             true
         } else {
-            self.question_index = self
+            let index = self
                 .answers
                 .iter()
                 .position(|answer| answer.selected.is_empty() && answer.custom_input.is_none())
                 .unwrap_or(self.question_index);
-            self.selected = 0;
+            self.show_question(index);
             false
         }
     }
+}
+
+/// A composer's field and its recall, set aside while another owns the input
+/// row (`App::parked_composer`).
+struct Composer {
+    input: String,
+    cursor: usize,
+    history: Vec<String>,
+    recall_pos: Option<usize>,
 }
 
 struct App {
@@ -4333,12 +5164,13 @@ struct App {
     /// The conversation as rendered rows, plus the streaming state that
     /// builds them. See [`Transcript`].
     transcript: Transcript,
-    /// Background journal writer, created on the first dump and joined on exit.
-    journal_writer: Option<journal::Writer>,
+    /// The open session file of `thread_id`, opened by the first save and held
+    /// (with its lock) until the session moves to another thread or exits.
+    session_writer: Option<SessionWriter>,
     /// Whether a prior assistant turn's reasoning is resent to the model.
     /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
     /// long chains of thought out of the request (and satisfies upstreams that
-    /// reject the key); the display journal keeps reasoning for a resume either
+    /// reject the key); the session record keeps reasoning for a resume either
     /// way.
     send_reasoning: bool,
     /// Normalized reasoning effort level sent with each model request.
@@ -4415,8 +5247,6 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
-    /// `/agents` message dock: text the user is writing to one running child.
-    agent_message: Option<AgentMessagePrompt>,
     /// `/vibe-setting`'s side call mapping the request onto settings, while it
     /// runs. Awaited by the chat loop; off the render loop like `/context`.
     vibe_task: Option<JoinHandle<Result<String, String>>>,
@@ -4431,6 +5261,15 @@ struct App {
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// Set by `/worktree` to ask the loop to gather its report off the render
+    /// loop: it runs git per worktree. Taken once, like `context_request`.
+    worktree_request: bool,
+    /// What `/worktrees` asked the loop to do off the render loop (list,
+    /// prune, clear the build cache): git and deletes. Taken once; one that
+    /// arrives while another runs waits for it.
+    worktrees_request: Option<WorktreesJob>,
+    /// The last `/worktrees` listing, which its picker rows are built from.
+    worktrees: Option<crate::core::agent::child_workspace::WorktreesReport>,
     /// The provider's execution id for the most recent request that reported
     /// one, so `/usage` can name something concrete to look up. `None` when no
     /// request has reported one -- which is the normal case on the default
@@ -4455,6 +5294,19 @@ struct App {
     /// Lines the `/agents` detail is scrolled up from its bottom; 0 follows
     /// the child as it works. Clamped to the content on every draw.
     agent_detail_scroll: u16,
+    /// The main composer, parked while a subagent's `/agents` detail has the
+    /// field: the detail's draft is a message to a child, and must never be
+    /// what the next Enter in the main view sends to the main agent. `Some`
+    /// exactly while the swap is in effect (see `settle_agent_detail`).
+    parked_composer: Option<Composer>,
+    /// What was sent to subagents from their detail, for that field's Up/Down
+    /// recall. Kept apart from `input_history` so a steer recalled in the main
+    /// view cannot go to the main agent.
+    steer_history: Vec<String>,
+    /// Why the detail's last send went nowhere (a full inbox, a child that
+    /// already finished), shown over the draft it kept until the next key.
+    /// On the input row rather than in the child's rows, which are its run.
+    steer_refusal: Option<String>,
     /// The background shell the `/shells` inspector is drilled into, or `None`
     /// at the list. Refreshed off the render path (`refresh_shell_tail`).
     shell_detail: Option<ShellDetail>,
@@ -4510,6 +5362,22 @@ struct App {
     plugin_collection_url: Option<String>,
     /// A plugin install is in flight: a second request is refused.
     plugin_installing: bool,
+    /// A memory tidy was asked for (`/memory tidy`, or the auto trigger); the
+    /// chat loop starts it on the session's subagent registry. Taken once.
+    tidy_request: Option<TidyKind>,
+    /// The tidy in flight, if any: one at a time. Set from when its git facts
+    /// start being gathered, before its child exists.
+    tidy_running: Option<TidyKind>,
+    /// The in-flight tidy's subagent run id, so entering plan mode can stop it;
+    /// `None` while its facts are gathered.
+    tidy_run_id: Option<String>,
+    /// Whether this session already queued an automatic tidy. Auto-tidy runs
+    /// at most once per session, so a tidy that cannot get the index under
+    /// budget never loops; `/new`, `/clear` and `/resume` reset it.
+    auto_tidy_checked: bool,
+    /// The memory stamp (`Scopes::stamp`) the last under-budget check saw, so
+    /// a turn that changed no note skips rebuilding the index.
+    auto_tidy_stamp: Option<u64>,
     /// Compaction handed off to the loop, which spawns the summarizing model
     /// call off the render loop. Taken once.
     compact_request: Option<CompactKind>,
@@ -4549,6 +5417,12 @@ struct App {
     repaint: bool,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
+    /// Set by [`App::end_session_work`]: the conversation the run reports into
+    /// was replaced, so `handle_key` drops it before another event is read.
+    abort_requested: bool,
+    /// The spawned run's task, so [`App::end_session_work`] can stop it at
+    /// once rather than after the rest of the command has run.
+    run_abort: Option<tokio::task::AbortHandle>,
     /// Turns (model roundtrips, plus the submission that kicked off a run)
     /// since the todo list last had open work. The list is the model's own
     /// scratchpad, so a finished one lingers until it declares a new plan --
@@ -4570,6 +5444,9 @@ struct App {
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
+    /// Agents Jan ran for itself this session (see `InternalAgent`), oldest
+    /// first, for `/agents`.
+    internal_agents: Vec<InternalAgent>,
     /// The session's active file monitors, replaced wholesale by each
     /// `StreamEvent::Monitors` and re-read from `monitor_set` when a run ends.
     /// Docked beside the fan-out; never a transcript row, since a monitor
@@ -4588,10 +5465,23 @@ struct App {
     /// (`submit_background_notices`). Distinct from `bg_shells`, which is the
     /// process-wide display snapshot behind the footer chip and `/shells`.
     shell_set: Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// Raised while a typed message waits on the live run, so a `bash` call
+    /// still running moves into `shell_set` and the message reaches the agent
+    /// at the next step rather than after the command ends (see
+    /// `OrchestrationArgs::shell_detach`). Kept in step by `sync_shell_detach`.
+    shell_detach: tokio::sync::watch::Sender<bool>,
+    /// The conversation's shell directory (`OrchestrationArgs::shell_cwd`),
+    /// cleared when the conversation is replaced.
+    shell_cwd: tauri_plugin_agent_tools::tools::ShellCwd,
     /// The session-owned background-subagent registry, on the same terms as
     /// `shell_set`. Children outlive the run that dispatched them, so their
     /// panels survive a run end and a completion between runs starts a turn.
     subagent_set: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    /// Where the settling of a replaced conversation's subagent worktrees
+    /// reports the ones it kept, once their branches are back. `None` from
+    /// exit on, so the drain there ends when the last settle does.
+    cleanup_reports: Option<mpsc::UnboundedSender<String>>,
+    cleanup_rx: mpsc::UnboundedReceiver<String>,
     /// In-flight `await_subagent` calls, `(tool_call_id, run_id, subagent_name)`.
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
@@ -4689,6 +5579,10 @@ struct App {
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
     run_started: Option<Instant>,
+    /// The plan mode the live run was started in. `run_mode` can change under a
+    /// running turn (a plan review choice), and `steer_run` only hands a queued
+    /// message to a run of the mode it was typed in.
+    live_run_mode: crate::core::agent::plan::RunMode,
     /// Mouse selection, live or finished. Cleared by any key, wheel notch or
     /// fresh press.
     selection: Option<Selection>,
@@ -4787,7 +5681,8 @@ const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
 /// transition rather than the thought vanishing the instant the tool runs.
 const REASONING_FOLD_AFTER: Duration = Duration::from_secs(4);
 
-/// One background subagent: its dock stats and activity, and its run as a
+/// One background subagent: its stats and activity for the background-work
+/// block and `/agents`, and its run as a
 /// transcript for the `/agents` detail. Moved into a `SubagentBlock` when the
 /// child finishes, so the summary row and `/agents` can still show the run.
 struct SubagentPanel {
@@ -4824,6 +5719,19 @@ struct SubagentPanel {
     /// request -- no completed tool call yet, so a stats line frozen at
     /// "0 tools" and an activity line stuck on "starting…".
     active: Option<StartingCall>,
+    /// Calls the child has issued whose results have not come back, oldest
+    /// first, as `(tool-call id, running label, done label)` from the same
+    /// `tool_activity`/`tool_finished` pair the transcript's rows use. One
+    /// request can issue several calls that run in parallel and answer in any
+    /// order, so each is retired by its own id: the activity line names the
+    /// newest call still running until the last sibling answers.
+    in_flight: Vec<(String, String, String)>,
+    /// The done label of the call that closed the latest batch, so the
+    /// activity line flips the verb of what it last named to the past tense
+    /// rather than jumping to whichever call happened to be issued last.
+    /// Cleared by a new call (or a batch that lost its results), which leaves
+    /// the last call made to speak for the child.
+    settled: Option<String>,
     /// True while the dispatch is parked on the parent run's
     /// `max_parallel_subagents` cap (reported via `SubagentQueued`); flipped
     /// off when the child's `SubagentStart` arrives. Queued panels render
@@ -4839,14 +5747,37 @@ struct SubagentPanel {
     /// 1-based phase this subagent belongs to, for phases past the first. `None`
     /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
     phase: Option<u32>,
+    /// True while the child has stopped generating to wait on a command it
+    /// backgrounded (its forwarded `Parked`); its next `Step` clears it. A
+    /// parked child is otherwise indistinguishable from one still working.
+    parked: bool,
     /// When the child's `SubagentStart` arrived, for the elapsed time beside
     /// it once the main turn has ended. `None` while it is queued or pending.
     started: Option<Instant>,
+    /// Where the child works, from its `SubagentStart` (see
+    /// `child_workspace::ChildWorkspace::label`). Shown in `/agents`.
+    workspace: Option<String>,
     /// The child's run as rows, built from its own stream by the same code
     /// that builds the main transcript, for the `/agents` detail view and the
     /// finished summary row's expand. A child's stream never reaches the
     /// parent's transcript, so it is kept here per child.
     transcript: Transcript,
+    /// An agent Jan runs for itself (compaction, memory tidy) rather than one
+    /// the model dispatched: `/agents` marks it, and its end goes to
+    /// `App::internal_agents` instead of a summary row in the transcript.
+    internal: bool,
+    /// The model its latest request went to, as that request reported it.
+    model: Option<String>,
+    /// Completion tokens summed over every request the child reported.
+    output_tokens: u64,
+    /// When it ended, so a finished internal agent keeps the duration it took.
+    ended: Option<Instant>,
+    /// Messages the user sent it from the `/agents` detail that it has not
+    /// taken yet, for the detail's `Pending (n)` cue -- the child's own
+    /// version of the main composer's queue count. Settled by each delivery
+    /// from the main agent (`AgentMessage`), saturating: the parent agent's
+    /// own `message_subagent` calls share the inbox and are delivered too.
+    steers_pending: usize,
 }
 
 /// Most rows a child's transcript keeps. The detail view opens on the tail,
@@ -4859,14 +5790,18 @@ const CHILD_ROWS_MAX: usize = 400;
 const CHILD_RESULT_MAX: usize = 64 * 1024;
 
 /// Cut `s` to at most `max` bytes, keeping its head and ending on a char
-/// boundary.
+/// boundary, then say so: a cut result is never passed off as a whole one.
 fn truncate_head(s: &mut String, max: usize) {
     if s.len() > max {
+        let total = s.len();
         let mut cut = max;
         while !s.is_char_boundary(cut) {
             cut -= 1;
         }
         s.truncate(cut);
+        s.push_str(&format!(
+            "\n[tool result truncated in this view: kept the first {cut} of {total} bytes]"
+        ));
     }
 }
 
@@ -4886,13 +5821,108 @@ impl SubagentPanel {
             total_cached_tokens: 0,
             cache_reported: false,
             active: None,
+            in_flight: Vec::new(),
+            settled: None,
             queued: false,
             waiting: 0,
             pending: false,
             phase: None,
+            parked: false,
             started: None,
+            workspace: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
+            internal: false,
+            model: None,
+            output_tokens: 0,
+            ended: None,
+            steers_pending: 0,
         }
+    }
+
+    /// The handle `/agents` addresses this child by, for its rows, its detail
+    /// and the core's `stop_subagent` / `message_subagent`. A started or
+    /// queued child is its `run_id`, so a re-dispatched name can never
+    /// redirect a stop or a message to a newer run. A pending later-phase
+    /// child has no run id yet, only its worker name -- which the core checks
+    /// against the plan's pending table before any running child, and which
+    /// `plan_dispatch` reserves for the whole session, so it names this child
+    /// and no other. Promotion swaps the handle back (`readdress_pending`).
+    fn target(&self) -> &str {
+        if self.pending {
+            &self.name
+        } else {
+            &self.run_id
+        }
+    }
+
+    /// Replace this child's rows with its run as its session file records it
+    /// (see `subagent_session`): the whole run, where the live rows were
+    /// capped. The task is the detail header's, so the prompt is not repeated.
+    /// The entries are the kinds the main conversation journals, and replay
+    /// the way `replay_display_log` replays those.
+    fn replay_record(&mut self, record: &session_log::SessionRecord) {
+        let fresh = Transcript {
+            show_reasoning: self.transcript.show_reasoning,
+            stream_reasoning: self.transcript.stream_reasoning,
+            ..Transcript::for_child(self.transcript.parse_think_tags)
+        };
+        let t = &mut self.transcript;
+        *t = fresh;
+        for entry in &record.display {
+            match entry {
+                DisplayEntry::User { text, images } => {
+                    t.flush_assistant();
+                    t.finalize_tool_group();
+                    t.push_user_line(text, images);
+                }
+                DisplayEntry::Invocation { label, detail } => {
+                    t.flush_assistant();
+                    t.finalize_tool_group();
+                    if !label.is_empty() {
+                        t.push_user_line(format!("{label} {detail}").trim_end(), &[]);
+                    }
+                }
+                DisplayEntry::Assistant {
+                    text,
+                    reasoning,
+                    reasoning_ms,
+                } => {
+                    t.assistant_buf = text.clone();
+                    t.reset_buf_scan();
+                    t.reasoning_segs = reasoning.clone();
+                    t.thought_for = reasoning_ms.map(Duration::from_millis);
+                    t.flush_assistant();
+                    t.thought_for = None;
+                }
+                DisplayEntry::ToolCall { id, name, args } => t.tool_call(id.clone(), name, args),
+                DisplayEntry::ToolResult {
+                    id,
+                    content,
+                    is_error,
+                    diff,
+                } => t.tool_result(id.clone(), content.clone(), *is_error, diff.clone()),
+                // A child dispatches no children of its own.
+                DisplayEntry::Subagent { .. } => {}
+                DisplayEntry::Note { text, level } => {
+                    t.finalize_tool_group();
+                    let level = Level::of_note(*level);
+                    t.push_note(level.glyph(), level, text);
+                }
+                DisplayEntry::AgentMessage { from, to, text } => {
+                    t.agent_message(&self.name, from, to, text);
+                }
+                // A child's own notes are journaled on the main transcript.
+                DisplayEntry::AgentNote { .. } => {}
+            }
+        }
+        let finished = record
+            .meta
+            .as_ref()
+            .is_some_and(|m| m.status == session_log::RunStatus::Finished);
+        t.settle(!finished);
+        self.active = None;
+        self.in_flight.clear();
+        self.settled = None;
     }
 
     /// A finished child rebuilt from its journal entry, which keeps only the
@@ -4908,7 +5938,6 @@ impl SubagentPanel {
             panel.transcript.push_row(RowKind::Tool {
                 state: ToolState::Success,
                 label: label.clone(),
-                reserve: TOOL_ROW_RESERVE,
             });
         }
         panel
@@ -4947,6 +5976,7 @@ impl SubagentPanel {
             Some(SubagentOutcome::Interrupted) => AgentStatus::Interrupted,
             None if self.pending => AgentStatus::Waiting(self.phase),
             None if self.queued => AgentStatus::Queued(self.waiting),
+            None if self.parked => AgentStatus::Parked,
             None => AgentStatus::Running,
         }
     }
@@ -4976,7 +6006,8 @@ enum SubagentOutcome {
     Interrupted,
 }
 
-/// Where a subagent stands, in the one vocabulary the dock, `/agents` and the
+/// Where a subagent stands, in the one vocabulary the background-work block,
+/// `/agents` and the
 /// transcript's summary row all speak, so a child reads the same wherever it
 /// is shown.
 #[derive(Clone, Debug, PartialEq)]
@@ -4984,8 +6015,12 @@ enum AgentStatus {
     Running,
     /// Parked on the `max_parallel_subagents` cap, at this queue position.
     Queued(u32),
-    /// A later-phase child waiting on the phase before it.
+    /// A later-phase child, announced by its plan but not started: it is
+    /// queued behind the phase before it. Reads as queued, with its phase, so
+    /// it is never taken for a child that is already running.
     Waiting(Option<u32>),
+    /// Started, but idle until a command it backgrounded reports back.
+    Parked,
     /// Finished on its own, with the first line of its reply when it gave one.
     Completed(Option<String>),
     Interrupted,
@@ -5002,8 +6037,11 @@ impl AgentStatus {
         match self {
             AgentStatus::Running => word("Running", Style::new().fg(theme::accent()).bold()),
             AgentStatus::Queued(n) => word(&format!("Queued ({n})"), dim),
-            AgentStatus::Waiting(Some(p)) => word(&format!("Waiting (phase {p})"), dim),
-            AgentStatus::Waiting(None) => word("Waiting", dim),
+            AgentStatus::Waiting(Some(p)) => {
+                word(&format!("Queued \u{b7} {}", phase_badge(*p)), dim)
+            }
+            AgentStatus::Waiting(None) => word("Queued", dim),
+            AgentStatus::Parked => word("Waiting on background work", dim),
             AgentStatus::Completed(preview) => {
                 let mut out = word("Completed", Style::new().fg(theme::success()));
                 if let Some(preview) = preview {
@@ -5018,32 +6056,37 @@ impl AgentStatus {
     }
 }
 
+/// A plan phase as every surface names it: the model's own `phase` key, so
+/// the number matches the dispatch call that set it.
+fn phase_badge(phase: u32) -> String {
+    format!("phase {phase}")
+}
+
 /// A subagent's name as every surface shows it.
 fn agent_label(name: &str) -> Span<'static> {
     Span::styled(name.to_string(), Style::new().fg(theme::accent()).bold())
 }
 
 /// A subagent's stats, dim and joined by a middle dot: `4 tools, 4 req, 50% ctx,
-/// 75% cache hit`, or without the request count in the `compact` form the dock
-/// fits beside the plan, which keeps the same words as the `/agents` list rather
-/// than abbreviating them. A part that is not known yet is left out rather than
-/// shown as a zero that would read as a stalled agent, and a child that has not
-/// started has none. The cache rate is its own span so a zero hit stands out, in
-/// the same alarm style as the header badge.
-fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec<Span<'static>> {
+/// 75% cache hit`, the same words in the `/agents` list and the child's detail
+/// header. A part that is not known yet is left out rather than shown as a zero
+/// that would read as a stalled agent, and a child that has not started has
+/// none. The cache rate is its own span so a zero hit stands out, in the same
+/// alarm style as the header badge.
+fn agent_stats(panel: &SubagentPanel, context_window: u64) -> Vec<Span<'static>> {
     if panel.queued || panel.pending {
         return Vec::new();
     }
+    if panel.internal {
+        return internal_agent_stats(panel);
+    }
     let dim = Style::new().fg(theme::muted());
     let (tools, requests) = (panel.calls.len(), panel.requests);
-    let mut parts = vec![pluralize("tool", tools)];
-    if !compact {
-        parts.push(format!("{requests} req"));
-    }
+    let mut parts = vec![pluralize("tool", tools), format!("{requests} req")];
     // A running later-phase child keeps its phase, so the dependent stage
     // stays visible past the wait.
     if let Some(p) = panel.phase {
-        parts.push(format!("phase {p}"));
+        parts.push(phase_badge(p));
     }
     // `context_window` arrives as 0 when the session has disproven it, and the
     // share is clamped: a child on a model with a larger window than the
@@ -5061,12 +6104,46 @@ fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec
     out
 }
 
+/// An internal agent's stats: the model it ran on, the tokens it read and
+/// wrote, and how long it has run or took, e.g. `smol, 9.0K in, 400 out, 5s`
+/// joined by middle dots. Its tool and request counts say little (a compaction
+/// makes one request and no calls), so these stand in for them.
+fn internal_agent_stats(panel: &SubagentPanel) -> Vec<Span<'static>> {
+    let mut parts: Vec<String> = panel.model.iter().cloned().collect();
+    if panel.total_prompt_tokens > 0 {
+        parts.push(format!("{} in", compact_tokens(panel.total_prompt_tokens)));
+    }
+    if panel.output_tokens > 0 {
+        parts.push(format!("{} out", compact_tokens(panel.output_tokens)));
+    }
+    if let Some(started) = panel.started {
+        let end = panel.ended.unwrap_or_else(Instant::now);
+        parts.push(format_elapsed(end.saturating_duration_since(started).as_secs()));
+    }
+    if parts.is_empty() {
+        return Vec::new();
+    }
+    vec![Span::styled(parts.join(" \u{b7} "), Style::new().fg(theme::muted()))]
+}
+
+/// A subagent's name as `/agents` shows it: Jan's own agents carry a dim
+/// `internal` tag, so they read apart from the ones the model dispatched.
+fn agent_name_spans(panel: &SubagentPanel) -> Vec<Span<'static>> {
+    let mut out = vec![agent_label(&panel.name)];
+    if panel.internal {
+        out.push(Span::styled(" internal", Style::new().fg(theme::muted())));
+    }
+    out
+}
+
 /// What a running subagent is doing, verb-first like a transcript row: the call
-/// it is building, else the last call it made with a dim ` ×N` for a short run
-/// of the same call. A run of `STUCK_REPEAT_THRESHOLD` reads as a loop and is
-/// flagged as one, even while the newest copy is still streaming. Empty for a
-/// child that has not started.
-fn agent_activity(panel: &mut SubagentPanel, frame: &str) -> Vec<Span<'static>> {
+/// it is building, else the newest call still running in the continuous tense
+/// (so a parallel batch reads as running until its last call answers), else
+/// the call it last finished in the past tense, with a dim repeat count for a
+/// short run of the same call. A run of `STUCK_REPEAT_THRESHOLD` reads as a
+/// loop and is flagged as one, even while the newest copy is still streaming.
+/// Empty for a child that has not started.
+fn agent_activity(panel: &mut SubagentPanel) -> Vec<Span<'static>> {
     if panel.queued || panel.pending {
         return Vec::new();
     }
@@ -5083,19 +6160,42 @@ fn agent_activity(panel: &mut SubagentPanel, frame: &str) -> Vec<Span<'static>> 
         }
         return out;
     }
+    let accent = Style::new().fg(theme::accent()).dim();
     if let Some(call) = panel.active.as_mut() {
-        let label = call.activity_label();
-        let text = if frame.is_empty() { label } else { format!("{frame} {label}") };
-        return vec![Span::styled(text, Style::new().fg(theme::accent()).dim())];
+        return vec![Span::styled(call.activity_label(), accent)];
     }
-    match last {
-        Some(last) if repeats > 1 => vec![
-            Span::styled(last, dim),
+    if let Some((_, running, _)) = panel.in_flight.last() {
+        return vec![Span::styled(single_line(running), accent)];
+    }
+    // The repeat count belongs to the last call made, so it rides only on a
+    // settled label that is that call.
+    let settled = panel.settled.as_deref().map(single_line);
+    let repeated = repeats > 1 && (settled.is_none() || settled == last);
+    match settled.or(last) {
+        Some(done) if repeated => vec![
+            Span::styled(done, dim),
             Span::styled(format!(" \u{d7}{repeats}"), dim),
         ],
-        Some(last) => vec![Span::styled(last, dim)],
+        Some(done) => vec![Span::styled(done, dim)],
         None => vec![Span::styled("starting\u{2026}", dim)],
     }
+}
+
+/// The name compaction is listed under in `/agents`.
+const COMPACTION_AGENT: &str = "compaction";
+
+/// An agent Jan ran for itself (compaction, memory tidy), kept for `/agents`.
+/// The main transcript only notes it in one line, so this is where its model,
+/// tokens, duration and result stay readable. A running memory tidy is still a
+/// live `SubagentPanel` in `App::subagents` and lands here when it ends; a
+/// compaction is a single model call and lives here from its start.
+struct InternalAgent {
+    panel: SubagentPanel,
+    /// `None` while it runs.
+    outcome: Option<SubagentOutcome>,
+    /// The subagent whose conversation a compaction folds, `None` for the
+    /// main one, so a finish closes the compaction it belongs to.
+    owner: Option<String>,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -5153,6 +6253,15 @@ enum SnapshotJob {
     },
 }
 
+/// Which list holds the child the `/agents` detail shows (see
+/// `App::detail_at`), by index, so the shared and the mutable lookups agree.
+#[derive(Clone, Copy)]
+enum DetailAt {
+    Live(usize),
+    Block(usize),
+    Internal(usize),
+}
+
 /// `(repo, parent sha, commit message, thread id, changed paths)` resolved
 /// from a queued [`SnapshotJob`], ready to hand to `git::snapshot`.
 type SnapshotInputs = (PathBuf, Option<String>, String, String, Vec<PathBuf>);
@@ -5168,6 +6277,7 @@ impl App {
         repo_root: Option<PathBuf>,
     ) -> Self {
         let slash_catalog = SlashCatalog::load(&project_root);
+        let (cleanup_reports, cleanup_rx) = mpsc::unbounded_channel();
         Self {
             smol_model: model.clone(),
             model,
@@ -5211,7 +6321,7 @@ impl App {
             history: Vec::new(),
             thread_id: None,
             transcript: Transcript::journaled(show_reasoning),
-            journal_writer: None,
+            session_writer: None,
             send_reasoning: true,
             reasoning_effort: "medium".into(),
             last_non_low_effort: "medium".into(),
@@ -5241,17 +6351,22 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
-            agent_message: None,
             vibe_task: None,
             vibe_confirm: None,
             readout: None,
             context_request: false,
+            worktree_request: false,
+            worktrees_request: None,
+            worktrees: None,
             last_execution_id: None,
             reported_usage_request: None,
             mcp_prompt: None,
             mcp_detail: None,
             agent_detail: None,
             agent_detail_scroll: 0,
+            parked_composer: None,
+            steer_history: Vec::new(),
+            steer_refusal: None,
             shell_detail: None,
             mcp_job_request: None,
             mcp_auth: None,
@@ -5277,6 +6392,11 @@ impl App {
             plugin_collection_url: None,
             plugin_installing: false,
             update_installing: false,
+            tidy_request: None,
+            tidy_running: None,
+            tidy_run_id: None,
+            auto_tidy_checked: false,
+            auto_tidy_stamp: None,
             compact_request: None,
             compacting: None,
             compact_started: None,
@@ -5288,17 +6408,24 @@ impl App {
             scrollback: 0,
             repaint: false,
             want_start: false,
+            abort_requested: false,
+            run_abort: None,
             turns_since_todos_closed: 0,
             todos_closed_at: None,
             should_quit: false,
             exit_armed: false,
             subagents: Vec::new(),
+            internal_agents: Vec::new(),
             monitors: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
             shell_set: Arc::new(crate::core::agent::bg_shell::BackgroundShells::default()),
+            shell_detach: tokio::sync::watch::Sender::default(),
+            shell_cwd: Default::default(),
             subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
                 crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
             )),
+            cleanup_reports: Some(cleanup_reports),
+            cleanup_rx,
             awaiting: Vec::new(),
             parked_answer: None,
             starting: Vec::new(),
@@ -5321,6 +6448,7 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
+            live_run_mode: crate::core::agent::plan::RunMode::Normal,
             selection: None,
             copy_armed: false,
             copy_request: None,
@@ -5378,6 +6506,22 @@ impl App {
         self.adopt_session_start(Some(start));
     }
 
+    /// Re-take the session's memory index after a compaction. The compaction
+    /// already rewrote the history, so the prompt it is about to send is new
+    /// either way, and a fresh index stops the changes block from repeating
+    /// what the summary folded in. The date and branch stay the session's.
+    fn refresh_memory_snapshot(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let Some(start) = args.session_start.as_ref() else {
+            return;
+        };
+        let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
+        let fresh = start.with_fresh_memory(&root);
+        self.adopt_session_start(Some(fresh));
+    }
+
     /// Run the session on `start` from the next turn on; a no-op when it is
     /// already the one in use.
     fn adopt_session_start(&mut self, start: Option<crate::core::agent::context::SessionStart>) {
@@ -5396,8 +6540,10 @@ impl App {
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
     fn reset_session(&mut self) {
+        self.end_session_work();
         self.history.clear();
         self.thread_id = None;
+        self.session_writer = None;
         // A fresh session drops any active goal along with the conversation.
         self.goal = None;
         self.goal_eval_pending = false;
@@ -5410,6 +6556,9 @@ impl App {
         self.resume_notice_pending = false;
         self.set_host_system_prompt(None);
         self.refresh_session_start();
+        // A new session gets its own chance at an automatic tidy.
+        self.auto_tidy_checked = false;
+        self.auto_tidy_stamp = None;
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -5425,19 +6574,26 @@ impl App {
         self.transcript.reasoning_blocks.clear();
         self.transcript.expanded_traces.clear();
         self.transcript.subagent_blocks.clear();
+        self.transcript.live_events.clear();
+        self.transcript.awaited.clear();
         // Aborts the children themselves, not just their panels: the
         // conversation they would report into is going away.
         self.stop_subagents();
+        self.end_conversation_worktrees();
         self.subagents.clear();
+        self.internal_agents.clear();
         self.stop_monitors();
         // Pings for work whose conversation is gone have no turn to join.
         self.shell_set.take_notices();
+        // A new conversation starts in the project root, as its prompt says.
+        *self.shell_cwd.lock().unwrap() = None;
         self.transcript.expanded.clear();
         self.transcript.reveal = None;
         self.find = None;
         self.transcript.assistant_buf.clear();
         self.transcript.reset_buf_scan();
         self.transcript.reasoning_segs.clear();
+        self.transcript.step_said = Default::default();
         self.message_queue.clear();
         self.pending_queue.clear();
         self.ask_queue.clear();
@@ -5470,6 +6626,34 @@ impl App {
         self.last_todo_reminder = None;
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
+    }
+
+    /// End the work still bound to a conversation that is being replaced
+    /// (`/new`, `/clear`, `/resume`, `/fork`). Left running, a turn's stream
+    /// lands in the new session, and its `MessagesUpdated` writes the old
+    /// conversation over the new one and persists it; a compaction landing
+    /// does the same with its summary, and an overflow retry restarts the old
+    /// turn there. The interrupted turn is kept in its own thread, as Esc would
+    /// keep it.
+    fn end_session_work(&mut self) {
+        // The loop aborts the compaction's task once `compacting` is gone.
+        self.compacting = None;
+        self.compact_started = None;
+        self.compact_request = None;
+        self.retry_after_compact = false;
+        if !self.run_is_live() {
+            return;
+        }
+        // Abort before cancelling, as Esc does: the rest of the command awaits,
+        // and the run's tools must not keep working through it.
+        if let Some(run) = self.run_abort.take() {
+            run.abort();
+        }
+        // Follow-ups queued for the old conversation; `cancel_run` would
+        // otherwise start the next one.
+        self.message_queue.clear();
+        self.cancel_run();
+        self.abort_requested = true;
     }
 
     /// Forget the session-cumulative cache counters, and what the route has
@@ -5536,6 +6720,8 @@ impl App {
     ///   streaming tool-call throbbers, which all animate in the dock/tail;
     /// - an active `/goal`, whose header chip counts seconds;
     /// - an `ask` with a timeout, whose title counts down;
+    /// - a prompt over a subagent's detail in its pause, whose hints name
+    ///   Enter once it runs out;
     /// - the `copied N lines` notice until it expires;
     /// - a closed todo plan until it hides itself;
     /// - a drag-select, which auto-scrolls while held past an edge.
@@ -5561,6 +6747,7 @@ impl App {
                 .as_ref()
                 .is_some_and(|g| g.status == crate::core::agent::goal::GoalStatus::Active)
             || self.ask_queue.iter().any(|a| a.deadline.is_some())
+            || self.prompt_pausing()
             || self.copy_notice().is_some()
             || (self.todos_closed_at.is_some() && !self.todos_expired())
             || self.selection.as_ref().is_some_and(|s| s.dragging)
@@ -5603,24 +6790,31 @@ impl App {
         self.push_banner(&phrasing, awaiting_first_message);
     }
 
-    /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (the user's `› ` bubble, `• ` tool, `┊ ` reasoning),
-    /// so without it a note is indistinguishable from model prose. `glyph` names the
-    /// category and `level` carries severity.
+    /// Append an event the *app* reports, under its own gutter mark. Every
+    /// other transcript class owns one (the user's `USER_GLYPH` bubble, a
+    /// tool's bullet, reasoning's rail), so without it a note is
+    /// indistinguishable from model prose. `glyph` names the category and
+    /// `level` carries severity. The text's first line is the event's title;
+    /// any further lines hang under it as its description.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
         self.scrollback = 0;
-        self.transcript.gap(Kind::Meta);
-        let (gutter, body) = level.styles();
-        self.transcript.push_row(RowKind::System {
-            glyph,
-            cont: " ",
-            gutter,
-            body: vec![Span::styled(text.to_string(), body)],
-            bg: None,
-        });
+        self.transcript.push_note(glyph, level, text);
     }
 
+    /// Commit an app-side event row (a note, a report, a message between
+    /// agents) to the main transcript.
+    fn push_event(&mut self, row: EventRow) {
+        self.scrollback = 0;
+        self.transcript.gap(Kind::Meta);
+        self.transcript.push_event(row);
+    }
+
+    /// A note at `level`, recorded so a resumed transcript shows it too.
     fn system(&mut self, level: Level, text: &str) {
+        self.transcript.log(DisplayEntry::Note {
+            text: text.to_string(),
+            level: level.note_level(),
+        });
         self.system_marked(level.glyph(), level, text);
     }
 
@@ -5630,27 +6824,28 @@ impl App {
         self.system(Level::Info, text);
     }
 
-    /// A background ping's headline, as the row its `NoticeKind` calls for: a
-    /// monitor match under the monitor glyph, a timeout or a failed command as
-    /// a warning, a finished command as a finished tool row. `who` names the
-    /// subagent the ping came from, ahead of the headline.
+    /// A background ping's headline, as the event its `NoticeKind` calls for:
+    /// a monitor match under the monitor glyph, a timeout or a failed command
+    /// as a warning, a finished command under a finished tool's bullet. `who`
+    /// names the subagent the ping came from, which makes it that agent's
+    /// note (see `agent_note`).
     fn notice(&mut self, text: &str, who: Option<&str>) {
-        let body = match who {
-            Some(name) => format!("{name}: {text}"),
-            None => text.to_string(),
-        };
-        match NoticeKind::of(text) {
-            NoticeKind::MonitorMatched => {
-                self.scrollback = 0;
-                self.transcript.gap(Kind::Meta);
-                self.transcript.push_row(RowKind::System {
-                    glyph: MONITOR_GLYPH,
-                    cont: " ",
-                    gutter: Style::new().fg(theme::accent()),
-                    body: vec![Span::raw(body)],
-                    bg: None,
-                });
-            }
+        let kind = NoticeKind::of(text);
+        if let Some(agent) = who {
+            let tone = match kind {
+                NoticeKind::MonitorMatched => NoteTone::Monitor,
+                NoticeKind::MonitorTimedOut | NoticeKind::ShellFailed => NoteTone::Warn,
+                NoticeKind::ShellFinished => NoteTone::Finished,
+                NoticeKind::Other => NoteTone::Info,
+            };
+            return self.agent_note(agent, tone, text);
+        }
+        let body = text.to_string();
+        match kind {
+            NoticeKind::MonitorMatched => self.push_event(EventRow::plain(TranscriptEvent::new(
+                Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
+                vec![Span::raw(body)],
+            ))),
             NoticeKind::MonitorTimedOut | NoticeKind::ShellFailed => {
                 self.system(Level::Warn, &body)
             }
@@ -5660,28 +6855,47 @@ impl App {
                 self.transcript.push_row(RowKind::Tool {
                     state: ToolState::Success,
                     label: body,
-                    reserve: TOOL_ROW_RESERVE,
                 });
             }
             NoticeKind::Other => self.note(&body),
         }
     }
 
-    /// A body row of a multi-line system block (`/help`, `/threads`, a goal
-    /// status), under the header its `system*` call pushed. The gutter keeps
-    /// running so the block reads as one unit instead of leaving its body
-    /// unattributed, and the body starts in the header's column.
+    /// A note a subagent's run raised, as the spec lays out every event
+    /// attributed to an agent: the agent's name is the title and `text` hangs
+    /// under it, wrapping in the tree's column. Journaled, so a resume draws
+    /// the same rows.
+    fn agent_note(&mut self, agent: &str, tone: NoteTone, text: &str) {
+        self.transcript.log(DisplayEntry::AgentNote {
+            agent: agent.to_string(),
+            tone,
+            text: text.to_string(),
+        });
+        self.push_event(agent_note_row(agent, tone, text));
+    }
+
+    /// A description row of a multi-line report (`/help`, `/threads`, a goal
+    /// status), hung under the event its `system*` call pushed, so the block
+    /// reads as one event instead of leaving its body unattributed.
     ///
     /// Fixed dim styling rather than the header's `Level`: blocks are
-    /// informational -- a warning or an error is a single line.
+    /// informational -- a warning or an error is a single event.
     fn system_detail(&mut self, body: Vec<Span<'static>>) {
-        self.transcript.push_row(RowKind::System {
-            glyph: SYSTEM_CONT,
-            cont: SYSTEM_CONT,
-            gutter: Style::new().dark_gray(),
-            body,
-            bg: None,
-        });
+        let rows = &mut self.transcript.rows;
+        match rows.pop().map(|row| row.kind) {
+            // Re-pushed rather than edited in place: the row's cached layout
+            // is stale once it grows a child.
+            Some(RowKind::Event(mut row)) => {
+                row.event.children.push(Child::Text(body));
+                rows.push(RowKind::Event(row).into());
+            }
+            other => {
+                rows.extend(other.map(Row::from));
+                let (gutter, _) = Level::Info.styles();
+                let marker = Span::styled(format!("{SYSTEM_GLYPH} "), gutter);
+                self.push_event(EventRow::plain(TranscriptEvent::new(marker, body)));
+            }
+        }
     }
 
     fn system_detail_text(&mut self, text: &str) {
@@ -5692,7 +6906,29 @@ impl App {
     /// with it its transcript -- so the row can expand back to the run (like a
     /// tool group) and `/agents` can still open it.
     fn push_subagent_summary(&mut self, mut panel: SubagentPanel, outcome: SubagentOutcome) {
+        // The child's stream is over: nothing it left open will resolve now.
+        panel
+            .transcript
+            .settle(outcome != SubagentOutcome::Finished);
+        panel.active = None;
+        panel.in_flight.clear();
+        // Jan's own agent reports in its own one-line note (`memory tidied:`),
+        // so it gets no row here and is kept for `/agents` alone.
+        if panel.internal {
+            panel.ended = Some(Instant::now());
+            self.internal_agents.push(InternalAgent {
+                panel,
+                outcome: Some(outcome),
+                owner: None,
+            });
+            return;
+        }
+        // The end is an event of its own: what the parent said and did before
+        // it is committed first, so it lands below that and a later call opens
+        // a new group under it, as the journal's replay lays it out.
+        self.transcript.commit_mid_step();
         let name = panel.name.clone();
+        let elapsed = panel.started.map(|s| s.elapsed().as_secs());
         self.transcript.log(DisplayEntry::Subagent {
             name: name.clone(),
             calls: panel.calls.clone(),
@@ -5701,28 +6937,34 @@ impl App {
                 SubagentOutcome::Failed(e) => Some(e.clone()),
                 _ => None,
             },
+            elapsed_secs: elapsed,
+            workspace: panel.workspace.clone(),
         });
-        // The child's stream is over: nothing it left open will resolve now.
-        panel
-            .transcript
-            .settle(outcome != SubagentOutcome::Finished);
-        panel.active = None;
         let state = match &outcome {
             SubagentOutcome::Finished => ToolState::Success,
             SubagentOutcome::Failed(_) => ToolState::Failure,
             SubagentOutcome::Interrupted => ToolState::Interrupted,
         };
+        // Its own event, not an edit of the dispatch row: what was dispatched
+        // stays as it was said, and the end lands where it happened.
+        let mut stats = pluralize("tool", panel.calls.len());
+        if let Some(secs) = elapsed {
+            stats.push_str(&format!(" \u{b7} {}", format_elapsed(secs)));
+        }
         self.transcript.gap(Kind::Tool);
         self.transcript.push_row(RowKind::Agent(Box::new(AgentRow {
             state,
             verb: AgentVerb::Finish,
-            names: vec![name],
-            stats: Some(pluralize("tool", panel.calls.len())),
-            briefs: Vec::new(),
+            children: vec![RowChild {
+                name,
+                ..RowChild::default()
+            }],
+            stats: Some(stats),
             status: Some(panel.status(Some(&outcome))),
+            workspace: panel.workspace.clone(),
         })));
+        let idx = self.transcript.rows.len() - 1;
         if !panel.transcript.rows.is_empty() {
-            let idx = self.transcript.rows.len() - 1;
             self.transcript.subagent_blocks.push(SubagentBlock {
                 idx,
                 panel,
@@ -5833,6 +7075,181 @@ impl App {
         self.monitors.clear();
     }
 
+    /// A pending child `name` was just promoted to `run_id`: a `/agents`
+    /// detail opened on it while it waited holds its name, and now follows the
+    /// run id instead (see `SubagentPanel::target`), so it keeps pointing at
+    /// this exact run -- and so does what the user types into it.
+    fn readdress_pending(&mut self, name: &str, run_id: &str) {
+        if self.agent_detail.as_deref() == Some(name) {
+            self.agent_detail = Some(run_id.to_string());
+        }
+    }
+
+    /// The `/agents` detail is open: the composer is aimed at that child.
+    fn agent_detail_open(&self) -> bool {
+        self.picker.as_ref().is_some_and(|p| p.kind == PickerKind::AgentDetail)
+    }
+
+    /// Drill the open `/agents` list into `target`'s detail, handing the field
+    /// to it: the main composer is parked and the detail's own, empty, takes
+    /// its place, with the steer recall.
+    fn enter_agent_detail(&mut self, target: String) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        picker.kind = PickerKind::AgentDetail;
+        if self.parked_composer.is_none() {
+            let history = std::mem::take(&mut self.steer_history);
+            self.parked_composer = Some(Composer {
+                input: std::mem::take(&mut self.input),
+                cursor: self.cursor,
+                history: std::mem::replace(&mut self.input_history, history),
+                recall_pos: self.recall_pos,
+            });
+            self.input_clear();
+        }
+        self.agent_detail = Some(target);
+        self.agent_detail_scroll = 0;
+        self.steer_refusal = None;
+    }
+
+    /// Give the field back to the main composer once the detail is no longer
+    /// on screen, however it went: Esc, Ctrl-C, or another screen replacing
+    /// it (a plugin listing that lands meanwhile). Run ahead of every key,
+    /// paste and frame, so no path can leave a child's draft where the main
+    /// agent's next message goes. A draft left in the detail is kept in the
+    /// steer recall.
+    fn settle_agent_detail(&mut self) {
+        if self.agent_detail_open() {
+            return;
+        }
+        self.agent_detail = None;
+        self.agent_detail_scroll = 0;
+        self.steer_refusal = None;
+        let Some(main) = self.parked_composer.take() else {
+            return;
+        };
+        self.record_draft();
+        self.steer_history = std::mem::replace(&mut self.input_history, main.history);
+        self.set_input(main.input);
+        self.cursor = main.cursor.min(self.input.len());
+        self.recall_pos = main.recall_pos;
+    }
+
+    /// Leave the open detail, for the `/agents` list (`to_list`) or the main
+    /// view, handing the field back to the main composer.
+    fn leave_agent_detail(&mut self, to_list: bool) {
+        match self.picker.as_mut() {
+            Some(picker) if to_list => picker.kind = PickerKind::Agents,
+            _ => self.picker = None,
+        }
+        self.settle_agent_detail();
+    }
+
+    /// A permission request or an `ask` waits over the open detail. It owns
+    /// the keyboard there, but the user was typing a message when it landed,
+    /// so only an option picked with the arrows answers it.
+    fn prompt_over_detail(&self) -> bool {
+        self.agent_detail_open() && (!self.pending_queue.is_empty() || !self.ask_queue.is_empty())
+    }
+
+    /// The prompt on screen (the front ask, else the front permission request,
+    /// as `draw_queued_prompt` picks): when it next takes a key over the
+    /// detail, and whether it was armed with an arrow.
+    fn front_prompt_state(&self) -> Option<(PromptPause, bool)> {
+        match self.ask_queue.front() {
+            Some(ask) => Some((ask.pause, ask.picked)),
+            None => self.pending_queue.front().map(|p| (p.pause, p.picked)),
+        }
+    }
+
+    /// Whether Enter would confirm the prompt on screen now
+    /// (`PromptPause::live`).
+    fn front_prompt_live(&self) -> bool {
+        self.front_prompt_state()
+            .is_some_and(|(pause, picked)| pause.live(picked, Instant::now()))
+    }
+
+    /// A prompt over the detail is still in its pause. The footer names Enter
+    /// only once it runs out, so frames keep coming until then (`animating`).
+    fn prompt_pausing(&self) -> bool {
+        self.prompt_over_detail()
+            && self
+                .front_prompt_state()
+                .and_then(|(pause, _)| pause.until)
+                .is_some_and(|until| Instant::now() < until)
+    }
+
+    /// Lines the view on screen is scrolled up from its bottom: the open
+    /// subagent detail's, else the main transcript's. One field per view, so
+    /// leaving the detail finds the main transcript where it was; 0 follows.
+    fn view_scroll(&mut self) -> &mut u16 {
+        if self.agent_detail_open() {
+            &mut self.agent_detail_scroll
+        } else {
+            &mut self.scrollback
+        }
+    }
+
+    /// Where the child `agent_detail` names is kept. A live child is found by
+    /// its `target` (a pending one has only its name); a finished one in its
+    /// summary row's block, which keeps it, or among Jan's own agents.
+    fn detail_at(&self) -> Option<DetailAt> {
+        let id = self.agent_detail.as_deref()?;
+        if let Some(i) = self.subagents.iter().position(|p| p.target() == id) {
+            return Some(DetailAt::Live(i));
+        }
+        let blocks = &self.transcript.subagent_blocks;
+        if let Some(i) = blocks.iter().position(|b| b.panel.run_id == id) {
+            return Some(DetailAt::Block(i));
+        }
+        let internal = &self.internal_agents;
+        internal.iter().position(|a| a.panel.run_id == id).map(DetailAt::Internal)
+    }
+
+    /// The child the `/agents` detail shows, with its outcome once it ended.
+    fn detail_panel(&self) -> Option<(&SubagentPanel, Option<&SubagentOutcome>)> {
+        Some(match self.detail_at()? {
+            DetailAt::Live(i) => (&self.subagents[i], None),
+            DetailAt::Block(i) => {
+                let block = &self.transcript.subagent_blocks[i];
+                (&block.panel, Some(&block.outcome))
+            }
+            DetailAt::Internal(i) => {
+                let agent = &self.internal_agents[i];
+                (&agent.panel, agent.outcome.as_ref())
+            }
+        })
+    }
+
+    /// `detail_panel`, for drawing: laying a panel out caches into it.
+    fn detail_panel_mut(&mut self) -> Option<(&mut SubagentPanel, Option<&SubagentOutcome>)> {
+        Some(match self.detail_at()? {
+            DetailAt::Live(i) => (&mut self.subagents[i], None),
+            DetailAt::Block(i) => {
+                let block = &mut self.transcript.subagent_blocks[i];
+                (&mut block.panel, Some(&block.outcome))
+            }
+            DetailAt::Internal(i) => {
+                let agent = &mut self.internal_agents[i];
+                (&mut agent.panel, agent.outcome.as_ref())
+            }
+        })
+    }
+
+    /// The child the open `/agents` detail shows, if it can still be steered:
+    /// `None` once it has ended, and for Jan's own agents, which no inbox
+    /// reaches.
+    fn steerable_detail_child(&self) -> Option<&SubagentPanel> {
+        if !self.agent_detail_open() {
+            return None;
+        }
+        match self.detail_panel()? {
+            (panel, None) if !panel.internal => Some(panel),
+            _ => None,
+        }
+    }
+
     /// Abort every background child and undock its panel. Cancelling stops the
     /// whole session's background work, not just the turn in flight: children
     /// used to die with the run through `AbortOnDrop`, and a session-owned
@@ -5846,6 +7263,36 @@ impl App {
                 continue;
             }
             self.push_subagent_summary(panel, SubagentOutcome::Interrupted);
+        }
+    }
+
+    /// Settle the subagent worktrees of the conversation being replaced, as
+    /// exit does, but off the render loop: empty ones go, kept ones have their
+    /// branch brought back and are named in the transcript when that is done.
+    /// Called after `stop_subagents` (a stopped writer no longer holds its
+    /// worktree), and not from it: Esc stops the children but keeps the
+    /// conversation, whose worktrees later dispatches may still name.
+    fn end_conversation_worktrees(&mut self) {
+        // The roster is the conversation's too: cleared here rather than in
+        // `stop_subagents`, for the same reason the worktrees are.
+        self.subagent_set.clear_roster();
+        let batch = self.subagent_set.workspaces.end_conversation();
+        if batch.is_empty() {
+            return;
+        }
+        let reports = self.cleanup_reports.clone();
+        // A notice counts as told once it is queued for the transcript; exit
+        // stops taking them after a while (see `EXIT_SETTLE_WAIT`), and an
+        // untold kept worktree is left for the next start to name.
+        let settle = move || {
+            batch.settle().report(&mut |notice| {
+                reports.as_ref().is_some_and(|reports| reports.send(notice).is_ok())
+            });
+        };
+        // A sync caller (a plain test) has no runtime, and no worktrees.
+        match tokio::runtime::Handle::try_current() {
+            Ok(rt) => drop(rt.spawn_blocking(settle)),
+            Err(_) => settle(),
         }
     }
 
@@ -5899,8 +7346,16 @@ impl App {
         for notice in &shells {
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
         }
-        for text in &subagents {
-            crate::core::agent::reminder::attach(&mut self.history, text);
+        for notice in &subagents {
+            crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+            // Taken here, not by a loop, so no loop will report its delivery.
+            if let Some((from, text)) = &notice.message {
+                self.apply(StreamEvent::AgentMessage {
+                    from: from.clone(),
+                    to: MAIN_AGENT.to_string(),
+                    text: text.clone(),
+                });
+            }
         }
         self.begin_turn();
         self.want_start = true;
@@ -5912,6 +7367,7 @@ impl App {
     /// bullet would read as work that is still running or that succeeded.
     fn abort_tool_rows(&mut self) {
         self.transcript.close_tool_group(true);
+        self.transcript.end_step();
         self.resolve_orphan_tool_rows();
     }
 
@@ -5993,8 +7449,6 @@ impl App {
             Some("answer the question above")
         } else if self.settings_prompt.is_some() {
             Some("edit the setting above")
-        } else if self.agent_message.is_some() {
-            Some("finish the message to the subagent above")
         } else if self.vibe_confirm.is_some() {
             Some("answer the proposal above")
         } else if self.mcp_prompt.is_some()
@@ -6279,7 +7733,9 @@ impl App {
     /// so the slash popup must not open: a pending permission request (drawn
     /// first, and its Up/Down/Enter/Esc answer it) or a pending `ask`.
     fn slash_popup_blocked(&self) -> bool {
-        !self.pending_queue.is_empty() || !self.ask_queue.is_empty()
+        // In a subagent's detail the field is a message to that child, which
+        // runs no commands: a `/word` there is text to send.
+        !self.pending_queue.is_empty() || !self.ask_queue.is_empty() || self.agent_detail_open()
     }
 
     /// The `[skills].enabled` whitelist the slash popup filters by. Every
@@ -6560,7 +8016,9 @@ impl App {
     fn refresh_path_hints(&mut self) {
         #[cfg(test)]
         tally(&PATH_HINT_REFRESHES);
-        if self.path_hint_dismissed || !self.accepts_input() {
+        // A message to a child is sent verbatim, so an `@path` there is never
+        // expanded and completing one would only mislead.
+        if self.path_hint_dismissed || !self.accepts_input() || self.agent_detail_open() {
             self.path_hints.clear();
             return;
         }
@@ -7019,6 +8477,26 @@ impl App {
         self.submit_reminder(text);
     }
 
+    /// Ask the live run to move its running commands to the background while
+    /// a typed message waits on it, and stop asking once none does. A message
+    /// is only taken at the run's next step, which a foreground command holds
+    /// back for as long as it runs. Only while `steer_run` would hand the
+    /// message over: one held for a fresh run gains nothing from it.
+    fn sync_shell_detach(&self) {
+        // `steer_run`'s own filter: a message typed for another mode (a plan
+        // switch) waits for a fresh run, so the live run's commands stay put.
+        let mode = self.live_run_mode;
+        let waiting = self.run_is_live()
+            && self
+                .message_queue
+                .front()
+                .is_some_and(|m| m.run_mode.is_none_or(|m| m == mode))
+            && self.pending_queue.is_empty()
+            && self.ask_queue.is_empty()
+            && !self.want_start;
+        self.shell_detach.send_if_modified(|on| std::mem::replace(on, waiting) != waiting);
+    }
+
     /// Dequeue the next message from the queue and submit it. Called after
     /// `on_done` / `on_error` / `cancel_run` to continue processing.
     fn dequeue_next(&mut self) {
@@ -7308,45 +8786,29 @@ impl App {
         }
     }
 
-    /// Save the conversation to a thread on disk so it survives and appears in
-    /// `/resume`. Fire-and-forget: failures surface in the status detail only.
+    /// Save the conversation to its thread so it survives and appears in
+    /// `/resume`: the wire history and the transcript go to the one session
+    /// file together, appending only what changed, so the two cannot drift.
+    /// Failures surface in the status detail only.
     fn persist(&mut self) {
         if self.history.is_empty() {
             return;
         }
-        match super::cli_save_thread(
+        let metadata = self.thread_metadata();
+        match super::save_session(
             &self.agent_dir,
-            self.thread_id.as_deref(),
-            &self.model,
-            &self.history,
-            self.thread_metadata(),
+            &mut self.session_writer,
+            super::SessionSave {
+                thread_id: self.thread_id.as_deref(),
+                model: &self.model,
+                history: &self.history,
+                display: Some(&self.transcript.display_log),
+                metadata,
+            },
         ) {
-            Ok(id) => {
-                self.thread_id = Some(id);
-                self.dump_display_log();
-            }
+            Ok(id) => self.thread_id = Some(id),
             Err(e) => self.detail = format!("save failed: {e}"),
         }
-    }
-
-    /// Hand the rendered transcript to the writer thread, so a turn boundary (or
-    /// a cancel) leaves a resumable journal without a frame paying for the write.
-    fn dump_display_log(&mut self) {
-        let Some(id) = self.thread_id.clone() else {
-            return;
-        };
-        let path = journal::journal_path(&self.agent_dir, &id);
-        self.journal_writer
-            .get_or_insert_with(journal::Writer::new)
-            .dump(path, self.transcript.display_log.clone());
-    }
-
-    /// Wait for queued journal dumps to reach disk (session exit, tests).
-    fn join_journal(&mut self) {
-        if let Some(writer) = self.journal_writer.as_mut() {
-            writer.join();
-        }
-        self.journal_writer = None;
     }
 
     /// Switch the active model and remember it in the project's agent.toml so it
@@ -7843,6 +9305,7 @@ impl App {
                     self.transcript.flush_assistant();
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
+                    self.transcript.await_call(&id, &args, &sub);
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
@@ -7893,6 +9356,8 @@ impl App {
                     offers_always,
                     justification,
                     selected: 0,
+                    picked: false,
+                    pause: PromptPause::default(),
                     subagent: None,
                 });
                 self.publish_agent_status();
@@ -7939,7 +9404,13 @@ impl App {
                     });
                 }
             }
-            StreamEvent::SubagentStart { run_id, name, task } => {
+            StreamEvent::SubagentStart {
+                run_id,
+                name,
+                task,
+                workspace,
+                internal,
+            } => {
                 // A child with no model of its own runs on the parent's, so it
                 // starts on the parent's tag setting; its first request moves it
                 // to its own provider's if that differs.
@@ -7952,6 +9423,8 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
+                    panel.internal = internal;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -7962,15 +9435,25 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
+                    panel.internal = internal;
                     if let Some(t) = task {
                         panel.task = t;
                     }
+                    let run_id = panel.run_id.clone();
+                    self.readdress_pending(&name, &run_id);
                 } else {
-                    self.transcript.finalize_tool_group();
-                    self.transcript.flush_assistant();
+                    // Jan's own agent never touches the conversation, so the
+                    // prose it starts beside is not committed early for it.
+                    if !internal {
+                        self.transcript.finalize_tool_group();
+                        self.transcript.flush_assistant();
+                    }
                     let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
+                    panel.internal = internal;
                     self.subagents.push(panel);
                 }
             }
@@ -7998,6 +9481,8 @@ impl App {
                     if let Some(t) = task {
                         panel.task = t;
                     }
+                    let run_id = panel.run_id.clone();
+                    self.readdress_pending(&name, &run_id);
                 } else {
                     self.subagents.push(SubagentPanel {
                         queued: true,
@@ -8012,8 +9497,19 @@ impl App {
                 error,
             } => {
                 // A child with no panel (its start never reached this screen)
-                // still gets its row, from an empty one.
-                let panel = match self.subagents.iter().position(|p| p.run_id == run_id) {
+                // still gets its row, from an empty one. A later-phase child
+                // stopped before it started ends under a run id its panel never
+                // learned (only a start or queue names it), so an unknown id
+                // falls back to the waiting panel of that name -- else its row
+                // waits on its phase forever.
+                let at = self
+                    .subagents
+                    .iter()
+                    .position(|p| p.run_id == run_id)
+                    .or_else(|| {
+                        self.subagents.iter().position(|p| p.pending && p.name == name)
+                    });
+                let panel = match at {
                     Some(at) => self.subagents.remove(at),
                     None => SubagentPanel::new(run_id.clone(), name, String::new()),
                 };
@@ -8026,11 +9522,18 @@ impl App {
             }
             // A background ping's headline (a monitor condition matching),
             // emitted as the loop delivers the `<SYSTEM>` text to the model.
-            // Transient like every other note: not journaled.
+            // Recorded when it lands as a note (see `notice`).
             StreamEvent::Notice { text } => {
-                self.transcript.finalize_tool_group();
-                self.transcript.flush_assistant();
+                self.transcript.commit_mid_step();
                 self.notice(&text, None);
+            }
+            // A subagent's message reaching the main agent: its one entry,
+            // made here rather than at the child's `message_main_agent` call,
+            // which the loop may still refuse and which can land mid-reply.
+            // Delivery comes between the main agent's turns.
+            StreamEvent::AgentMessage { from, to, text } => {
+                self.scrollback = 0;
+                self.transcript.agent_message(MAIN_AGENT, &from, &to, &text);
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             // The live countdown carries every attempt; the transcript notes
@@ -8132,7 +9635,8 @@ impl App {
                 phase,
                 reason,
                 messages,
-            } => self.apply_compaction(phase, reason, messages, None),
+                report,
+            } => self.apply_compaction(phase, reason, messages, report, None),
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
                 // A snapshot only arrives on a successful mutation; its absence
@@ -8152,7 +9656,10 @@ impl App {
         // content streams. That is how a child learns its own tag setting: a
         // definition can name a model another provider serves, and its content
         // must follow that provider's default, not the main model's.
-        if let StreamEvent::RequestProvenance { provider, api_type, .. } = &event {
+        if let StreamEvent::RequestProvenance { provider, api_type, model, .. } = &event {
+            if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                panel.model = Some(model.clone());
+            }
             // An unreadable config (another run holds the lock) leaves the
             // child's gate as it was: guessing without the endpoint can read an
             // `openai`-named entry pointed at vLLM as the official API.
@@ -8183,7 +9690,10 @@ impl App {
                         panel.active = None;
                     }
                     // Stored untruncated; the dock clamps it to the draw width.
-                    panel.record_call(&tool, &args, tool_finished(&tool, &args));
+                    let done = tool_finished(&tool, &args);
+                    panel.record_call(&tool, &args, done.clone());
+                    panel.in_flight.push((id.clone(), tool_activity(&tool, &args), done));
+                    panel.settled = None;
                     panel.transcript.tool_call(id, &tool, &args);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
@@ -8206,6 +9716,12 @@ impl App {
                 diff,
             } => {
                 if let Some(panel) = panel {
+                    let at = panel.in_flight.iter().position(|(call, ..)| *call == id);
+                    if let Some((_, _, done)) = at.map(|i| panel.in_flight.remove(i)) {
+                        if panel.in_flight.is_empty() {
+                            panel.settled = Some(done);
+                        }
+                    }
                     truncate_head(&mut content, CHILD_RESULT_MAX);
                     panel.transcript.tool_result(id, content, is_error, diff);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
@@ -8253,6 +9769,8 @@ impl App {
                     offers_always,
                     justification,
                     selected: 0,
+                    picked: false,
+                    pause: PromptPause::default(),
                     subagent: Some(name.to_string()),
                 });
                 self.publish_agent_status();
@@ -8261,6 +9779,12 @@ impl App {
             // happening even during a long think with no tool calls.
             StreamEvent::Step { .. } => {
                 if let Some(panel) = panel {
+                    // A request is the child working again, so a park is over.
+                    panel.parked = false;
+                    // A request only goes out once every call of the last batch
+                    // has answered, so a call still listed lost its result and
+                    // would otherwise read as running for the rest of the run.
+                    panel.in_flight.clear();
                     panel.requests += 1;
                     panel.transcript.step();
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
@@ -8280,6 +9804,7 @@ impl App {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                     panel.total_prompt_tokens += usage.prompt_tokens.unwrap_or(0);
                     panel.total_cached_tokens += usage.cached_tokens.unwrap_or(0);
+                    panel.output_tokens += usage.completion_tokens.unwrap_or(0);
                     if usage.cached_tokens.is_some() {
                         panel.cache_reported = true;
                     }
@@ -8296,6 +9821,18 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
             }
+            // The parent's message, as the child took it, in the child's own
+            // run. The main transcript showed it when it was sent, so the
+            // delivery adds nothing there.
+            StreamEvent::AgentMessage { from, to, text } => {
+                if let Some(panel) = panel {
+                    if from == MAIN_AGENT {
+                        panel.steers_pending = panel.steers_pending.saturating_sub(1);
+                    }
+                    panel.transcript.agent_message(name, &from, &to, &text);
+                    panel.transcript.cap_rows(CHILD_ROWS_MAX);
+                }
+            }
             // A child's headline (a compaction, a monitor match) is as much the
             // user's business as the parent's: dropping it made a child's
             // compaction invisible.
@@ -8310,7 +9847,7 @@ impl App {
                 reason,
                 ..
             } => {
-                self.note(&format!("{name}: {reason}; retrying"));
+                self.agent_note(name, NoteTone::Info, &format!("{reason}; retrying"));
             }
             // A child's compaction is announced, but the spinner and gauge are
             // the parent's: the child's history is not the one on screen.
@@ -8318,7 +9855,13 @@ impl App {
                 phase,
                 reason,
                 messages,
-            } => self.apply_compaction(phase, reason, messages, Some(name)),
+                report,
+            } => self.apply_compaction(phase, reason, messages, report, Some(name)),
+            StreamEvent::Parked => {
+                if let Some(panel) = panel {
+                    panel.parked = true;
+                }
+            }
             // Anything else a child emits (a nested bracket, its terminal
             // events) has no place on this screen: a child's end arrives as
             // the parent's own `SubagentEnd`.
@@ -8326,14 +9869,16 @@ impl App {
         }
     }
 
-    /// Show a loop-side compaction: a throbber while the summarizer runs and a
-    /// note when it lands or fails. `child` names the subagent it came from,
-    /// whose compaction gets a note only.
+    /// Show a loop-side compaction: a throbber while the summarizer runs, a
+    /// one-line event when it lands or fails, and the summarizer itself as an
+    /// internal agent in `/agents`. `child` names the subagent it came from,
+    /// whose compaction gets no throbber.
     fn apply_compaction(
         &mut self,
         phase: crate::core::agent::events::CompactionPhase,
         reason: crate::core::agent::events::CompactionReason,
         messages: Option<usize>,
+        report: Option<crate::core::agent::events::CompactionReport>,
         child: Option<&str>,
     ) {
         use crate::core::agent::events::{CompactionPhase, CompactionReason};
@@ -8342,31 +9887,106 @@ impl App {
             CompactionReason::ContextOverflow => "the provider rejected the prompt as too long",
             CompactionReason::SessionBudget => "the session token budget was used up",
         };
-        let who = child.map(|c| format!("{c}: ")).unwrap_or_default();
+        // A child's note is that agent's; the main run's is the app's own.
+        let say = |app: &mut App, text: String| match child {
+            Some(agent) => app.agent_note(agent, NoteTone::Info, &text),
+            None => app.note(&text),
+        };
         match phase {
             CompactionPhase::Started => {
                 if child.is_none() {
                     self.run_compacting = Some(Instant::now());
                 }
+                self.begin_compaction_agent(child, format!("summarizing older messages: {why}"));
             }
             CompactionPhase::Finished => {
                 if child.is_none() {
                     self.run_compacting = None;
                     self.pending_compaction_refresh = true;
+                    self.refresh_memory_snapshot();
                 }
+                let folded = messages.unwrap_or(0);
+                self.end_compaction_agent(child, None, SubagentOutcome::Finished, folded, report);
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
-                self.note(&format!(
-                    "{who}compacted {} messages into a summary: {why}",
-                    messages.unwrap_or(0)
-                ));
+                say(self, format!("compacted {folded} messages into a summary: {why}"));
             }
             CompactionPhase::Failed => {
                 if child.is_none() {
                     self.run_compacting = None;
                 }
-                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+                let failed = SubagentOutcome::Failed(format!("{why}; history unchanged"));
+                self.end_compaction_agent(child, None, failed, 0, None);
+                self.transcript.finalize_tool_group();
+                self.transcript.flush_assistant();
+                say(self, format!("compaction failed ({why}); history unchanged"));
             }
+        }
+    }
+
+    /// List a compaction that just started in `/agents`. `owner` is the
+    /// subagent whose conversation it compacts, `None` for the main one.
+    fn begin_compaction_agent(&mut self, owner: Option<&str>, task: String) {
+        let run_id = format!("{COMPACTION_AGENT}-{}", self.internal_agents.len() + 1);
+        let mut panel = SubagentPanel::new(run_id, COMPACTION_AGENT.to_string(), task);
+        panel.internal = true;
+        panel.started = Some(Instant::now());
+        self.internal_agents.push(InternalAgent {
+            panel,
+            outcome: None,
+            owner: owner.map(str::to_string),
+        });
+    }
+
+    /// Close the running compaction `owner` started (or, when its start never
+    /// reached this screen, record one that began at `since`) with what the
+    /// summarizer did: its model, tokens and summary.
+    fn end_compaction_agent(
+        &mut self,
+        owner: Option<&str>,
+        since: Option<Instant>,
+        outcome: SubagentOutcome,
+        folded: usize,
+        report: Option<crate::core::agent::events::CompactionReport>,
+    ) {
+        let open = self.internal_agents.iter().rposition(|a| {
+            a.outcome.is_none() && a.panel.name == COMPACTION_AGENT && a.owner.as_deref() == owner
+        });
+        let at = match open {
+            Some(at) => at,
+            None => {
+                self.begin_compaction_agent(owner, String::new());
+                let at = self.internal_agents.len() - 1;
+                self.internal_agents[at].panel.started = since.or(Some(Instant::now()));
+                at
+            }
+        };
+        let agent = &mut self.internal_agents[at];
+        let panel = &mut agent.panel;
+        panel.ended = Some(Instant::now());
+        if let Some(report) = report {
+            panel.model = report.model;
+            if let Some(usage) = report.usage {
+                panel.total_prompt_tokens = usage.prompt_tokens.unwrap_or(0);
+                panel.output_tokens = usage.completion_tokens.unwrap_or(0);
+            }
+            panel.task = format!(
+                "Summarized {folded} messages (~{} tokens)",
+                compact_tokens(report.input_tokens)
+            );
+            panel.transcript.token(&report.summary);
+            panel.transcript.flush_assistant();
+        }
+        agent.outcome = Some(outcome);
+    }
+
+    /// Take back the main conversation's running compaction from `/agents`:
+    /// it found nothing to fold, so no summarizer ran.
+    fn drop_open_compaction_agent(&mut self) {
+        if let Some(at) = self.internal_agents.iter().rposition(|a| {
+            a.outcome.is_none() && a.panel.name == COMPACTION_AGENT && a.owner.is_none()
+        }) {
+            self.internal_agents.remove(at);
         }
     }
 
@@ -8376,6 +9996,16 @@ impl App {
     /// pending permission summary (what Jan is blocked on) or the active
     /// subagent task, matching Orca's card fields.
     fn publish_agent_status(&mut self) {
+        self.publish_agent_status_with(true);
+    }
+
+    /// [`Self::publish_agent_status`] for a transition the user just caused:
+    /// the state is reported but the bell stays quiet, as they are looking.
+    fn publish_agent_status_quietly(&mut self) {
+        self.publish_agent_status_with(false);
+    }
+
+    fn publish_agent_status_with(&mut self, may_ring: bool) {
         use super::agent_status::AgentStatusState as S;
         let state = match self.status {
             // A live prompt outranks the turn status: a session-owned child
@@ -8395,7 +10025,11 @@ impl App {
                 .map(|q| q.question.clone()),
             _ => None,
         };
-        self.agent_status.set_state(state, prompt.as_deref());
+        if may_ring {
+            self.agent_status.set_state(state, prompt.as_deref());
+        } else {
+            self.agent_status.set_state_quietly(state, prompt.as_deref());
+        }
     }
 
     /// Arm the per-turn state shared by a user submit and a reminder
@@ -8405,6 +10039,7 @@ impl App {
     fn begin_turn(&mut self) {
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
+        self.live_run_mode = self.run_mode;
         self.turn = (0, 0);
         self.tokens_per_sec = None;
         self.turn_output_tokens = 0;
@@ -8452,16 +10087,19 @@ impl App {
 
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.transcript.finalize_tool_group();
+        self.transcript.end_step();
         // Done is terminal: nothing more arrives on this stream, so a call that
         // never completed cannot be left animating for the rest of the session.
         self.resolve_orphan_tool_rows();
+        // Preserved so the final assistant turn can be resent with its
+        // reasoning (see below). Taken before the children close: a child's
+        // end commits the buffered answer to the transcript, and the answer
+        // would then never reach `history`.
+        let (reasoning, answer) = self.take_turn_answer();
         // Children cannot outlive the run that dispatched them: their events
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
         self.close_live_background();
-        // Preserved so the final assistant turn can be resent with its
-        // reasoning (see below).
-        let (reasoning, answer) = self.take_turn_answer();
         let wire = answer_without_reasoning(&answer, self.transcript.parse_think_tags);
         if !wire.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
@@ -8519,6 +10157,9 @@ impl App {
             );
             self.transcript.gap(Kind::Meta);
             self.transcript.push(stats);
+            // The receipt closes the turn: whatever lands next (a subagent's
+            // notice, a background result) is a new block, not part of it.
+            self.transcript.last_kind = Kind::None;
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -8569,7 +10210,87 @@ impl App {
         // Reminder policy runs last: only if nothing else already claimed the
         // next turn (goal eval, a dequeued message) and open work remains.
         self.maybe_inject_todo_reminder(normal, no_answer, &answer);
+        self.maybe_auto_tidy();
         self.persist();
+    }
+
+    /// Switch to plan mode, the one way the TUI enters it once the session is
+    /// up. A tidy child runs in normal mode, so one already running would keep
+    /// changing memory under a mode that keeps memory read only: it is
+    /// aborted (the registry releases its slot; a note it was mid-way through
+    /// is written whole or not at all, and the index is rebuilt by the next
+    /// change), and a queued one is dropped. A stopped automatic tidy gets its
+    /// check back, so it runs again at the first turn end after plan mode.
+    fn enter_plan_mode(&mut self) {
+        self.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let queued = self.tidy_request.take();
+        let running = self.tidy_running.take();
+        if let Some(run_id) = self.tidy_run_id.take() {
+            self.subagent_set.abort_child(&run_id);
+        }
+        if queued.or(running) == Some(TidyKind::Auto) {
+            self.auto_tidy_checked = false;
+            self.auto_tidy_stamp = None;
+        }
+        if queued.is_some() || running.is_some() {
+            self.note("memory tidy stopped: plan mode is read only");
+        }
+    }
+
+    /// Whether this project's rules deny the `memory` tool. A tidy child keeps
+    /// the parent's permissions, so with `memory` denied it could change
+    /// nothing: no tidy is started.
+    fn memory_denied(&self) -> bool {
+        self.args.as_ref().is_some_and(|a| {
+            a.permissions
+                .is_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        })
+    }
+
+    /// Queue an automatic memory tidy when the index has outgrown its prompt
+    /// budget, at most once per session.
+    ///
+    /// Checked at the end of every turn rather than per write: that is when the
+    /// session's own writes have landed, and the first turn's end also covers
+    /// a store that was already over budget at session start. Only a queued
+    /// tidy spends the session's one automatic tidy, so a store that grows
+    /// past its budget mid-session is still tidied. Cheap when nothing changed:
+    /// the index is rebuilt only when the notes' metadata stamp moved. The tidy
+    /// runs in the background on the session's subagent registry and never
+    /// starts a model turn, so it cannot block or loop; its changes reach this
+    /// session only through the `Memory Changes` tail block. Off with
+    /// `memory_auto_tidy = false`.
+    fn maybe_auto_tidy(&mut self) {
+        // Plan mode is read-only, memory included; the check resumes at the
+        // first turn end after it.
+        if self.auto_tidy_checked
+            || self.tidy_running.is_some()
+            || self.tidy_request.is_some()
+            || self.run_mode == crate::core::agent::plan::RunMode::Plan
+        {
+            return;
+        }
+        let Some(root) = self.args.as_ref().and_then(|a| a.project_root.clone()) else {
+            return;
+        };
+        if !crate::core::agent::global_config::memory_auto_tidy_enabled() || self.memory_denied() {
+            return;
+        }
+        let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
+        let scopes = tauri_plugin_agent_tools::memory::Scopes {
+            store: &store,
+            home: home.as_deref(),
+            cross_project,
+        };
+        let stamp = scopes.stamp();
+        if self.auto_tidy_stamp == Some(stamp) {
+            return;
+        }
+        self.auto_tidy_stamp = Some(stamp);
+        if scopes.over_budget() {
+            self.auto_tidy_checked = true;
+            self.tidy_request = Some(TidyKind::Auto);
+        }
     }
 
     /// Whether auto-compaction should trigger: a non-zero token use above the
@@ -8770,7 +10491,9 @@ impl App {
         // cancel must not quietly become "keep working in the background".
         self.stop_subagents();
         self.close_live_background();
-        self.publish_agent_status();
+        // The user pressed Esc or Ctrl-C: `bell = "always"` must not ring for
+        // a turn end they caused while looking at it.
+        self.publish_agent_status_quietly();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.system(Level::Warn, "cancelled");
@@ -8789,13 +10512,21 @@ impl App {
     /// publishes a `MessagesUpdated` at a natural stop -- a run killed mid-way
     /// by a cancel loses them from the model's view (they still render from the
     /// display journal). Calls still in flight at the cancel are paired with a
-    /// placeholder result so the exchange stays protocol-valid.
+    /// placeholder result so the exchange stays protocol-valid. A turn starts
+    /// at a typed prompt or a skill/command invocation, as in
+    /// `session_log::truncate_at_user`, so the search never reaches back into an
+    /// earlier turn whose calls a compaction already removed.
     fn append_cancelled_turn_tools(&mut self) {
         let start = self
             .transcript
             .display_log
             .iter()
-            .rposition(|e| matches!(e, DisplayEntry::User { .. }))
+            .rposition(|e| {
+                matches!(
+                    e,
+                    DisplayEntry::User { .. } | DisplayEntry::Invocation { .. }
+                )
+            })
             .map(|i| i + 1)
             .unwrap_or(0);
         let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
@@ -9915,13 +11646,7 @@ const USER_GLYPH: &str = "›";
 /// only filled element in the transcript, so the user's own words are what the
 /// eye lands on when scanning back.
 fn user_bubble(body: Vec<Span<'static>>) -> RowKind {
-    RowKind::System {
-        glyph: USER_GLYPH,
-        cont: " ",
-        gutter: Style::new().fg(theme::accent()).bold(),
-        body,
-        bg: Some(user_bubble_bg()),
-    }
+    RowKind::User { body }
 }
 
 /// Tint a run of gutter rows as one filled bubble spanning the whole transcript
@@ -10321,6 +12046,22 @@ fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
     }
 }
 
+/// The line range a `read` call asked for, as a ` [start-end]` suffix for its
+/// path (` [start+]` when only `offset` is set), or empty for a whole-file read.
+/// Without it, paging through a large file shows the same label over and over.
+fn read_span(args: &serde_json::Value) -> String {
+    let n = |k: &str| args.get(k).and_then(|v| v.as_u64());
+    // The tool treats offset 0 as line 1, and a limit of 0 reads nothing.
+    let start = n("offset").unwrap_or(1).max(1);
+    match n("limit") {
+        Some(0) => String::new(),
+        // The arguments come from the model, so a huge limit must not overflow.
+        Some(limit) => format!(" [{start}-{}]", start.saturating_add(limit - 1)),
+        None if start > 1 => format!(" [{start}+]"),
+        None => String::new(),
+    }
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -10342,7 +12083,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         }
         "grep" | "search" => "Searching".to_string(),
         "find" | "glob" => "Finding files".to_string(),
-        "read" => format!("Reading {}", base(s("path"))),
+        "read" => format!("Reading {}{}", base(s("path")), read_span(args)),
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
@@ -10456,7 +12197,7 @@ fn todo_target_label(args: &serde_json::Value) -> String {
 }
 
 /// Past-tense counterpart to `tool_activity` for a finalized single call
-/// ("Reading main.rs" -> "Read main.rs"); falls back to `describe_tool_call`.
+/// ("Reading main.rs" -> "Read main.rs"); falls back to `describe_finished_tool_call`.
 fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -10476,7 +12217,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         }
         "grep" | "search" => "Searched".to_string(),
         "find" | "glob" => "Found files".to_string(),
-        "read" => format!("Read {}", base(s("path"))),
+        "read" => format!("Read {}{}", base(s("path")), read_span(args)),
         "list" | "ls" => "Listed files".to_string(),
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
@@ -10509,7 +12250,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "ask" => "Asked a question".to_string(),
         "todo" => format!("{} {}", todo_op_verb(args, true), todo_target_label(args)),
         "monitor" => monitor_activity(args, true),
-        _ => describe_tool_call(name, args),
+        _ => describe_finished_tool_call(name, args),
     }
 }
 
@@ -10862,11 +12603,10 @@ fn starting_call_lines(
 fn tool_row_lines(
     bullet: Span<'static>,
     label: &str,
-    reserve: u16,
     width: u16,
     suffix: Vec<Span<'static>>,
 ) -> Vec<Line<'static>> {
-    tool_row_spans(bullet, verb_first_spans(label), reserve, width, suffix)
+    tool_row_spans(bullet, verb_first_spans(label), width, suffix)
 }
 
 /// `tool_row_lines` for a label already split into styled spans, such as a
@@ -10874,29 +12614,10 @@ fn tool_row_lines(
 fn tool_row_spans(
     bullet: Span<'static>,
     label: Vec<Span<'static>>,
-    reserve: u16,
     width: u16,
     suffix: Vec<Span<'static>>,
 ) -> Vec<Line<'static>> {
-    let held = if suffix.is_empty() {
-        0
-    } else {
-        suffix.iter().map(Span::width).sum::<usize>().max(ELAPSED_RESERVE)
-    };
-    let max = (width.saturating_sub(reserve) as usize)
-        .saturating_sub(held)
-        .max(1);
-    let mut rows = wrap_spans_hard(label, max);
-    if rows.len() > TOOL_ROW_MAX_LINES {
-        rows.truncate(TOOL_ROW_MAX_LINES);
-        if let Some(last) = rows.last_mut() {
-            last.push(Span::raw(" \u{2026}"));
-        }
-    }
-    rows.last_mut()
-        .expect("wrap_text yields at least one row")
-        .extend(suffix);
-    gutter_lines(rows, vec![bullet], vec![Span::raw("  ")])
+    TranscriptEvent::new(bullet, label).suffix(suffix).capped().lines(width)
 }
 
 /// `label` split into a bold verb (its first word) and the plain rest.
@@ -10958,63 +12679,72 @@ fn result_style(is_error: bool) -> Style {
 /// as a tree: each call's finished label with its output (and diff, if any)
 /// indented under it.
 fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
-    let max = width.saturating_sub(8) as usize;
-    let mut out: Vec<Line<'static>> = Vec::new();
     // A single-call group's summary row already IS that call's `done` label, so
     // repeating it here would duplicate it; only multi-call groups (whose
-    // summary is a counted breakdown) need the per-call headers. An `Explored`
-    // or `Ran N commands` row already ends on its tree, so its detail always
-    // names each call and carries that tree on rather than opening a second
-    // corner.
-    let tree = group.explored() || group.shells();
+    // summary is a counted breakdown) nest each call as an event of its own.
+    // An `Explored`, `Shell` or `Worked` row already ends on its tree, so its
+    // detail always names each call and carries that tree on rather than
+    // opening a second corner. A mixed group still in flight reads as its
+    // running call, with no tree yet.
+    let tree = group.explored() || group.shells() || (group.worked() && !group.is_running());
     let show_headers = group.calls.len() > 1 || tree;
-    let first = |out: &Vec<Line<'static>>| out.is_empty() && !tree;
-    for call in &group.calls {
-        if show_headers {
-            out.extend(gutter_lines(
-                wrap_spans_hard(verb_first_spans(&call.settled_label()), max),
-                vec![child_prefix(first(&out)), call.state().bullet()],
-                vec![Span::raw(TREE_NESTED)],
-            ));
-        }
-        let Some(content) = &call.content else {
-            continue;
-        };
-        // Expanded view shows the full output verbatim, and a line wider than
-        // the terminal wraps rather than eliding -- this is the surface the
-        // transcript's one-line summary sends the user to. A silent call says
-        // so, so it is visibly accounted for.
-        let rows = if content.trim().is_empty() {
-            wrap_text("(no output)", Style::new().dark_gray(), max)
-        } else {
-            wrap_text(content, result_style(call.is_error), max)
-        };
-        let indent = if show_headers { TREE_NESTED } else { TREE_REST };
-        let lead = if show_headers {
-            Span::raw(TREE_NESTED)
-        } else {
-            child_prefix(first(&out))
-        };
-        out.extend(gutter_lines(rows, vec![lead], vec![Span::raw(indent)]));
-        if let Some(diff) = &call.diff {
-            out.extend(diff_lines(diff, width as usize, DIFF_MAX_ROWS, indent, None));
-        }
-    }
-    out
+    let children: Vec<Child> = group
+        .calls
+        .iter()
+        .flat_map(|call| {
+            // Expanded view shows the full output verbatim, and a line wider
+            // than the terminal wraps rather than eliding -- this is the
+            // surface the transcript's one-line summary sends the user to. A
+            // silent call says so, so it is visibly accounted for.
+            let output = call.content.as_ref().map(|content| {
+                if content.trim().is_empty() {
+                    Child::text("(no output)", Style::new().dark_gray())
+                } else {
+                    Child::text(content.clone(), result_style(call.is_error))
+                }
+            });
+            let diff = call.diff.clone().map(|diff| Child::Diff { diff, lang: None });
+            let body = output.into_iter().chain(diff);
+            if show_headers {
+                let head = verb_first_spans(&call.settled_label());
+                vec![Child::Nested(
+                    TranscriptEvent::new(call.state().bullet(), head).children(body),
+                )]
+            } else {
+                body.collect()
+            }
+        })
+        .collect();
+    tree_lines(&children, Fit::Wrap, width, !tree)
 }
 
-/// Classify a collapsible tool into a breakdown noun and whether it is a
-/// read-style op (drives the "Read" vs "Ran" verb in a group summary).
-fn tool_kind(name: &str) -> (&'static str, bool) {
+/// Which clause of a group summary a call counts in, so its verb agrees with
+/// what the call did (`Read 2 files; updated 1 memory note; ran 1 command`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ToolOp {
+    Read,
+    Update,
+    Run,
+}
+
+/// Classify a collapsible tool into a breakdown noun and the `ToolOp` it is.
+/// One `memory` tool reads and writes, so its `op` decides which.
+fn tool_kind(name: &str, args: &serde_json::Value) -> (&'static str, ToolOp) {
+    let op = args.get("op").and_then(|v| v.as_str());
     match name {
-        n if n.starts_with("memory") => ("memory note", true),
-        n if n.starts_with("skill") => ("skill", true),
-        "read" => ("file", true),
-        "list" | "ls" => ("directory", true),
-        "grep" | "search" => ("search", false),
-        "find" | "glob" => ("file search", false),
-        "bash" | "shell" | "exec" => ("command", false),
-        _ => ("tool call", false),
+        "memory" if matches!(op, Some("view" | "search")) => ("memory note", ToolOp::Read),
+        "memory" => ("memory note", ToolOp::Update),
+        // Its names before it became one tool, still in journals a resume replays.
+        "memory_read" | "memory_list" => ("memory note", ToolOp::Read),
+        "memory_write" => ("memory note", ToolOp::Update),
+        "skill_write" => ("skill", ToolOp::Update),
+        n if n.starts_with("skill") => ("skill", ToolOp::Read),
+        "read" => ("file", ToolOp::Read),
+        "list" | "ls" => ("directory", ToolOp::Read),
+        "grep" | "search" => ("search", ToolOp::Run),
+        "find" | "glob" => ("file search", ToolOp::Run),
+        "bash" | "shell" | "exec" => ("command", ToolOp::Run),
+        _ => ("tool call", ToolOp::Run),
     }
 }
 
@@ -11034,11 +12764,13 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
     let named = |noun| Explore::Read {
         noun: Some(noun),
         target: s("name").trim_end_matches(".md").to_string(),
+        span: String::new(),
     };
     match name {
         "read" => Some(Explore::Read {
             noun: None,
             target: s("path"),
+            span: read_span(args),
         }),
         "list" | "ls" => Some(Explore::List {
             target: scope().unwrap_or_else(|| ".".to_string()),
@@ -11047,11 +12779,19 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
             query: s("pattern"),
             scope: scope(),
         }),
-        "memory_read" => Some(named("memory")),
+        "memory" => match args.get("op").and_then(|v| v.as_str()) {
+            Some("view") if !s("name").is_empty() => Some(named("memory")),
+            Some("view") => Some(Explore::List {
+                target: "memory notes".to_string(),
+            }),
+            Some("search") => Some(Explore::Search {
+                query: s("query"),
+                scope: Some("memory".to_string()),
+            }),
+            // write/edit/delete change memory: not an exploration.
+            _ => None,
+        },
         "skill_read" => Some(named("skill")),
-        "memory_list" => Some(Explore::List {
-            target: "memory notes".to_string(),
-        }),
         "skill_list" => Some(Explore::List {
             target: "skills".to_string(),
         }),
@@ -11082,7 +12822,9 @@ fn explore_actions(calls: &[GroupedCall]) -> Vec<ExploreAction> {
     let paths: Vec<&str> = calls
         .iter()
         .filter_map(|c| match &c.explore {
-            Some(Explore::Read { noun: None, target }) => Some(target.as_str()),
+            Some(Explore::Read {
+                noun: None, target, ..
+            }) => Some(target.as_str()),
             _ => None,
         })
         .collect();
@@ -11110,9 +12852,9 @@ fn explore_actions(calls: &[GroupedCall]) -> Vec<ExploreAction> {
             _ => ExploreOutcome::Ok,
         };
         let (verb, noun, item, scope) = match explore {
-            Explore::Read { noun, target } => {
+            Explore::Read { noun, target, span } => {
                 let item = if noun.is_none() {
-                    shown(target)
+                    format!("{}{span}", shown(target))
                 } else {
                     target.clone()
                 };
@@ -11158,15 +12900,12 @@ fn explored_lines(
     suffix: Vec<Span<'static>>,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let mut head = vec![bullet, Span::styled(verb, Style::new().bold())];
+    let mut head = vec![Span::styled(verb, Style::new().bold())];
     if failed > 0 {
         head.push(Span::styled(format!(" \u{b7} {failed} failed"), Style::new().red()));
     }
-    head.extend(suffix);
-    let mut out = vec![Line::from(head)];
     let dim = Style::new().dark_gray();
-    let max = (width as usize).saturating_sub(TREE_REST.len() + 2).max(1);
-    for (i, action) in actions.iter().take(EXPLORE_MAX_ROWS).enumerate() {
+    let rows = actions.iter().take(EXPLORE_MAX_ROWS).map(|action| {
         let mut spans = vec![Span::styled(action.verb, Style::new().fg(theme::accent()))];
         if let Some(noun) = action.noun {
             spans.push(Span::raw(format!(" {noun}:")));
@@ -11186,27 +12925,68 @@ fn explored_lines(
             ExploreOutcome::Empty => spans.push(Span::styled(" (no matches)", dim)),
             ExploreOutcome::Failed => spans.push(Span::styled(" (failed)", Style::new().red())),
         }
-        out.extend(gutter_lines(
-            wrap_spans_hard(spans, max),
-            vec![child_prefix(i == 0)],
-            vec![Span::raw(TREE_REST)],
-        ));
-    }
-    if actions.len() > EXPLORE_MAX_ROWS {
-        out.push(Line::from(Span::styled(
-            format!("{TREE_REST}\u{2026} +{} more", actions.len() - EXPLORE_MAX_ROWS),
+        Child::Text(spans)
+    });
+    let more = (actions.len() > EXPLORE_MAX_ROWS).then(|| {
+        Child::text(
+            format!("\u{2026} +{} more", actions.len() - EXPLORE_MAX_ROWS),
             dim,
-        )));
-    }
-    out
+        )
+    });
+    TranscriptEvent::new(bullet, head)
+        .suffix(suffix)
+        .children(rows.chain(more))
+        .lines(width)
 }
 
 /// Short sentence summarizing a finished tool group, e.g. "Read 3 memory notes,
-/// 1 skill" or "Read 20 files; ran 12 commands". Read-style nouns get a "Read"
-/// clause and executed nouns a "ran" clause, so the verb always agrees with its
-/// noun (never "Ran 1 directory"). Each clause preserves first-seen order.
-fn group_summary(nouns: &[(&str, bool)]) -> String {
-    group_clauses(nouns, "Read", "ran")
+/// 1 skill" or "Read 20 files; updated 1 memory note; ran 12 commands": one
+/// clause per `ToolOp`, so the verb always agrees with its noun (never "Ran 1
+/// directory", never "Read" for a note that was written). Each clause counts
+/// and pluralizes its nouns in first-seen order.
+fn group_summary(nouns: &[(&str, ToolOp)]) -> String {
+    let clauses = [(ToolOp::Read, "read"), (ToolOp::Update, "updated"), (ToolOp::Run, "ran")]
+        .into_iter()
+        .filter_map(|(op, verb)| {
+            let mut counts: Vec<(&str, usize)> = Vec::new();
+            for &(noun, _) in nouns.iter().filter(|(_, o)| *o == op) {
+                match counts.iter_mut().find(|(n, _)| *n == noun) {
+                    Some((_, c)) => *c += 1,
+                    None => counts.push((noun, 1)),
+                }
+            }
+            let items: Vec<String> = counts.iter().map(|(n, c)| pluralize(n, *c)).collect();
+            (!items.is_empty()).then(|| format!("{verb} {}", items.join(", ")))
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let mut chars = clauses.chars();
+    chars
+        .next()
+        .map(|f| f.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
+}
+
+/// A folded mixed group: `bullet`, a bold `Worked · N tool calls`, then the
+/// group's breakdown on the tree, cut to one row each, so it reads like the
+/// header a finished trace folds to.
+fn worked_lines(
+    bullet: Span<'static>,
+    calls: usize,
+    summary: &str,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let head = vec![
+        Span::styled("Worked", Style::new().bold()),
+        Span::styled(
+            format!(" \u{b7} {}", pluralize("tool call", calls)),
+            Style::new().dark_gray(),
+        ),
+    ];
+    TranscriptEvent::new(bullet, head)
+        .child(Child::text(summary, Style::new().dim()))
+        .clipped()
+        .lines(width)
 }
 
 /// The one-line header a finished trace collapses to, with a step count so the
@@ -11219,24 +12999,21 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
 /// groups' `nouns`), cut to one row; a reasoning-only run has nothing to add.
 fn trace_header_lines(
     run: &TraceRun,
-    nouns: &[(&str, bool)],
+    nouns: &[(&str, ToolOp)],
     width: u16,
 ) -> Vec<Line<'static>> {
     let verb = if run.tool_ran { "Worked" } else { "Thought" };
     let unit = if run.steps == 1 { "step" } else { "steps" };
-    let mut out = vec![Line::from(vec![
-        Span::styled(TOOL_BULLET, Style::new().dim()),
+    let head = vec![
         Span::styled(verb, Style::new().dim().bold()),
         Span::styled(format!(" \u{b7} {} {unit}", run.steps), Style::new().dim()),
-    ])];
-    if !nouns.is_empty() {
-        let max = (width as usize).saturating_sub(TREE_FIRST.len() + 2).max(1);
-        out.push(Line::from(vec![
-            child_prefix(true),
-            Span::styled(truncate(&group_summary(nouns), max), Style::new().dim()),
-        ]));
-    }
-    out
+    ];
+    let summary = (!nouns.is_empty())
+        .then(|| Child::text(group_summary(nouns), Style::new().dim()));
+    TranscriptEvent::new(Span::styled(TOOL_BULLET, Style::new().dim()), head)
+        .children(summary)
+        .clipped()
+        .lines(width)
 }
 
 /// The terminal cap of an expanded trace's rail: a `└` corner that closes the
@@ -11276,13 +13053,7 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
             width,
         );
     }
-    tool_row_lines(
-        running_bullet(spinner_frame),
-        &group.activity(),
-        TOOL_ROW_RESERVE,
-        width,
-        badge,
-    )
+    tool_row_lines(running_bullet(spinner_frame), &group.activity(), width, badge)
 }
 
 /// Live output kept per running command. Past this the front is dropped: the
@@ -11306,11 +13077,16 @@ const SHELL_COMMAND_MAX_CONT: usize = 2;
 /// that reads as more of the command rather than as its output.
 const SHELL_CONT: &str = "  \u{2502} ";
 
-/// `SHELL_CONT` for a command listed under a `Ran N commands` row, the rail
-/// under the command's own first column.
-const SHELL_CHILD_CONT: &str = "    \u{2502} ";
+/// `SHELL_CONT` for a command listed under a `Shell` row, the rail under the
+/// command's own verb, past its bullet.
+const SHELL_CHILD_CONT: &str = "      \u{2502} ";
 
-/// Output rows each command of a `Ran N commands` row previews (or, running,
+/// Commands a `Shell` row lists in the default view, newest last; older ones
+/// fold into one count line so a long run cannot bury what is happening now.
+/// Ctrl-O's detail view still lists every command.
+const SHELL_GROUP_MAX_COMMANDS: usize = 5;
+
+/// Output rows each command of a `Shell` row previews (or, running,
 /// tails): fewer than a lone command's, since several share the screen.
 const SHELL_CHILD_PREVIEW_LINES: usize = 2;
 
@@ -11339,7 +13115,7 @@ fn shell_header_rows(
 /// `head`, then the command's first line (after `sep`) cut to `room` and
 /// `suffix`, then up to `SHELL_COMMAND_MAX_CONT` continuation rows after `rail`
 /// cut to `max`, and a count of the rest. Shared by a lone command's header and
-/// a command listed under a `Ran N commands` row.
+/// a command listed under a `Shell` row.
 fn shell_command_lines(
     mut head: Vec<Span<'static>>,
     sep: &str,
@@ -11387,11 +13163,12 @@ fn shell_output_span((text, note): (String, bool)) -> Span<'static> {
 
 /// Hang `rows` off a shell header as its tree: the corner on the first row, the
 /// blank indent after.
-fn shell_tree(rows: Vec<(String, bool)>) -> Vec<Line<'static>> {
-    rows.into_iter()
-        .enumerate()
-        .map(|(i, row)| Line::from(vec![child_prefix(i == 0), shell_output_span(row)]))
-        .collect()
+fn shell_tree(rows: Vec<(String, bool)>, width: u16) -> Vec<Line<'static>> {
+    let children: Vec<Child> = rows
+        .into_iter()
+        .map(|row| Child::Text(vec![shell_output_span(row)]))
+        .collect();
+    tree_lines(&children, Fit::Clip, width, true)
 }
 
 /// Columns an output row may use under the tree: the prefix and a right margin
@@ -11449,7 +13226,7 @@ fn running_shell_lines(
         width,
     );
     let rows = shell_tail_rows(output, LIVE_OUTPUT_TAIL_LINES, shell_output_width(width));
-    out.extend(shell_tree(rows));
+    out.extend(shell_tree(rows, width));
     out
 }
 
@@ -11566,58 +13343,111 @@ fn finished_shell_lines(
         "Ran"
     };
     let mut out = shell_header_rows(state.bullet(), verb, command, suffix, width);
-    out.extend(shell_tree(rows));
+    out.extend(shell_tree(rows, width));
     out
 }
 
-/// A run of shell commands: `bullet` and `Ran N commands` (`Running` while one
-/// is in flight), then each command under the tree with a shorter preview of
-/// its output than a lone command gets, `SHELL_CHILD_PREVIEW_LINES` deep, so
-/// the run reads in one place without one command burying the rest. A failed
-/// command ends on its exit code; a running one on its elapsed time over the
-/// newest lines of its live output; one without a result yet on nothing.
+/// A run of shell commands: `bullet` and a bold `Shell`, then each command under
+/// the tree as its own `• Ran <cmd>` / `• Running <cmd>` with a bullet of its
+/// own state, and a shorter preview of its output than a lone command gets,
+/// `SHELL_CHILD_PREVIEW_LINES` deep, so the run reads in one place without one
+/// command burying the rest. The header names no verb: with commands running
+/// detached beside finished ones, no single tense is true of the whole run.
+/// A failed command ends on its exit code; a running one on its elapsed time
+/// over the newest lines of its live output; one without a result yet on
+/// nothing. `spinner_frame` is set only in the live panel, where a command in
+/// flight sweeps its bullet; `interrupted` marks an unresolved command of a run
+/// that ended.
 fn shell_group_lines(
     bullet: Span<'static>,
-    running: bool,
     views: &[ShellView<'_>],
+    spinner_frame: Option<usize>,
+    interrupted: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let verb = if running { "Running" } else { "Ran" };
-    let room = (width as usize).saturating_sub(bullet.width() + verb.len());
     let mut out = vec![Line::from(vec![
         bullet,
-        Span::styled(verb, Style::new().bold()),
-        Span::raw(truncate(&format!(" {}", pluralize("command", views.len())), room)),
+        Span::styled("Shell", Style::new().bold()),
     ])];
     let max = (width as usize).saturating_sub(TREE_NESTED.len() + 2).max(1);
-    for (i, view) in views.iter().enumerate() {
-        let (suffix, rows) = match (view.result, view.live) {
+    // Only the newest settled commands are listed; one without a result is
+    // never folded, so a long-running early command keeps its clock and tail
+    // in the live panel. The fold line takes the corner so the tree still
+    // opens on the first row under the header.
+    let unresolved = views.iter().filter(|v| v.result.is_none()).count();
+    let settled = views.len() - unresolved;
+    let hidden = settled.saturating_sub(SHELL_GROUP_MAX_COMMANDS.saturating_sub(unresolved));
+    let mut to_hide = hidden;
+    let shown: Vec<&ShellView<'_>> = views
+        .iter()
+        .filter(|v| {
+            let fold = to_hide > 0 && v.result.is_some();
+            to_hide -= usize::from(fold);
+            !fold
+        })
+        .collect();
+    if hidden > 0 {
+        let note = format!(
+            "\u{2026} +{} ({} in this group, Ctrl-O to expand)",
+            pluralize("finished command", hidden),
+            views.len()
+        );
+        out.push(Line::from(vec![
+            child_prefix(true),
+            Span::styled(
+                truncate(&note, (width as usize).saturating_sub(TREE_FIRST.len()).max(1)),
+                Style::new().dark_gray(),
+            ),
+        ]));
+    }
+    for (i, view) in shown.into_iter().enumerate() {
+        let (state, suffix, rows) = match (view.result, view.live) {
             (Some((output, is_error)), _) => {
-                let (_, suffix, rows) =
-                    settled_shell_rows(output, is_error, SHELL_CHILD_PREVIEW_LINES, max);
-                (suffix, rows)
+                settled_shell_rows(output, is_error, SHELL_CHILD_PREVIEW_LINES, max)
             }
             (None, Some((output, elapsed))) => (
+                ToolState::Running,
                 Some(elapsed_badge(elapsed)),
                 shell_tail_rows(output, SHELL_CHILD_PREVIEW_LINES, max),
             ),
-            (None, None) => (None, Vec::new()),
+            (None, None) if interrupted => (ToolState::Interrupted, None, Vec::new()),
+            (None, None) => (ToolState::Running, None, Vec::new()),
+        };
+        // A detached command is still running, like a lone one's header says.
+        let verb = match state {
+            ToolState::Running | ToolState::Backgrounded | ToolState::Interrupted => "Running",
+            ToolState::Success | ToolState::Failure => "Ran",
+        };
+        let child_bullet = match spinner_frame {
+            Some(frame) if state == ToolState::Running => running_bullet(frame),
+            _ => state.bullet(),
         };
         // Held back like a lone header's, so the elapsed badge ticking (or
-        // turning into an exit code) does not re-cut the command.
+        // turning into an exit code) does not re-cut the command; budgeted
+        // against the longer verb so `Ran` cuts where `Running` did.
         let held = suffix.as_ref().map_or(0, Span::width).max(ELAPSED_RESERVE);
         let room = (width as usize)
-            .saturating_sub(TREE_REST.len() + 2 + held)
+            .saturating_sub(TREE_NESTED.len() + "Running ".len() + held)
             .max(1);
-        out.extend(shell_command_lines(
-            vec![child_prefix(i == 0)],
-            "",
-            view.command,
-            room,
-            suffix,
-            SHELL_CHILD_CONT,
-            room,
-        ));
+        // Clipped as a whole: on a terminal narrower than the prefix and verb,
+        // the command budget alone cannot keep the row to one line.
+        out.extend(
+            shell_command_lines(
+                vec![
+                    child_prefix(i == 0 && hidden == 0),
+                    child_bullet,
+                    Span::styled(verb, Style::new().bold()),
+                ],
+                " ",
+                view.command,
+                room,
+                suffix,
+                SHELL_CHILD_CONT,
+                max,
+            )
+            .into_iter()
+            .map(|line| Line::from(clip_spans(line.spans, width as usize))),
+        );
         out.extend(
             rows.into_iter()
                 .map(|row| Line::from(vec![Span::raw(TREE_NESTED), shell_output_span(row)])),
@@ -11632,44 +13462,6 @@ fn shell_group_lines(
 /// first command byte, so a shell call never sits on a "Preparing bash" row.
 fn typing_shell_lines(command: &str, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
     shell_header_rows(running_bullet(spinner_frame), "Running", command, None, width)
-}
-
-/// Bucket `nouns` into read-style and run-style clauses (first-seen order,
-/// counted and pluralized) and join them with the given verbs, so the verb
-/// always agrees with its noun (never "Ran 1 directory").
-fn group_clauses(nouns: &[(&str, bool)], read_verb: &str, run_verb: &str) -> String {
-    let mut read: Vec<(&str, usize)> = Vec::new();
-    let mut run: Vec<(&str, usize)> = Vec::new();
-    for &(n, is_read) in nouns {
-        let bucket = if is_read { &mut read } else { &mut run };
-        match bucket.iter_mut().find(|(name, _)| *name == n) {
-            Some((_, c)) => *c += 1,
-            None => bucket.push((n, 1)),
-        }
-    }
-    let clause = |items: &[(&str, usize)]| {
-        items
-            .iter()
-            .map(|(n, c)| pluralize(n, *c))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let mut out = String::new();
-    if !read.is_empty() {
-        out = format!("{read_verb} {}", clause(&read));
-    }
-    if !run.is_empty() {
-        let verb = if out.is_empty() {
-            let mut c = run_verb.chars();
-            c.next()
-                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
-                .unwrap_or_default()
-        } else {
-            format!("; {run_verb}")
-        };
-        out.push_str(&format!("{verb} {}", clause(&run)));
-    }
-    out
 }
 
 /// "3 memory notes", "1 skill", "2 searches", "1 directory".
@@ -11701,8 +13493,8 @@ fn has_answer_text(buf: &str, parse_tags: bool) -> bool {
 
 /// `text` with its reasoning removed, for the copy that goes into `history`.
 /// Reasoning never belongs in `content`; it rides along on the message's
-/// `reasoning_content` instead (see `on_done`), and the display journal is what
-/// keeps it for a resume. `parse_tags` is the setting of the run that said it.
+/// `reasoning_content` instead (see `on_done`), and the session record keeps
+/// both for a resume. `parse_tags` is the setting of the run that said it.
 pub(crate) fn answer_without_reasoning(text: &str, parse_tags: bool) -> String {
     split_reasoning(text, parse_tags)
         .into_iter()
@@ -12041,7 +13833,7 @@ impl FileStamp {
 struct RegionIndex {
     groups: HashMap<usize, usize>,
     reasoning: HashMap<usize, usize>,
-    subagents: HashMap<usize, usize>,
+    subagents: HashMap<usize, Vec<usize>>,
 }
 
 /// Everything besides the buffer and the reasoning segments that the live
@@ -12557,18 +14349,18 @@ fn finish_plugin_install(
                     for hook in
                         tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(&dir).0
                     {
-                        app.note(&format!(
-                            "  hook {} ({}): {}",
+                        app.system_detail_text(&format!(
+                            "hook {} ({}): {}",
                             hook.event,
                             hook.matcher.as_deref().unwrap_or("*"),
                             hook.command
                         ));
                     }
                     for tool in crate::core::agent::hooks_config::plugin_tool_entries(&dir) {
-                        app.note(&format!("  tool {}: {}", tool.name, tool.command));
+                        app.system_detail_text(&format!("tool {}: {}", tool.name, tool.command));
                     }
-                    app.note(
-                        "  disable with [plugins] hooks = false / tools = false in agent.toml",
+                    app.system_detail_text(
+                        "disable with [plugins] hooks = false / tools = false in agent.toml",
                     );
                 }
             }
@@ -12650,11 +14442,22 @@ pub async fn run(
     // fresh turn by `submit_background_notices`.
     let shell_set = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
     args.bg_shells = Some(shell_set.clone());
+    // A command the user is waiting behind moves into that set too, so a
+    // typed message is not held until a long build ends.
+    let (shell_detach, detach_signal) = tokio::sync::watch::channel(false);
+    args.shell_detach = Some(detach_signal);
+    // The shell's directory is the conversation's too: a `cd` holds into the
+    // next turn, and a new conversation starts back in the project root.
+    let shell_cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+    args.shell_cwd = Some(shell_cwd.clone());
     let subagent_set = Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
         args.max_parallel_subagents,
     ));
     args.subagent_bg = Some(subagent_set.clone());
-    let session_scratch = args.session_id.clone();
+    // The project cache folder the run keys its scratch under, with the id.
+    let session_scratch = args.session_id.clone().zip(
+        args.project_root.as_deref().map(crate::core::agent::project::project_cache_dir),
+    );
     let args = Arc::new(args);
 
     // Resolve the colour theme before anything highlights: `warm` below caches
@@ -12673,7 +14476,9 @@ pub async fn run(
     let prev_log_level = log::max_level();
     log::set_max_level(log::LevelFilter::Off);
 
-    enable_raw_mode().map_err(|e| e.to_string())?;
+    // Started in the background (`jan &`), the `tcsetattr` stops jan with
+    // SIGTTOU and, once `fg` continues it, fails with EINTR; try again then.
+    retry_interrupted(enable_raw_mode).map_err(|e| e.to_string())?;
     // From here a panic must not leave the shell in raw mode / the alternate
     // screen / mouse-tracking / Kitty keys: install before anything else that
     // can panic runs, so every failure from this point is caught by it.
@@ -12699,6 +14504,8 @@ pub async fn run(
     };
     let mouse = crate::core::agent::global_config::mouse_enabled();
     enter_terminal_modes(&mut stdout, mouse).map_err(abort_startup)?;
+    #[cfg(unix)]
+    install_tty_input_stop_handler();
     // Test-only hook for the real-PTY panic-recovery integration test
     // (`jan-cli/tests/tui_panic.rs`): an in-memory unit test can prove the hook
     // fires, but only a genuine panic on a genuine terminal, with every mode
@@ -12737,7 +14544,19 @@ pub async fn run(
     app.send_reasoning = send_reasoning;
     app.monitor_set = monitor_set;
     app.shell_set = shell_set;
+    app.shell_cwd = shell_cwd;
+    app.shell_detach = shell_detach;
     app.subagent_set = subagent_set;
+    // Weak, so exit's drain never waits on a startup sweep still fetching.
+    // The sweep runs on a thread exit does not join: a process that exits
+    // mid-sweep leaves the rest for the next start.
+    if let Some(reports) = app.cleanup_reports.as_ref().map(mpsc::UnboundedSender::downgrade) {
+        crate::core::agent::child_workspace::spawn_startup_sweep(
+            app.project_root.clone(),
+            args.session_id.clone(),
+            move |kept| reports.upgrade().is_some_and(|reports| reports.send(kept).is_ok()),
+        );
+    }
     app.args = Some(args.clone());
     app.sync_think_tags();
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
@@ -12782,6 +14601,10 @@ pub async fn run(
     // or a CLAUDE.md is what loaded; an AGENTS.md project hears nothing.
     if let Some(note) = project_instructions_note(&app.project_root) {
         app.note(&note);
+    }
+    let instructions = crate::core::agent::context::project_context_files(&app.project_root);
+    if let Some(warning) = instructions_size_warning(&instructions) {
+        app.system(Level::Warn, &warning);
     }
     // A modified key the terminal is dropping looks like a bug in the composer,
     // so say so once, and only where a config file proves it is unconfigured
@@ -12838,10 +14661,6 @@ pub async fn run(
     )
     .await;
 
-    // The last turn's journal may still be queued on the writer thread; a
-    // process that exits now would lose it, and with it that turn's resume.
-    app.join_journal();
-
     release_terminal();
     restore_terminal_modes();
     log::set_max_level(prev_log_level);
@@ -12859,12 +14678,60 @@ pub async fn run(
     if app.update_installing {
         eprintln!("the update was still installing when jan exited; run `jan update` to finish it");
     }
-    // The interactive session is over: wipe the persistent bash `/tmp` scratch
-    // that its turns shared.
-    if let Some(session) = session_scratch.as_deref() {
-        let _ = workspace::remove_scratch_dir(session).await;
+    // The interactive session is over. Children still running are stopped
+    // first: they may still be writing into the scratch, and a live writer
+    // holds its worktree, which would otherwise outlive the process even
+    // when empty.
+    app.subagent_set.abort_all();
+    // Then the persistent bash scratch its turns shared and its
+    // subagents' worktrees that hold nothing go, together (both are renames
+    // into trash); the rest are named on the real terminal, since they are
+    // what is left to merge. The worktrees on the blocking pool, as every
+    // worktree sweep is: it runs git per worktree.
+    let workspaces = app.subagent_set.workspaces.clone();
+    let scratch = async {
+        if let Some((session, cache)) = &session_scratch {
+            let _ = workspace::trash_scratch_dir_in(cache, session).await;
+        }
+    };
+    let ((), kept) = tokio::join!(
+        scratch,
+        tokio::task::spawn_blocking(move || workspaces.finish_session())
+    );
+    // A conversation replaced just before exit may still be bringing its
+    // branches back: wait a little for it, so what it kept is named too, but
+    // never the fetch's full limit. One still settling is marked only once
+    // told, so the next start's sweep names it instead.
+    app.cleanup_reports = None;
+    for earlier in drain_cleanup_reports(&mut app.cleanup_rx, EXIT_SETTLE_WAIT).await {
+        eprintln!("{earlier}");
+    }
+    for notice in kept.map(|kept| kept.notices()).unwrap_or_default() {
+        eprintln!("{notice}");
     }
     res
+}
+
+/// How long exit waits for a replaced conversation's settle to report.
+const EXIT_SETTLE_WAIT: Duration = Duration::from_secs(2);
+
+/// What the settles still running report within `wait`. The channel is closed
+/// before the last read, so a report sent later fails and its settle leaves
+/// the worktree unmarked rather than counting it as shown.
+async fn drain_cleanup_reports(
+    rx: &mut mpsc::UnboundedReceiver<String>,
+    wait: Duration,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + wait;
+    while let Ok(Some(report)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        out.push(report);
+    }
+    rx.close();
+    while let Ok(report) = rx.try_recv() {
+        out.push(report);
+    }
+    out
 }
 
 const CLAUDE_ALIAS_NOTICE: &str = crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE;
@@ -13003,7 +14870,7 @@ async fn chat_loop<B: Backend>(
     // whole session rather than for one run: a child outliving the run that
     // dispatched it must still reach its panel and emit its closing bracket.
     let (session_events_tx, mut session_events) = mpsc::unbounded_channel::<StreamEvent>();
-    subagent_set.install_session_events(session_events_tx);
+    subagent_set.install_session_events(session_events_tx.clone());
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -13047,6 +14914,12 @@ async fn chat_loop<B: Backend>(
     // executing an MCP tool call holds it for up to the tool-call timeout), so
     // it must never run on the render loop. One at a time.
     let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
+    // `/worktree` gathering its report: git per worktree, so on the blocking
+    // pool. One at a time.
+    let mut worktree_task: Option<tokio::task::JoinHandle<WorktreeReport>> = None;
+    // `/worktrees` listing or pruning: git and deletes, so on the blocking
+    // pool. One at a time.
+    let mut worktrees_task: Option<tokio::task::JoinHandle<WorktreesDone>> = None;
     type ReportedUsageResult = (
         super::tokamak::usage::Query,
         Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
@@ -13072,9 +14945,12 @@ async fn chat_loop<B: Backend>(
 
     // Compaction is a summarizing model call, so it runs off the render loop
     // too; `compact_base` is the history length it was computed from.
-    let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
-        None;
+    let mut compact_task: Option<tokio::task::JoinHandle<CompactResult>> = None;
     let mut compact_base = 0usize;
+    // A memory tidy runs as a session-owned subagent; this collects its answer.
+    let mut tidy_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
+    // A begun tidy's git facts, gathered before its child starts.
+    let mut tidy_facts_task: Option<tokio::task::JoinHandle<Option<String>>> = None;
 
     // The dock's branch indicator is captured once at startup; re-read it on a
     // slow timer so a checkout made outside the TUI (another terminal, an
@@ -13095,6 +14971,12 @@ async fn chat_loop<B: Backend>(
     let sync_output = use_synchronized_output();
 
     while !app.should_quit {
+        // Back from a SIGTTIN stop (`on_tty_input_stop`): re-arm the modes once
+        // the terminal is ours, and draw nothing until then.
+        #[cfg(unix)]
+        let mut tty_away = rearm_after_tty_stop(app, mouse);
+        #[cfg(not(unix))]
+        let tty_away = false;
         // Drive the snapshot queue: run one job off-loop at a time. A job whose
         // inputs no longer resolve (snapshots disabled) is dropped.
         if snap_task.is_none() {
@@ -13199,6 +15081,15 @@ async fn chat_loop<B: Backend>(
             let snapshot = app.context_snapshot();
             context_task = Some(tokio::spawn(compute_context_report(snapshot)));
         }
+        if worktree_task.is_none() && app.worktree_request {
+            app.worktree_request = false;
+            worktree_task = Some(spawn_worktree_report(app));
+        }
+        if worktrees_task.is_none() {
+            if let Some(job) = app.worktrees_request.take() {
+                worktrees_task = Some(spawn_worktrees_job(app, job));
+            }
+        }
         // `/usage <view>` asked for an account read. It is a network call, so
         // it runs off the render loop exactly like `/context`'s report: one at
         // a time, with the overlay sitting on its loading state until it lands.
@@ -13287,18 +15178,43 @@ async fn chat_loop<B: Backend>(
                 let args = app.args.clone().unwrap_or_else(|| args.clone());
                 let model = app.model.clone();
                 let history = app.history.clone();
+                let run_mode = app.run_mode;
+                let goal_active = app.goal.as_ref().is_some_and(|g| g.is_active());
                 compact_base = history.len();
                 app.compacting = Some(kind);
                 app.compact_started = Some(Instant::now());
+                app.begin_compaction_agent(None, format!("{} the conversation", kind.label()));
                 compact_task = Some(tokio::spawn(async move {
                     crate::core::agent::r#loop::compact_history(
                         &args,
                         &model,
                         &history,
-                        kind.keep_recent(),
+                        run_mode,
+                        goal_active,
                     )
                     .await
                 }));
+            }
+        }
+
+        // Entering plan mode stops the tidy and drops `tidy_running`; its
+        // collector would only report the cancellation as a failure, and its
+        // facts must not start a child once they land.
+        if app.tidy_running.is_none() {
+            if let Some(task) = tidy_task.take() {
+                task.abort();
+            }
+            if let Some(task) = tidy_facts_task.take() {
+                task.abort();
+            }
+        }
+
+        // A memory tidy was asked for: begin it in the background. It writes
+        // only memory and never starts a turn, so it runs beside whatever else
+        // the session is doing; its facts arrive in the select below.
+        if tidy_task.is_none() && tidy_facts_task.is_none() {
+            if let Some(kind) = app.tidy_request.take() {
+                tidy_facts_task = begin_memory_tidy(app, kind);
             }
         }
 
@@ -13308,6 +15224,14 @@ async fn chat_loop<B: Backend>(
         // it never races an in-flight turn.
         if app.goal_eval_pending && current.is_none() && !app.want_start {
             app.run_goal_evaluation().await;
+        }
+
+        // Only a replaced session drops `compacting` while its task still runs
+        // (see `App::end_session_work`); its summary belongs to nothing now.
+        if app.compacting.is_none() {
+            if let Some(task) = compact_task.take() {
+                task.abort();
+            }
         }
 
         // Kick off a queued run once the previous one has cleared, the MCP
@@ -13324,7 +15248,9 @@ async fn chat_loop<B: Backend>(
                 // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
                 let run_args = app.args.clone().unwrap_or_else(|| args.clone());
-                current = Some(spawn_run(&run_args, app.body()));
+                let run = spawn_run(&run_args, app.body());
+                app.run_abort = Some(run.handle.abort_handle());
+                current = Some(run);
             } else if !loading_noted && !mcp_ready {
                 // The base snapshot gates silently; only the MCP connect notes.
                 loading_noted = true;
@@ -13349,6 +15275,9 @@ async fn chat_loop<B: Backend>(
             .into_iter()
             .filter(|s| s.backgrounded)
             .collect();
+        // Once per pass rather than at each place the queue or the run changes,
+        // so none of them can leave a command detaching for nobody.
+        app.sync_shell_detach();
         // Skip a frame that would come out identical: nothing handled since the
         // last one and nothing on screen moving with time. ratatui would emit
         // no cells for it, but the frame still costs a full layout and writes
@@ -13362,7 +15291,9 @@ async fn chat_loop<B: Backend>(
             since_last: last_frame.map(|t| t.elapsed()),
         };
         let draw_now = gate.due();
-        if draw_now {
+        // A held frame stays dirty and is retried on the next tick; `deferred`
+        // below only covers `!draw_now`, so this cannot wake the loop early.
+        if draw_now && !tty_away {
             if sync_output {
                 let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
             }
@@ -13420,7 +15351,12 @@ async fn chat_loop<B: Backend>(
                 if app.refresh_shell_tail() {
                     idle_tick = false;
                 }
-                while event::poll(Duration::ZERO).unwrap_or(false) {
+                #[cfg(unix)]
+                if !tty_away && stop_if_terminal_taken() {
+                    tty_away = true;
+                }
+                // The terminal is not ours: a read would only stop again.
+                while !tty_away && event::poll(Duration::ZERO).unwrap_or(false) {
                     // Input draws at once, past the frame cap: typing must not
                     // wait on output pacing.
                     idle_tick = false;
@@ -13505,6 +15441,15 @@ async fn chat_loop<B: Backend>(
                 // landing after the overlay was closed must not reopen it.
                 finish_context_report(app, report);
             }
+            Some(report) = await_job(&mut worktree_task) => {
+                finish_worktree_report(app, report);
+            }
+            Some(done) = await_job(&mut worktrees_task) => {
+                finish_worktrees_job(app, done);
+            }
+            Some(kept) = app.cleanup_rx.recv() => {
+                app.notice(&kept, None);
+            }
             Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
                 finish_reported_usage(app, &query, result);
             }
@@ -13571,6 +15516,12 @@ async fn chat_loop<B: Backend>(
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
+            }
+            facts = await_tidy_facts(&mut tidy_facts_task) => {
+                tidy_task = start_memory_tidy(app, facts, &session_events_tx).await;
+            }
+            tidied = await_memory_tidy(&mut tidy_task) => {
+                finish_memory_tidy(app, tidied);
             }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
@@ -13643,11 +15594,13 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             app.clear_selection();
-            app.scrollback = app.scrollback.saturating_add(1);
+            let scroll = app.view_scroll();
+            *scroll = scroll.saturating_add(1);
         }
         MouseEventKind::ScrollDown => {
             app.clear_selection();
-            app.scrollback = app.scrollback.saturating_sub(1);
+            let scroll = app.view_scroll();
+            *scroll = scroll.saturating_sub(1);
         }
         MouseEventKind::Down(MouseButton::Left) => {
             app.copy_armed = false;
@@ -13979,6 +15932,22 @@ async fn handle_ask_key(
         app.request_repaint();
         return true;
     }
+    let over_detail = app.agent_detail_open();
+    // While the free-text answer is open the cursor keys are its own, so only
+    // the scroll keys reach the draft behind it.
+    let editing = app.ask_queue.front().is_some_and(|ask| ask.editing_custom);
+    // Over the detail Esc in the free-text field closes just the field, back
+    // to the options: leaving the detail would hide a question the user was
+    // halfway through answering.
+    if over_detail && editing && key.code == KeyCode::Esc {
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        ask.editing_custom = false;
+        ask.custom_input.clear();
+        return true;
+    }
+    if over_detail && detail_key_under_prompt(&key, !editing) {
+        return false;
+    }
     if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
         crate::core::agent::interaction::cancel_all(registry).await;
         app.ask_queue.clear();
@@ -14001,16 +15970,21 @@ async fn handle_ask_key(
                 KeyCode::Char(ch) if !ctrl => ask.custom_input.push(ch),
                 _ => {}
             }
-        } else {
+        } else if !over_detail || ask.pause.key_lands(key.code, Instant::now(), ask.picked) {
+            // Over the detail the user may be mid-message: a space or Enter
+            // typed for it must not choose an option they never picked, nor
+            // open the free-text field that the next message would fill.
+            let armed = !over_detail || ask.picked;
             match key.code {
-                KeyCode::Up => ask.move_selection(-1),
-                KeyCode::Down => ask.move_selection(1),
+                KeyCode::Up => ask.arrow(-1, over_detail),
+                KeyCode::Down => ask.arrow(1, over_detail),
+                // Over the detail Left/Right went to the draft above.
                 KeyCode::Left => ask.move_question(-1),
                 KeyCode::Right => ask.move_question(1),
-                KeyCode::Char(' ') if ask.question().multi => {
+                KeyCode::Char(' ') if ask.question().multi && armed => {
                     submit = ask.choose();
                 }
-                KeyCode::Enter => submit = ask.choose(),
+                KeyCode::Enter if armed => submit = ask.choose(),
                 _ => {}
             }
         }
@@ -14029,6 +16003,7 @@ fn route_paste_event(app: &mut App, event: Event) {
     let Event::Paste(text) = event else {
         return;
     };
+    app.settle_agent_detail();
     if let Some(prompt) = app.account_login.as_mut() {
         // A pasted redirect/code belongs to the OAuth prompt, not chat.
         prompt.paste(&text);
@@ -14046,8 +16021,6 @@ fn route_paste_event(app: &mut App, event: Event) {
         picker.refresh_search();
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
-    } else if let Some(prompt) = app.agent_message.as_mut() {
-        prompt.input.push_str(&text);
     } else if let Some(proposal) = app.vibe_confirm.as_mut() {
         proposal.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -14058,6 +16031,12 @@ fn route_paste_event(app: &mut App, event: Event) {
         prompt.paste(&text);
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
+    } else if app.picker.is_some()
+        && (app.steerable_detail_child().is_none() || app.prompt_over_detail())
+    {
+        // Under a picker the field reads "selecting...", and a detail that
+        // cannot send (or waits on a prompt) takes no typing: a paste there
+        // would sit unseen in the composer and later go out as a message.
     } else {
         app.input_insert_str(&text);
     }
@@ -14114,9 +16093,16 @@ async fn handle_ask_mouse(
     if app.blocking_dock().is_some() {
         return false;
     }
+    let over_detail = app.agent_detail_open();
     let Some(ask) = app.ask_queue.front_mut() else {
         return false;
     };
+    // The wheel still scrolls the child's run under the question, so the user
+    // can read what it did before answering (`detail_key_under_prompt`).
+    let wheel = matches!(mouse.kind, MouseEventKind::ScrollUp | MouseEventKind::ScrollDown);
+    if over_detail && wheel {
+        return false;
+    }
     if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
         return true;
     }
@@ -14135,6 +16121,9 @@ async fn handle_ask_mouse(
     else {
         return true;
     };
+    // A click answers at once, even over the detail where keys wait out a
+    // pause and need an arrow first (`PromptPause`): those guard against keys
+    // already on their way for the draft, and a click on a row is aimed.
     ask.selected = selected;
     let submit = ask.choose();
     if submit {
@@ -14713,9 +16702,27 @@ async fn handle_key(
     current: &mut Option<CurrentRun>,
     mcp_servers: &crate::core::state::SharedMcpServers,
 ) {
+    handle_key_input(app, key, registry, current, mcp_servers).await;
+    // A command that replaced the conversation already cancelled its run in
+    // `App`; the task itself is held here.
+    if std::mem::take(&mut app.abort_requested) {
+        abort_run(current);
+    }
+}
+
+async fn handle_key_input(
+    app: &mut App,
+    key: KeyEvent,
+    registry: &PermissionRegistry,
+    current: &mut Option<CurrentRun>,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
     if key.kind != KeyEventKind::Press {
         return;
     }
+    // Whatever replaced the detail since the last key, the main composer is
+    // what this key edits.
+    app.settle_agent_detail();
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
@@ -14808,11 +16815,6 @@ async fn handle_key(
         handle_settings_key(app, key, ctrl);
         return;
     }
-    // So does the `/agents` message dock, drawn over the inspector it came from.
-    if app.agent_message.is_some() {
-        handle_agent_message_key(app, key, ctrl);
-        return;
-    }
     // So does `/vibe-setting`'s confirm dock: nothing is written without it.
     if app.vibe_confirm.is_some() {
         vibe_setting::handle_key(app, key, ctrl);
@@ -14842,8 +16844,14 @@ async fn handle_key(
     // unanswered prompt. Several subagents can have requests queued at once
     // (see `pending_queue`), so cancelling denies all of them, not just the
     // one on screen. Quitting itself stays with the two-press exit below.
-    if !app.pending_queue.is_empty() {
-        if ctrl_c || ctrl_d {
+    // Over a subagent's detail the user may be mid-message when the prompt
+    // lands, so the letter keys and an Enter the user never aimed at it must
+    // not answer it, and the detail's own keys (`detail_key_under_prompt`)
+    // pass it by: Esc/Ctrl-C step out rather than denying and cancelling the
+    // main run, and the draft and the child's run stay reachable.
+    let over_detail = app.agent_detail_open();
+    if !app.pending_queue.is_empty() && !(over_detail && detail_key_under_prompt(&key, true)) {
+        if !over_detail && (ctrl_c || ctrl_d) {
             for pending in app.pending_queue.drain(..) {
                 deny(registry, &pending.request_id).await;
             }
@@ -14855,16 +16863,24 @@ async fn handle_key(
             .pending_queue
             .front_mut()
             .expect("checked non-empty above");
+        // Keys already on their way when the prompt landed over the detail,
+        // or pressed in a burst, fall on it without effect.
+        if over_detail && !pending.pause.key_lands(key.code, Instant::now(), pending.picked) {
+            return;
+        }
         let decision = match key.code {
             KeyCode::Up => {
-                pending.move_selection(-1);
+                pending.arrow(-1, over_detail);
                 None
             }
             KeyCode::Down => {
-                pending.move_selection(1);
+                pending.arrow(1, over_detail);
                 None
             }
-            KeyCode::Enter => Some(pending.options()[pending.selected].0),
+            KeyCode::Enter if !over_detail || pending.picked => {
+                Some(pending.options()[pending.selected].0)
+            }
+            _ if over_detail => None,
             KeyCode::Char('y') | KeyCode::Char('Y') => Some(PermissionDecision::AllowOnce),
             KeyCode::Char('a') | KeyCode::Char('A') if pending.offers_always => {
                 Some(PermissionDecision::AllowAlways)
@@ -14905,9 +16921,17 @@ async fn handle_key(
     // Ctrl-C and Ctrl-D both cancel a run, clear a draft, or (on a blank idle
     // composer, and only on a second press) quit.
 
-    // An open picker owns navigation/Enter/Esc. One-shot pickers (thread/model)
-    // act and close; the `/mcp` picker toggles the selected row in place.
-    if let Some(picker) = app.picker.as_mut() {
+    // A subagent's `/agents` detail is not a list: its keys are the main
+    // view's, aimed at the child. What it does not take falls through to the
+    // composer's editing keys below, so typing (`m`, `x`, `q` included) types.
+    if app.agent_detail_open() {
+        if handle_agent_detail_key(app, key, ctrl, newline) {
+            return;
+        }
+    // Any other open picker owns navigation/Enter/Esc. One-shot pickers
+    // (thread/model) act and close; the `/mcp` picker toggles the selected row
+    // in place.
+    } else if let Some(picker) = app.picker.as_mut() {
         match key.code {
             KeyCode::Char(ch) if picker.search.is_some() && !ctrl && !alt && !sup => {
                 if let Some(search) = picker.search.as_mut() {
@@ -14962,64 +16986,44 @@ async fn handle_key(
                 run_mcp_action(app, &action, mcp_servers).await;
             }
             // `/agents`: Enter drills into the selected subagent's detail.
+            // A pending child opens too: its header says which phase it waits
+            // on, and the detail follows it once it starts.
             KeyCode::Enter if picker.kind == PickerKind::Agents => {
-                let run_id = picker
+                let target = picker
                     .items
                     .get(picker.selected)
                     .map(|i| i.value.clone())
                     .unwrap_or_default();
                 // The watermark row (no subagents running) has no id to open.
-                if run_id.is_empty() {
+                if target.is_empty() {
                     return;
                 }
-                picker.kind = PickerKind::AgentDetail;
-                app.agent_detail = Some(run_id);
-                app.agent_detail_scroll = 0;
+                replay_finished_agent(app, &target);
+                app.enter_agent_detail(target);
             }
-            // The detail scrolls like the main body: PgUp/PgDn by a page's
-            // worth, Home to the start of the run, End back to following it.
-            KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End
-                if picker.kind == PickerKind::AgentDetail =>
-            {
-                let at = app.agent_detail_scroll;
-                app.agent_detail_scroll = match key.code {
-                    KeyCode::PageUp => at.saturating_add(10),
-                    KeyCode::PageDown => at.saturating_sub(10),
-                    KeyCode::Home => u16::MAX,
-                    _ => 0,
-                };
+            // `/agents`: `x` stops the selected child through the registry
+            // call the parent agent's `stop_subagent` tool makes. Its detail
+            // stops it with Ctrl-X (`handle_agent_detail_key`).
+            KeyCode::Char('x') if !ctrl && picker.kind == PickerKind::Agents => {
+                let target = picker
+                    .items
+                    .get(picker.selected)
+                    .map(|i| i.value.clone())
+                    .unwrap_or_default();
+                stop_agent(app, &target);
             }
-            // `/agents`: `m` writes to the selected child (or the one drilled
-            // into), `x` stops it. Both reach the same registry calls the parent
-            // agent's `message_subagent` / `stop_subagent` tools make.
-            KeyCode::Char('m') | KeyCode::Char('x')
-                if !ctrl
-                    && matches!(picker.kind, PickerKind::Agents | PickerKind::AgentDetail) =>
-            {
-                let run_id = if picker.kind == PickerKind::AgentDetail {
-                    app.agent_detail.clone().unwrap_or_default()
-                } else {
-                    picker
-                        .items
-                        .get(picker.selected)
-                        .map(|i| i.value.clone())
-                        .unwrap_or_default()
-                };
-                let Some(name) = app
-                    .subagents
-                    .iter()
-                    .find(|p| p.run_id == run_id && !run_id.is_empty())
-                    .map(|p| p.name.clone())
-                else {
-                    return;
-                };
-                if key.code == KeyCode::Char('m') {
-                    app.agent_message = Some(AgentMessagePrompt::new(&run_id, &name));
-                } else {
-                    match crate::core::agent::subagent::stop_subagent(&app.subagent_set, &run_id) {
-                        Ok(_) => app.note(&format!("stopped subagent {name}")),
-                        Err(e) => app.note(&format!("could not stop subagent {name}: {e}")),
-                    }
+            // `/worktrees`: Enter runs the action row, or removes the
+            // checkout row (asking first when that loses work).
+            KeyCode::Enter if picker.kind == PickerKind::Worktrees => {
+                if let Some(item) = picker.items.get(picker.selected) {
+                    let value = item.value.clone();
+                    worktrees_action(app, &value);
+                }
+            }
+            KeyCode::Enter if picker.kind == PickerKind::WorktreeConfirm => {
+                if let Some(item) = picker.items.get(picker.selected) {
+                    let value = item.value.clone();
+                    confirm_worktree_removal(app, &value);
                 }
             }
             KeyCode::Enter if picker.kind == PickerKind::PluginConnect => {
@@ -15406,7 +17410,9 @@ async fn handle_key(
                     | PickerKind::AgentDetail
                     | PickerKind::BackgroundShells
                     | PickerKind::ShellDetail
-                    | PickerKind::Monitors => {}
+                    | PickerKind::Monitors
+                    | PickerKind::Worktrees
+                    | PickerKind::WorktreeConfirm => {}
                     PickerKind::PluginConnect => {}
                 }
             }
@@ -15428,11 +17434,12 @@ async fn handle_key(
                     open_mcp_picker(app, mcp_servers).await;
                 }
             }
-            // Esc on a subagent's detail steps back to the `/agents` list, one
-            // level up, rather than closing the inspector outright.
-            KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::AgentDetail => {
-                picker.kind = PickerKind::Agents;
-                app.agent_detail = None;
+            // The confirm sits one level inside `/worktrees`: Esc keeps the
+            // checkout and steps back to the list.
+            KeyCode::Esc | KeyCode::Char('q')
+                if !ctrl && picker.kind == PickerKind::WorktreeConfirm =>
+            {
+                open_worktrees_picker(app);
             }
             // Likewise a shell's detail steps back to the `/shells` list.
             KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::ShellDetail => {
@@ -15731,14 +17738,16 @@ async fn handle_key(
                 return;
             }
             let step = if key.code == KeyCode::PageUp { 10 } else { 1 };
-            app.scrollback = app.scrollback.saturating_add(step);
+            let scroll = app.view_scroll();
+            *scroll = scroll.saturating_add(step);
         }
         KeyCode::Down | KeyCode::PageDown => {
             if key.code == KeyCode::Down && app.recall_next() {
                 return;
             }
             let step = if key.code == KeyCode::PageDown { 10 } else { 1 };
-            app.scrollback = app.scrollback.saturating_sub(step);
+            let scroll = app.view_scroll();
+            *scroll = scroll.saturating_sub(step);
         }
         _ => {}
     }
@@ -16012,7 +18021,13 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/init",
         hint: "",
-        description: "Study the project, then write AGENTS.md, skills, and memory",
+        description: "Study the project, then write or update AGENTS.md",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/memory",
+        hint: "[tidy]",
+        description: "Show the memory index size, or tidy memory in the background",
         alias_of: None,
     },
     SlashCommand {
@@ -16079,6 +18094,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/worktree",
         hint: "",
         description: "Show the dedicated checkout this session works in, and what changed there",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/worktrees",
+        hint: "",
+        description: "See and prune this project's subagent worktrees and their build cache",
         alias_of: None,
     },
     SlashCommand {
@@ -16399,6 +18420,7 @@ async fn run_command(
         },
         "fork" => open_fork_picker(app),
         "worktree" => worktree_command(app),
+        "worktrees" => worktrees_command(app),
         "tree" => open_tree_picker(app),
         "resume" => {
             if arg.is_empty() {
@@ -16431,6 +18453,7 @@ async fn run_command(
         "settings" => settings_command(app, arg),
         "vibe-setting" => vibe_setting::command(app, arg),
         "goal" => goal_command(app, arg),
+        "memory" => memory_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
         "effort" | "think" | "reasoning" => effort_command(app, arg),
@@ -16634,30 +18657,56 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
 }
 
 
-/// The `/init` prompt. Onboarding a project means producing the three things a
-/// later session reads back: the root instructions file (ingested as project
-/// context), skills for repeatable workflows, and memory for durable facts.
-/// Phrased as a task for the model rather than executed here -- only the model
-/// can read the project and judge what is worth writing down. `{file}` is the
-/// file [`init_plan`] chose.
+/// The `/init` prompt. `/init` writes or updates the root instructions file and
+/// nothing else: skills and memory are the model's to grow as it works, and an
+/// onboarding pass that also invents them fills both with guesswork. Phrased as
+/// a task for the model rather than executed here -- only the model can read the
+/// project and judge what is worth writing down. `{file}` is the file
+/// [`init_plan`] chose.
 fn init_prompt(file: &str) -> String {
+    let budget = INSTRUCTIONS_WARN_CHARS / 1000;
     format!(
-        "Onboard yourself to this project so future sessions start informed.\n\n\
+        "Onboard yourself to this project so future sessions start informed. Your only output is \
+`{file}` in the project root: do not write skills, memory notes, or any other file.\n\n\
 1. Study the project first. Read the README and any contributor docs, map the directory layout, and \
 find the real build, test, lint, and type-check commands (from the manifests and CI config, not from \
 guesswork). Note the conventions the code actually follows.\n\n\
-2. Write `{file}` in the project root. It is loaded into your system prompt every session, so it \
-must earn its tokens: the commands to build/test/lint, the architecture a newcomer cannot infer from \
-the tree, and the conventions worth enforcing. Skip anything obvious from a directory listing, and \
-do not pad it. If `{file}` already exists, read it and correct what has drifted instead of rewriting \
-it wholesale.\n\n\
-3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
-migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
-multi-step recipe exists. Do not invent skills to fill space.\n\n\
-4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
-true beyond this session and not already stated in the code.\n\n\
+2. Write `{file}`. It is loaded into your system prompt every session, so it must earn its tokens: \
+the commands to build/test/lint, the architecture a newcomer cannot infer from the tree, and the \
+conventions worth enforcing. Skip anything obvious from a directory listing, and do not pad it. Keep \
+it well under {budget}K characters. If `{file}` already exists, read it and correct what has drifted \
+instead of rewriting it wholesale; if it has grown past that size, tighten it -- drop what is stale \
+or obvious and fold long step-by-step recipes into a line each.\n\n\
 Then report what you wrote and why, briefly."
     )
+}
+
+/// Loaded instructions above this many characters draw a startup warning. They
+/// sit in the system prompt of every turn, so past a few thousand tokens they
+/// crowd the window and dilute the rules that matter; the `/init` prompt asks
+/// for a file well under it.
+const INSTRUCTIONS_WARN_CHARS: usize = 20_000;
+
+/// The startup warning for instructions that have grown too large: the loaded
+/// files together, since that total is what every turn pays for, naming each
+/// file so the user knows what to trim. `None` while under the limit.
+fn instructions_size_warning(
+    files: &[crate::core::agent::context::ContextFile],
+) -> Option<String> {
+    let total: usize = files.iter().map(|f| f.content.chars().count()).sum();
+    if total <= INSTRUCTIONS_WARN_CHARS {
+        return None;
+    }
+    // Exact counts: rounded to K, a total just past the limit reads as equal to it.
+    let names: Vec<String> = files
+        .iter()
+        .map(|f| format!("{} ({} chars)", f.path.display(), f.content.chars().count()))
+        .collect();
+    Some(format!(
+        "project instructions are {total} characters, past the {INSTRUCTIONS_WARN_CHARS} that keeps \
+         them cheap to load every turn: trim {} or run /init to tighten it",
+        names.join(", ")
+    ))
 }
 
 /// The startup note about project instructions: an invitation to `/init` when
@@ -16741,14 +18790,12 @@ fn init_command(app: &mut App) {
     let plan = init_plan(&app.project_root);
     let file = plan.file;
     match (plan.seed, plan.existing) {
-        (_, true) => app.note(&format!(
-            "◈ init · reviewing {file}, skills, and memory for this project"
-        )),
+        (_, true) => app.note(&format!("\u{25c8} init \u{b7} reviewing {file} for this project")),
         (Some(seed), false) => app.note(&format!(
-            "◈ init · writing {file} from this project's {seed}, plus skills and memory"
+            "\u{25c8} init \u{b7} writing {file} from this project's {seed}"
         )),
         (None, false) => app.note(&format!(
-            "◈ init · studying the project to write {file}, skills, and memory"
+            "\u{25c8} init \u{b7} studying the project to write {file}"
         )),
     }
     let mut prompt = init_prompt(file);
@@ -16797,13 +18844,247 @@ fn compact_command(app: &mut App) {
     app.compact_request = Some(CompactKind::Manual);
 }
 
+/// `/memory`: `tidy` starts a memory tidy in the background; bare shows the
+/// index size against its budget.
+fn memory_command(app: &mut App, arg: &str) {
+    let Some(root) = app.args.as_ref().and_then(|a| a.project_root.clone()) else {
+        app.note("memory is unavailable (no active project)");
+        return;
+    };
+    match arg.trim() {
+        "tidy" => {
+            if app.memory_denied() {
+                app.note("memory tidy is unavailable: this project's rules deny the memory tool");
+                return;
+            }
+            // The tidy child runs in normal mode, so without this it would
+            // change memory that plan mode keeps read-only.
+            if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+                app.note("memory tidy is unavailable in plan mode (read only); /plan exit to leave");
+                return;
+            }
+            if app.tidy_running.is_some() || app.tidy_request.is_some() {
+                app.note("a memory tidy is already running");
+                return;
+            }
+            // A manual tidy also settles this session's automatic one.
+            app.auto_tidy_checked = true;
+            app.tidy_request = Some(TidyKind::Manual);
+        }
+        "" => {
+            let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
+            let scopes = tauri_plugin_agent_tools::memory::Scopes {
+                store: &store,
+                home: home.as_deref(),
+                cross_project,
+            };
+            app.note(&format!(
+                "memory index: ~{} of {} tokens; /memory tidy archives, merges and prunes notes",
+                scopes.index_tokens(),
+                tauri_plugin_agent_tools::memory::INDEX_BUDGET_TOKENS
+            ));
+        }
+        other => app.note(&format!("unknown /memory option '{other}' (try /memory tidy)")),
+    }
+}
+
+/// Which path asked for a memory tidy. A manual one reports even when it
+/// changed nothing; an automatic one stays quiet unless it did something.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TidyKind {
+    Manual,
+    Auto,
+}
+
+/// Begin the requested tidy: mark it running and gather its git facts on a
+/// task of their own, which the loop hands to [`start_memory_tidy`] when they
+/// land. Never waits: the facts take several gits, each allowed seconds, and
+/// the loop must keep drawing meanwhile. Running already, so `/memory tidy`
+/// and the auto trigger stand off, and entering plan mode stops it here too.
+fn begin_memory_tidy(
+    app: &mut App,
+    kind: TidyKind,
+) -> Option<tokio::task::JoinHandle<Option<String>>> {
+    let root = app.args.as_ref()?.project_root.clone();
+    let problem = if app.model.is_empty() {
+        "memory tidy needs a model: run /login first"
+    } else {
+        "memory tidy failed to start: no active project"
+    };
+    let Some(root) = root.filter(|_| !app.model.is_empty()) else {
+        if kind == TidyKind::Manual {
+            app.note(problem);
+        }
+        return None;
+    };
+    app.tidy_running = Some(kind);
+    app.note(match kind {
+        TidyKind::Manual => "tidying memory in the background",
+        TidyKind::Auto => "memory index is over its budget: tidying in the background",
+    });
+    Some(tokio::spawn(crate::core::agent::subagent::gather_tidy_facts(root)))
+}
+
+/// Start the tidy [`begin_memory_tidy`] began, with its gathered `facts`, on
+/// the session's registry. Fire-and-forget from the caller's view: the result
+/// is collected off the render loop. Nothing starts when the tidy was stopped
+/// while its facts were gathered (plan mode drops `tidy_running`).
+async fn start_memory_tidy(
+    app: &mut App,
+    facts: Option<String>,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Option<tokio::task::JoinHandle<Result<String, String>>> {
+    app.tidy_running?;
+    let Some(args) = app.args.clone() else {
+        app.tidy_running = None;
+        return None;
+    };
+    let parent = crate::core::agent::subagent::ParentRun {
+        model: app.model.clone(),
+        smol_model: crate::core::agent::subagent::configured_smol_model(),
+        budget_remaining: None,
+        send_reasoning: app.send_reasoning,
+        cost_remaining: None,
+        tool_ceiling: None,
+        known_tools: Vec::new(),
+    };
+    let set = app.subagent_set.clone();
+    let budget = Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(
+        tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES,
+    ));
+    let dispatched = crate::core::agent::subagent::spawn_memory_tidy(
+        &set.scope(),
+        &args,
+        &parent,
+        events,
+        budget.clone(),
+        facts,
+    )
+    .await;
+    match dispatched {
+        Ok(dispatched) => {
+            app.tidy_run_id = Some(dispatched.run_id.clone());
+            Some(tokio::spawn(async move {
+                let report = crate::core::agent::subagent::await_subagent(&set, &dispatched.run_id)
+                    .await
+                    .map(|collected| collected.text)
+                    .map_err(|e| e.to_string())?;
+                Ok(with_cap_note(report, &budget))
+            }))
+        }
+        Err(e) => {
+            // Either kind has announced itself by now (see
+            // `begin_memory_tidy`), so a silent failure would leave that note
+            // promising a tidy that never reports back.
+            app.tidy_running = None;
+            app.note(&format!("memory tidy failed to start: {e}"));
+            None
+        }
+    }
+}
+
+/// The git facts a begun tidy is waiting on; pending while there is none.
+async fn await_tidy_facts(
+    task: &mut Option<tokio::task::JoinHandle<Option<String>>>,
+) -> Option<String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A facts task that died leaves the tidy without facts, as a failed git does.
+    joined.ok().flatten()
+}
+
+/// Report a finished tidy: its own summary of what it changed, as one note.
+fn finish_memory_tidy(app: &mut App, result: Result<String, String>) {
+    let kind = app.tidy_running.take().unwrap_or(TidyKind::Manual);
+    app.tidy_run_id = None;
+    match result {
+        Ok(report) => {
+            let report = report.trim();
+            let quiet = report.is_empty() || report.eq_ignore_ascii_case("no changes");
+            if quiet && kind == TidyKind::Auto {
+                return;
+            }
+            app.note(&format!(
+                "memory tidied: {}",
+                if quiet { "no changes".to_string() } else { tidy_summary(report) }
+            ));
+        }
+        Err(e) => app.note(&format!("memory tidy failed: {e}")),
+    }
+}
+
+/// The tidy's report, with a closing line when the harness refused changes
+/// past the cap: the model may not say so, and the user should know the store
+/// was only partly tidied.
+fn with_cap_note(report: String, budget: &tauri_plugin_agent_tools::memory::ChangeBudget) -> String {
+    if budget.refused() == 0 {
+        return report;
+    }
+    format!(
+        "{}\ncap reached ({} changes); run /memory tidy again to continue",
+        report.trim_end(),
+        budget.used()
+    )
+}
+
+/// Verbs a tidy report's lines start with (see `MEMORY_TIDY_PROMPT`).
+const TIDY_VERBS: [&str; 4] = ["archived", "merged", "deleted", "moved"];
+
+/// A tidy report as one line. The report has a line per change, and a note
+/// that carried all of them grew taller than the screen, pushing its own
+/// `memory tidied:` header out of view. A few changes are listed; more are
+/// counted per verb, the full list staying in the memory-tidy row.
+fn tidy_summary(report: &str) -> String {
+    let changes: Vec<&str> = report
+        .lines()
+        .map(|l| l.trim().trim_start_matches(['-', '*', ' ']))
+        .filter(|l| TIDY_VERBS.iter().any(|v| l.starts_with(v)))
+        .collect();
+    let summary = if changes.is_empty() {
+        let first = report.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        first.chars().take(160).collect()
+    } else if changes.len() <= 3 {
+        changes.join("; ")
+    } else {
+        TIDY_VERBS
+            .iter()
+            .filter_map(|verb| {
+                let n = changes.iter().filter(|l| l.starts_with(verb)).count();
+                (n > 0).then(|| format!("{verb} {n}"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match report.lines().find(|l| l.starts_with("cap reached (")) {
+        Some(cap) if !summary.contains("cap reached") => format!("{summary}; {cap}"),
+        _ => summary,
+    }
+}
+
+async fn await_memory_tidy(
+    task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
+) -> Result<String, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("memory tidy task failed: {e}")),
+    }
+}
+
 /// Compact-and-retry attempts allowed per user turn. The loop already retries
 /// within a single request (`MAX_COMPACTION_ATTEMPTS`); this bounds the outer
 /// recovery so a model that overflows at any size still hands control back.
 const MAX_OVERFLOW_RETRIES: u8 = 2;
 
-/// Which path asked for a compaction: `/compact` keeps a shorter tail than the
-/// automatic one and reports itself differently.
+/// Which path asked for a compaction. Both keep the same token-sized tail a
+/// run's own compaction keeps; they differ in how they report themselves.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum CompactKind {
     Manual,
@@ -16811,13 +19092,6 @@ enum CompactKind {
 }
 
 impl CompactKind {
-    fn keep_recent(self) -> usize {
-        match self {
-            CompactKind::Manual => crate::core::agent::compaction::MANUAL_KEEP_RECENT,
-            CompactKind::Auto => crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-        }
-    }
-
     fn label(self) -> &'static str {
         match self {
             CompactKind::Manual => "compacting",
@@ -16833,11 +19107,19 @@ impl CompactKind {
     }
 }
 
+/// What a `/compact` hands back: the compacted history and the summarizer's
+/// report, `None` when there was nothing to compact.
+type CompactResult = Result<
+    (
+        Vec<serde_json::Value>,
+        Option<crate::core::agent::events::CompactionReport>,
+    ),
+    String,
+>;
+
 /// Await an in-flight compaction, parking forever when none is running so this
 /// can sit in the loop's `select!` unconditionally.
-async fn await_compaction(
-    task: &mut Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>>,
-) -> Result<Vec<serde_json::Value>, String> {
+async fn await_compaction(task: &mut Option<tokio::task::JoinHandle<CompactResult>>) -> CompactResult {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -16851,19 +19133,36 @@ async fn await_compaction(
 
 /// Apply a finished compaction. `base_len` is the history length the summary was
 /// computed from: anything appended since (a message submitted while the call was
-/// in flight) is carried over rather than dropped.
-fn finish_compaction(
-    app: &mut App,
-    result: Result<Vec<serde_json::Value>, String>,
-    base_len: usize,
-) {
+/// in flight) is carried over rather than dropped. The summarizer is closed in
+/// `/agents` as an internal agent; a compaction with nothing to fold made no
+/// call, so it leaves no agent behind.
+fn finish_compaction(app: &mut App, result: CompactResult, base_len: usize) {
     let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
-    app.compact_started = None;
+    let since = app.compact_started.take();
     let retrying = std::mem::take(&mut app.retry_after_compact);
-    match result {
+    // Billed whether or not it shrank anything: a summarizer that ran was a
+    // paid request. Between turns no run is open to meter it, so it goes to
+    // the session totals `/usage` prices, as a run's own requests do.
+    if let Ok((_, Some(report))) = &result {
+        if let Some(usage) = &report.usage {
+            let key = app.usage_key();
+            app.session_usage.entry(key).or_default().add(usage);
+        }
+    }
+    match &result {
+        Ok((compacted, Some(report))) if compacted.len() < base_len => {
+            let folded = base_len - (compacted.len() - 1);
+            let report = Some(report.clone());
+            app.end_compaction_agent(None, since, SubagentOutcome::Finished, folded, report);
+        }
+        Ok(_) => app.drop_open_compaction_agent(),
+        Err(e) => app.end_compaction_agent(None, since, SubagentOutcome::Failed(e.clone()), 0, None),
+    }
+    match result.map(|(compacted, _)| compacted) {
         Ok(mut compacted) if compacted.len() < base_len => {
             compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
+            app.refresh_memory_snapshot();
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             // The provider's last `usage` measured the pre-compaction history, so
@@ -17110,6 +19409,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
     AgentSettingDef {
+        key: "memory_auto_tidy",
+        label: "memory_auto_tidy",
+        desc: "tidy memory in the background when its index outgrows the prompt budget",
+        kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
         key: "hide_secrets",
         label: "hide_secrets",
         desc: "Privacy: obfuscate secret env values and redact credential-shaped tokens before sending to AI providers",
@@ -17124,6 +19430,16 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
     AgentSettingDef {
+        key: "bell",
+        label: "bell",
+        desc: "terminal bell: attention rings for permission prompts and asks, always also when a turn ends",
+        kind: AgentSettingKind::Enum {
+            options: super::agent_status::BellMode::OPTIONS,
+            default: "attention",
+        },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
         key: SMOL_MODEL_KEY,
         label: "smol_model",
         desc: "cheap model for subagents with model = \"smol\", /goal checks and compaction",
@@ -17135,133 +19451,147 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     },
 ];
 
-/// Docked message field for one running subagent, opened from `/agents`. What
-/// it sends goes through `subagent::message_subagent`, the call the parent
-/// agent's own `message_subagent` tool makes, so the child cannot tell (and
-/// need not care) which of the two steered it.
-struct AgentMessagePrompt {
-    run_id: String,
-    name: String,
-    input: String,
-    error: Option<String>,
-}
-
-impl AgentMessagePrompt {
-    fn new(run_id: &str, name: &str) -> Self {
-        Self {
-            run_id: run_id.to_string(),
-            name: name.to_string(),
-            input: String::new(),
-            error: None,
-        }
-    }
-}
-
-/// Keyboard for the `/agents` message dock: chars/backspace edit, Enter queues
-/// the message on the child's inbox and closes, Esc closes without sending.
-/// Either way the inspector underneath stays open where the user left it.
-fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
-    if key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')) {
-        app.agent_message = None;
-        return;
-    }
-    let Some(prompt) = app.agent_message.as_mut() else {
+/// Stop the child `/agents` addresses as `target` (`SubagentPanel::target`:
+/// a pending child by name, before it starts) through the registry call the
+/// parent agent's `stop_subagent` tool makes.
+fn stop_agent(app: &mut App, target: &str) {
+    let Some(name) = app
+        .subagents
+        .iter()
+        .find(|p| !target.is_empty() && p.target() == target)
+        .map(|p| p.name.clone())
+    else {
         return;
     };
+    match crate::core::agent::subagent::stop_subagent(&app.subagent_set, target) {
+        Ok(_) => app.note(&format!("stopped subagent {name}")),
+        Err(e) => app.note(&format!("could not stop subagent {name}\n{e}")),
+    }
+}
+
+/// The keys of a subagent's `/agents` detail that differ from the main
+/// view's; true when the key was taken. Everything else falls through to the
+/// composer, so typing, cursor motion, recall and scrolling behave as they do
+/// on the main screen (`App::view_scroll` points the scroll keys here).
+/// A child that can no longer be steered takes no text: only the scroll keys
+/// fall through, so nothing typed piles up in a field that cannot send.
+fn handle_agent_detail_key(app: &mut App, key: KeyEvent, ctrl: bool, newline: bool) -> bool {
+    // A refused send is reported until the user acts on it.
+    app.steer_refusal = None;
     match key.code {
-        KeyCode::Enter => {
-            let text = prompt.input.trim().to_string();
-            if text.is_empty() {
-                prompt.error = Some("type a message first (Esc to cancel)".to_string());
-                return;
-            }
-            // By run id: the user picked this exact child, and a re-dispatched
-            // name must not redirect the message to a newer one.
-            match crate::core::agent::subagent::message_subagent(
-                &app.subagent_set,
-                &prompt.run_id,
-                &text,
-            ) {
-                Ok(_) => {
-                    let (run_id, name) = (prompt.run_id.clone(), prompt.name.clone());
-                    app.agent_message = None;
-                    if let Some(panel) = app.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                        // Committed first, as a steer to the parent is, so the
-                        // message sits below what the child said before it.
-                        panel.transcript.flush_assistant();
-                        panel.transcript.finalize_tool_group();
-                        panel.transcript.push_user_line(&text, &[]);
-                        panel.transcript.cap_rows(CHILD_ROWS_MAX);
-                    }
-                    app.note(&format!(
-                        "message queued for subagent {name}; it reads it at its next step"
-                    ));
-                }
-                Err(e) => prompt.error = Some(e.to_string()),
+        // One level up, to the `/agents` list, as before.
+        KeyCode::Esc => app.leave_agent_detail(true),
+        // Ctrl-C clears a draft first, the way the main composer does; on an
+        // empty field it closes the inspector, and never cancels the main run.
+        KeyCode::Char('c') | KeyCode::Char('d') if ctrl => {
+            if app.input.trim().is_empty() {
+                app.leave_agent_detail(false);
+            } else {
+                app.record_draft();
+                app.input_clear();
             }
         }
-        KeyCode::Backspace => {
-            prompt.input.pop();
+        KeyCode::Char('x') if ctrl => {
+            if let Some(target) = app.steerable_detail_child().map(|p| p.target().to_string()) {
+                stop_agent(app, &target);
+            }
         }
-        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
-        _ => {}
+        // The main view's expand-all, on the child's own rows.
+        KeyCode::Char('o') if ctrl => {
+            if let Some((panel, _)) = app.detail_panel_mut() {
+                panel.transcript.toggle_regions();
+            }
+        }
+        KeyCode::Enter if !newline => send_to_detail_child(app),
+        // A newline opening an empty field is nothing to send; and falling
+        // through, it would step a `/find` on the main transcript behind.
+        KeyCode::Enter if app.input.is_empty() => {}
+        // The main session's own keys mean nothing aimed at a child: Ctrl-F
+        // would fill the field with a `/find` to send it, Ctrl-V would stage an
+        // image the message does not carry, and the effort keys retune the
+        // main model from a screen about another one.
+        KeyCode::Char('f') if ctrl && app.input.is_empty() => {}
+        KeyCode::Char('v') if ctrl => {}
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::ALT) => {}
+        KeyCode::BackTab => {}
+        KeyCode::PageUp | KeyCode::PageDown => return false,
+        // With no draft to move through, Home jumps to the start of the
+        // child's run and End follows it again.
+        KeyCode::Home | KeyCode::End if app.input.is_empty() => {
+            app.agent_detail_scroll = if key.code == KeyCode::Home { u16::MAX } else { 0 };
+        }
+        // Up/Down recall what was sent to children (`App::steer_history`)
+        // while there is a field to recall into; otherwise they scroll.
+        KeyCode::Up | KeyCode::Down if app.steerable_detail_child().is_none() => {
+            let scroll = app.view_scroll();
+            *scroll = match key.code {
+                KeyCode::Up => scroll.saturating_add(1),
+                _ => scroll.saturating_sub(1),
+            };
+        }
+        _ => return app.steerable_detail_child().is_none(),
+    }
+    true
+}
+
+/// Send the composer's text to the child the `/agents` detail shows, through
+/// `subagent::message_subagent` -- the call the parent agent's own
+/// `message_subagent` tool makes, so the child cannot tell (and need not care)
+/// which of the two steered it. Addressed by `SubagentPanel::target`: the
+/// user picked this exact child, so its run id, or its reserved name while it
+/// is pending (queued for when it starts). A message that was not queued (a
+/// full inbox, a child that already finished) keeps the draft and says why on
+/// the input row (`App::steer_refusal`), leaving the child's run untouched.
+fn send_to_detail_child(app: &mut App) {
+    let text = app.input.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    let Some((target, name)) = app
+        .steerable_detail_child()
+        .map(|p| (p.target().to_string(), p.name.clone()))
+    else {
+        return;
+    };
+    use crate::core::agent::subagent::{message_subagent, MessageReply};
+    match message_subagent(&app.subagent_set, &target, &text) {
+        Ok(MessageReply::Queued(_)) => {
+            if let Some(panel) = app.subagents.iter_mut().find(|p| p.target() == target) {
+                panel.steers_pending += 1;
+            }
+            app.record_submitted(&text);
+            app.input_clear();
+            // One entry, when the user sends it: the child taking it later
+            // adds nothing to the main transcript.
+            app.transcript.agent_message(MAIN_AGENT, MAIN_AGENT, &name, &text);
+            // Sending is a request to see the answer: follow the tail again.
+            app.agent_detail_scroll = 0;
+        }
+        Ok(MessageReply::NotDelivered(reply)) => app.steer_refusal = Some(reply),
+        Err(e) => app.steer_refusal = Some(e.to_string()),
     }
 }
 
-/// The message dock's contents at `width`.
-fn agent_message_lines(prompt: &AgentMessagePrompt, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().fg(theme::muted());
-    let max = width.max(1) as usize;
-    let mut lines: Vec<Line<'static>> = wrap_text(
-        "Delivered at the subagent's next step, after any tool call in flight, as a \
-         message from you.",
-        dim,
-        max,
-    )
-    .into_iter()
-    .map(Line::from)
-    .collect();
-    if let Some(error) = &prompt.error {
-        lines.extend(wrap_text(error, Style::new().red(), max).into_iter().map(Line::from));
-    }
-    lines.extend(field_lines(
-        vec![Span::styled("message: ", Style::new().bold())],
-        &prompt.input,
-        Style::new(),
-        max,
-    ));
-    lines.push(Line::styled("Enter send \u{b7} Esc cancel".to_string(), dim));
-    lines
+/// The keys that leave (or clear) a subagent's detail: Esc and Ctrl-C/Ctrl-D.
+/// A prompt waiting over the detail lets them through to the detail, so they
+/// never deny it or cancel the main run from a screen about a child; the
+/// prompt stays queued and is drawn, with its own keys, where the user lands.
+fn detail_leave_key(key: &KeyEvent) -> bool {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    key.code == KeyCode::Esc || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
 }
 
-/// Where the message dock sits: grown upward from the input row into `body`,
-/// sized to its contents, the way the other docks are placed.
-fn agent_message_rect(
-    prompt: &AgentMessagePrompt,
-    body: ratatui::layout::Rect,
-    input: ratatui::layout::Rect,
-) -> ratatui::layout::Rect {
-    let height = (agent_message_lines(prompt, panel_inner_width(input.width)).len() as u16 + 2)
-        .min(body.height);
-    ratatui::layout::Rect {
-        x: input.x,
-        y: input.y.saturating_sub(height).max(body.y),
-        width: input.width,
-        height,
-    }
-}
-
-fn draw_agent_message(f: &mut Frame, area: ratatui::layout::Rect, prompt: &AgentMessagePrompt) {
-    use ratatui::widgets::Clear;
-    let block = panel_block(theme::border_active())
-        .title(Span::styled(
-            format!(" message subagent: {} ", prompt.name),
-            title_style(theme::border_active()),
-        ));
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.render_widget(Paragraph::new(agent_message_lines(prompt, inner.width)), inner);
+/// The keys a prompt over a subagent's detail lets through to the detail:
+/// `detail_leave_key`, PgUp/PgDn so the child's run can be read before
+/// deciding, and, with `cursor_keys`, Left/Right/Home/End, which edit the
+/// draft (Home/End scroll the run on an empty field). Left/Right in
+/// particular must not reach the prompt: on an `ask` they would switch the
+/// question and arm it, and a typo fixed then Enter would answer it.
+fn detail_key_under_prompt(key: &KeyEvent, cursor_keys: bool) -> bool {
+    let cursor = matches!(key.code, KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End);
+    detail_leave_key(key)
+        || matches!(key.code, KeyCode::PageUp | KeyCode::PageDown)
+        || (cursor_keys && cursor)
 }
 
 /// Docked edit prompt for one `/settings` row: value field, inline validation
@@ -18367,7 +20697,12 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                     } else {
                         format!("{} = {entered} written", prompt.key)
                     };
-                    app.note(&format!("{what}; takes effect on the next run"));
+                    let when = if vibe_setting::LIVE_KEYS.contains(&prompt.key) {
+                        "applies now"
+                    } else {
+                        "takes effect on the next run"
+                    };
+                    app.note(&format!("{what}; {when}"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
@@ -18580,7 +20915,7 @@ fn plan_command(app: &mut App, arg: &str) {
         }
         return;
     }
-    app.run_mode = RunMode::Plan;
+    app.enter_plan_mode();
     app.persist();
     app.note("◈ PLAN · read only — investigate, then propose a plan for review");
     if app.goal.is_some() {
@@ -19432,8 +21767,8 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
     if let Some(t) = title.map(str::trim).filter(|s| !s.is_empty()) {
         return t.to_string();
     }
-    if let Ok(messages) = super::cli_list_messages_in(base, id) {
-        if let Some(last_user) = messages.iter().rev().find(|m| {
+    if let Ok(loaded) = super::load_thread_record(base, id) {
+        if let Some(last_user) = loaded.record.messages.iter().rev().find(|m| {
             m.get("role").and_then(|v| v.as_str()) == Some("user")
                 && !crate::core::agent::reminder::is_reminder_text(&message_text(m))
         }) {
@@ -19708,6 +22043,7 @@ fn open_agents_picker(app: &mut App) {
         items: agent_picker_items(
             &mut app.subagents,
             &app.transcript.subagent_blocks,
+            &app.internal_agents,
             app.context_window,
         ),
         selected: 0,
@@ -19929,19 +22265,22 @@ fn monitor_picker_items(monitors: &[MonitorSnapshot]) -> Vec<PickerItem> {
 
 /// One row per subagent this session can open, live ones first: a bullet
 /// (green while it runs, dim while it waits and once it has finished), its name, its dim stats and
-/// its status -- for a running child, what it is doing now. A single watermark
-/// row stands in when there are none. The row `value` is the child's `run_id`,
-/// which Enter drills into.
+/// its status -- for a running child, what it is doing now. Jan's own agents
+/// (`internal`) follow, marked as internal. A single watermark row stands in
+/// when there are none. The row `value` is the child's `SubagentPanel::target`
+/// (its `run_id`, or its name while pending), which Enter drills into and
+/// `m` / `x` address.
 fn agent_picker_items(
     subagents: &mut [SubagentPanel],
     finished: &[SubagentBlock],
+    internal: &[InternalAgent],
     context_window: u64,
 ) -> Vec<PickerItem> {
     let finished: Vec<&SubagentBlock> = finished
         .iter()
         .filter(|b| !b.panel.run_id.is_empty())
         .collect();
-    if subagents.is_empty() && finished.is_empty() {
+    if subagents.is_empty() && finished.is_empty() && internal.is_empty() {
         return vec![PickerItem {
             label: "no subagents running".to_string(),
             value: String::new(),
@@ -19957,25 +22296,23 @@ fn agent_picker_items(
         } else {
             dim
         };
-        let mut spans = vec![
-            Span::styled(TOOL_BULLET, bullet),
-            agent_label(&p.name),
-            Span::raw("  "),
-        ];
-        let stats = agent_stats(p, context_window, false);
+        let mut spans = vec![Span::styled(TOOL_BULLET, bullet)];
+        spans.extend(agent_name_spans(p));
+        spans.push(Span::raw("  "));
+        let stats = agent_stats(p, context_window);
         if !stats.is_empty() {
             spans.extend(stats);
             spans.push(Span::raw("  "));
         }
         spans.extend(tail);
-        styled_item(p.run_id.clone(), spans)
+        styled_item(p.target().to_string(), spans)
     };
     let mut items = Vec::new();
     for p in subagents.iter_mut() {
         let status = p.status(None);
         let running = status == AgentStatus::Running;
         let mut tail = status.spans(AGENT_PREVIEW_MAX);
-        let activity = agent_activity(p, "");
+        let activity = agent_activity(p);
         if running && !activity.is_empty() {
             tail.push(Span::styled(" \u{b7} ", dim));
             tail.extend(activity);
@@ -19986,7 +22323,43 @@ fn agent_picker_items(
         let tail = b.panel.status(Some(&b.outcome)).spans(AGENT_PREVIEW_MAX);
         items.push(row(&b.panel, false, tail));
     }
+    // Newest first: the one that just ran is the one worth a look.
+    for a in internal.iter().rev() {
+        let status = a.panel.status(a.outcome.as_ref());
+        let running = status == AgentStatus::Running;
+        items.push(row(&a.panel, running, status.spans(AGENT_PREVIEW_MAX)));
+    }
     items
+}
+
+/// Load a finished child's run from its session file in the session scratch
+/// and lay it out in place of the rows this screen kept, which are capped
+/// (`CHILD_ROWS_MAX`, `CHILD_RESULT_MAX`). The one path `/agents` replays
+/// through. A child still running, a run with no session, a missing or
+/// unreadable file, or a file another run of the same name left behind keeps
+/// the rows as they are.
+fn replay_finished_agent(app: &mut App, run_id: &str) {
+    let Some(scratch) = app.args.as_ref().and_then(|a| {
+        Some(crate::core::agent::project::scratch_dir(a.project_root.as_deref()?, a.session_id.as_deref()?))
+    }) else {
+        return;
+    };
+    let Some(block) = app
+        .transcript
+        .subagent_blocks
+        .iter_mut()
+        .find(|b| b.panel.run_id == run_id)
+    else {
+        return;
+    };
+    match crate::core::agent::subagent_session::load(&scratch, &block.panel.name) {
+        Ok(loaded) if loaded.record.meta.as_ref().is_some_and(|m| m.run_id == run_id) => {
+            block.panel.replay_record(&loaded.record);
+            block.flat = std::cell::OnceCell::new();
+        }
+        Ok(_) => {}
+        Err(e) => log::debug!("/agents: no session file for {run_id}: {e}"),
+    }
 }
 
 /// Widest a one-line reply preview runs in the `/agents` list, which does not
@@ -20005,11 +22378,10 @@ fn agent_detail_header(
 ) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let max = (width.max(8) as usize).saturating_sub(2);
-    let mut out = vec![Line::from(vec![
-        agent_label(&panel.name),
-        Span::styled(format!("  ({})", panel.run_id), dim),
-    ])];
-    let mut row = agent_stats(panel, context_window, false);
+    let mut name = agent_name_spans(panel);
+    name.push(Span::styled(format!("  ({})", panel.run_id), dim));
+    let mut out = vec![Line::from(name)];
+    let mut row = agent_stats(panel, context_window);
     if !row.is_empty() {
         row.push(Span::raw("  "));
     }
@@ -20018,9 +22390,16 @@ fn agent_detail_header(
     // A loop is still worth flagging: the transcript alone reads as busy.
     if status == AgentStatus::Running && panel.repeats >= STUCK_REPEAT_THRESHOLD {
         row.push(Span::styled(" \u{b7} ", dim));
-        row.extend(agent_activity(panel, ""));
+        row.extend(agent_activity(panel));
     }
     out.push(Line::from(row));
+    if let Some(workspace) = &panel.workspace {
+        out.extend(
+            wrap_text(&format!("workspace {workspace}"), dim, max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
         out.push(Line::from(""));
         out.extend(
@@ -20037,7 +22416,10 @@ fn agent_detail_header(
 /// inspector's box: `agent_detail_header`, then the child's transcript laid out
 /// by the code that lays out the main body, at the box's inner width, with the
 /// call it is still building below it. Pinned to the bottom unless scrolled
-/// back (`App::agent_detail_scroll`).
+/// back (`App::agent_detail_scroll`), so it follows the child like the main
+/// body follows the main run. Drawn every frame from the live panel, so the
+/// child's streaming text lands as it arrives; its working row is the input
+/// row's (`detail_input_line`).
 fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     let block = panel_block(theme::border_active()).title(" subagent ");
     let inner = block.inner(area);
@@ -20046,19 +22428,12 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
     let dim = Style::new().fg(theme::muted());
-    let run_id = app.agent_detail.clone().unwrap_or_default();
     let spinner_frame = app.spinner_frame;
     let context_window = app.context_window;
-    // A finished child is read from its summary row's block, which keeps it.
-    let found = match app.subagents.iter_mut().find(|p| p.run_id == run_id) {
-        Some(panel) => Some((panel, None)),
-        None => app
-            .transcript
-            .subagent_blocks
-            .iter_mut()
-            .find(|b| b.panel.run_id == run_id)
-            .map(|b| (&mut b.panel, Some(&b.outcome))),
-    };
+    // Copied out: the panel below borrows `app` whole, and written back once
+    // it is laid out.
+    let mut back = app.agent_detail_scroll;
+    let found = app.detail_panel_mut();
     let Some((panel, outcome)) = found else {
         let gone = "this subagent is no longer available. Press Esc to go back.";
         f.render_widget(Paragraph::new(Line::styled(gone, dim)), inner);
@@ -20084,12 +22459,11 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     }
     layout.pin(body.height);
     let max_back = layout.content_h.saturating_sub(body.height);
-    app.agent_detail_scroll = app.agent_detail_scroll.min(max_back);
-    let scroll = max_back - app.agent_detail_scroll;
+    back = back.min(max_back);
     let (lines, _, offset) = layout.window(
         &panel.transcript.rows,
         width,
-        scroll,
+        max_back - back,
         body.height,
         None,
         &|_| None,
@@ -20100,6 +22474,7 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
             .scroll((offset, 0)),
         body,
     );
+    app.agent_detail_scroll = back;
 }
 
 fn open_login_picker(app: &mut App) {
@@ -20573,18 +22948,7 @@ fn open_account_login_with_begin(
 }
 
 fn open_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let mut command = Command::new("open");
-    #[cfg(target_os = "linux")]
-    let mut command = Command::new("xdg-open");
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = Command::new("cmd");
-        command.args(["/C", "start"]);
-        command
-    };
-    command
-        .arg(url)
+    super::browser::opener_command(url)?
         .spawn()
         .map(|_| ())
         .map_err(|_| "could not open the browser".to_string())
@@ -21342,17 +23706,24 @@ fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
     app.snap_queue.clear();
     app.base_requested = false;
     let Some(meta) = metadata else { return };
+    // The ids go to git on rewind, so only full object ids are taken back.
     let Some(base) = meta
         .get("base_snapshot")
         .and_then(|v| v.as_str())
+        .filter(|sha| git::is_object_id(sha))
         .map(str::to_string)
     else {
         return;
     };
-    app.checkpoints = meta
+    let checkpoints = meta
         .get("checkpoints")
         .and_then(|v| serde_json::from_value::<Vec<Checkpoint>>(v.clone()).ok())
         .unwrap_or_default();
+    // Dropping just a bad one would make a rewind restore the wrong turn.
+    if !checkpoints.iter().all(|c| git::is_object_id(&c.sha)) {
+        return;
+    }
+    app.checkpoints = checkpoints;
     app.base_snapshot = Some(base);
     // A resumed thread already has its base; don't re-snapshot on next submit.
     app.base_requested = true;
@@ -21388,6 +23759,7 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     {
         app.run_mode = mode;
         if mode == RunMode::Plan {
+            app.enter_plan_mode();
             app.note("resumed in plan mode (read only); /plan exit to leave");
         }
     }
@@ -21452,8 +23824,55 @@ fn note_workspace_mismatch(app: &mut App, thread: &serde_json::Value) {
 ///
 /// Read-only on purpose. Getting the work out is the user's own git: this
 /// session must never write to the branch they left behind.
+///
+/// It runs git once per worktree, so this only raises a flag; the loop
+/// gathers the report on the blocking pool and [`finish_worktree_report`]
+/// shows it when it lands, keeping the frame live meanwhile.
 fn worktree_command(app: &mut App) {
-    let Some(workspace) = app.workspace.clone() else {
+    app.worktree_request = true;
+}
+
+/// What `/worktree` shows, gathered off the render loop.
+struct WorktreeReport {
+    /// A line per live subagent worktree.
+    children: Vec<String>,
+    /// The session's own worktree and its changed paths, if it has one.
+    workspace: Option<(Worktree, Vec<String>)>,
+}
+
+/// Gather `/worktree`'s report on the blocking pool.
+fn spawn_worktree_report(app: &App) -> tokio::task::JoinHandle<WorktreeReport> {
+    let ledger = app.subagent_set.workspaces.clone();
+    let workspace = app.workspace.clone();
+    tokio::task::spawn_blocking(move || WorktreeReport {
+        children: ledger.live(),
+        workspace: workspace.map(|ws| {
+            let changed = git::changed_paths(&ws.path);
+            (ws, changed)
+        }),
+    })
+}
+
+/// Await an in-flight off-loop job (`/worktree`'s report, a `/worktrees`
+/// action), parking forever when none is running so this can sit in the
+/// loop's `select!` unconditionally.
+async fn await_job<T>(task: &mut Option<tokio::task::JoinHandle<T>>) -> Option<T> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok()
+}
+
+fn finish_worktree_report(app: &mut App, report: WorktreeReport) {
+    if !report.children.is_empty() {
+        app.note("subagent worktrees:");
+        for line in &report.children {
+            app.system_detail_text(&format!("        {line}"));
+        }
+    }
+    let Some((workspace, changed)) = report.workspace else {
         app.note(
             "working in the project directory; start with --worktree for a dedicated checkout",
         );
@@ -21462,7 +23881,6 @@ fn worktree_command(app: &mut App) {
     app.note("worktree:");
     app.system_detail_text(&format!("path    {}", tilde_path(&workspace.path)));
     app.system_detail_text(&format!("branch  {}", workspace.branch));
-    let changed = git::changed_paths(&workspace.path);
     if changed.is_empty() {
         app.system_detail_text("changes nothing yet");
         return;
@@ -21487,14 +23905,249 @@ fn worktree_command(app: &mut App) {
 /// away and the point of the row is the shape of the change, not the manifest.
 const WORKTREE_CHANGE_ROWS: usize = 20;
 
+/// What `/worktrees` asks the loop to run on the blocking pool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum WorktreesJob {
+    List,
+    Prune(crate::core::agent::child_workspace::Prune),
+    ClearCache,
+}
+
+/// What a [`WorktreesJob`] found or did.
+#[derive(Debug)]
+enum WorktreesDone {
+    Listed(crate::core::agent::child_workspace::WorktreesReport),
+    Pruned(crate::core::agent::child_workspace::Pruned),
+    Cleared(Result<u64, String>),
+}
+
+/// `/worktrees`: list this project's subagent checkouts and build cache.
+/// Sizing them walks every file and reading them runs git, so this only asks
+/// the loop; [`finish_worktrees_job`] opens the picker when the list lands.
+fn worktrees_command(app: &mut App) {
+    app.worktrees_request = Some(WorktreesJob::List);
+}
+
+/// Run `job` on the blocking pool as this session, so its own checkouts and
+/// running subagents are told apart from another live session's. Whether a
+/// subagent runs is asked live, at each decision, not when the job was
+/// queued: one may start while git runs.
+fn spawn_worktrees_job(app: &App, job: WorktreesJob) -> tokio::task::JoinHandle<WorktreesDone> {
+    use crate::core::agent::child_workspace as cw;
+    let subagents = app.subagent_set.clone();
+    let root = app.project_root.clone();
+    tokio::task::spawn_blocking(move || {
+        let running = || !subagents.live_run_ids().is_empty();
+        let session = cw::Session { ledger: &subagents.workspaces, children_running: &running };
+        match job {
+            WorktreesJob::List => WorktreesDone::Listed(cw::list_worktrees(&root, Some(&session))),
+            WorktreesJob::Prune(which) => {
+                WorktreesDone::Pruned(cw::prune_worktrees(&root, Some(&session), &which))
+            }
+            WorktreesJob::ClearCache => {
+                WorktreesDone::Cleared(cw::clear_build_cache(&root, Some(&session)))
+            }
+        }
+    })
+}
+
+fn finish_worktrees_job(app: &mut App, done: WorktreesDone) {
+    use crate::core::agent::child_workspace::human_bytes;
+    match done {
+        WorktreesDone::Listed(report) => {
+            app.worktrees = Some(report);
+            // The listing walks every checkout, so the user may be typing or
+            // looking at something else when it lands: a picker whose first
+            // row prunes must not appear under their Enter.
+            if app.picker.is_none()
+                && app.model_picker.is_none()
+                && app.readout.is_none()
+                && app.input.trim().is_empty()
+            {
+                open_worktrees_picker(app);
+            } else {
+                app.note("worktree listing ready - /worktrees to view");
+            }
+        }
+        // The listing no longer says what is on disk: nothing may reopen it.
+        WorktreesDone::Pruned(pruned) => {
+            app.worktrees = None;
+            app.note(&pruned.notice());
+        }
+        WorktreesDone::Cleared(Ok(bytes)) => {
+            app.worktrees = None;
+            app.note(&format!(
+                "cleared the subagent build cache, freed {} (next build starts cold)",
+                human_bytes(bytes)
+            ));
+        }
+        WorktreesDone::Cleared(Err(why)) => app.note(&format!("build cache not cleared: {why}")),
+    }
+}
+
+/// Open (or return to) the `/worktrees` list from the last listing; with
+/// none (a prune since made it stale), list again rather than show nothing.
+fn open_worktrees_picker(app: &mut App) {
+    let Some(report) = app.worktrees.as_ref() else {
+        app.picker = None;
+        return worktrees_command(app);
+    };
+    let items = worktrees_picker_items(report);
+    app.picker = Some(Picker {
+        kind: PickerKind::Worktrees,
+        items,
+        selected: 0,
+        search: None,
+        armed_delete: None,
+    });
+}
+
+/// Picker value of a checkout row: the checkout's id behind this prefix.
+const WORKTREE_ROW: &str = "wt:";
+/// Picker value of the confirm's remove row, likewise.
+const WORKTREE_FORCE_ROW: &str = "force:";
+
+/// The `/worktrees` rows: the two actions, then one row per checkout
+/// (`branch  size  state`, the state coloured by what may be done with it).
+fn worktrees_picker_items(
+    report: &crate::core::agent::child_workspace::WorktreesReport,
+) -> Vec<PickerItem> {
+    use crate::core::agent::child_workspace::{human_bytes, CheckoutState};
+    if report.dir.is_none() {
+        return vec![watermark_item("no Jan home: there are no subagent worktrees")];
+    }
+    let dim = Style::new().fg(theme::muted());
+    let (count, bytes) = report.removable();
+    let safe = match count {
+        0 => "nothing to remove".to_string(),
+        n => format!("{n} checkout(s), {}", human_bytes(bytes)),
+    };
+    let mut items = vec![styled_item(
+        "safe".to_string(),
+        vec![
+            Span::raw("Remove what is safe to remove"),
+            Span::styled(format!("  {safe}"), dim),
+        ],
+    )];
+    items.push(match report.build_cache_bytes {
+        Some(bytes) => styled_item(
+            "cache".to_string(),
+            vec![
+                Span::raw("Clear build cache"),
+                Span::styled(format!("  {}", human_bytes(bytes)), dim),
+            ],
+        ),
+        None => watermark_item("no build cache"),
+    });
+    if report.checkouts.is_empty() {
+        items.push(watermark_item("no subagent checkouts"));
+    }
+    items.extend(report.checkouts.iter().map(|c| {
+        let tone = match c.state {
+            CheckoutState::Removable { .. } => theme::success(),
+            CheckoutState::Uncommitted { .. } | CheckoutState::Unbrought { .. } => theme::warning(),
+            CheckoutState::InUse { .. } | CheckoutState::Unreadable { .. } => theme::muted(),
+        };
+        styled_item(
+            format!("{WORKTREE_ROW}{}", c.id),
+            vec![
+                Span::styled(c.branch.clone(), Style::new().fg(theme::accent())),
+                Span::styled(format!("  {}", human_bytes(c.bytes)), dim),
+                Span::styled(format!("  {}", c.state.describe()), Style::new().fg(tone)),
+            ],
+        )
+    }));
+    items
+}
+
+/// Enter on a `/worktrees` row. A checkout that holds work opens the
+/// confirm naming what it would lose; one in use, or that git cannot read,
+/// is never removed from here, and says why.
+fn worktrees_action(app: &mut App, value: &str) {
+    use crate::core::agent::child_workspace::{CheckoutState, Prune};
+    let job = match value {
+        "" => return,
+        "safe" => {
+            app.note("removing the subagent worktrees that are safe to remove...");
+            WorktreesJob::Prune(Prune::Safe)
+        }
+        "cache" => WorktreesJob::ClearCache,
+        row => {
+            let Some(id) = row.strip_prefix(WORKTREE_ROW) else { return };
+            let Some(found) = app
+                .worktrees
+                .as_ref()
+                .and_then(|r| r.checkouts.iter().find(|c| c.id == id))
+                .cloned()
+            else {
+                return;
+            };
+            if let Some(loses) = found.loses() {
+                return open_worktree_confirm(app, &found, &loses);
+            }
+            if !matches!(found.state, CheckoutState::Removable { .. }) {
+                return app.note(&format!("{} is kept: {}", found.branch, found.state.describe()));
+            }
+            WorktreesJob::Prune(Prune::One { id: id.to_string(), force: false })
+        }
+    };
+    app.picker = None;
+    app.worktrees_request = Some(job);
+}
+
+/// The confirm before removing a checkout that holds work: what is lost, and
+/// "keep" selected, so a stray Enter loses nothing.
+fn open_worktree_confirm(
+    app: &mut App,
+    found: &crate::core::agent::child_workspace::CheckoutInfo,
+    loses: &str,
+) {
+    let mut items = vec![
+        watermark_item(&format!("{} at {}", found.branch, tilde_path(&found.path))),
+        watermark_item(&format!("removing it deletes {loses}, for good")),
+    ];
+    items.extend(found.state.brings_back().map(|kept| watermark_item(&kept)));
+    let keep = items.len();
+    items.extend([
+        styled_item("keep".to_string(), vec![Span::raw("Keep it")]),
+        styled_item(
+            format!("{WORKTREE_FORCE_ROW}{}", found.id),
+            vec![Span::styled(
+                format!("Remove it and lose {loses}"),
+                Style::new().fg(theme::warning()),
+            )],
+        ),
+    ]);
+    app.picker = Some(Picker {
+        kind: PickerKind::WorktreeConfirm,
+        items,
+        selected: keep,
+        search: None,
+        armed_delete: None,
+    });
+}
+
+/// Enter on the confirm: remove the checkout whatever it holds, or keep it
+/// and go back to the list.
+fn confirm_worktree_removal(app: &mut App, value: &str) {
+    use crate::core::agent::child_workspace::Prune;
+    match value.strip_prefix(WORKTREE_FORCE_ROW) {
+        Some(id) => {
+            app.picker = None;
+            app.worktrees_request =
+                Some(WorktreesJob::Prune(Prune::One { id: id.to_string(), force: true }));
+        }
+        None if value == "keep" => open_worktrees_picker(app),
+        None => {}
+    }
+}
+
 /// Branch the session before its `target`-th user message into a new thread and
 /// switch to it, leaving the source whole on disk. The cut turn lands in the
 /// input, as a rewind's does, so the branch opens ready to re-ask it.
 async fn fork_at(app: &mut App, target: usize) {
-    // The fork is cut from what is on disk, so this turn's history and journal
-    // have to be there first; the journal writer is asynchronous.
+    // The fork is cut from what is on disk, so this turn has to be there first.
     app.persist();
-    app.join_journal();
     let Some(source) = app.thread_id.clone() else {
         return app.note("nothing to fork: this session has not been saved yet");
     };
@@ -21723,11 +24376,11 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     // measured, so that count now overstates the window by the removed prefix.
     app.invalidate_token_provenance();
     app.tokens = estimate_token_count(&app.history);
-    // The journal is keyed by its own user entries, not by history indices: it
-    // holds rows (tool calls, reasoning) that history never had.
+    // The display list is keyed by its own user entries, not by history
+    // indices: it holds rows (tool calls, reasoning) that history never had.
     app.transcript
         .display_log
-        .truncate(journal::truncate_at_user(
+        .truncate(session_log::truncate_at_user(
             &app.transcript.display_log,
             target,
         ));
@@ -21824,6 +24477,8 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 calls,
                 finished,
                 error,
+                elapsed_secs,
+                workspace,
             } => {
                 app.transcript.finalize_tool_group();
                 let outcome = match (finished, error) {
@@ -21831,14 +24486,38 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                     (true, None) => SubagentOutcome::Finished,
                     (false, None) => SubagentOutcome::Interrupted,
                 };
-                app.push_subagent_summary(SubagentPanel::replayed(name, calls), outcome);
+                let mut panel = SubagentPanel::replayed(name, calls);
+                // Started that long before now, so the row reports the
+                // duration the live one did.
+                panel.started = elapsed_secs
+                    .and_then(|secs| Instant::now().checked_sub(Duration::from_secs(secs)));
+                panel.workspace = workspace.clone();
+                app.push_subagent_summary(panel, outcome);
+            }
+            DisplayEntry::Note { text, level } => {
+                app.transcript.finalize_tool_group();
+                let level = Level::of_note(*level);
+                app.system_marked(level.glyph(), level, text);
+            }
+            DisplayEntry::AgentMessage { from, to, text } => {
+                app.transcript.agent_message(MAIN_AGENT, from, to, text);
+            }
+            DisplayEntry::AgentNote { agent, tone, text } => {
+                app.transcript.finalize_tool_group();
+                app.agent_note(agent, *tone, text);
             }
         }
     }
     // A replay is rendering, not work: the calls it re-renders must not stage
     // files for the next checkpoint, leave a call awaiting a diff, or read as
-    // todo activity in the turn that follows.
+    // todo activity in the turn that follows. A logged call with no logged
+    // result will never get one.
     app.transcript.finalize_tool_group();
+    app.transcript.interrupt_committed_groups();
+    // A wait the journal never saw answered gets no answer now: no throbber
+    // spins for it, and nothing will read its result as a subagent's.
+    app.awaiting.clear();
+    app.transcript.awaited.clear();
     app.turn_touched.clear();
     app.transcript.diff_paths.clear();
     app.todo_call_this_turn = false;
@@ -21858,12 +24537,15 @@ fn rebuild_transcript(app: &mut App) {
     app.transcript.reasoning_blocks.clear();
     app.transcript.expanded_traces.clear();
     app.transcript.subagent_blocks.clear();
+    app.transcript.live_events.clear();
+    app.transcript.awaited.clear();
     app.transcript.expanded.clear();
     app.transcript.reveal = None;
     app.find = None;
     app.transcript.assistant_buf.clear();
     app.transcript.reset_buf_scan();
     app.transcript.reasoning_segs.clear();
+    app.transcript.step_said = Default::default();
     app.transcript.last_kind = Kind::None;
     if !app.transcript.display_log.is_empty() {
         let logged = std::mem::take(&mut app.transcript.display_log);
@@ -21913,21 +24595,26 @@ async fn apply_resume(app: &mut App, request: &ResumeRequest) {
 }
 
 /// Replace the live session with a saved thread's state: history, transcript,
-/// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
-/// are not persisted as messages). `verb` names how the thread was opened, so a
-/// fork does not report itself as a resume.
+/// snapshots, goal, and model. The history is the wire conversation exactly as
+/// saved, so the next request shares its prefix. `verb` names how the thread
+/// was opened, so a fork does not report itself as a resume.
 async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     let full_id = thread
         .get("id")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
 
-    let (messages, skipped) = match super::cli_read_messages_lenient(&app.agent_dir, full_id) {
-        Ok(m) => m,
+    let loaded = match super::load_thread_record(&app.agent_dir, full_id) {
+        Ok(loaded) => loaded,
         Err(e) => return app.note(&format!("failed to load messages: {e}")),
     };
+    let skipped = loaded.skipped;
 
+    app.end_session_work();
     app.history.clear();
+    // The previous thread's lock goes with it; this one's is taken by the
+    // first save, so merely opening a thread neither writes nor locks it.
+    app.session_writer = None;
     app.thread_id = Some(full_id.to_string());
     app.transcript.rows.clear();
     app.transcript.tool_group = None;
@@ -21937,16 +24624,24 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.transcript.reasoning_blocks.clear();
     app.transcript.expanded_traces.clear();
     app.transcript.subagent_blocks.clear();
+    app.transcript.live_events.clear();
+    app.transcript.awaited.clear();
     // The conversation these would report into is being replaced.
     app.stop_subagents();
+    app.end_conversation_worktrees();
     app.stop_monitors();
     app.shell_set.take_notices();
+    // The loaded thread's shell starts in the project root, like a new one;
+    // its saved history may still announce an old `cd`, which the first
+    // command's result corrects.
+    *app.shell_cwd.lock().unwrap() = None;
     app.transcript.expanded.clear();
     app.transcript.reveal = None;
     app.find = None;
     app.transcript.assistant_buf.clear();
     app.transcript.reset_buf_scan();
     app.transcript.reasoning_segs.clear();
+    app.transcript.step_said = Default::default();
     app.turn = (0, 0);
     app.scrollback = 0;
     app.message_queue.clear();
@@ -21986,12 +24681,12 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         app.model = model.to_string();
     }
 
-    // The journal holds what was rendered (reasoning, tool rows, diffs); the
-    // messages hold what the model is sent. Prefer the journal for the
+    // The display entries hold what was rendered (reasoning, tool rows, diffs);
+    // the messages hold what the model is sent. Prefer the entries for the
     // transcript, and fall back to replaying the messages for a thread saved
-    // before journaling (or whose journal was lost).
-    let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
-    app.history = super::rebuild_wire_history(&messages);
+    // before display entries were kept.
+    let logged = loaded.record.display;
+    app.history = loaded.record.messages;
     // Only a conversation with something in it predates the snapshot.
     app.resume_notice_pending = !app.history.is_empty();
     // A resumed thread was never measured by *this* session's provider calls, and
@@ -22030,9 +24725,14 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("(untitled)");
-    app.note(&format!("{verb} \"{title}\" ({count} messages)"));
+    // About this opening, not the conversation: recorded, they would pile up
+    // one more on every resume.
+    let level = Level::Info;
+    let opened = format!("{verb} \"{title}\" ({count} messages)");
+    app.system_marked(level.glyph(), level, &opened);
     if skipped > 0 {
-        app.note(&format!("{skipped} unreadable message(s) were skipped"));
+        let skipped = format!("{skipped} unreadable line(s) were skipped");
+        app.system_marked(level.glyph(), level, &skipped);
     }
 }
 
@@ -22184,15 +24884,37 @@ fn message_text(msg: &serde_json::Value) -> String {
     super::thread_message_text(msg)
 }
 
-/// Whitespace-collapsed, char-truncated one-liner for checkpoint/rewind labels.
+/// Whitespace-collapsed one-liner for checkpoint/rewind labels, at most 60
+/// columns.
 fn truncate_preview(text: &str) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.chars().count() > 60 {
-        let head: String = collapsed.chars().take(57).collect();
-        format!("{head}...")
-    } else {
-        collapsed
+    ellipsize(&collapsed, 60)
+}
+
+/// `s` cut to `max` display columns with a trailing `...` when it does not
+/// fit, so a cut always shows. Measured in cells, not chars: a CJK name is
+/// two cells a glyph, and a wide glyph that would straddle the cut is dropped
+/// rather than half-drawn. Under four columns there is no room for a glyph
+/// and the mark both, so the mark alone (as much of it as fits) stands in.
+fn ellipsize(s: &str, max: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    if s.width() <= max {
+        return s.to_string();
     }
+    let room = max.saturating_sub(3);
+    let mut out = String::new();
+    let mut used = 0usize;
+    for c in s.chars() {
+        let w = c.width().unwrap_or(0);
+        if used + w > room {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.push_str(&"..."[..max.min(3)]);
+    out
 }
 
 /// Blank lines to prepend so a transcript shorter than the body viewport pins
@@ -22381,21 +25103,47 @@ fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> boo
     }
 }
 
-/// Rows the status panel may take, given the frame it has to share. The
-/// conversation is the point of the screen, so the panel is what gives way: it
-/// gets what is left after the header, rule, input, dock and
-/// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
-/// on a frame with nothing to spare.
-fn panel_budget(frame_h: u16, input_h: u16) -> usize {
+/// Rows the live state over the input may take, given the frame it has to
+/// share. The conversation is the point of the screen, so this is what gives
+/// way: what is left after the header, rule, input, dock and
+/// `MIN_TRANSCRIPT_ROWS`, and nothing on a frame with nothing to spare. The
+/// background-work block takes it uncapped, since each of its groups is
+/// already bounded (`BACKGROUND_GROUP_ROWS`).
+fn spare_rows(frame_h: u16, input_h: u16) -> usize {
     // header, transcript air, rule, input, dock
     let fixed = 1 + TRANSCRIPT_BOTTOM_PAD + 1 + input_h + 1;
-    frame_h
-        .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
-        .min(PANEL_MAX_ROWS as u16) as usize
+    frame_h.saturating_sub(fixed + MIN_TRANSCRIPT_ROWS) as usize
+}
+
+/// Rows the plan may take: `spare_rows`, capped at `PANEL_MAX_ROWS`.
+fn panel_budget(frame_h: u16, input_h: u16) -> usize {
+    spare_rows(frame_h, input_h).min(PANEL_MAX_ROWS)
+}
+
+/// How far the input row scrolls to keep the cursor row visible once a draft
+/// outgrows `area`: the main composer's, or a subagent detail's.
+fn input_scroll(app: &App, area: Rect) -> u16 {
+    let typing = if app.agent_detail_open() {
+        app.steerable_detail_child().is_some() && !app.input.is_empty()
+    } else {
+        app.accepts_input() && app.picker.is_none()
+    };
+    if !typing || app.blocking_dock().is_some() {
+        return 0;
+    }
+    let visible = area.height.saturating_sub(1);
+    let total = Paragraph::new(composer_lines(app))
+        .wrap(Wrap { trim: false })
+        .line_count(area.width.saturating_sub(2).max(1))
+        .min(u16::MAX as usize) as u16;
+    total.saturating_sub(visible)
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
-    // Cached before anything reads it: the status panel sizes the layout, so a
+    // A screen that replaced the detail since the last key gets the main
+    // composer back before it is drawn.
+    app.settle_agent_detail();
+    // Cached before anything reads it: the plan dock sizes the layout, so a
     // stale width would mis-size the frame a resize lands on. The body spans
     // the full frame width (its border is top-only).
     app.transcript.view_width = f.area().width.max(1);
@@ -22411,21 +25159,33 @@ fn draw(f: &mut Frame, app: &mut App) {
     // pulling content into view a row per frame.
     autoscroll_selection(app);
     let input_h = input_box_height(app, f.area().width);
-    let shells_line = bg_shells_row(app, f.area().width);
-    let shells_h = u16::from(shells_line.is_some());
-    let agent_lines = subagent_rows(app, f.area().width, Instant::now()).unwrap_or_default();
-    let shells_h = shells_h + agent_lines.len() as u16;
-    // Live state -- the plan and the running fan-out -- is docked, not woven
-    // into the transcript: it describes *now*, and it is what the eye wants
-    // right where the typing happens. Built at most once per frame, since its
-    // own height sizes the layout, and clamped to what the frame can spare so a
-    // short terminal loses panel rows rather than conversation.
+    // Live state -- the work running in the background and the plan -- is
+    // docked, not woven into the transcript: it describes *now*, and it is
+    // what the eye wants right where the typing happens. Built at most once per
+    // frame, since its own height sizes the layout, and clamped to what the
+    // frame can spare so a short terminal loses these rows rather than
+    // conversation. The background work is the thing moving, so it is sized
+    // first and the plan takes what is left -- less a floor of its head and
+    // one item, so a full block cannot squeeze a live plan out of view. The
+    // floor comes out of the spare rows only, never the conversation's
+    // `MIN_TRANSCRIPT_ROWS`, and only when the frame has that much to spare.
+    let width = f.area().width.max(1);
+    let spare = spare_rows(f.area().height, input_h);
+    let plan_shown = app.picker.is_none() && !app.todos_expired();
+    let plan_floor = if plan_shown {
+        todo_column(&app.todos, width, PLAN_FLOOR_ROWS).len()
+    } else {
+        0
+    };
+    let background_cap = if spare >= plan_floor { spare - plan_floor } else { spare };
+    let background = background_rows(app, width, background_cap, Instant::now());
+    let background_h = background.len() as u16;
     let panel_lines = app
         .picker
         .is_none()
         .then(|| {
-            let width = f.area().width.max(1);
-            status_panel(app, width, panel_budget(f.area().height, input_h + shells_h))
+            let rows = panel_budget(f.area().height, input_h + background_h);
+            todo_column(&app.todos, width, if app.todos_expired() { 0 } else { rows })
         })
         .filter(|l| !l.is_empty());
     let panel_h = panel_lines.as_ref().map_or(0, |l| l.len() as u16);
@@ -22433,36 +25193,39 @@ fn draw(f: &mut Frame, app: &mut App) {
     // transient key hints share the single row *below* the input, so the whole
     // "where am I, what's happening" block reads as one unit at the bottom edge
     // next to where the user types, instead of being split across both ends and
-    // spending two rows on it. The panel sits directly above the input box --
-    // the last thing in view right before where the user types, not competing
-    // with the header for attention. The separator rule is its own row *below*
-    // the panel (rather than the body's own bottom border) so the live state
-    // reads as part of the input dock, above the line, instead of stranded
-    // between the rule and the prompt. A zero-length slot collapses away, so a
-    // session with neither todos nor subagents renders exactly as before.
+    // spending two rows on it. The live state -- the plan, then the background
+    // work -- is parked above the separator rule, so the rule sits directly on
+    // the `>` row and the input reads as one fixed line whatever is live: the
+    // block does not slide between the rule and the prompt as it grows, and a
+    // prompt docked over the input (a permission, an ask) covers the live
+    // state rather than splitting it from the rule. The plan goes above the
+    // background work because the work is what moves -- children start,
+    // finish and tick -- and the eye checks it most, so it sits nearest the
+    // input; the plan changes a step at a time and reads fine a row further
+    // up. The rule is its own row (rather than the body's bottom border) so
+    // it can sit under the live state instead of over it. A zero-length slot
+    // collapses away, so a session with no plan and nothing in the background
+    // renders exactly as before.
     let raw = Layout::vertical([
         Constraint::Length(1),                     // 0: header
         Constraint::Min(1),                        // 1: body
         Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
-        Constraint::Length(panel_h),               // 3: status panel
-        Constraint::Length(1),                     // 4: separator rule
-        Constraint::Length(shells_h),              // 5: subagents, background shells
+        Constraint::Length(panel_h),               // 3: plan dock
+        Constraint::Length(background_h),          // 4: background work
+        Constraint::Length(1),                     // 5: separator rule
         Constraint::Length(input_h),               // 6: input
         Constraint::Length(1),                     // 7: path + key hints
     ])
     .split(f.area());
     let panel_area = raw[3];
     let chunks = [raw[0], raw[1], raw[6], raw[7]];
-    // The subagents first, then the shells: both are work outliving the turn,
-    // stacked in one slot over the input.
-    let background: Vec<Line<'static>> = agent_lines.into_iter().chain(shells_line).collect();
     if !background.is_empty() {
-        f.render_widget(Paragraph::new(background), raw[5]);
+        f.render_widget(Paragraph::new(background), raw[4]);
     }
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[4]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[5]);
 
     // Top border only, so wrapping uses the full width; the border row reduces
     // the vertical viewport.
@@ -22475,6 +25238,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         let items = agent_picker_items(
             &mut app.subagents,
             &app.transcript.subagent_blocks,
+            &app.internal_agents,
             app.context_window,
         );
         if let Some(p) = app.picker.as_mut() {
@@ -22512,17 +25276,17 @@ fn draw(f: &mut Frame, app: &mut App) {
                 app.spinner(),
             );
         }
-        f.render_widget(input_box(app, chunks[2].width), chunks[2]);
+        let input_scroll = input_scroll(app, chunks[2]);
+        f.render_widget(input_box(app, chunks[2].width).scroll((input_scroll, 0)), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         // The `/mcp` sign-in confirm lives here too: the picker path returns
         // before the overlay chain below, so without this the "open a browser?"
-        // prompt never shows on the one screen that raises it.
+        // prompt never shows on the one screen that raises it. Likewise a
+        // queued permission request or `ask`, whose keys work under a picker.
         if let Some(confirm) = &app.browser_confirm {
             draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
-        }
-        // Likewise the `/agents` message dock, opened over the inspector.
-        if let Some(prompt) = &app.agent_message {
-            draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
+        } else {
+            draw_queued_prompt(f, app, chunks[2], chunks[1]);
         }
         return;
     }
@@ -22638,18 +25402,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.last_scroll = scroll;
     app.row_index = row_index;
 
-    // Keep the cursor row visible when the input outgrows the box.
-    let input_scroll =
-        if app.accepts_input() && app.picker.is_none() && app.blocking_dock().is_none() {
-            let visible = chunks[2].height.saturating_sub(1);
-            let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
-                .wrap(Wrap { trim: false })
-                .line_count(chunks[2].width.saturating_sub(2).max(1))
-                .min(u16::MAX as usize) as u16;
-            total.saturating_sub(visible)
-        } else {
-            0
-        };
+    let input_scroll = input_scroll(app, chunks[2]);
     if let Some(lines) = panel_lines {
         f.render_widget(Paragraph::new(lines), panel_area);
     }
@@ -22762,8 +25515,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_settings_prompt(f, rect, prompt, &toml_path);
-    } else if let Some(prompt) = &app.agent_message {
-        draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
     } else if let Some(prompt) = &app.mcp_prompt {
         let height = (mcp_prompt_lines(prompt, panel_inner_width(chunks[2].width)).len() as u16 + 2)
             .min(chunks[1].height);
@@ -22787,33 +25538,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         draw_provider_prompt(f, rect, prompt);
     } else if let Some(prompt) = &app.web_search_prompt {
         draw_web_search_prompt(f, web_search_prompt_rect(prompt, chunks[1], chunks[2]), prompt);
-    } else if !app.ask_queue.is_empty() {
-        let queue_len = app.ask_queue.len();
-        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        let height = ask.box_height(chunks[2].width).min(chunks[1].height);
-        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
-        let rect = ratatui::layout::Rect {
-            x: chunks[2].x,
-            y,
-            width: chunks[2].width,
-            height,
-        };
-        draw_ask(f, rect, ask, queue_len);
-    } else if let Some(pending) = app.pending() {
-        let inner_w = panel_inner_width(chunks[2].width);
-        let detail_rows = pending.detail_lines(inner_w).len() as u16;
-        let diff_rows = pending.diff_preview(inner_w).len() as u16;
-        let height =
-            (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
-        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
-        let rect = ratatui::layout::Rect {
-            x: chunks[2].x,
-            y,
-            width: chunks[2].width,
-            height,
-        };
-        draw_permission(f, rect, pending, app.pending_queue.len());
-    } else {
+    } else if !draw_queued_prompt(f, app, chunks[2], chunks[1]) {
         // Dock the slash-command hints above the input box, growing upward
         // and clamped to the body so they never overrun the transcript.
         let matches = app.slash_matches();
@@ -22863,8 +25588,77 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
-fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
-    use ratatui::widgets::{Clear, List, ListItem, ListState};
+/// Dock the front queued `ask`, else the front permission request, above
+/// `input`, clamped to `body`; false when neither waits. Shared by the main
+/// view and the picker path: the prompt's keys work under a picker too, so it
+/// has to be seen there, above all over a subagent's detail, where the user
+/// may be typing when it lands.
+fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> bool {
+    let over_detail = app.agent_detail_open();
+    // A prompt's pause over the detail starts when the user can see it there
+    // (`PromptPause::key_lands`), not when it was queued: one queued behind
+    // another, or seen in the main view before the detail opened, lands as new
+    // when it shows over the detail. It lands unarmed too: an arrow the user
+    // pressed on it in the main view was not aimed at a prompt over the
+    // detail, so the Enter they then type for the child must not confirm it.
+    // Clearing `picked` also hides the highlight (`prompt_highlight`), and the
+    // next arrow re-arms on the safe row (`detail_arrow`). The main view reads
+    // neither the pause nor `picked`, so it is unchanged.
+    let now = Instant::now();
+    let stamp = |pause: &mut PromptPause, picked: &mut bool| {
+        if !over_detail {
+            *pause = PromptPause::default();
+        } else if pause.until.is_none() {
+            pause.until = Some(now + PROMPT_PAUSE);
+            *picked = false;
+        }
+    };
+    // Every prompt but the one in front is hidden, so it forgets its pause and
+    // its arming: a permission request covered by a newer ask, then uncovered
+    // when the ask is answered, comes back with a fresh pause and unarmed.
+    // Otherwise its old, long-past deadline would let a reflex second Enter,
+    // meant for the ask, confirm whatever the user had armed on it before.
+    // It has to be armed again, on the safe row, like any prompt that lands
+    // over the detail. The main view reads neither (`prompt_highlight`, and
+    // its Enter ignores `picked`), so it is unchanged.
+    let shown_requests = usize::from(app.ask_queue.is_empty());
+    let hidden_asks = app.ask_queue.iter_mut().skip(1);
+    let hidden_requests = app.pending_queue.iter_mut().skip(shown_requests);
+    let hidden = hidden_asks
+        .map(|ask| (&mut ask.pause, &mut ask.picked))
+        .chain(hidden_requests.map(|p| (&mut p.pause, &mut p.picked)));
+    for (pause, picked) in hidden {
+        *pause = PromptPause::default();
+        *picked = false;
+    }
+    if !app.ask_queue.is_empty() {
+        let queue_len = app.ask_queue.len();
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        stamp(&mut ask.pause, &mut ask.picked);
+        let height = ask.box_height(input.width).min(body.height);
+        let y = input.y.saturating_sub(height).max(body.y);
+        let rect = Rect { x: input.x, y, width: input.width, height };
+        draw_ask(f, rect, ask, queue_len, over_detail);
+        return true;
+    }
+    if let Some(pending) = app.pending_queue.front_mut() {
+        stamp(&mut pending.pause, &mut pending.picked);
+    }
+    let Some(pending) = app.pending() else {
+        return false;
+    };
+    let inner_w = panel_inner_width(input.width);
+    let detail_rows = pending.detail_lines(inner_w).len() as u16;
+    let diff_rows = pending.diff_preview(inner_w).len() as u16;
+    let height = (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(body.height);
+    let y = input.y.saturating_sub(height).max(body.y);
+    let rect = Rect { x: input.x, y, width: input.width, height };
+    draw_permission(f, rect, pending, app.pending_queue.len(), over_detail);
+    true
+}
+
+fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize, over_detail: bool) {
+    use ratatui::widgets::{Clear, HighlightSpacing, List, ListItem, ListState};
 
     let dim = Style::new().fg(theme::muted());
     // Whole seconds until the auto-select deadline, rounded up (ceil) so a
@@ -22902,9 +25696,10 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
 
     let list = List::new(items.into_iter().map(ListItem::new).collect::<Vec<_>>())
         .highlight_style(select_style())
-        .highlight_symbol(SELECT_MARK);
+        .highlight_symbol(SELECT_MARK)
+        .highlight_spacing(HighlightSpacing::Always);
     let mut state = ListState::default();
-    state.select(Some(ask.selected));
+    state.select(prompt_highlight(ask.selected, ask.picked, over_detail));
     f.render_stateful_widget(list, rows[1], &mut state);
 
     // Hitboxes come from the same heights the list just laid out, offset by the
@@ -22926,20 +25721,35 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     }
 
     let help = if ask.editing_custom {
+        // Over the detail the draft row sits just below with its own cursor,
+        // so the field says plainly that what is typed here is the answer.
+        let label = if over_detail {
+            Span::styled("your answer: ", Style::new().fg(theme::accent()).bold())
+        } else {
+            Span::styled("Other: ", Style::new().fg(theme::accent()))
+        };
         Line::from(vec![
-            Span::styled("Other: ", Style::new().fg(theme::accent())),
+            label,
             Span::raw(ask.custom_input.clone()),
             Span::styled("\u{2588}", Style::new().fg(theme::accent())),
         ])
     } else {
-        Line::styled(
-            if ask.question().multi {
-                "\u{2191}\u{2193} move \u{b7} Space toggle \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
-            } else {
-                "\u{2191}\u{2193} move \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
-            },
-            dim,
-        )
+        let toggle = if ask.question().multi { " \u{b7} Space toggle" } else { "" };
+        // Over a subagent's detail Esc goes back and leaves the question
+        // waiting, Left/Right edit the draft rather than switch questions, and
+        // Enter and Space do nothing until an arrow arms it and its pause runs
+        // out (`handle_ask_key`).
+        let live = ask.pause.live(ask.picked, std::time::Instant::now());
+        let help = match (over_detail, live) {
+            (false, _) => format!(
+                "\u{2191}\u{2193} move{toggle} \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
+            ),
+            (true, false) => "\u{2191}\u{2193} pick \u{b7} Esc back".to_string(),
+            (true, true) => {
+                format!("\u{2191}\u{2193} move{toggle} \u{b7} Enter choose \u{b7} Esc back")
+            }
+        };
+        Line::styled(help, dim)
     };
     f.render_widget(Paragraph::new(help), rows[2]);
 }
@@ -23654,8 +26464,9 @@ fn draw_permission(
     area: ratatui::layout::Rect,
     pending: &Pending,
     queue_len: usize,
+    over_detail: bool,
 ) {
-    use ratatui::widgets::{Clear, List, ListItem, ListState};
+    use ratatui::widgets::{Clear, HighlightSpacing, List, ListItem, ListState};
 
     let title = if queue_len > 1 {
         format!(" permission required (1 of {queue_len}) ")
@@ -23688,10 +26499,20 @@ fn draw_permission(
         .collect();
     let list = List::new(items)
         .highlight_style(select_style())
-        .highlight_symbol(SELECT_MARK);
+        .highlight_symbol(SELECT_MARK)
+        .highlight_spacing(HighlightSpacing::Always);
     let mut state = ListState::default();
-    state.select(Some(pending.selected));
+    state.select(prompt_highlight(pending.selected, pending.picked, over_detail));
     f.render_stateful_widget(list, rows[2], &mut state);
+}
+
+/// The row a docked prompt highlights. Over a subagent's detail an unarmed
+/// prompt highlights none: Enter does not choose there until an arrow arms it
+/// (`Pending::arrow`), and a highlight would say it does. The lists keep the
+/// mark's gutter either way (`HighlightSpacing::Always`), so arming does not
+/// shift the rows sideways.
+fn prompt_highlight(selected: usize, picked: bool, over_detail: bool) -> Option<usize> {
+    (picked || !over_detail).then_some(selected)
 }
 
 fn count_label(label: &str, count: usize, width: u16) -> String {
@@ -24044,10 +26865,15 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
     output_tokens as f64 * 1000.0 / d as f64
 }
 
-/// Rows the docked status panel may occupy. Both columns elide to fit; a short
-/// terminal shrinks the budget further (see `draw`), and a terminal with no
-/// room left for the conversation drops the panel entirely.
+/// Rows the plan dock above the rule may occupy. The plan elides to fit; the
+/// background-work block over the input and a short terminal shrink the budget
+/// further (see `draw`), and a terminal with no room left for the conversation
+/// drops the plan entirely.
 const PANEL_MAX_ROWS: usize = 8;
+
+/// Rows the plan keeps against the background-work block: its head row and
+/// one item, enough to say what is being worked on.
+const PLAN_FLOOR_ROWS: usize = 2;
 
 /// Conversation rows the panel may never eat into. Below this the panel gives
 /// up its own rows first: the transcript is the point of the screen.
@@ -24060,135 +26886,9 @@ const MIN_TRANSCRIPT_ROWS: u16 = 4;
 /// appears only on some frames is a layout that jumps.
 const TRANSCRIPT_BOTTOM_PAD: u16 = 1;
 
-/// Narrowest terminal that still gets two side-by-side columns. Under it they
-/// stack, plan first, because a 30-column half fits neither a task nor an agent.
-const PANEL_SPLIT_MIN_WIDTH: u16 = 76;
-
-/// Cells between the two columns, including the divider glyph.
-const PANEL_GUTTER: u16 = 3;
-
-/// Detail rows one agent may occupy under its stats line, when the budget
-/// stretches that far: the dispatch brief and the current activity.
-const AGENT_MAX_ROWS: usize = 3;
-
 /// A trailing run of identical calls this long reads as a spin, not progress, so
 /// the collapsed `×N` count becomes a `⚠ looping ×N` warning.
 const STUCK_REPEAT_THRESHOLD: usize = 4;
-
-/// The live fan-out, as a column: one stats line per child plus as much detail
-/// as `rows` allows.
-///
-/// Parallel agents are otherwise unreadable -- N growing sections, with the
-/// interesting question (which of these is progressing, and is one about to
-/// blow its context) answerable only by counting rows. Here every child gets
-/// the same shape, so the whole fan-out reads at a glance and holds a fixed
-/// height as the work runs.
-fn agents_column(
-    panels: &mut [SubagentPanel],
-    context_window: u64,
-    width: u16,
-    rows: usize,
-    frame: &str,
-) -> Vec<Line<'static>> {
-    if panels.is_empty() || rows == 0 {
-        return Vec::new();
-    }
-    let max = width.max(8) as usize;
-    let mut out = vec![Line::from(vec![
-        Span::styled(AGENT_PANEL_GLYPH, Style::new().fg(theme::accent())),
-        Span::styled(
-            pluralize("agent", panels.len()),
-            Style::new().fg(theme::accent()).bold(),
-        ),
-    ])];
-
-    // Fit as many children as the budget allows at one line each, keeping the
-    // last row for the count of those that did not fit.
-    let body = rows - 1;
-    let (shown, hidden) = if panels.len() <= body {
-        (panels.len(), 0)
-    } else {
-        (
-            body.saturating_sub(1),
-            panels.len() - body.saturating_sub(1),
-        )
-    };
-    // Whatever is left over after one line each is spread evenly as detail.
-    let per = (body - shown)
-        .checked_div(shown)
-        .map_or(0, |n| n.min(AGENT_MAX_ROWS - 1));
-
-    for panel in panels.iter_mut().take(shown) {
-        let status = panel.status(None);
-        let running = status == AgentStatus::Running;
-        let mut spans = vec![
-            Span::styled(
-                format!("{} ", if running { frame } else { "\u{b7}" }),
-                Style::new().fg(theme::accent()),
-            ),
-            // Clamped so a long name cannot push its stats off the column.
-            agent_label(&truncate(&panel.name, max.saturating_sub(20))),
-            Span::raw("  "),
-        ];
-        // A running child shows its stats; one that has not started has none,
-        // so its place in line stands in for them.
-        if running {
-            spans.extend(agent_stats(panel, context_window, true));
-        } else {
-            spans.extend(status.spans(max));
-        }
-        out.push(Line::from(clip_spans(spans, max)));
-
-        if per == 0 {
-            continue;
-        }
-        // The dispatch brief says what this child is *for*. Split on the task's
-        // own newlines rather than word-wrapping: models write these as
-        // structured briefs whose first line is the summary.
-        let brief = panel
-            .task
-            .lines()
-            .find(|l| !l.trim().is_empty())
-            .map(|b| vec![Span::styled(b.trim().to_string(), Style::new().dim().italic())]);
-        let activity = Some(agent_activity(panel, frame)).filter(|a| !a.is_empty());
-        // With only one detail row the activity wins: what it is doing now is
-        // worth more than what it was asked, which the transcript already shows.
-        let detail: Vec<Vec<Span<'static>>> = match (per, brief, activity) {
-            (1, _, Some(a)) => vec![a],
-            (_, Some(b), Some(a)) => vec![b, a],
-            (_, b, a) => b.or(a).into_iter().collect(),
-        };
-        for row in detail {
-            let mut spans = vec![Span::raw("   ")];
-            spans.extend(row);
-            out.push(Line::from(clip_spans(spans, max)));
-        }
-    }
-    if hidden > 0 {
-        // The overflow row points at the `/agents` inspector, which lists the
-        // whole live fan-out with per-agent detail -- the dock only has room for
-        // the newest few.
-        out.push(overflow_row(hidden, "/agents", "running", max));
-    }
-    out.truncate(rows);
-    out
-}
-
-/// A dock column's overflow row: `+N more · /command`, naming the inspector
-/// that lists the rest, or the compact `+N more {fallback}` when the (often
-/// half-width) column cannot fit the command.
-fn overflow_row(hidden: usize, command: &str, fallback: &str, max: usize) -> Line<'static> {
-    let dim = Style::new().fg(theme::muted());
-    let lead = format!("  +{hidden} more · ");
-    if lead.chars().count() + command.chars().count() <= max {
-        Line::from(vec![
-            Span::styled(lead, dim),
-            Span::styled(command.to_string(), Style::new().fg(theme::accent())),
-        ])
-    } else {
-        Line::from(Span::styled(format!("  +{hidden} more {fallback}"), dim))
-    }
-}
 
 /// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
 /// column of them stays the same width as the numbers grow.
@@ -24274,9 +26974,8 @@ fn provider_label_for_model(
 const STATUS_GLYPH_IDLE: &str = "\u{25cf}";
 const STATUS_GLYPH_RUNNING: &str = "\u{25c9}";
 
-/// Header glyphs of the docked panels, paired with the accent like the badge.
+/// Header glyph of the docked plan, paired with the accent like the badge.
 const TODO_PANEL_GLYPH: &str = "\u{2713} ";
-const AGENT_PANEL_GLYPH: &str = "\u{2261} ";
 
 fn header(app: &App) -> Paragraph<'static> {
     Paragraph::new(Line::from(header_spans(app)))
@@ -24583,247 +27282,20 @@ fn todo_column(
     lines
 }
 
-/// Pad `lines` to exactly `rows` entries so a column keeps its shape when the
-/// other one is taller.
-fn pad_column(mut lines: Vec<Line<'static>>, rows: usize) -> Vec<Line<'static>> {
-    lines.resize_with(rows, || Line::raw(""));
-    lines
-}
-
-/// Set two columns side by side, `left` padded out to `left_w` and separated by
-/// a dim divider. Callers pass columns already clamped to their own widths.
-fn join_columns(
-    left: Vec<Line<'static>>,
-    right: Vec<Line<'static>>,
-    left_w: u16,
-) -> Vec<Line<'static>> {
-    let rows = left.len().max(right.len());
-    let (left, right) = (pad_column(left, rows), pad_column(right, rows));
-    left.into_iter()
-        .zip(right)
-        .map(|(l, r)| {
-            let pad = (left_w as usize).saturating_sub(spans_width(&l.spans));
-            let mut spans = l.spans;
-            spans.push(Span::raw(" ".repeat(pad)));
-            spans.push(Span::styled(" │ ", Style::new().fg(theme::muted())));
-            spans.extend(r.spans);
-            Line::from(spans)
-        })
-        .collect()
-}
-
-/// The docked status panel: the plan on the left, the live fan-out on the
-/// right, both bounded by `rows`.
-///
-/// Neither belongs in the transcript -- they describe *now*, not what was said
-/// -- so they sit above the input where the eye already is, and they use the
-/// width instead of stacking. When the terminal is too narrow to split, the
-/// columns stack (plan first, since it is the shorter of the two); when it is
-/// too short, `rows` shrinks and each column elides its own tail.
-fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
-    if rows == 0 {
-        return Vec::new();
-    }
-    let frame = app.spinner();
-    // The active resolved window drives the subagent share; it is always
-    // known (configured, catalog, or fallback), so it is always a denominator.
-    let context_window = app.context_window;
-    let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    // Once the turn has ended the children are listed over the input
-    // (`subagent_rows`), so the dock leaves them out rather than show them
-    // twice.
-    let panels: &mut [SubagentPanel] = if subagent_rows_shown(app) {
-        &mut []
-    } else {
-        &mut app.subagents
-    };
-    let has_activity = !panels.is_empty() || !app.monitors.is_empty();
-    match (has_todos, has_activity) {
-        (false, false) => Vec::new(),
-        (true, false) => todo_column(&app.todos, width, rows),
-        (false, true) => activity_column(
-            panels,
-            &app.monitors,
-            context_window,
-            width,
-            rows,
-            frame,
-        ),
-        (true, true) if width < PANEL_SPLIT_MIN_WIDTH => {
-            // Stacked: the plan keeps its head line plus whatever is left after
-            // the activity, which is the thing actually moving.
-            let activity = activity_column(
-                panels,
-                &app.monitors,
-                context_window,
-                width,
-                rows.saturating_sub(1),
-                frame,
-            );
-            let mut out = todo_column(&app.todos, width, rows - activity.len());
-            out.extend(activity);
-            out
-        }
-        (true, true) => {
-            let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
-            let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
-            let left = todo_column(&app.todos, left_w, rows);
-            let right = activity_column(
-                panels,
-                &app.monitors,
-                context_window,
-                right_w,
-                rows,
-                frame,
-            );
-            join_columns(left, right, left_w)
-        }
-    }
-}
-
-/// The right-hand panel column: the live fan-out over the live monitors.
-/// Monitors are laid out first since they are compact (one line each) and
-/// capped at half the budget; the agents take whatever they leave.
-fn activity_column(
-    panels: &mut [SubagentPanel],
-    monitors: &[MonitorSnapshot],
-    context_window: u64,
-    width: u16,
-    rows: usize,
-    frame: &str,
-) -> Vec<Line<'static>> {
-    // Agents keep priority: the monitors share at most half the budget when
-    // agents are present, and take only what they need otherwise.
-    let want_mon = if monitors.is_empty() {
-        0
-    } else {
-        1 + monitors.len()
-    };
-    let compact_budget = if panels.is_empty() {
-        rows
-    } else {
-        want_mon.min(rows / 2)
-    };
-    let monitors = monitors_column(monitors, width, compact_budget);
-    let used = monitors.len();
-    let mut out = agents_column(panels, context_window, width, rows.saturating_sub(used), frame);
-    out.extend(monitors);
-    out
-}
-
-/// The session's active monitors, as a column: one line per monitor (id, name,
-/// polls so far), plus its script when the budget stretches to a second row
-/// each.
-fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec<Line<'static>> {
-    if monitors.is_empty() || rows == 0 {
-        return Vec::new();
-    }
-    let dim = Style::new().fg(theme::muted());
-    let max = width.max(8) as usize;
-    let mut out = vec![Line::from(vec![
-        Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
-        Span::styled(
-            pluralize("monitor", monitors.len()),
-            Style::new().fg(theme::accent()).bold(),
-        ),
-    ])];
-    let body = rows - 1;
-    let (shown, hidden) = if monitors.len() <= body {
-        (monitors.len(), 0)
-    } else {
-        (
-            body.saturating_sub(1),
-            monitors.len() - body.saturating_sub(1),
-        )
-    };
-    // The overflow row takes its line first, or a script line would push it
-    // past `rows` and the hidden monitors would go uncounted.
-    let spare = (body - shown).saturating_sub(usize::from(hidden > 0));
-    let detail = spare.checked_div(shown).is_some_and(|n| n >= 1);
-    for monitor in monitors.iter().take(shown) {
-        let stats = format!("  {}", pluralize("poll", monitor.polls as usize));
-        let label = format!("{} {}", monitor.monitor_id, monitor.name);
-        out.push(Line::from(vec![
-            Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
-            Span::styled(
-                truncate(&label, max.saturating_sub(2 + stats.len())),
-                Style::new().fg(theme::accent()),
-            ),
-            Span::styled(stats, dim),
-        ]));
-        if detail {
-            out.push(Line::from(vec![
-                Span::raw("   "),
-                Span::styled(truncate(&monitor.script, max.saturating_sub(3)), dim),
-            ]));
-        }
-    }
-    if hidden > 0 {
-        out.push(overflow_row(hidden, "/monitors", "watching", max));
-    }
-    out.truncate(rows);
-    out
-}
-
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
-
-/// `1 background shell running \u{b7} /shells to view \u{b7} /stop to close`: the dim
-/// row over the input while the agent has commands running in the background,
-/// cut to `width` (the commands go before the words, so a narrow terminal
-/// still says how many are running).
-///
-/// `None` with nothing backgrounded, behind a picker, and while the working
-/// row shows: a turn's input dock is one row tall by rule (see
-/// `working_row`), so a shell backgrounded mid-turn must not make it jump.
-/// The working row carries the count then instead (`bg_shells_count`).
-fn bg_shells_row(app: &App, width: u16) -> Option<Line<'static>> {
-    let n = app.bg_shells.len();
-    if n == 0 || app.picker.is_some() || working_row_shown(app) {
-        return None;
-    }
-    let dim = Style::new().fg(theme::muted());
-    let accent = Style::new().fg(theme::accent());
-    let spans = vec![
-        Span::styled(format!(" {} running \u{b7} ", pluralize("background shell", n)), dim),
-        Span::styled("/shells", accent),
-        Span::styled(" to view \u{b7} ", dim),
-        Span::styled("/stop", accent),
-        Span::styled(" to close", dim),
-    ];
-    Some(Line::from(clip_spans(spans, width as usize)))
-}
-
-/// Whether the input row is the running turn's shimmering working row.
-fn working_row_shown(app: &App) -> bool {
-    app.status == Status::Running
-        && app.input.is_empty()
-        && app.message_queue.is_empty()
-        && app.picker.is_none()
-        && app.compacting.is_none()
-        && app.run_compacting.is_none()
-        && app.retrying.is_none()
-}
-
-/// The working row's ` \u{b7} 1 background shell` while background shells
-/// run, the compact stand-in for `bg_shells_row`, which yields to the working
-/// row.
-fn bg_shells_count(app: &App) -> Option<String> {
-    let n = app.bg_shells.len();
-    (n > 0).then(|| format!(" \u{b7} {}", pluralize("background shell", n)))
-}
 
 /// Rows the message box occupies: 1 content row for the idle/working
 /// placeholder, or the wrapped input height clamped to `MAX_INPUT_ROWS` while
 /// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.picker.is_none()
+    let content = if (app.picker.is_none() || app.steerable_detail_child().is_some())
         && app.blocking_dock().is_none()
         && !(app.status == Status::Running && app.input.is_empty())
     {
         let inner = width.saturating_sub(2).max(1);
-        let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
+        let rows = Paragraph::new(composer_lines(app))
             .wrap(Wrap { trim: false })
             .line_count(inner)
             .max(1) as u16;
@@ -24834,13 +27306,37 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `> ` on the first line, 2-space hang on
+/// The draft as the input row shows it: `input_content_lines`, then, in a
+/// subagent's detail, why its last send went nowhere (`App::steer_refusal`),
+/// under the draft it kept, and that a prompt over it holds Enter. One source
+/// for the row and the rows it is sized to.
+fn composer_lines(app: &App) -> Vec<Line<'static>> {
+    let mut lines = input_content_lines(&app.input, app.cursor);
+    if let Some(why) = app.steer_refusal.as_ref().filter(|_| app.agent_detail_open()) {
+        let (gutter, body) = Level::Error.styles();
+        lines.push(Line::from(vec![
+            Span::styled(format!("{} ", Level::Error.glyph()), gutter),
+            Span::styled(why.clone(), body),
+        ]));
+    }
+    // The draft stays visible under a prompt, but Enter does not send it
+    // there (`handle_key`), so the row says so rather than looking ready.
+    if app.prompt_over_detail() && !app.input.is_empty() {
+        lines.push(Line::styled(
+            "answer the prompt above, then Enter sends this",
+            Style::new().dim().italic(),
+        ));
+    }
+    lines
+}
+
+/// Visible input as styled lines: `USER_GLYPH` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("> ", Style::new().fg(theme::accent()).bold());
+    let arrow = Span::styled(format!("{USER_GLYPH} "), Style::new().fg(theme::accent()).bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -24904,13 +27400,24 @@ const WORKING_HINTS: [&str; 2] = [
 /// not fit `width` drops to the shorter one, then to none, so the row never
 /// wraps or changes height.
 fn working_row(app: &App, width: u16) -> Line<'static> {
+    working_line(&app.transcript, app.spinner_frame, &WORKING_HINTS, width)
+}
+
+/// `working_row` for the run `transcript` belongs to -- the main run's, or a
+/// subagent's in its `/agents` detail -- with `hints` offered beside it.
+fn working_line<H: AsRef<str>>(
+    transcript: &Transcript,
+    spinner_frame: usize,
+    hints: &[H],
+    width: u16,
+) -> Line<'static> {
     let mode = motion::mode();
     // The spinner carries the fast motion; the action word turns over on a
     // slower cadence, cycling "working" synonyms -- or "thinking" synonyms in
     // orange while a reasoning block streams -- so the row reads alive without
     // shifting under the eye.
-    let step = app.spinner_frame / WORD_ROTATE_FRAMES;
-    let (word, style, tint) = if app.transcript.reasoning_open() {
+    let step = spinner_frame / WORD_ROTATE_FRAMES;
+    let (word, style, tint) = if transcript.reasoning_open() {
         (
             THINKING_WORDS[step % THINKING_WORDS.len()],
             // Same theme-aware accent as markdown bold, so reasoning reads
@@ -24932,7 +27439,7 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
         vec![Line::from(Span::styled(message, style))],
         style,
         tint,
-        motion::frame_time(app.spinner_frame),
+        motion::frame_time(spinner_frame),
         mode,
         theme::Theme::current(),
     )
@@ -24950,22 +27457,17 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     let pad = (longest + 1).saturating_sub(word.chars().count() + 1);
     spans.push(Span::raw(" ".repeat(pad)));
     spans.splice(0..0, empty_prompt_prefix());
-    if let Some(count) = bg_shells_count(app) {
-        let room = (width as usize).saturating_sub(spans_width(&spans));
-        if count.chars().count() <= room {
-            spans.push(Span::styled(count, Style::new().fg(theme::muted())));
-        }
-    }
-    push_fitting_hint(&mut spans, &WORKING_HINTS, width);
+    push_fitting_hint(&mut spans, hints, width);
     Line::from(spans)
 }
 
-/// The `> ` prompt and the fixed block cursor that open an empty input row.
+/// The `USER_GLYPH` prompt (the transcript's user gutter, so typed and sent
+/// text read alike) and the fixed block cursor that open an empty input row.
 /// Shared by the idle placeholder and the working row so their text starts in
 /// the same column.
 fn empty_prompt_prefix() -> [Span<'static>; 3] {
     [
-        Span::styled("> ", Style::new().fg(theme::accent()).bold()),
+        Span::styled(format!("{USER_GLYPH} "), Style::new().fg(theme::accent()).bold()),
         Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
         Span::raw(" "),
     ]
@@ -24973,112 +27475,369 @@ fn empty_prompt_prefix() -> [Span<'static>; 3] {
 
 /// Append the longest of `hints` that still fits `width` beside `spans`, or
 /// none, so an input-row hint is dropped whole rather than clipped mid-word.
-fn push_fitting_hint(spans: &mut Vec<Span<'static>>, hints: &[&'static str], width: u16) {
+fn push_fitting_hint<H: AsRef<str>>(spans: &mut Vec<Span<'static>>, hints: &[H], width: u16) {
     let used = spans_width(spans);
-    if let Some(hint) = hints.iter().find(|h| used + h.len() <= width as usize) {
-        spans.push(Span::styled(*hint, Style::new().dim().italic()));
+    let fits = |h: &&H| used + h.as_ref().chars().count() <= width as usize;
+    if let Some(hint) = hints.iter().find(fits) {
+        spans.push(Span::styled(hint.as_ref().to_string(), Style::new().dim().italic()));
     }
 }
 
-/// Most agent rows `subagent_rows` hangs under its head row, so a wide
-/// fan-out cannot push the transcript off a short terminal. Past it the last
-/// row counts the rest and points at `/agents`, as the dock's overflow does.
-const SUBAGENT_DETAIL_ROWS: usize = 3;
-
-/// Whether the session's subagents show as `subagent_rows` over the input
-/// rather than in the dock: the main turn has ended, so they are what is
-/// still working, and the user is typing right under them.
-fn subagent_rows_shown(app: &App) -> bool {
-    app.status == Status::Idle && app.picker.is_none() && !app.subagents.is_empty()
+/// The input row of a subagent's `/agents` detail: the main composer's states,
+/// for the child. A draft shows as typed; an empty field shows what was sent
+/// and not yet taken, else the main view's working row while the child is
+/// generating, else the composer's placeholder, addressed to the child. A
+/// child that has ended, or one of Jan's own, takes nothing, and says so.
+fn detail_input_line(app: &App, width: u16) -> Vec<Line<'static>> {
+    let note = |text: String| vec![Line::styled(text, Style::new().dim().italic())];
+    let Some((panel, outcome)) = app.detail_panel() else {
+        return note("this subagent is no longer available - Esc to go back".to_string());
+    };
+    let name = &panel.name;
+    if outcome.is_some() {
+        return note(format!("{name} has finished and takes no messages - Esc to go back"));
+    }
+    if panel.internal {
+        return note(format!("{name} is Jan's own agent and takes no messages"));
+    }
+    if !app.input.is_empty() {
+        return composer_lines(app);
+    }
+    // The prompt owns the keys until it is answered or left: the field does
+    // not invite typing that would go nowhere.
+    if app.prompt_over_detail() {
+        return note("answer the prompt above, or Esc to go back".to_string());
+    }
+    if panel.steers_pending > 0 {
+        // The main composer's queue cue, for this child's inbox.
+        let n = panel.steers_pending;
+        return vec![Line::styled(
+            format!("\u{23f3} Pending ({n}) - {name} reads it at its next step; type to add more"),
+            Style::new().fg(theme::warning()),
+        )];
+    }
+    if panel.status(None) == AgentStatus::Running {
+        let hints = [
+            format!(" (type to message {name}, Ctrl-X to stop)"),
+            format!(" (type to message {name})"),
+        ];
+        return vec![working_line(&panel.transcript, app.spinner_frame, &hints, width)];
+    }
+    // Queued, pending on a phase, or parked: not generating, so the field
+    // offers itself. A child that has not started reads it first thing.
+    let mut spans: Vec<Span<'static>> = empty_prompt_prefix().into();
+    spans.push(Span::styled(
+        format!("Message {name}\u{2026}"),
+        Style::new().dim().italic(),
+    ));
+    if panel.pending || panel.queued {
+        push_fitting_hint(&mut spans, &[" (it reads this when it starts)"], width);
+    }
+    vec![Line::from(spans)]
 }
 
-/// The subagents still working after the main turn ended, over the input: a
-/// head row worded like `bg_shells_row` (`2 subagents running . 1 queued .
-/// /agents to view or stop`), then one tree row per child with its status,
-/// and for a running one its elapsed time and current activity.
+/// Most child rows one group of the background-work block hangs under its
+/// head, so a wide fan-out cannot push the transcript off a short terminal.
+/// Past it the last row counts the rest; the head already names the command
+/// that lists them, so the count does not repeat it.
+const BACKGROUND_GROUP_ROWS: usize = 3;
+
+/// Fewest columns of name a child row of the background-work block must be
+/// able to show. Narrower than that, every name reads as `ab...`, which says
+/// less than the head's count does, so the group collapses to its head.
+const BACKGROUND_CHILD_MIN_NAME: usize = 10;
+
+/// A head row of the background-work block: counts by state, the noun riding
+/// on the first (`2 subagents running . 1 queued`), then the commands that
+/// view or stop the group, each with its words.
+struct WorkHead {
+    noun: &'static str,
+    counts: Vec<(&'static str, usize)>,
+    hints: &'static [(&'static str, &'static str)],
+}
+
+/// One child row of the background-work block: a name, then the facts worth
+/// a glance (a status word when it is not plain running, its elapsed time or
+/// polls, what it is doing), each already styled.
+struct WorkChild {
+    name: String,
+    facts: Vec<Vec<Span<'static>>>,
+    /// Whether the last fact is a verb-first label that is cut with `...`,
+    /// keeping at least its verb, before it is dropped whole. A subagent's activity is
+    /// often a long command, and dropped whole it left a busy child reading
+    /// as idle on any row narrower than the command.
+    cut_last: bool,
+}
+
+/// A group of the background-work block: monitors, subagents or shells.
+struct WorkGroup {
+    head: WorkHead,
+    children: Vec<WorkChild>,
+}
+
+/// The one place the background-work block is formatted, so monitors,
+/// subagents and shells cannot drift apart: a head row indented one column,
+/// with its counts and hints muted, its commands in the accent and `.` between
+/// every part; then up to `cap` children on the transcript's own tree prefix
+/// (`child_prefix`), name in the accent and facts muted behind the same `.`,
+/// and a `+N more` row for the rest.
 ///
-/// Built from the live panels, which `SubagentEnd` removes, so a finished
-/// child drops out on its own. A child that has not started shows its place
-/// in line instead. The head names `/agents` because that is where a child is
-/// viewed and stopped: Esc on an idle session clears the input, and typing
-/// starts a new turn rather than steering the children. Every row is clipped
-/// to `width`. `None` whenever `subagent_rows_shown` is false.
-fn subagent_rows(app: &mut App, width: u16, now: Instant) -> Option<Vec<Line<'static>>> {
-    if !subagent_rows_shown(app) {
-        return None;
-    }
-    let max = width as usize;
+/// Every row fits `max` display columns, and gives way in the order that
+/// keeps the most meaning per column, so nothing is cut mid-word without a
+/// mark: the head drops its hint words, then its commands, then every count
+/// but the first; a child drops its facts from the last in (activity before
+/// elapsed before status), except that a `cut_last` fact is first cut to what
+/// fits, so long as its verb survives; only then is the remaining text cut,
+/// with `...`. Under `BACKGROUND_CHILD_MIN_NAME` columns of name the group is
+/// its head alone, whatever `cap` allows.
+fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+
     let dim = Style::new().fg(theme::muted());
     let accent = Style::new().fg(theme::accent());
-    let statuses: Vec<AgentStatus> = app.subagents.iter().map(|p| p.status(None)).collect();
-    let count = |want: fn(&AgentStatus) -> bool| statuses.iter().filter(|s| want(s)).count();
-    let counts = [
-        ("running", count(|s| *s == AgentStatus::Running)),
-        ("queued", count(|s| matches!(s, AgentStatus::Queued(_)))),
-        ("waiting", count(|s| matches!(s, AgentStatus::Waiting(_)))),
-    ];
-    // Worded like `bg_shells_row` beneath it: the noun rides on the first
-    // count, so `2 subagents running`, then `1 queued`.
-    let parts: Vec<String> = counts
-        .into_iter()
+    let sep = || Span::styled(" \u{b7} ", dim);
+    let parts: Vec<String> = group
+        .head
+        .counts
+        .iter()
         .filter(|(_, n)| *n > 0)
         .enumerate()
         .map(|(i, (word, n))| match i {
-            0 => format!("{} {word}", pluralize("subagent", n)),
+            0 => format!("{} {word}", pluralize(group.head.noun, *n)),
             _ => format!("{n} {word}"),
         })
         .collect();
-    // The pointer is dropped whole, longest form first, rather than cut
-    // mid-word; the counts are what a narrow terminal keeps.
     let counts = format!(" {}", parts.join(" \u{b7} "));
-    let room = max.saturating_sub(counts.chars().count());
-    let mut head = vec![Span::styled(counts, dim)];
-    let pointer = " \u{b7} /agents".chars().count();
-    if let Some(tail) = [" to view or stop", ""]
-        .into_iter()
-        .find(|tail| pointer + tail.len() <= room)
-    {
-        head.push(Span::styled(" \u{b7} ", dim));
-        head.push(Span::styled("/agents", accent));
-        head.push(Span::styled(tail, dim));
-    }
-    let mut rows = vec![Line::from(clip_spans(head, max))];
-    let total = app.subagents.len();
-    let shown = if total > SUBAGENT_DETAIL_ROWS {
-        SUBAGENT_DETAIL_ROWS - 1
-    } else {
-        total
-    };
-    for (i, (panel, status)) in app.subagents.iter_mut().zip(statuses).take(shown).enumerate() {
-        let mut spans = vec![
-            Span::styled(if i == 0 { TREE_FIRST } else { TREE_REST }, dim),
-            agent_label(&panel.name),
-            Span::raw("  "),
-        ];
-        let running = status == AgentStatus::Running;
-        spans.extend(status.spans(max));
-        if running {
-            if let Some(started) = panel.started {
-                let secs = now.saturating_duration_since(started).as_secs();
-                spans.push(Span::styled(format!("  {}", format_elapsed(secs)), dim));
-            }
-            let activity = agent_activity(panel, "");
-            if !activity.is_empty() {
-                spans.push(Span::raw("  "));
-                spans.extend(activity);
+    let first = format!(" {}", parts.first().map_or("", String::as_str));
+    let hints = |words: bool| {
+        let mut spans = vec![Span::styled(counts.clone(), dim)];
+        for (command, tail) in group.head.hints {
+            spans.push(sep());
+            spans.push(Span::styled(*command, accent));
+            if words {
+                spans.push(Span::styled(*tail, dim));
             }
         }
-        rows.push(Line::from(clip_spans(spans, max)));
+        spans
+    };
+    let head = [
+        hints(true),
+        hints(false),
+        vec![Span::styled(counts.clone(), dim)],
+        vec![Span::styled(first.clone(), dim)],
+    ]
+    .into_iter()
+    .find(|h| spans_width(h) <= max)
+    .unwrap_or_else(|| vec![Span::styled(ellipsize(&first, max), dim)]);
+    let mut out = vec![Line::from(head)];
+    let prefix_w = child_prefix(true).width();
+    let cap = if max < prefix_w + BACKGROUND_CHILD_MIN_NAME { 0 } else { cap };
+    let total = group.children.len();
+    let shown = if total > cap { cap.saturating_sub(1) } else { total };
+    for (i, child) in group.children.iter().take(shown).enumerate() {
+        // An empty fact (a status word a running child does not carry) would
+        // leave a dangling separator.
+        let facts: Vec<&Vec<Span<'static>>> = child.facts.iter().filter(|f| !f.is_empty()).collect();
+        let row = |kept: usize, name: String| {
+            let mut spans = vec![child_prefix(i == 0), Span::styled(name, accent.bold())];
+            for fact in &facts[..kept] {
+                spans.push(sep());
+                spans.extend(fact.iter().cloned());
+            }
+            spans
+        };
+        let full = row(facts.len(), child.name.clone());
+        let cut = || {
+            // The flag names the child's own last fact: an empty one was
+            // filtered out above, and the fact before it is not verb-first.
+            child.facts.last().filter(|f| !f.is_empty())?;
+            let fact = facts.last()?;
+            let mut spans = row(facts.len() - 1, child.name.clone());
+            let room = max.checked_sub(spans_width(&spans) + sep().width())?;
+            let verb = fact.first()?.content.split_whitespace().next()?;
+            if room < verb.width() + 3 {
+                return None;
+            }
+            spans.push(sep());
+            // Whole spans while they leave room for the mark, then the one
+            // that does not, cut to what is left in that span's style. The
+            // mark is part of what `ellipsize` measures, so a span that just
+            // fits without it is still cut; its trailing space is trimmed so
+            // the mark does not float off the word.
+            let mut left = room;
+            for span in fact.iter() {
+                if span.width() + 3 <= left {
+                    left -= span.width();
+                    spans.push(span.clone());
+                    continue;
+                }
+                let cut = ellipsize(&format!("{}...", span.content), left);
+                let head = cut.strip_suffix("...").unwrap_or(&cut).trim_end();
+                spans.push(Span::styled(format!("{head}..."), span.style));
+                break;
+            }
+            Some(spans)
+        };
+        let spans = Some(full)
+            .filter(|spans| spans_width(spans) <= max)
+            .or_else(|| child.cut_last.then(cut).flatten())
+            .or_else(|| {
+                (0..facts.len())
+                    .rev()
+                    .map(|kept| row(kept, child.name.clone()))
+                    .find(|spans| spans_width(spans) <= max)
+            })
+            .unwrap_or_else(|| row(0, ellipsize(&child.name, max.saturating_sub(prefix_w))));
+        out.push(Line::from(spans));
     }
-    if shown < total {
-        let more = overflow_row(total - shown, "/agents", "running", max);
-        rows.push(Line::from(clip_spans(more.spans, max)));
+    // At `cap` 0 the group is its head alone, which already carries the count.
+    if shown < total && cap > 0 {
+        let more = format!("+{} more", total - shown);
+        out.push(Line::from(vec![
+            child_prefix(shown == 0),
+            Span::styled(ellipsize(&more, max.saturating_sub(prefix_w)), dim),
+        ]));
     }
-    Some(rows)
+    out
+}
+
+/// The session's monitors as a group: `mon-1 build . 12 polls` each. The
+/// script stays in `/monitors`; here it was a line of noise per monitor.
+fn monitor_group(monitors: &[MonitorSnapshot]) -> Option<WorkGroup> {
+    let dim = Style::new().fg(theme::muted());
+    (!monitors.is_empty()).then(|| WorkGroup {
+        head: WorkHead {
+            noun: "monitor",
+            counts: vec![("watching", monitors.len())],
+            hints: &[("/monitors", " to view or stop")],
+        },
+        children: monitors
+            .iter()
+            .map(|m| WorkChild {
+                name: format!("{} {}", m.monitor_id, single_line(&m.name)),
+                facts: vec![vec![Span::styled(pluralize("poll", m.polls as usize), dim)]],
+                cut_last: false,
+            })
+            .collect(),
+    })
+}
+
+/// The session's subagents as a group. A running child shows its elapsed
+/// time and what it is doing; the head already says it is running, so only
+/// a child that is not carries a status word: queued for a slot (with its
+/// place in line), queued behind an earlier phase (with its phase), or
+/// started and waiting on background work of its own, which keeps its
+/// elapsed time.
+/// The head names `/agents` because that is where a child is viewed and
+/// stopped in either state: Esc mid-turn cancels the turn and every child
+/// with it, and idle it only clears the input.
+fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGroup> {
+    if panels.is_empty() {
+        return None;
+    }
+    let dim = Style::new().fg(theme::muted());
+    let statuses: Vec<AgentStatus> = panels.iter().map(|p| p.status(None)).collect();
+    let count = |want: fn(&AgentStatus) -> bool| statuses.iter().filter(|s| want(s)).count();
+    let counts = vec![
+        ("running", count(|s| *s == AgentStatus::Running)),
+        // A later-phase child has not started either, so it counts as queued
+        // with the capped ones; "waiting" is a started child idle on its own
+        // background work.
+        ("queued", count(|s| matches!(s, AgentStatus::Queued(_) | AgentStatus::Waiting(_)))),
+        ("waiting", count(|s| *s == AgentStatus::Parked)),
+    ];
+    let children = panels
+        .iter_mut()
+        .zip(statuses)
+        .map(|(panel, status)| {
+            let running = status == AgentStatus::Running;
+            let word = (!running).then(|| status.spans(usize::MAX));
+            let elapsed = panel.started.map(|started| {
+                let secs = now.saturating_duration_since(started).as_secs();
+                vec![Span::styled(format_elapsed(secs), dim)]
+            });
+            let activity = running.then(|| agent_activity(panel));
+            let facts = word.into_iter().chain(elapsed).chain(activity).collect();
+            WorkChild {
+                name: panel.name.clone(),
+                facts,
+                cut_last: running,
+            }
+        })
+        .collect();
+    Some(WorkGroup {
+        head: WorkHead {
+            noun: "subagent",
+            counts,
+            hints: &[("/agents", " to view or stop")],
+        },
+        children,
+    })
+}
+
+/// The commands the agent left running in the background, as a group:
+/// `npm run dev . 1m 05s` each.
+fn shell_group(shells: &[tauri_plugin_agent_tools::tools::proc::ShellInfo]) -> Option<WorkGroup> {
+    let dim = Style::new().fg(theme::muted());
+    (!shells.is_empty()).then(|| WorkGroup {
+        head: WorkHead {
+            noun: "background shell",
+            counts: vec![("running", shells.len())],
+            hints: &[("/shells", " to view"), ("/stop", " to close")],
+        },
+        children: shells
+            .iter()
+            .map(|shell| WorkChild {
+                name: single_line(&shell.command),
+                facts: vec![vec![Span::styled(format_elapsed(shell.elapsed_secs), dim)]],
+                cut_last: false,
+            })
+            .collect(),
+    })
+}
+
+/// Everything working in the background -- monitors, subagents, shells -- as
+/// one block over the input, at most `rows` tall.
+///
+/// Drawn in this one slot whether the main turn runs or not: a finishing child
+/// or a matching monitor pings the session, which flips it to Running and
+/// back, and work that followed the status hopped between the dock and the
+/// input on every ping. A short frame gives up child rows first, a row per
+/// group at a time, then whole groups from the bottom up, keeping each head as
+/// long as it can. Built from the live sets, so finished work drops out on its
+/// own. Empty behind a picker, which hides the block rather than moving it.
+fn background_rows(app: &mut App, width: u16, rows: usize, now: Instant) -> Vec<Line<'static>> {
+    if app.picker.is_some() {
+        return Vec::new();
+    }
+    let groups: Vec<WorkGroup> = [
+        monitor_group(&app.monitors),
+        subagent_group(&mut app.subagents, now),
+        shell_group(&app.bg_shells),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let max = width as usize;
+    for cap in (0..=BACKGROUND_GROUP_ROWS).rev() {
+        let out: Vec<Line<'static>> =
+            groups.iter().flat_map(|g| work_group_lines(g, cap, max)).collect();
+        if out.len() <= rows || cap == 0 {
+            return out.into_iter().take(rows).collect();
+        }
+    }
+    Vec::new()
 }
 
 fn input_box(app: &App, width: u16) -> Paragraph<'static> {
     let block = Block::default();
+    // Ahead of the main run's states: the field is the child's here, and the
+    // main run's own state is still in the header.
+    if app.agent_detail_open() {
+        return Paragraph::new(detail_input_line(app, width))
+            .wrap(Wrap { trim: false })
+            .block(block);
+    }
     if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
         // Compaction puts nothing in the transcript while it runs, so the input
         // row carries the label and the elapsed seconds.
@@ -25221,6 +27980,25 @@ fn dock_line(app: &App, width: u16) -> Paragraph<'static> {
 }
 
 fn footer_spans(app: &App) -> Vec<Span<'static>> {
+    // Over a subagent's detail the letters and a stray Enter answer nothing,
+    // and Esc/Ctrl-C step out of the detail (`handle_key_input`).
+    if app.prompt_over_detail() {
+        let style = Style::new().fg(theme::warning()).bold();
+        // The free-text field takes the keys, and Esc closes only it.
+        if app.ask_queue.front().is_some_and(|ask| ask.editing_custom) {
+            return hint_spans(style, &[("Enter", "answer"), ("Esc", "options")]);
+        }
+        // Enter is named only once it would confirm something: armed with an
+        // arrow (`Pending::arrow`) and past its pause (`PromptPause::key_lands`).
+        return if app.front_prompt_live() {
+            hint_spans(
+                style,
+                &[("\u{2191}/\u{2193}", "move"), ("Enter", "confirm"), ("Esc", "back")],
+            )
+        } else {
+            hint_spans(style, &[("\u{2191}/\u{2193}", "pick"), ("Esc", "back")])
+        };
+    }
     if !app.pending_queue.is_empty() {
         return hint_spans(
             Style::new().fg(theme::warning()).bold(),
@@ -25231,6 +28009,13 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
                 ("Ctrl-C", "cancel"),
             ],
         );
+    }
+    // A child that takes no messages has nothing to send or stop.
+    if app.agent_detail_open() && app.steerable_detail_child().is_none() {
+        return vec![Span::styled(
+            " PgUp/PgDn scroll   Esc back/^C close",
+            Style::new().dim(),
+        )];
     }
     if let Some(picker) = &app.picker {
         return vec![Span::styled(picker.action_hint(), Style::new().dim())];
@@ -25285,8 +28070,8 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         // the other states.
         Status::Idle => vec![Span::raw(" ")],
     };
-    // A pending queue leads the row in every state. Background shells have
-    // their own row over the input (`bg_shells_row`).
+    // A pending queue leads the row in every state. Background shells are
+    // listed over the input (`background_rows`).
     let queue_count = app.message_queue.len();
     if queue_count > 0 {
         spans.insert(
@@ -25317,11 +28102,12 @@ mod tests {
     fn no_mcp() -> crate::core::state::SharedMcpServers {
         std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
     }
-    use super::journal::{self, DisplayEntry};
+    use crate::core::agent::session_log::{DisplayEntry, SessionWriter};
     use super::{
         cancel_command, next_event, RunEvent, SessionLimits, SteeringRequest, SubagentOutcome,
     };
     use tokio::sync::mpsc;
+    use super::{PromptPause, HELD_KEY_WINDOW, PROMPT_PAUSE, STEP_AGAIN_WINDOW};
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
@@ -25329,21 +28115,27 @@ mod tests {
         await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
+        begin_memory_tidy, finish_memory_tidy, memory_command, start_memory_tidy, TidyKind,
+        with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
+        tool_kind, ToolOp,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
         header_spans, image_mime,
         image_mime_of, input_content_lines, is_user_turn, load_first_file_image, load_image_file,
         message_text, note_update, open_config_screen, open_fork_picker, open_rewind_picker,
         open_tree_picker, pairs_to_str, parse_command, partial_json_field,
-        provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
+        provider_label_for_model, read_span, rebuild_recall, replay_display_log, restore_goal,
         restore_host_system_prompt, restore_run_mode, restore_todos, resume_hint, rewind_to,
         route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        with_real_think_tag_gate, worktree_command, AgentStatus, App, CompactKind, ContextReport,
+        with_real_think_tag_gate, worktree_command, await_job, spawn_worktree_report,
+        worktrees_command, spawn_worktrees_job, finish_worktrees_job, worktrees_picker_items,
+        open_worktrees_picker, worktrees_action, WorktreesDone, WorktreesJob,
+        finish_worktree_report, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -25353,8 +28145,8 @@ mod tests {
         SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_picker_items, agents_column, background_shell_picker_items, bg_shells_row,
-        cache_summary_lines, monitor_picker_items, monitors_column, open_agents_picker,
+        agent_picker_items, background_shell_picker_items,
+        cache_summary_lines, monitor_picker_items, open_agents_picker,
         open_background_shells_picker, open_monitors_picker, NoticeKind, retry_wait_label, RetryWait, SubagentPanel, CHILD_RESULT_MAX,
         CHILD_ROWS_MAX,
     };
@@ -25492,9 +28284,9 @@ mod tests {
         assert_eq!(panel.calls.len(), 6, "every call is still listed");
     }
 
-    /// Labels that collide must not read as a spin in the dock either.
+    /// Labels that collide must not read as a spin in the background block either.
     #[test]
-    fn agents_column_does_not_flag_same_label_calls_with_new_arguments() {
+    fn background_block_does_not_flag_same_label_calls_with_new_arguments() {
         let mut panel = panel_with_calls("kv-review", vec![]);
         for offset in 0..5u64 {
             panel.record_call(
@@ -25503,19 +28295,21 @@ mod tests {
                 "read big.rs".into(),
             );
         }
-        let lines = agents_column(&mut [panel], 200_000, 80, 8, "-");
-        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        let mut app = test_app();
+        app.subagents = vec![panel];
+        let text = subagent_text(&mut app, 80, Instant::now()).join("\n");
         assert!(!text.contains('\u{d7}'), "no repeat marker: {text}");
     }
 
-    /// A worker spinning on one call collapses to a `×N` line in the panel, so
+    /// A worker spinning on one call collapses to a `×N` line in the block, so
     /// the loop is visible at a glance rather than hidden behind the tool counter
     /// with one innocuous call on screen.
     #[test]
-    fn agents_column_collapses_a_repeated_call() {
+    fn background_block_collapses_a_repeated_call() {
         let call = "bash {\"command\":\"ls -la\"}";
-        let mut panels = vec![panel_with_calls("kv-review", vec![call; 5])];
-        let lines = agents_column(&mut panels, 200_000, 80, 8, "-");
+        let mut app = test_app();
+        app.subagents = vec![panel_with_calls("kv-review", vec![call; 5])];
+        let lines = super::background_rows(&mut app, 80, 8, Instant::now());
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("⚠ looping ×5"), "a spin reads as a loop: {text}");
         // The single call is not duplicated across five rows.
@@ -25530,13 +28324,10 @@ mod tests {
 
     /// Below the loop threshold a run of one call keeps a quiet dim count.
     #[test]
-    fn agents_column_counts_a_short_repeat_quietly() {
-        let mut panels = vec![panel_with_calls("kv-review", vec!["Ran ls"; 2])];
-        let text = agents_column(&mut panels, 200_000, 80, 8, "-")
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
+    fn background_block_counts_a_short_repeat_quietly() {
+        let mut app = test_app();
+        app.subagents = vec![panel_with_calls("kv-review", vec!["Ran ls"; 2])];
+        let text = subagent_text(&mut app, 80, Instant::now()).join("\n");
         assert!(text.contains("Ran ls ×2"), "{text}");
         assert!(!text.contains("looping"), "{text}");
     }
@@ -25576,12 +28367,8 @@ mod tests {
                 delta: r#"{"path":"src/kv.rs","content":"x"#.into(),
             },
         );
-        let text = agents_column(&mut app.subagents, 200_000, 80, 8, "-")
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(text.contains("- Writing kv.rs"), "the call in flight: {text}");
+        let text = subagent_text(&mut app, 80, Instant::now()).join("\n");
+        assert!(text.contains("Writing kv.rs"), "the call in flight: {text}");
     }
 
     /// One status vocabulary: each state's word, in its own colour.
@@ -25605,49 +28392,90 @@ mod tests {
         assert_eq!(text, "Error - 429");
         assert_eq!(style.fg, Some(ratatui::style::Color::Red));
         assert_eq!(words(AgentStatus::Queued(2)).0, "Queued (2)");
-        assert_eq!(words(AgentStatus::Waiting(Some(3))).0, "Waiting (phase 3)");
+        assert_eq!(words(AgentStatus::Waiting(Some(3))).0, "Queued \u{b7} phase 3");
+        assert_eq!(words(AgentStatus::Parked).0, "Waiting on background work");
     }
 
-    /// The full and compact stats come from one function and leave out what
-    /// is not known yet.
+    /// A child that parks on its own background work reads as waiting, in
+    /// the block, its head count and `/agents`, and goes back to running on
+    /// its next request.
     #[test]
-    fn agent_stats_full_and_compact_forms() {
+    fn a_parked_child_waits_then_resumes() {
+        let mut app = test_app();
+        let now = Instant::now();
+        start_subagent(&mut app, "r0", "builder");
+        app.subagents[0].started = Some(now - Duration::from_secs(30));
+        subagent_event(&mut app, "r0", "builder", StreamEvent::Parked);
+        assert_eq!(app.subagents[0].status(None), AgentStatus::Parked);
+        assert_eq!(
+            subagent_text(&mut app, 100, now),
+            vec![
+                " 1 subagent waiting \u{b7} /agents to view or stop",
+                "  \u{2514} builder \u{b7} Waiting on background work \u{b7} 30s",
+            ]
+        );
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
+        assert!(items[0].label.contains("Waiting on background work"), "{}", items[0].label);
+        subagent_event(&mut app, "r0", "builder", StreamEvent::Step { index: 2, max: 8 });
+        assert_eq!(app.subagents[0].status(None), AgentStatus::Running);
+        assert!(subagent_text(&mut app, 100, now)[0].starts_with(" 1 subagent running"));
+    }
+
+    /// A child's `Parked` is the child's alone: the parent's own run neither
+    /// commits its answer as parked nor leaves `Running`, and only the panel
+    /// of the child that sent it reads as waiting.
+    #[test]
+    fn a_wrapped_parked_marks_only_that_child() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        assert_eq!(app.status, Status::Running);
+        start_subagent(&mut app, "r0", "builder");
+        start_subagent(&mut app, "r1", "tester");
+        subagent_event(&mut app, "r0", "builder", StreamEvent::Parked);
+        assert!(app.subagents[0].parked, "the sender is parked");
+        assert!(!app.subagents[1].parked, "its sibling is not");
+        assert!(app.parked_answer.is_none(), "the parent did not park");
+        assert_eq!(app.status, Status::Running);
+    }
+
+    /// The stats leave out what is not known yet.
+    #[test]
+    fn agent_stats_leave_out_what_is_not_known() {
         let text = |spans: Vec<ratatui::text::Span<'static>>| {
             spans.iter().map(|s| s.content.to_string()).collect::<String>()
         };
         let mut panel = panel_with_calls("kv-review", vec!["Ran a", "Ran b", "Ran c", "Ran d"]);
         panel.requests = 4;
-        assert_eq!(text(agent_stats(&panel, 128_000, false)), "4 tools \u{b7} 4 req");
+        assert_eq!(text(agent_stats(&panel, 128_000)), "4 tools \u{b7} 4 req");
         panel.prompt_tokens = 64_000;
         panel.total_prompt_tokens = 64_000;
         panel.total_cached_tokens = 48_000;
         panel.cache_reported = true;
         assert_eq!(
-            text(agent_stats(&panel, 128_000, false)),
+            text(agent_stats(&panel, 128_000)),
             "4 tools \u{b7} 4 req \u{b7} 50% ctx \u{b7} 75% cache hit"
         );
-        assert_eq!(
-            text(agent_stats(&panel, 128_000, true)),
-            "4 tools \u{b7} 50% ctx \u{b7} 75% cache hit"
-        );
         panel.queued = true;
-        assert!(agent_stats(&panel, 128_000, false).is_empty(), "no stats before it starts");
+        assert!(agent_stats(&panel, 128_000).is_empty(), "no stats before it starts");
     }
 
-    /// A dispatch is a bullet row naming every child, with each brief under it.
+    /// A dispatch is one block per child: its name, then the first line of its
+    /// task, cut to one row so a long brief cannot push the transcript away.
     #[test]
-    fn a_dispatch_row_names_the_children_and_their_briefs() {
+    fn a_dispatch_row_is_one_block_per_child_with_its_brief() {
         let mut app = test_app();
+        let long = "Review the store for races between the writer and the reader threads";
         app.apply(StreamEvent::ToolCall {
             id: "d1".into(),
             name: "dispatch_subagent".into(),
             args: json!({ "subagents": [
-                { "agent": "review", "task": "Review the store.\nThen report." },
+                { "agent": "review", "task": format!("\n{long}.\nThen report.") },
                 { "agent": "general", "task": "Write the docs." },
             ] }),
         });
         let text = transcript_text(&app);
-        assert!(text.contains("• Dispatching review, general"), "{text}");
+        assert!(text.contains("• Dispatching review\n"), "{text}");
+        assert!(text.contains("• Dispatching general\n"), "{text}");
         app.apply(StreamEvent::ToolResult {
             id: "d1".into(),
             content: "dispatched".into(),
@@ -25657,14 +28485,20 @@ mod tests {
         let text = transcript_text(&app);
         assert!(
             text.contains(concat!(
-                "• Dispatched review, general\n",
-                "  └ review: Review the store.\n",
-                "    general: Write the docs."
+                "• Dispatched review\n",
+                "  └ Review the store for races between the writer and the reader threads.\n",
+                "• Dispatched general\n",
+                "  └ Write the docs."
             )),
             "{text}"
         );
+        assert!(!text.contains("Then report"), "only the first line: {text}");
         assert!(!text.contains("dispatched\n"), "a clean result adds no row: {text}");
         assert!(has_dispatch_state(&app, ToolState::Success));
+        let narrow = render_rows(&mut app, 40, 20);
+        let brief = narrow.iter().find(|r| r.contains("Review the")).expect("brief row");
+        assert!(brief.trim_end().ends_with('\u{2026}'), "cut, not wrapped: {narrow:?}");
+        assert!(!narrow.iter().any(|r| r.contains("threads")), "{narrow:?}");
     }
 
     /// The row names each worker as the dispatch actually named it: an
@@ -25681,7 +28515,7 @@ mod tests {
                 { "agent": "general", "task": "Write the docs." },
             ] }),
         });
-        assert!(transcript_text(&app).contains("• Dispatching explore, general"));
+        assert!(transcript_text(&app).contains("• Dispatching explore\n"));
         app.apply(StreamEvent::ToolResult {
             id: "d1".into(),
             content: format!(
@@ -25697,9 +28531,10 @@ mod tests {
         let text = transcript_text(&app);
         assert!(
             text.contains(concat!(
-                "• Dispatched explore-2, general\n",
-                "  └ explore-2: Find the store.\n",
-                "    general: Write the docs."
+                "• Dispatched explore-2\n",
+                "  └ Find the store.\n",
+                "• Dispatched general\n",
+                "  └ Write the docs."
             )),
             "{text}"
         );
@@ -25719,7 +28554,210 @@ mod tests {
         );
     }
 
-    /// A dispatch the run never resolved reads as interrupted, not running.
+    /// A dispatch row says what was dispatched and is never rewritten as the
+    /// children are queued and start; each child that ends is an event of its
+    /// own, where it ended, with its run time and workspace. A resume shows
+    /// the same.
+    #[test]
+    fn a_child_ending_is_its_own_event_not_an_edit_of_its_dispatch() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the parser." },
+                { "agent": "general", "task": "Write the docs." },
+            ] }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: "dispatched".into(),
+            is_error: false,
+            diff: None,
+        });
+        let dispatched = transcript_text(&app);
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            task: Some("Find the parser.".into()),
+            workspace: Some("/tmp/wt-a (jan/agent/explore)".into()),
+            internal: false,
+        });
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "sub-general-2".into(),
+            name: "general".into(),
+            task: Some("Write the docs.".into()),
+            waiting: 1,
+        });
+        assert_eq!(transcript_text(&app), dispatched, "no edit in place");
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-general-2".into(),
+            name: "general".into(),
+            task: None,
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: None,
+        });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-general-2".into(),
+            name: "general".into(),
+            error: Some("stopped by the parent agent".into()),
+        });
+        app.transcript.settle(false);
+        let blocks = |app: &App| -> Vec<String> {
+            app.transcript
+                .rows
+                .iter()
+                .filter(|r| !r.is_blank())
+                .map(message_text_of)
+                .collect()
+        };
+        let done = vec![
+            "• Dispatched explore\n  └ Find the parser.\n\
+             • Dispatched general\n  └ Write the docs."
+                .to_string(),
+            "• Finished explore · 0 tools · 0s\n  └ Completed\n    /tmp/wt-a (jan/agent/explore)"
+                .to_string(),
+            "• Finished general · 0 tools · 0s\n  └ Error - stopped by the parent agent"
+                .to_string(),
+        ];
+        assert_eq!(blocks(&app), done);
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        assert!(blocks(&resumed).ends_with(&done[1..]), "{:?}", blocks(&resumed));
+    }
+
+    /// A child's end lands after what the parent said and did before it:
+    /// buffered prose and an open tool group are committed first, so the
+    /// `Finished` row never jumps above them and a later call never joins a
+    /// group above it. A resume lays it out the same way.
+    #[test]
+    fn a_child_ending_lands_after_the_parents_output_so_far() {
+        let read = |app: &mut App, id: &str, path: &str| {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "read".into(),
+                args: json!({ "path": path }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "x".into(),
+                is_error: false,
+                diff: None,
+            });
+        };
+        // The child starts first: starting commits the parent's output, so
+        // only what the parent emits while the child runs is at stake.
+        let start = |app: &mut App| {
+            app.apply(StreamEvent::SubagentStart {
+                run_id: "sub-explore-1".into(),
+                name: "explore".into(),
+                task: Some("look".into()),
+                workspace: None,
+                internal: false,
+            });
+        };
+        let end = |app: &mut App| {
+            app.apply(StreamEvent::SubagentEnd {
+                run_id: "sub-explore-1".into(),
+                name: "explore".into(),
+                error: None,
+            });
+        };
+        let order = |text: &str, items: &[&str]| {
+            let at: Vec<usize> = items
+                .iter()
+                .map(|i| text.find(i).unwrap_or_else(|| panic!("no {i:?}: {text}")))
+                .collect();
+            assert!(at.windows(2).all(|w| w[0] < w[1]), "{items:?} out of order: {text}");
+        };
+
+        let mut app = test_app();
+        start(&mut app);
+        app.apply(StreamEvent::Token { text: "Before completion.".into() });
+        end(&mut app);
+        app.transcript.settle(false);
+        order(&transcript_text(&app), &["Before completion.", "Finished explore"]);
+
+        let mut app = test_app();
+        start(&mut app);
+        read(&mut app, "r1", "a.rs");
+        end(&mut app);
+        read(&mut app, "r2", "b.rs");
+        app.transcript.settle(false);
+        let live = transcript_text(&app);
+        order(&live, &["a.rs", "Finished explore", "b.rs"]);
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        order(&transcript_text(&resumed), &["a.rs", "Finished explore", "b.rs"]);
+    }
+
+    /// A child ending in the middle of the parent's answer commits the part
+    /// streamed so far to the transcript, but `history` still gets the whole
+    /// answer and its reasoning, not just what streamed after the child ended.
+    #[test]
+    fn a_child_ending_mid_answer_keeps_the_whole_answer_in_history() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::Reasoning { text: "Think first.".into() });
+        app.apply(StreamEvent::Token { text: "The answer ".into() });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: None,
+        });
+        app.apply(StreamEvent::Reasoning { text: " Then more.".into() });
+        app.apply(StreamEvent::Token { text: "is ".into() });
+        // A notice lands the same way, and a second commit adds nothing twice.
+        app.apply(StreamEvent::Notice { text: "monitor matched".into() });
+        app.apply(StreamEvent::Token { text: "42.".into() });
+        app.on_done("stop".into(), None);
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "The answer is 42.");
+        assert_eq!(last["reasoning_content"], "Think first. Then more.");
+        // A new step's answer starts clean: what the last step said went to
+        // history with that step.
+        app.submit_user("again".into());
+        app.apply(StreamEvent::Token { text: "Fresh.".into() });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.history.last().unwrap()["content"], "Fresh.");
+    }
+
+    /// A dispatch that names no child it can parse still has its header, so
+    /// the error the tool answers with is not left without a title.
+    #[test]
+    fn a_dispatch_without_children_keeps_its_header() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "task": "no subagents array" }),
+        });
+        assert!(transcript_text(&app).contains("\u{2022} Dispatching"), "{}", transcript_text(&app));
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: "ERROR: missing required argument 'subagents'".into(),
+            is_error: true,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(text.contains("\u{2022} Dispatched"), "{text}");
+        assert!(text.contains("missing required argument"), "{text}");
+    }
+
+    /// A dispatch the run never resolved reads as interrupted, not running,
+    /// and still says what each child was sent to do.
     #[test]
     fn an_unresolved_dispatch_row_is_interrupted_by_a_cancel() {
         let mut app = test_app();
@@ -25728,9 +28766,11 @@ mod tests {
             name: "dispatch_subagent".into(),
             args: json!({ "subagents": [{ "agent": "general", "task": "go" }] }),
         });
+        assert!(transcript_text(&app).contains("\u{2022} Dispatching general\n  \u{2514} go"));
         app.transcript.settle(true);
         assert!(has_dispatch_state(&app, ToolState::Interrupted));
-        assert!(transcript_text(&app).contains("• Dispatching general\n  └ go"));
+        let text = transcript_text(&app);
+        assert!(text.contains("\u{2022} Dispatching general\n  \u{2514} go"), "{text}");
     }
 
     fn has_dispatch_state(app: &App, state: ToolState) -> bool {
@@ -25757,7 +28797,7 @@ mod tests {
 
     #[test]
     fn agents_picker_shows_a_watermark_when_no_children_run() {
-        let items = agent_picker_items(&mut [], &[], 200_000);
+        let items = agent_picker_items(&mut [], &[], &[], 200_000);
         assert_eq!(items.len(), 1);
         assert!(items[0].value.is_empty(), "watermark row has no run_id to open");
         assert!(items[0].label.contains("no subagents"), "{}", items[0].label);
@@ -25766,7 +28806,7 @@ mod tests {
     #[test]
     fn agents_picker_row_names_the_child_and_flags_a_spin() {
         let mut panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
-        let items = agent_picker_items(&mut panels, &[], 200_000);
+        let items = agent_picker_items(&mut panels, &[], &[], 200_000);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-kv-review-1");
         assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
@@ -25784,6 +28824,23 @@ mod tests {
         let text = agent_detail_text(&mut app, "sub-kv-review-1", 100, 20);
         assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
         assert!(text.contains("5 tools · 0 req  Running · ⚠ looping ×5"), "{text}");
+    }
+
+    /// `/agents` names where a child works: its worktree and branch, or the
+    /// checkout it was given read-only.
+    #[test]
+    fn agent_detail_names_the_childs_workspace() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-general-1".into(),
+            name: "general".into(),
+            task: Some("fix it".into()),
+            workspace: Some("~/.jan/worktrees/jan-1/general-3f2a (jan/agent/general-3f2a)".into()),
+            internal: false,
+        });
+        let text = agent_detail_text(&mut app, "sub-general-1", 120, 20);
+        assert!(text.contains("workspace ~/.jan/worktrees/jan-1/general-3f2a"), "{text}");
+        assert!(text.contains("jan/agent/general-3f2a"), "{text}");
     }
 
     #[test]
@@ -25809,13 +28866,9 @@ mod tests {
         assert_eq!(app.subagents.len(), 1);
         assert!(app.subagents[0].pending && app.subagents[0].phase == Some(2));
 
-        let text = agents_column(&mut app.subagents, 200_000, 80, 8, "-")
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let text = subagent_text(&mut app, 80, Instant::now()).join("\n");
         assert!(
-            text.contains("collector") && text.contains("Waiting (phase 2)"),
+            text.contains("collector") && text.contains("Queued \u{b7} phase 2"),
             "the waiting hint is shown: {text}"
         );
 
@@ -25823,6 +28876,8 @@ mod tests {
             run_id: "sub-collector-1".to_string(),
             name: "collector".to_string(),
             task: Some("synthesize".to_string()),
+            workspace: None,
+            internal: false,
         });
         assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
         assert!(!app.subagents[0].pending);
@@ -25835,6 +28890,97 @@ mod tests {
         );
     }
 
+    /// A multi-phase dispatch, driven by the events the core sends in order:
+    /// the call, its `SubagentPlan`, phase 0's start, the result, then a later
+    /// phase's start and the end of one stopped before it started. Only a
+    /// started child reads as dispatched or running; a later-phase one reads
+    /// as queued for its phase on every surface until its own start flips it,
+    /// and one stopped before it started ends instead of waiting forever.
+    #[test]
+    fn a_later_phase_child_reads_queued_until_it_starts() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        let now = Instant::now();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the parser." },
+                { "agent": "collector", "task": "Merge the findings.", "phase": 2 },
+                { "agent": "general", "task": "Write it up.", "phase": 2 },
+            ] }),
+        });
+        assert!(transcript_text(&app).contains("\u{2022} Queueing collector \u{b7} phase 2\n"));
+        app.apply(StreamEvent::SubagentPlan {
+            pending: ["collector", "general"]
+                .map(|name| PendingSubagent { name: name.into(), phase: 2 })
+                .to_vec(),
+        });
+        start_subagent(&mut app, "sub-explore-1", "explore");
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: crate::core::agent::subagent::worker_names_line(&[
+                "explore".to_string(),
+                "collector".to_string(),
+                "general".to_string(),
+            ]),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(text.contains("\u{2022} Dispatched explore\n"), "{text}");
+        assert!(
+            text.contains(concat!(
+                "\u{2022} Queued collector \u{b7} phase 2\n",
+                "  \u{2514} Merge the findings."
+            )),
+            "{text}"
+        );
+        assert!(!text.contains("Dispatched collector"), "{text}");
+        assert!(!text.contains("Dispatched general"), "{text}");
+        let block = subagent_text(&mut app, 100, now);
+        assert_eq!(block[0], " 1 subagent running \u{b7} 2 queued \u{b7} /agents to view or stop");
+        // The plan announces its later phases before phase 0 starts, so
+        // their panels come first.
+        assert!(block[1].ends_with("collector \u{b7} Queued \u{b7} phase 2"), "{block:?}");
+        assert!(block[3].contains("explore") && !block[3].contains("Queued"), "{block:?}");
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
+        assert!(items[0].label.ends_with("Queued \u{b7} phase 2"), "{}", items[0].label);
+        assert!(items[2].label.contains("Running"), "{}", items[2].label);
+        let header = super::agent_detail_header(&mut app.subagents[0], None, 128_000, 80);
+        let header: String = header[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(header, "Queued \u{b7} phase 2");
+
+        // A child stopped before it started ends under a run id no panel
+        // knows: its end falls back to the waiting panel of its name, so its
+        // row closes rather than waiting forever.
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-general-stopped-9".into(),
+            name: "general".into(),
+            error: Some("stopped by the parent agent before it started".into()),
+        });
+        let names: Vec<&str> = app.subagents.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["collector", "explore"], "only the stopped row is gone");
+        let text = transcript_text(&app);
+        assert!(
+            text.contains("Finished general")
+                && text.contains("Error - stopped by the parent agent before it started"),
+            "{text}"
+        );
+
+        // Phase 0 ends and the next phase starts: the label flips in place.
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: None,
+        });
+        start_subagent(&mut app, "sub-collector-1", "collector");
+        let block = subagent_text(&mut app, 100, now);
+        assert_eq!(block[0], " 1 subagent running \u{b7} /agents to view or stop");
+        assert!(!block[1].contains("Queued"), "{block:?}");
+        assert_eq!(app.subagents[0].status(None), AgentStatus::Running);
+    }
+
     /// Enter on the `/agents` list drills into a child's detail; Esc steps back
     /// to the list rather than closing the inspector.
     #[tokio::test]
@@ -25844,6 +28990,8 @@ mod tests {
             run_id: "sub-a-1".to_string(),
             name: "a".to_string(),
             task: Some("do it".to_string()),
+            workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
@@ -25864,6 +29012,8 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count things".to_string()),
+            workspace: None,
+            internal: false,
         });
         let child = |event: StreamEvent| StreamEvent::Subagent {
             run_id: "sub-counter-1".to_string(),
@@ -25914,7 +29064,8 @@ mod tests {
         let order = [
             "┊ Thought",
             "• Let me run the command.",
-            "• Read 1 file; ran 1 command",
+            "• Worked · 2 tool calls",
+            "└ Read 1 file; ran 1 command",
             "• All done.",
         ];
         let mut at = 0;
@@ -25929,7 +29080,7 @@ mod tests {
         let child = &app.subagents[0].transcript;
         let failed = child.rows.iter().any(|row| {
             row.lines(100).iter().any(|l| {
-                line_text(l).contains("Read 1 file")
+                line_text(l).contains("Worked")
                     && l.spans[0].style == ToolState::Failure.bullet_style()
             })
         });
@@ -26000,7 +29151,7 @@ mod tests {
         assert!(app.subagents.is_empty(), "the live panel is gone");
         let items = {
             let app = &mut *app;
-            agent_picker_items(&mut app.subagents, &app.transcript.subagent_blocks, 200_000)
+            agent_picker_items(&mut app.subagents, &app.transcript.subagent_blocks, &[], 200_000)
         };
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-counter-1");
@@ -26033,7 +29184,7 @@ mod tests {
         let rows = render_rows(&mut app, 100, 40);
         let screen = rows.join("\n");
         assert!(
-            rows.windows(2).any(|w| w[0].trim_end() == "• Finished counter · 2 tools"
+            rows.windows(2).any(|w| w[0].trim_end() == "• Finished counter · 2 tools · 0s"
                 && w[1].trim_end() == "  └ Completed - All done."),
             "{screen}"
         );
@@ -26051,11 +29202,12 @@ mod tests {
         );
     }
 
-    /// `m` on a child's detail opens a message dock; Enter queues the text on
-    /// the child's inbox through the same `message_subagent` the parent agent
-    /// uses, so it lands as a plain user turn at the child's next boundary.
+    /// The detail's input is the composer, aimed at the child: Enter queues
+    /// the typed text on the child's inbox through the same `message_subagent`
+    /// the parent agent uses, so it lands as a plain user turn at the child's
+    /// next boundary, and the field clears for the next one.
     #[tokio::test]
-    async fn agents_detail_m_steers_the_child_like_the_parent_does() {
+    async fn agents_detail_input_steers_the_child_like_the_parent_does() {
         let mut app = test_app();
         let inbox = crate::core::agent::subagent::tests::register_live_child(
             &app.subagent_set,
@@ -26066,84 +29218,1383 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count".to_string()),
+            workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
-        assert!(app.agent_message.is_some(), "m opens the message dock");
-        assert!(app.blocking_dock().is_some(), "the dock owns the keyboard");
+        assert!(app.blocking_dock().is_none(), "no dock: the field itself is live");
 
         type_key_chars(&mut app, "also say BANANA").await;
+        assert_eq!(app.input, "also say BANANA");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("\u{203a} also say BANANA"), "{screen}");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
-        assert!(app.agent_message.is_none(), "Enter sends and closes the dock");
+        assert!(app.input.is_empty(), "Enter sends and clears the field");
         assert_eq!(
             app.picker.as_ref().map(|p| p.kind),
             Some(PickerKind::AgentDetail),
             "the user is left where they were"
         );
         assert_eq!(
-            inbox.drain(),
+            inbox.drain().0,
             vec![json!({ "role": "user", "content": "also say BANANA" })],
             "queued exactly as a parent message is"
         );
-        let text = render_rows(&mut app, 80, 30).join("\n");
-        assert!(
-            text.contains("› also say BANANA"),
-            "the message shows as a user turn: {text}"
+        // The sender's transcript shows it once, as sent; the child's run
+        // shows it once the child takes it.
+        let sent = "\u{2022} Message to counter\n  \u{2514} also say BANANA";
+        assert!(transcript_text(&app).contains(sent), "{}", transcript_text(&app));
+        let child = |app: &App| -> String {
+            app.subagents[0].transcript.rows.iter().map(row_text).collect::<Vec<_>>().join("\n")
+        };
+        assert!(!child(&app).contains("BANANA"), "{}", child(&app));
+
+        // The child takes it at its next boundary.
+        subagent_event(
+            &mut app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::AgentMessage {
+                from: super::MAIN_AGENT.into(),
+                to: "counter".into(),
+                text: "also say BANANA".into(),
+            },
         );
-        let bubble = app.subagents[0].transcript.rows.iter().any(
-            |row| matches!(row.kind, RowKind::System { glyph, .. } if glyph == super::USER_GLYPH),
-        );
-        assert!(bubble, "the steer is the main transcript's user bubble");
+        let seen = child(&app);
+        assert!(seen.contains("\u{2022} Message from main\n  \u{2514} also say BANANA"), "{seen}");
+        let parent = transcript_text(&app);
+        assert_eq!(parent.matches("BANANA").count(), 1, "{parent}");
     }
 
-    /// The dock opens over the `/agents` inspector, whose draw path returns
-    /// before the ordinary dock chain: it must still be on screen, or the user
-    /// types into a field they cannot see.
+    /// Keys that type go into the field, not to the inspector: `m`, `x`, `j`,
+    /// `k` and `q` were picker keys on this screen. Ctrl-X is the stop.
     #[tokio::test]
-    async fn agents_message_dock_is_drawn_over_the_inspector() {
+    async fn agents_detail_letters_type_and_ctrl_x_stops() {
+        use crate::core::agent::subagent::tests::{child_is_finished, register_live_child};
+        let mut app = test_app();
+        register_live_child(&app.subagent_set, "sub-counter-1", "counter");
+        start_subagent(&mut app, "sub-counter-1", "counter");
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "mxjkq").await;
+        assert_eq!(app.input, "mxjkq");
+        assert_eq!(
+            app.picker.as_ref().map(|p| p.kind),
+            Some(PickerKind::AgentDetail),
+            "q does not leave the detail"
+        );
+        assert!(!child_is_finished(&app.subagent_set, "sub-counter-1"), "x typed");
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL).await;
+        assert!(child_is_finished(&app.subagent_set, "sub-counter-1"));
+        assert_eq!(app.input, "mxjkq", "the stop leaves the draft alone");
+    }
+
+    /// A running child shows the main view's working row under its panel,
+    /// with the steer hint aimed at it, instead of a dead `selecting` row:
+    /// between a child's events (a request in flight, a folded thought) that
+    /// row is the one thing on screen that moves.
+    #[test]
+    fn agents_detail_shows_the_childs_working_row() {
+        let mut app = app_with_child_activity();
+        let text = agent_detail_text(&mut app, "sub-counter-1", 100, 30);
+        assert!(!text.contains("selecting"), "{text}");
+        assert!(text.contains("working\u{2026}"), "{text}");
+        assert!(text.contains("type to message counter"), "{text}");
+    }
+
+    /// A parked child is not generating, so the field offers itself with the
+    /// main composer's placeholder, addressed to the child.
+    #[test]
+    fn agents_detail_placeholder_names_an_idle_child() {
+        let mut app = app_with_child_activity();
+        subagent_event(&mut app, "sub-counter-1", "counter", StreamEvent::Parked);
+        let text = agent_detail_text(&mut app, "sub-counter-1", 100, 30);
+        assert!(text.contains("Message counter\u{2026}"), "{text}");
+    }
+
+    /// Streamed text reaches the open detail as it arrives, with the main run
+    /// idle: a child's events are applied and drawn on their own, not only
+    /// alongside the parent's.
+    #[test]
+    fn a_child_token_streams_into_the_open_detail_while_main_is_idle() {
+        let mut app = app_with_child_activity();
+        app.status = Status::Idle;
+        let before = agent_detail_text(&mut app, "sub-counter-1", 100, 30);
+        assert!(!before.contains("half a sent"), "{before}");
+        subagent_event(
+            &mut app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::Token { text: " Now half a sent".into() },
+        );
+        assert!(app.animating(), "a live child keeps the frame gate drawing");
+        let after = render_rows(&mut app, 100, 30).join("\n");
+        assert!(after.contains("half a sent"), "{after}");
+    }
+
+    /// A finished child takes no steering: the field says so and typing does
+    /// nothing, rather than queueing text for the main agent from a screen
+    /// about someone else. Esc still goes back.
+    #[tokio::test]
+    async fn agents_detail_of_a_finished_child_takes_no_input() {
+        let mut app = app_with_child_activity();
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-counter-1".into(),
+            name: "counter".into(),
+            error: None,
+        });
+        let text = agent_detail_text(&mut app, "sub-counter-1", 100, 30);
+        assert!(text.contains("counter has finished"), "{text}");
+        type_key_chars(&mut app, "hello").await;
+        assert!(app.input.is_empty(), "{:?}", app.input);
+        // Nor does a paste: the field cannot send it.
+        route_paste_event(&mut app, Event::Paste("pasted".into()));
+        assert!(app.input.is_empty(), "{:?}", app.input);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
+    }
+
+    /// `counter`, live in the registry and on screen, with `/agents` open on
+    /// its detail, as the user reaches it; and the inbox it reads.
+    async fn counter_detail(
+        app: &mut App,
+    ) -> std::sync::Arc<crate::core::agent::subagent::ChildInbox> {
+        let inbox = crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        start_subagent(app, "sub-counter-1", "counter");
+        open_agents_picker(app);
+        press(app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+        inbox
+    }
+
+    /// Deliver a key the way the event loop does: a queued `ask` sees it
+    /// first, and only what it declines reaches `handle_key`.
+    async fn press_routed(
+        app: &mut App,
+        asks: &crate::core::agent::interaction::AskRegistry,
+        perms: &PermissionRegistry,
+        code: KeyCode,
+        mods: KeyModifiers,
+    ) {
+        let key = KeyEvent::new(code, mods);
+        if !handle_ask_key(app, key, asks).await {
+            handle_key(app, key, perms, &mut None, &no_mcp()).await;
+        }
+    }
+
+    fn child_permission(app: &mut App, request_id: &str, command: &str) {
+        subagent_event(
+            app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::PermissionRequest {
+                request_id: request_id.into(),
+                tool_name: "bash".into(),
+                capability: "execute".into(),
+                path: None,
+                command: Some(command.into()),
+                diff: None,
+                prompt_kind: "exec".into(),
+                offers_always: true,
+                justification: None,
+            },
+        );
+    }
+
+    /// A child's permission request that lands while its detail is open is
+    /// drawn over the detail, and what the user was typing answers nothing:
+    /// `a` is not "allow always" and the Enter that would have sent the
+    /// message does not confirm the highlighted option. Only an option picked
+    /// with the arrows and confirmed with Enter answers it.
+    #[tokio::test]
+    async fn a_prompt_over_the_detail_is_drawn_and_typing_does_not_answer_it() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        app.status = Status::Running;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+
+        for ch in "also".chars() {
+            press_routed(&mut app, &asks, &perms, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.pending_queue.len(), 1, "nothing answered the prompt");
+        assert!(decision.try_recv().is_err(), "no decision was sent");
+        assert!(app.input.is_empty(), "nor did the letters type: {:?}", app.input);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("permission required"), "{screen}");
+        assert!(screen.contains("rm -rf build"), "{screen}");
+        assert!(footer_text(&app).contains("pick"), "{}", footer_text(&app));
+
+        // The first arrow arms on Deny, the next moves up to Allow always,
+        // each a pause apart.
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
+        assert!(app.pending_queue.is_empty());
+        assert_eq!(decision.try_recv().unwrap(), PermissionDecision::AllowAlways);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// The same for an `ask`: drawn over the detail, deaf to typing, and
+    /// answered only by an arrow-picked Enter.
+    #[tokio::test]
+    async fn an_ask_over_the_detail_is_drawn_and_typing_does_not_answer_it() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+
+        for ch in "also".chars() {
+            press_routed(&mut app, &asks, &perms, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        route_paste_event(&mut app, Event::Paste("pasted".into()));
+        assert_eq!(app.ask_queue.len(), 1, "nothing answered the ask");
+        assert!(app.ask_queue[0].answers[0].selected.is_empty());
+        assert!(app.input.is_empty(), "{:?}", app.input);
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("Which scope?"), "{screen}");
+
+        // The first arrow arms on "Other", the next moves up to Large.
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
+        assert!(app.ask_queue.is_empty());
+        assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// Left/Right edit the draft over the detail: they neither arm the ask
+    /// nor switch its question, so fixing a typo and pressing Enter answers
+    /// nothing (for the plan review that would have been "Execute plan").
+    #[tokio::test]
+    async fn left_or_right_then_enter_over_the_detail_answers_no_ask() {
+        for arrow in [KeyCode::Left, KeyCode::Right] {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            type_key_chars(&mut app, "tpyo").await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+            app.apply(StreamEvent::AskRequest {
+                request_id,
+                request: ask_request(false, true),
+                timeout_secs: None,
+            });
+            press_routed(&mut app, &asks, &perms, KeyCode::Left, KeyModifiers::NONE).await;
+            press_routed(&mut app, &asks, &perms, arrow, KeyModifiers::NONE).await;
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            assert_eq!(app.ask_queue.len(), 1, "{arrow:?} then Enter answered the ask");
+            let ask = &app.ask_queue[0];
+            assert!(!ask.picked, "{arrow:?} armed the ask");
+            assert_eq!(ask.question_index, 0, "{arrow:?} switched the question");
+            assert!(ask.answers.iter().all(|a| a.selected.is_empty()));
+            let expected = if arrow == KeyCode::Left { 2 } else { 4 };
+            assert_eq!(app.cursor, expected, "{arrow:?} moves the draft's cursor");
+            assert_eq!(app.input, "tpyo");
+        }
+    }
+
+    /// Down is the detail's recall key, so over the detail a fresh prompt is
+    /// drawn with no highlight, and the first arrow only arms it, on the row
+    /// that grants nothing: a reflex Down then Enter denies rather than
+    /// allowing once or always, and on an ask it opens the free-text field
+    /// rather than choosing an option.
+    #[tokio::test]
+    async fn down_then_enter_over_the_detail_grants_nothing() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+        let marked = |app: &mut App, label: &str| {
+            let mark = format!("{}{label}", super::SELECT_MARK);
+            render_rows(app, 100, 30).iter().any(|row| row.contains(&mark))
+        };
+        assert!(!marked(&mut app, "Allow once"), "an unarmed prompt marks nothing");
+        assert!(!marked(&mut app, "Deny"), "an unarmed prompt marks nothing");
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down], true).await;
+        assert!(marked(&mut app, "Deny"), "armed, on Deny");
+        assert!(footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(decision.try_recv().unwrap(), PermissionDecision::Deny);
+
+        // The same rule for an ask.
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        assert!(!marked(&mut app, "\u{25cb} Small"), "an unarmed ask marks nothing");
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down], true).await;
+        assert!(marked(&mut app, "\u{25cb} Other"), "armed, on Other");
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.ask_queue.len(), 1, "nothing was answered");
+        assert!(app.ask_queue[0].answers[0].selected.is_empty());
+    }
+
+    /// Lets the pause run out on the prompt on screen, as if the user had
+    /// stopped to read it (`PROMPT_PAUSE`), without sleeping.
+    /// The last key is forgotten too, so the next press is a fresh one rather
+    /// than a held key's repeat (`HELD_KEY_WINDOW`). The arrow that last
+    /// stepped the prompt is kept: a pause this short does not free it
+    /// (`STEP_AGAIN_WINDOW`).
+    fn settle_prompt(app: &mut App) {
+        let pause = match app.ask_queue.front_mut() {
+            Some(ask) => &mut ask.pause,
+            None => match app.pending_queue.front_mut() {
+                Some(pending) => &mut pending.pause,
+                None => return,
+            },
+        };
+        pause.until = Some(Instant::now());
+        pause.last_key = None;
+    }
+
+    /// A key over the detail, then the pause runs out when `settle` asks.
+    async fn press_detail(
+        app: &mut App,
+        asks: &crate::core::agent::interaction::AskRegistry,
+        perms: &PermissionRegistry,
+        keys: &[KeyCode],
+        settle: bool,
+    ) {
+        for &code in keys {
+            press_routed(app, asks, perms, code, KeyModifiers::NONE).await;
+            if settle {
+                settle_prompt(app);
+            }
+        }
+    }
+
+    /// Two reflex arrows then Enter, typed faster than the pause, grant nothing
+    /// over the detail: Down Down does not wrap from Deny to Allow once, and Up
+    /// Up Enter (recalling the message two back) does not allow always. The
+    /// prompt has been up a while first, so the arming arrow itself counts.
+    #[tokio::test]
+    async fn two_fast_arrows_then_enter_over_the_detail_grant_nothing() {
+        for arrow in [KeyCode::Down, KeyCode::Up] {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow, KeyCode::Enter], false).await;
+            assert_eq!(app.pending_queue.len(), 1, "{arrow:?} {arrow:?} Enter answered");
+            assert!(decision.try_recv().is_err(), "{arrow:?} {arrow:?} Enter decided");
+            assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+
+            // The same for an ask: neither option 0 nor the last is chosen.
+            app.pending_queue.clear();
+            let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+            app.apply(StreamEvent::AskRequest {
+                request_id,
+                request: ask_request(false, false),
+                timeout_secs: None,
+            });
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow, KeyCode::Enter], false).await;
+            assert_eq!(app.ask_queue.len(), 1, "{arrow:?} {arrow:?} Enter answered the ask");
+            let ask = &app.ask_queue[0];
+            assert!(ask.answers[0].selected.is_empty(), "{arrow:?}: {:?}", ask.answers);
+            assert!(!ask.editing_custom, "{arrow:?} {arrow:?} Enter opened Other");
+        }
+    }
+
+    /// With the pause run out before Enter, Enter confirms the highlighted
+    /// row. Fast arrows count only once (the second lands inside the pause the
+    /// first started), and arrows a pause apart move but clamp at the ends: Down
+    /// Down stays on Deny rather than wrapping to Allow once.
+    #[tokio::test]
+    async fn arrows_then_a_pause_then_enter_over_the_detail_pick_the_highlight() {
+        let cases = [
+            (KeyCode::Down, false, PermissionDecision::Deny),
+            (KeyCode::Up, false, PermissionDecision::Deny),
+            (KeyCode::Down, true, PermissionDecision::Deny),
+            (KeyCode::Up, true, PermissionDecision::AllowAlways),
+        ];
+        for (arrow, paused, expected) in cases {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow], paused).await;
+            settle_prompt(&mut app);
+            assert!(footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            let got = decision.try_recv();
+            assert_eq!(got.ok(), Some(expected), "{arrow:?} {arrow:?} paused={paused}");
+        }
+
+        // An ask has Small, Large, Other: Up Up a pause apart lands on Large;
+        // fast, or Down Down, it stays on Other, whose Enter opens the field.
+        for (arrow, paused, chosen) in [
+            (KeyCode::Up, true, Some("Large")),
+            (KeyCode::Up, false, None),
+            (KeyCode::Down, true, None),
+        ] {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+            app.apply(StreamEvent::AskRequest {
+                request_id,
+                request: ask_request(false, false),
+                timeout_secs: None,
+            });
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow], paused).await;
+            settle_prompt(&mut app);
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            match chosen {
+                Some(label) => {
+                    assert!(app.ask_queue.is_empty(), "{arrow:?} paused={paused}");
+                    assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec![label]);
+                }
+                None => {
+                    assert_eq!(app.ask_queue.len(), 1, "{arrow:?} paused={paused}");
+                    assert!(app.ask_queue[0].editing_custom, "{arrow:?} paused={paused}");
+                }
+            }
+        }
+    }
+
+    /// What the user types for the child never becomes the ask's answer: a
+    /// reflex Down (recall) and Enter (send) do not open the free-text field,
+    /// so the next message and its Enter answer nothing. Opened deliberately,
+    /// the field is labelled inside the box, and Esc closes it back to the
+    /// options rather than leaving the detail.
+    #[tokio::test]
+    async fn typing_for_the_child_never_answers_an_ask_over_the_detail() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down, KeyCode::Enter], false).await;
+        for ch in "next message".chars() {
+            press_routed(&mut app, &asks, &perms, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.ask_queue.len(), 1, "the typed message answered the ask");
+        let ask = &app.ask_queue[0];
+        assert!(!ask.editing_custom, "the reflex Enter opened the field");
+        assert_eq!(ask.answers[0].custom_input, None);
+
+        settle_prompt(&mut app);
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.ask_queue[0].editing_custom, "a paused Enter on Other opens it");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("your answer"), "{screen}");
+        assert!(footer_text(&app).contains("Esc options"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(!app.ask_queue[0].editing_custom, "Esc closes the field");
+        assert_eq!(app.ask_queue.len(), 1);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// Answering question 1 over the detail does not leave question 2 armed:
+    /// it opens unarmed, like a fresh prompt, so Enter Enter answers nothing.
+    #[tokio::test]
+    async fn the_next_question_over_the_detail_opens_unarmed() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, true),
+            timeout_secs: None,
+        });
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
+        assert_eq!(app.ask_queue[0].answers[0].selected, vec!["Large"]);
+        assert_eq!(app.ask_queue[0].question_index, 1);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Enter, KeyCode::Enter], true).await;
+        assert_eq!(app.ask_queue.len(), 1, "question 2 was answered unarmed");
+        assert!(app.ask_queue[0].answers[1].selected.is_empty());
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+    }
+
+    /// `by` passes for the prompt on screen, without sleeping: its pause and
+    /// its last key's press move that far into the past.
+    fn elapse(app: &mut App, by: Duration) {
+        let back = |at: Instant| at.checked_sub(by).expect("monotonic clock this far back");
+        let pause = match app.ask_queue.front_mut() {
+            Some(ask) => &mut ask.pause,
+            None => &mut app.pending_queue.front_mut().expect("a prompt on screen").pause,
+        };
+        pause.until = pause.until.map(back);
+        pause.last_key = pause.last_key.map(|(code, at)| (code, back(at)));
+        pause.stepped = pause.stepped.map(|(code, at)| (code, back(at)));
+    }
+
+    /// A held key, as the TUI gets it without keyboard enhancement: a press,
+    /// its first repeat after the OS repeat delay `delay`, then repeats every
+    /// 33 ms, then the release and a pause.
+    async fn hold_key(
+        app: &mut App,
+        asks: &crate::core::agent::interaction::AskRegistry,
+        perms: &PermissionRegistry,
+        code: KeyCode,
+        delay: Duration,
+    ) {
+        press_routed(app, asks, perms, code, KeyModifiers::NONE).await;
+        elapse(app, delay);
+        for _ in 0..10 {
+            press_routed(app, asks, perms, code, KeyModifiers::NONE).await;
+            elapse(app, Duration::from_millis(33));
+        }
+        elapse(app, PROMPT_PAUSE);
+    }
+
+    /// The OS repeat delays a held key is checked against: GNOME and Windows'
+    /// default, X11's `xset` default, a slow one a user might pick, and none
+    /// (the repeats start at once).
+    const REPEAT_DELAYS: [u64; 4] = [500, 660, 1000, 33];
+
+    /// Holding an arrow over the detail counts as one press: it arms the
+    /// prompt on its safe row and its repeats never move it, so after the
+    /// release and a pause Enter denies (or, on an ask, opens "Other") rather
+    /// than granting the row a repeat would have reached.
+    #[tokio::test]
+    async fn a_held_arrow_over_the_detail_only_arms() {
+        for arrow in [KeyCode::Up, KeyCode::Down] {
+            for delay in REPEAT_DELAYS.map(Duration::from_millis) {
+                let mut app = test_app();
+                counter_detail(&mut app).await;
+                let asks = crate::core::agent::interaction::new_registry();
+                let perms = PermissionRegistry::default();
+                let (tx, mut decision) = tokio::sync::oneshot::channel();
+                perms.lock().await.insert("p1".to_string(), tx);
+                child_permission(&mut app, "p1", "rm -rf build");
+                settle_prompt(&mut app);
+                hold_key(&mut app, &asks, &perms, arrow, delay).await;
+                let pending = &app.pending_queue[0];
+                assert!(pending.picked, "{arrow:?} held {delay:?} did not arm");
+                assert_eq!(pending.selected, 2, "{arrow:?} held {delay:?} moved off Deny");
+                press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+                let got = decision.try_recv().ok();
+                assert_eq!(got, Some(PermissionDecision::Deny), "{arrow:?} held {delay:?}");
+
+                let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+                app.apply(StreamEvent::AskRequest {
+                    request_id,
+                    request: ask_request(false, false),
+                    timeout_secs: None,
+                });
+                settle_prompt(&mut app);
+                hold_key(&mut app, &asks, &perms, arrow, delay).await;
+                assert_eq!(app.ask_queue[0].selected, 2, "{arrow:?} held {delay:?} left Other");
+                press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+                assert_eq!(app.ask_queue.len(), 1, "{arrow:?} held {delay:?} answered the ask");
+                assert!(app.ask_queue[0].answers[0].selected.is_empty());
+                assert!(app.ask_queue[0].editing_custom, "Enter on Other opens the field");
+            }
+        }
+    }
+
+    /// Deliberate presses still move: the same arrow again once a held key's
+    /// repeat would have come, or a different key a pause after the last.
+    #[tokio::test]
+    async fn distinct_presses_a_pause_apart_over_the_detail_still_move() {
+        let cases = [
+            ([KeyCode::Up, KeyCode::Up], HELD_KEY_WINDOW, PermissionDecision::AllowAlways),
+            ([KeyCode::Down, KeyCode::Up], PROMPT_PAUSE, PermissionDecision::AllowAlways),
+            ([KeyCode::Up, KeyCode::Up], PROMPT_PAUSE, PermissionDecision::Deny),
+        ];
+        for (keys, gap, expected) in cases {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            for code in keys {
+                press_routed(&mut app, &asks, &perms, code, KeyModifiers::NONE).await;
+                elapse(&mut app, gap);
+            }
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            assert_eq!(decision.try_recv().ok(), Some(expected), "{keys:?} {gap:?} apart");
+        }
+    }
+
+    /// An arrow held with a repeat slower than `HELD_KEY_WINDOW` lands each
+    /// repeat as a fresh press. Over the detail it still takes one step past
+    /// the arming at most: once an armed arrow has moved, the same arrow moves
+    /// again only after a different key or `STEP_AGAIN_WINDOW` of quiet, so
+    /// the held Up stops on Allow always rather than walking on to Allow once.
+    #[tokio::test]
+    async fn a_slow_repeating_arrow_over_the_detail_moves_one_step_at_most() {
+        let slow = HELD_KEY_WINDOW + Duration::from_millis(100);
+        let quiet = STEP_AGAIN_WINDOW + Duration::from_millis(100);
+        // (keys, gap after each, decision): a slow held Up, then deliberate
+        // presses that still reach Allow once: after a long quiet, or with a
+        // different key between.
+        let cases = [
+            (vec![KeyCode::Up; 6], slow, PermissionDecision::AllowAlways),
+            (vec![KeyCode::Up; 3], quiet, PermissionDecision::AllowOnce),
+            (
+                vec![KeyCode::Up, KeyCode::Up, KeyCode::Char('x'), KeyCode::Up],
+                slow,
+                PermissionDecision::AllowOnce,
+            ),
+        ];
+        for (keys, gap, expected) in cases {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            for &code in &keys {
+                press_routed(&mut app, &asks, &perms, code, KeyModifiers::NONE).await;
+                elapse(&mut app, gap);
+            }
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            assert_eq!(decision.try_recv().ok(), Some(expected), "{keys:?} {gap:?} apart");
+        }
+
+        // An ask (Small, Large, Other): the slow held Up stops on Large.
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        settle_prompt(&mut app);
+        for _ in 0..6 {
+            press_routed(&mut app, &asks, &perms, KeyCode::Up, KeyModifiers::NONE).await;
+            elapse(&mut app, slow);
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
+    }
+
+    /// A permission request covered by a newer ask comes back from behind it
+    /// unarmed and with a fresh pause: the reflex second Enter of the one that
+    /// answered the ask does not confirm what the user had armed on it before.
+    #[tokio::test]
+    async fn a_request_uncovered_by_an_answered_ask_returns_unarmed() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+        render_rows(&mut app, 100, 30);
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down, KeyCode::Up], true).await;
+        assert_eq!(app.pending_queue[0].selected, 1, "armed on Allow always");
+
+        let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        render_rows(&mut app, 100, 30);
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
+        assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(decision.try_recv().is_err(), "the reflex Enter confirmed the request");
+
+        // Drawn again, it still has to be armed after its pause, on Deny.
+        render_rows(&mut app, 100, 30);
+        let pending = &app.pending_queue[0];
+        assert!(!pending.picked, "the uncovered request is still armed");
+        assert!(pending.pause.until.is_some_and(|until| until > Instant::now()));
+        settle_prompt(&mut app);
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(decision.try_recv().is_err(), "an unarmed Enter decided");
+    }
+
+    /// A prompt armed in the main view and then shown over the detail (the
+    /// detail opened, say with the mouse, while it waits) lands there unarmed:
+    /// the Enter the user then types for the child does not confirm the row
+    /// they had moved to before, and nothing is marked until an arrow arms it.
+    #[tokio::test]
+    async fn a_prompt_armed_in_the_main_view_lands_unarmed_over_the_detail() {
+        let open_detail = |app: &mut App| {
+            open_agents_picker(app);
+            app.enter_agent_detail("sub-counter-1".to_string());
+            assert!(app.agent_detail_open());
+        };
+        let marks_any = |app: &mut App| {
+            let mark = super::SELECT_MARK;
+            render_rows(app, 100, 30).iter().any(|row| row.contains(mark))
+        };
+        let mut app = test_app();
+        start_subagent(&mut app, "sub-counter-1", "counter");
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+        render_rows(&mut app, 100, 30);
+        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        assert!(app.pending_queue[0].picked, "Down arms it in the main view");
+        assert_eq!(app.pending_queue[0].selected, 1, "on Allow always");
+
+        open_detail(&mut app);
+        assert!(!marks_any(&mut app), "the moved prompt is still armed");
+        assert!(!app.pending_queue[0].picked, "the moved prompt is still armed");
+        settle_prompt(&mut app);
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(decision.try_recv().is_err(), "Enter confirmed the main view's arming");
+        assert_eq!(app.pending_queue.len(), 1);
+
+        // The same for an ask armed in the main view.
+        app.pending_queue.clear();
+        app.picker = None;
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        render_rows(&mut app, 100, 30);
+        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        assert!(app.ask_queue[0].picked, "Down arms the ask in the main view");
+        open_detail(&mut app);
+        assert!(!marks_any(&mut app), "the moved ask is still armed");
+        assert!(!app.ask_queue[0].picked, "the moved ask is still armed");
+        settle_prompt(&mut app);
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.ask_queue.len(), 1, "Enter answered the ask");
+        assert!(app.ask_queue[0].answers[0].selected.is_empty());
+        assert!(!app.ask_queue[0].editing_custom, "Enter opened Other");
+    }
+
+    /// With a prompt over the detail the child's run still scrolls: PgUp/PgDn,
+    /// Home/End on an empty field, and the wheel reach the detail, so the
+    /// user can read what the child did before deciding.
+    #[tokio::test]
+    async fn the_detail_scrolls_under_a_prompt() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "ls");
+        for (prompt, ask) in [("permission", false), ("ask", true)] {
+            if ask {
+                let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+                app.apply(StreamEvent::AskRequest {
+                    request_id,
+                    request: ask_request(false, false),
+                    timeout_secs: None,
+                });
+            }
+            app.agent_detail_scroll = 0;
+            press_routed(&mut app, &asks, &perms, KeyCode::PageUp, KeyModifiers::NONE).await;
+            assert_eq!(app.agent_detail_scroll, 10, "PgUp under the {prompt}");
+            press_routed(&mut app, &asks, &perms, KeyCode::PageDown, KeyModifiers::NONE).await;
+            assert_eq!(app.agent_detail_scroll, 0, "PgDn under the {prompt}");
+            press_routed(&mut app, &asks, &perms, KeyCode::Home, KeyModifiers::NONE).await;
+            assert_eq!(app.agent_detail_scroll, u16::MAX, "Home under the {prompt}");
+            press_routed(&mut app, &asks, &perms, KeyCode::End, KeyModifiers::NONE).await;
+            assert_eq!(app.agent_detail_scroll, 0, "End under the {prompt}");
+            let wheel = mouse_at(MouseEventKind::ScrollUp, 5, 5);
+            if !handle_ask_mouse(&mut app, wheel, &asks).await {
+                handle_mouse(&mut app, wheel);
+            }
+            assert_eq!(app.agent_detail_scroll, 1, "the wheel under the {prompt}");
+        }
+        assert_eq!(app.pending_queue.len(), 1);
+        assert_eq!(app.ask_queue.len(), 1);
+        assert!(decision.try_recv().is_err());
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// A draft kept under a prompt says why Enter will not send it.
+    #[tokio::test]
+    async fn a_draft_under_a_prompt_says_enter_will_not_send_it() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        type_key_chars(&mut app, "also").await;
+        child_permission(&mut app, "p1", "ls");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("also"), "{screen}");
+        assert!(screen.contains("answer the prompt above"), "{screen}");
+    }
+
+    /// Ctrl-C in the detail clears the draft, then closes the inspector. It
+    /// never cancels the main run or arms the exit, and with a prompt up it
+    /// neither denies it nor cancels anything: the prompt waits in the main
+    /// view.
+    #[tokio::test]
+    async fn ctrl_c_in_the_detail_never_cancels_the_main_run() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        app.status = Status::Running;
+        assert!(footer_text(&app).contains("^C close"), "{}", footer_text(&app));
+        type_key_chars(&mut app, "draft").await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.input.is_empty());
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.picker.is_none(), "the empty field closes the inspector");
+        assert_eq!(app.status, Status::Running, "the main run goes on");
+        assert!(!app.should_quit && !app.exit_armed);
+
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "ls");
+        let ctrl_c = (KeyCode::Char('c'), KeyModifiers::CONTROL);
+        press_routed(&mut app, &asks, &perms, ctrl_c.0, ctrl_c.1).await;
+        assert!(app.picker.is_none());
+        assert_eq!(app.pending_queue.len(), 1, "the prompt still waits");
+        assert!(decision.try_recv().is_err(), "nothing was denied");
+        assert_eq!(app.status, Status::Running);
+        assert!(!app.should_quit && !app.exit_armed);
+    }
+
+    /// The `Pending (n)` cue counts what was sent and not yet taken: it rises
+    /// with each send and falls as the child takes each message.
+    #[tokio::test]
+    async fn the_detail_pending_cue_rises_on_send_and_falls_on_delivery() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let screen = |app: &mut App| render_rows(app, 100, 30).join("\n");
+        for text in ["one", "two"] {
+            type_key_chars(&mut app, text).await;
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        }
+        assert!(screen(&mut app).contains("Pending (2)"), "{}", screen(&mut app));
+        for text in ["one", "two"] {
+            subagent_event(
+                &mut app,
+                "sub-counter-1",
+                "counter",
+                StreamEvent::AgentMessage {
+                    from: super::MAIN_AGENT.into(),
+                    to: "counter".into(),
+                    text: text.into(),
+                },
+            );
+            if text == "one" {
+                assert!(screen(&mut app).contains("Pending (1)"), "{}", screen(&mut app));
+            }
+        }
+        assert!(!screen(&mut app).contains("Pending ("), "{}", screen(&mut app));
+    }
+
+    /// A live child's field takes a paste like the main composer does.
+    #[tokio::test]
+    async fn a_paste_lands_in_a_live_childs_field() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        route_paste_event(&mut app, Event::Paste("look at a.rs".into()));
+        assert_eq!(app.input, "look at a.rs");
+    }
+
+    /// The `/agents` list has no field: a paste there is dropped, not hidden in
+    /// the composer to turn up later as a message to a child.
+    #[tokio::test]
+    async fn a_paste_on_the_agents_list_goes_nowhere() {
         let mut app = test_app();
         crate::core::agent::subagent::tests::register_live_child(
             &app.subagent_set,
             "sub-counter-1",
             "counter",
         );
-        app.apply(StreamEvent::SubagentStart {
-            run_id: "sub-counter-1".to_string(),
-            name: "counter".to_string(),
-            task: None,
-        });
+        start_subagent(&mut app, "sub-counter-1", "counter");
         open_agents_picker(&mut app);
+        route_paste_event(&mut app, Event::Paste("stray".into()));
+        assert!(app.input.is_empty(), "{:?}", app.input);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
-        type_key_chars(&mut app, "hello").await;
-        let screen = render_rows(&mut app, 100, 30).join("\n");
-        assert!(screen.contains("message subagent: counter"), "{screen}");
-        assert!(screen.contains("message: hello"), "{screen}");
+        assert!(app.input.is_empty(), "{:?}", app.input);
     }
 
-    /// Esc abandons a message without sending it, back on the detail screen.
+    /// Up/Down in the detail recall what was sent to children, on an empty
+    /// field, and otherwise scroll the child's run. The main composer's recall
+    /// is its own: a steer never comes back there to go to the main agent.
     #[tokio::test]
-    async fn agents_message_dock_esc_sends_nothing() {
+    async fn detail_recall_is_the_detail_own_and_scrolls_otherwise() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.agent_detail_scroll, 1, "nothing to recall: Up scrolls");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.agent_detail_scroll, 0);
+
+        type_key_chars(&mut app, "first").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "first", "Up recalls the sent message");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty());
+        type_key_chars(&mut app, "x").await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "x", "with a draft, Up scrolls");
+        assert_eq!(app.agent_detail_scroll, 1);
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty(), "a steer is not main recall: {:?}", app.input);
+        assert_eq!(app.scrollback, 1, "with nothing to recall, Up scrolls");
+    }
+
+    /// The main composer's draft and scroll position are where they were
+    /// after a visit to a child's detail, whatever was typed or scrolled there.
+    #[tokio::test]
+    async fn the_main_draft_and_scrollback_survive_the_detail() {
+        let mut app = test_app();
+        app.scrollback = 4;
+        app.set_input("main draft".to_string());
+        counter_detail(&mut app).await;
+        assert!(app.input.is_empty(), "the detail's field is its own");
+        press(&mut app, KeyCode::PageUp, KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "for the child").await;
+        assert_eq!(app.scrollback, 4);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        assert_eq!(app.input, "main draft");
+        assert_eq!(app.scrollback, 4);
+    }
+
+    /// Another screen replacing the detail (a plugin collection listing
+    /// arriving) leaves no child draft in the main composer, where the next
+    /// Enter would send it to the main agent.
+    #[tokio::test]
+    async fn a_picker_replacing_the_detail_restores_the_main_composer() {
+        let mut app = test_app();
+        app.set_input("main draft".to_string());
+        counter_detail(&mut app).await;
+        type_key_chars(&mut app, "for the child").await;
+        finish_plugin_install(
+            &mut app,
+            Some("file:///tmp/collection".to_string()),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(vec![
+                crate::core::agent::plugins::CollectionPlugin {
+                    path: "alpha".to_string(),
+                    installed: false,
+                },
+            ])),
+        );
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::PluginSelect));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        assert_eq!(app.input, "main draft");
+        assert!(app.agent_detail.is_none());
+    }
+
+    /// The field is a message to the child, which runs no commands: a
+    /// `/word` typed there is sent as written.
+    #[tokio::test]
+    async fn a_typed_command_in_the_detail_is_sent_verbatim() {
+        let mut app = test_app();
+        let inbox = counter_detail(&mut app).await;
+        app.submit_user("keep me".to_string());
+        type_key_chars(&mut app, "/clear").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(inbox.drain().1, vec!["/clear".to_string()]);
+        assert!(transcript_text(&app).contains("keep me"), "nothing was cleared");
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// The registry marks the child finished before its end reaches the
+    /// screen: the core takes the message without queueing it, so it is not
+    /// shown as sent. The draft stays and the reason shows on the input row.
+    #[tokio::test]
+    async fn a_message_to_a_child_that_just_finished_is_not_shown_as_sent() {
+        let mut app = test_app();
+        let inbox = counter_detail(&mut app).await;
+        crate::core::agent::subagent::stop_subagent(&app.subagent_set, "sub-counter-1").unwrap();
+        type_key_chars(&mut app, "late").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "late", "the draft is kept");
+        assert_eq!(app.subagents[0].steers_pending, 0);
+        assert!(!transcript_text(&app).contains("Message to counter"), "{}", transcript_text(&app));
+        assert!(inbox.drain().0.is_empty());
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("already finished"), "{screen}");
+        assert!(!screen.contains("Pending ("), "{screen}");
+    }
+
+    /// A refused send (a full inbox) leaves the child's run as it was: its
+    /// running tool group is not closed, nothing is added to its rows, and
+    /// the view is not moved. The error shows on the input row, over the
+    /// draft it kept.
+    #[tokio::test]
+    async fn a_refused_send_leaves_the_childs_run_alone() {
+        let mut app = test_app();
+        let inbox = counter_detail(&mut app).await;
+        subagent_event(
+            &mut app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "bash".into(),
+                args: json!({ "command": "sleep 20" }),
+            },
+        );
+        for i in 0..crate::core::agent::subagent::MAX_CHILD_INBOX {
+            inbox.push(format!("m{i}")).unwrap();
+        }
+        let rows = app.subagents[0].transcript.rows.len();
+        app.agent_detail_scroll = 2;
+        type_key_chars(&mut app, "more").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "more");
+        let child = &app.subagents[0].transcript;
+        assert!(child.tool_group.is_some(), "the running group is still open");
+        assert_eq!(child.rows.len(), rows, "nothing added to the child's run");
+        assert_eq!(app.agent_detail_scroll, 2, "the view did not move");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("inbox is full"), "{screen}");
+        assert!(screen.contains("more"), "{screen}");
+    }
+
+    /// A modified Enter on an empty detail field is the detail's: it does not
+    /// step a `/find` running on the main transcript behind it.
+    #[tokio::test]
+    async fn shift_enter_in_the_detail_does_not_step_a_main_find() {
+        let mut app = long_answer_app();
+        run_command(&mut app, "find answer line", &no_mcp()).await;
+        let at = app.find.as_ref().and_then(|f| f.current);
+        assert!(at.is_some());
+        counter_detail(&mut app).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        assert_eq!(app.find.as_ref().and_then(|f| f.current), at);
+        press(&mut app, KeyCode::Enter, KeyModifiers::ALT).await;
+        assert_eq!(app.find.as_ref().and_then(|f| f.current), at);
+        assert!(app.input.is_empty(), "{:?}", app.input);
+    }
+
+    /// A message is one entry: the main agent's `message_subagent` call reads
+    /// as `Message to <name>` with the text under it, and the child taking it
+    /// later (after the turn ended) appends nothing. A child's
+    /// `message_main_agent` is one `Message from <name>`, made when the main
+    /// agent receives it: the call alone can still be refused. A resume shows
+    /// the same.
+    #[test]
+    fn a_message_between_agents_is_one_entry() {
+        use super::MAIN_AGENT;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-debug-1".into(),
+            name: "debug".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "m1".into(),
+            name: "message_subagent".into(),
+            args: json!({ "name": "debug", "message": "Narrow it to the parser.\nSkip the lexer." }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "m1".into(),
+            content: "Queued for subagent 'debug'".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "Asked it to narrow.".into() });
+        app.transcript.settle(false);
+        let at_call = transcript_text(&app);
+        let sent = "\u{2022} Message to debug\n  \u{2514} Narrow it to the parser.";
+        assert_eq!(at_call.matches("debug").count(), 1, "{at_call}");
+        assert!(at_call.contains(sent), "{at_call}");
+        assert!(
+            at_call.find(sent) < at_call.find("Asked it to narrow."),
+            "in call order: {at_call}"
+        );
+        // The child takes it at its next boundary, after the turn ended.
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::AgentMessage {
+            from: MAIN_AGENT.into(),
+            to: "debug".into(),
+            text: "Narrow it to the parser.\nSkip the lexer.".into(),
+        });
+        assert_eq!(transcript_text(&app), at_call, "nothing is appended on delivery");
+        // The child writes back: nothing at its call, one entry at delivery.
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "Found it in parse_command." }),
+        });
+        assert!(!transcript_text(&app).contains("Found it"), "{}", transcript_text(&app));
+        app.apply(StreamEvent::AgentMessage {
+            from: "debug".into(),
+            to: MAIN_AGENT.into(),
+            text: "Found it in parse_command.".into(),
+        });
+        let both = transcript_text(&app);
+        let got = "\u{2022} Message from debug\n  \u{2514} Found it in parse_command.";
+        assert_eq!(both.matches("Found it").count(), 1, "{both}");
+        assert!(both.contains(got), "{both}");
+        let child: String = app.subagents[0].transcript.rows.iter().map(row_text).collect();
+        assert!(child.contains("\u{2022} Message to main"), "{child}");
+        assert!(child.contains("\u{2022} Message from main"), "{child}");
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        resumed.transcript.settle(false);
+        let replayed = transcript_text(&resumed);
+        assert_eq!(replayed.matches("Narrow it").count(), 1, "{replayed}");
+        assert!(replayed.contains(sent) && replayed.contains(got), "{replayed}");
+        assert!(!replayed.contains("Messaged"), "{replayed}");
+    }
+
+    /// A child's `message_main_agent` the loop refuses (a policy deny, an
+    /// empty message, the message cap) never reaches the main agent, so the
+    /// main transcript does not show it.
+    #[test]
+    fn a_refused_message_to_the_main_agent_is_not_shown() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-debug-1".into(),
+            name: "debug".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "over the cap" }),
+        });
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: this subagent has already sent 20 messages".into(),
+            is_error: true,
+            diff: None,
+        });
+        let main = transcript_text(&app);
+        assert!(!main.contains("over the cap") && !main.contains("Message from"), "{main}");
+        assert!(
+            !app.transcript.display_log.iter().any(|e| matches!(e, DisplayEntry::AgentMessage { .. })),
+            "nor does its record"
+        );
+    }
+
+    /// A child may call `message_main_agent` while the main agent is still
+    /// streaming its reply: that reply stays one piece, on screen and in the
+    /// record.
+    #[test]
+    fn a_child_message_call_does_not_split_the_main_reply() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-debug-1".into(),
+            name: "debug".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::Token { text: "```rust
+fn a() {}
+".into() });
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "found it" }),
+        });
+        app.apply(StreamEvent::Token { text: "fn b() {}
+```
+".into() });
+        app.transcript.settle(false);
+        let replies: Vec<String> = app
+            .transcript
+            .display_log
+            .iter()
+            .filter_map(|e| match e {
+                DisplayEntry::Assistant { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(replies.len(), 1, "one reply, not split: {replies:?}");
+        assert!(replies[0].contains("fn a() {}\nfn b() {}"), "{replies:?}");
+    }
+
+    /// Every action that is both a tool call and an event of its own shows
+    /// once: whatever the event adds lands on the call's entry, never beside it.
+    #[test]
+    fn every_action_is_one_transcript_entry() {
+        use super::MAIN_AGENT;
+        let mut app = test_app();
+        let entries = |app: &App| app.transcript.rows.iter().filter(|r| !r.is_blank()).count();
+        let call = |app: &mut App, id: &str, name: &str, args: serde_json::Value, out: &str| {
+            app.apply(StreamEvent::ToolCall { id: id.into(), name: name.into(), args });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: out.into(),
+                is_error: false,
+                diff: None,
+            });
+        };
+        let step = |app: &mut App, what: &str, act: &dyn Fn(&mut App)| {
+            app.transcript.finalize_tool_group();
+            let before = entries(app);
+            act(app);
+            app.transcript.finalize_tool_group();
+            assert_eq!(entries(app), before + 1, "{what}: {}", transcript_text(app));
+        };
+        step(&mut app, "dispatch", &|app| {
+            app.apply(StreamEvent::ToolCall {
+                id: "d1".into(),
+                name: "dispatch_subagent".into(),
+                args: json!({ "subagents": [
+                    { "agent": "debug", "task": "look" },
+                    { "agent": "general", "task": "docs" },
+                ] }),
+            });
+            app.apply(StreamEvent::SubagentStart {
+                run_id: "sub-debug-1".into(),
+                name: "debug".into(),
+                task: Some("look".into()),
+                workspace: None,
+                internal: false,
+            });
+            app.apply(StreamEvent::SubagentQueued {
+                run_id: "sub-general-2".into(),
+                name: "general".into(),
+                task: Some("docs".into()),
+                waiting: 1,
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: "d1".into(),
+                content: "dispatched".into(),
+                is_error: false,
+                diff: None,
+            });
+        });
+        step(&mut app, "message_subagent", &|app| {
+            call(app, "m1", "message_subagent", json!({ "name": "debug", "message": "hi" }), "Queued");
+            subagent_event(app, "sub-debug-1", "debug", StreamEvent::AgentMessage {
+                from: MAIN_AGENT.into(),
+                to: "debug".into(),
+                text: "hi".into(),
+            });
+        });
+        step(&mut app, "message_main_agent", &|app| {
+            subagent_event(app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "message_main_agent".into(),
+                args: json!({ "message": "found it" }),
+            });
+            app.apply(StreamEvent::AgentMessage {
+                from: "debug".into(),
+                to: MAIN_AGENT.into(),
+                text: "found it".into(),
+            });
+        });
+        step(&mut app, "stop_subagent", &|app| {
+            call(app, "s1", "stop_subagent", json!({ "name": "general" }), "Stopped");
+        });
+        // A child ending is an event of its own, not an edit of its dispatch.
+        step(&mut app, "the stopped child ending", &|app| {
+            app.apply(StreamEvent::SubagentEnd {
+                run_id: "sub-general-2".into(),
+                name: "general".into(),
+                error: Some("stopped by the parent agent".into()),
+            });
+        });
+        step(&mut app, "await_subagent", &|app| {
+            call(app, "a1", "await_subagent", json!({ "run_id": "sub-debug-1" }), "the answer");
+        });
+        step(&mut app, "the awaited child ending", &|app| {
+            app.apply(StreamEvent::SubagentEnd {
+                run_id: "sub-debug-1".into(),
+                name: "debug".into(),
+                error: None,
+            });
+        });
+        step(&mut app, "todo", &|app| {
+            call(app, "t1", "todo", json!({ "op": "init", "list": [] }), "ok");
+            app.apply(StreamEvent::TodoUpdate { list: Default::default() });
+        });
+        step(&mut app, "ask", &|app| {
+            call(app, "q1", "ask", json!({ "questions": [] }), "answered");
+            app.apply(StreamEvent::AskResolved { request_id: "ask-1".into() });
+        });
+        step(&mut app, "memory write", &|app| {
+            call(app, "w1", "memory", json!({ "op": "write", "name": "decisions" }), "ok");
+        });
+    }
+
+    /// Esc abandons a draft without sending it, back on the `/agents` list,
+    /// and keeps it in the steer recall rather than leaving it in the main
+    /// composer, or in the main recall where Up would send it to main.
+    #[tokio::test]
+    async fn agents_detail_esc_sends_nothing() {
         let mut app = test_app();
         let inbox = crate::core::agent::subagent::tests::register_live_child(
             &app.subagent_set,
             "sub-counter-1",
             "counter",
         );
-        app.apply(StreamEvent::SubagentStart {
-            run_id: "sub-counter-1".to_string(),
-            name: "counter".to_string(),
-            task: None,
-        });
+        start_subagent(&mut app, "sub-counter-1", "counter");
         open_agents_picker(&mut app);
-        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         type_key_chars(&mut app, "never mind").await;
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
-        assert!(app.agent_message.is_none());
+        assert!(app.input.is_empty());
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
-        assert!(inbox.drain().is_empty());
+        assert!(inbox.drain().0.is_empty());
+        assert!(app.input_history.is_empty(), "{:?}", app.input_history);
+        assert_eq!(app.steer_history.last().map(String::as_str), Some("never mind"));
     }
 
     /// `x` on the list stops the selected child through `stop_subagent`.
@@ -26159,6 +30610,8 @@ mod tests {
             run_id: "sub-waster-1".to_string(),
             name: "waster".to_string(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
@@ -26168,30 +30621,115 @@ mod tests {
         ));
     }
 
-    /// When more agents are running than the dock can show, the overflow row
-    /// points at the `/agents` inspector so the full list is reachable.
-    #[test]
-    fn agents_column_overflow_hints_the_agents_command() {
-        let mut panels: Vec<SubagentPanel> = (0..6)
-            .map(|n| panel_with_calls(&format!("worker-{n}"), vec!["bash {}"]))
-            .collect();
-        let lines = agents_column(&mut panels, 200_000, 80, 4, "-");
-        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
-        assert!(text.contains("more"), "overflow row present: {text}");
-        assert!(text.contains("/agents"), "overflow hints /agents: {text}");
+    /// A pending later-phase child (named by `SubagentPlan`, not started) has
+    /// no run id yet, so `/agents` addresses it by its worker name: the core
+    /// checks the plan's pending table under that name first. With no plan
+    /// behind this test the core answers "no subagent named 'collector'",
+    /// which is the proof the name -- not an empty id -- was what got sent.
+    #[tokio::test]
+    async fn agents_stop_and_message_a_pending_child_by_name() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        open_agents_picker(&mut app);
+        assert_eq!(app.picker.as_ref().unwrap().items[0].value, "collector");
+
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        let text = transcript_text(&app);
+        assert!(text.contains("no subagent named 'collector'"), "{text}");
+
+        // A refused message is reported where the user is looking, in the
+        // child's view, and the draft stays for another try.
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "hi").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "hi");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("no subagent named 'collector'"), "{screen}");
     }
 
-    /// A column too narrow for the hint falls back to the plain count rather than
-    /// spilling `/agents` off the edge.
-    #[test]
-    fn agents_column_overflow_drops_the_hint_when_too_narrow() {
-        let mut panels: Vec<SubagentPanel> = (0..6)
-            .map(|n| panel_with_calls(&format!("w{n}"), vec!["bash {}"]))
-            .collect();
-        let lines = agents_column(&mut panels, 200_000, 12, 4, "-");
-        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
-        assert!(text.contains("more running"), "compact fallback: {text}");
-        assert!(!text.contains("/agents"), "no hint when it would not fit: {text}");
+    /// Enter drills into a pending child too (its header says what it waits
+    /// on), and the open detail follows the child once it starts.
+    #[tokio::test]
+    async fn agents_detail_of_a_pending_child_follows_its_promotion() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::AgentDetail);
+        assert_eq!(app.agent_detail.as_deref(), Some("collector"));
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(!screen.contains("no longer available"), "{screen}");
+        assert!(screen.contains("collector"), "{screen}");
+
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: None,
+            workspace: None,
+            internal: false,
+        });
+        assert_eq!(app.agent_detail.as_deref(), Some("sub-collector-1"));
+    }
+
+    /// Once promoted, the panel is addressed by its run id again: another live
+    /// child answering to the same name (which name resolution would prefer,
+    /// being newer) is left alone by both `x` and `m`.
+    #[tokio::test]
+    async fn agents_a_promoted_pending_child_is_addressed_by_run_id() {
+        use crate::core::agent::events::PendingSubagent;
+        use crate::core::agent::subagent::tests::{child_is_finished, register_live_child};
+        let mut app = test_app();
+        let mine = register_live_child(&app.subagent_set, "sub-collector-1", "collector");
+        let other = register_live_child(&app.subagent_set, "sub-collector-9", "collector");
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: None,
+            waiting: 1,
+        });
+        assert_eq!(
+            app.agent_detail.as_deref(),
+            Some("sub-collector-1"),
+            "a detail opened while pending follows the promotion"
+        );
+        type_key_chars(&mut app, "hello").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(mine.drain().1, vec!["hello".to_string()]);
+        assert!(other.drain().1.is_empty());
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: None,
+            workspace: None,
+            internal: false,
+        });
+        render_rows(&mut app, 100, 30);
+        assert_eq!(app.picker.as_ref().unwrap().items[0].value, "sub-collector-1");
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        assert!(child_is_finished(&app.subagent_set, "sub-collector-1"));
+        assert!(!child_is_finished(&app.subagent_set, "sub-collector-9"));
     }
 
     #[test]
@@ -26474,10 +31012,10 @@ mod tests {
         assert!(items[0].value.is_empty());
     }
 
-    /// The shells row sits over an idle input, but a running turn keeps its
-    /// one-row dock and folds the count into the working row instead.
+    /// Background shells are listed over the input in both states, on the
+    /// same rows, and the working row no longer carries a second count.
     #[test]
-    fn bg_shells_row_yields_to_the_working_row() {
+    fn background_shells_hold_their_rows_across_a_turn() {
         let mut app = test_app();
         app.bg_shells.push(tauri_plugin_agent_tools::tools::proc::ShellInfo {
             pid: 1,
@@ -26485,16 +31023,23 @@ mod tests {
             elapsed_secs: 1,
             backgrounded: true,
         });
-        let idle = render_rows(&mut app, 80, 12);
-        assert!(
-            idle.iter().any(|r| r.contains("1 background shell running · /shells to view · /stop to close")),
-            "{idle:#?}"
+        let shell_rows = |app: &mut App| -> Vec<(usize, String)> {
+            render_rows(app, 80, 14)
+                .into_iter()
+                .enumerate()
+                .filter(|(_, r)| r.contains("shell") || r.contains("sleep 9000"))
+                .collect()
+        };
+        let idle = shell_rows(&mut app);
+        assert_eq!(
+            idle.iter().map(|(_, r)| r.trim_end()).collect::<Vec<_>>(),
+            vec![
+                " 1 background shell running \u{b7} /shells to view \u{b7} /stop to close",
+                "  \u{2514} sleep 9000 \u{b7} 1s",
+            ]
         );
         app.submit_user("go".into());
-        let running = render_rows(&mut app, 80, 12);
-        assert!(!running.iter().any(|r| r.contains("background shell running")), "{running:#?}");
-        assert!(running.iter().any(|r| r.contains("\u{b7} 1 background shell")), "{running:#?}");
-        assert!(bg_shells_row(&app, 80).is_none());
+        assert_eq!(shell_rows(&mut app), idle, "same rows while the turn runs");
     }
 
     fn steering_request(
@@ -26512,6 +31057,44 @@ mod tests {
             },
             receiver,
         )
+    }
+
+    /// A message typed into a live run asks it to background its running
+    /// command, and the ask is withdrawn once the run took the message.
+    #[test]
+    fn a_waiting_message_asks_the_run_to_background_its_command() {
+        let mut app = test_app();
+        let detach = app.shell_detach.subscribe();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.sync_shell_detach();
+        assert!(!*detach.borrow(), "nothing is waiting yet");
+        app.submit_user("look at this instead".into());
+        app.sync_shell_detach();
+        assert!(*detach.borrow(), "the queued message wants the agent back");
+        let (request, _reply) = steering_request(app.history.clone());
+        app.steer_run(request);
+        app.sync_shell_detach();
+        assert!(!*detach.borrow(), "delivered, so later commands run in front");
+    }
+
+    /// A message typed for another plan mode waits for a fresh run, which
+    /// `steer_run` will not give it, so it must not detach the live run's
+    /// commands either.
+    #[test]
+    fn a_message_for_another_mode_leaves_the_running_command_in_front() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        let detach = app.shell_detach.subscribe();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.run_mode = RunMode::Plan;
+        app.submit_user("plan this instead".into());
+        app.sync_shell_detach();
+        assert!(!*detach.borrow(), "the queued message is for a fresh run");
+        let (request, mut reply) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert!(reply.try_recv().unwrap().is_empty(), "steer_run holds it too");
     }
 
     #[test]
@@ -26693,7 +31276,6 @@ mod tests {
         let (request, mut receiver) = steering_request(app.history.clone());
         app.steer_run(request);
         assert_eq!(receiver.try_recv().unwrap().len(), 1);
-        app.join_journal();
         let mut restored = test_app();
         restored.agent_dir = app.agent_dir.clone();
         apply_resume(&mut restored, &ResumeRequest::resume(ResumeTarget::Latest)).await;
@@ -26740,7 +31322,6 @@ mod tests {
         );
         assert!(!app.want_start);
         assert!(transcript_text(&app).contains("[skill:deploy] please carefully"));
-        app.join_journal();
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -26824,6 +31405,8 @@ mod tests {
             offers_always,
             justification: None,
             selected: 0,
+            picked: false,
+            pause: PromptPause::default(),
             subagent: None,
         }
     }
@@ -26970,6 +31553,17 @@ mod tests {
         row_text(row)
     }
 
+    /// The transcript unwrapped, one logical line each, as `/find` reads it:
+    /// for a report whose rows wrap inside one event at the test width.
+    fn flat_transcript(app: &App) -> String {
+        app.transcript
+            .rows
+            .iter()
+            .flat_map(|r| r.flat().clone())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Text a committed transcript row renders to at a nominal width, joined
     /// across the lines a multi-line row (prose, a diff panel) expands to.
     fn row_text(row: &Row) -> String {
@@ -26994,7 +31588,8 @@ mod tests {
             match kind {
                 RowKind::Tool { state, .. }
                 | RowKind::Explored { state, .. }
-                | RowKind::Shells { state, .. } => Some(*state),
+                | RowKind::Shells { state, .. }
+                | RowKind::Worked { state, .. } => Some(*state),
                 RowKind::Resolved { call, .. } => of(call),
                 _ => None,
             }
@@ -28725,18 +33320,18 @@ mod tests {
     fn group_summary_counts_and_pluralizes() {
         assert_eq!(
             group_summary(&[
-                ("memory note", true),
-                ("skill", true),
-                ("memory note", true)
+                ("memory note", ToolOp::Read),
+                ("skill", ToolOp::Read),
+                ("memory note", ToolOp::Read)
             ]),
             "Read 2 memory notes, 1 skill"
         );
         assert_eq!(
-            group_summary(&[("command", false), ("search", false), ("search", false)]),
+            group_summary(&[("command", ToolOp::Run), ("search", ToolOp::Run), ("search", ToolOp::Run)]),
             "Ran 1 command, 2 searches"
         );
         assert_eq!(
-            group_summary(&[("directory", true), ("directory", true)]),
+            group_summary(&[("directory", ToolOp::Read), ("directory", ToolOp::Read)]),
             "Read 2 directories"
         );
     }
@@ -28752,7 +33347,7 @@ mod tests {
             tool_ran: true,
             steps: 5,
         };
-        let nouns = [("file", true), ("command", false), ("file", true), ("command", false)];
+        let nouns = [("file", ToolOp::Read), ("command", ToolOp::Run), ("file", ToolOp::Read), ("command", ToolOp::Run)];
         let text: Vec<String> = super::trace_header_lines(&run, &nouns, 70)
             .iter()
             .map(line_text)
@@ -28776,12 +33371,46 @@ mod tests {
         // Mixed ops keep the verb agreeing with its noun: never "Ran 1 directory".
         assert_eq!(
             group_summary(&[
-                ("directory", true),
-                ("search", false),
-                ("file", true),
-                ("command", false),
+                ("directory", ToolOp::Read),
+                ("search", ToolOp::Run),
+                ("file", ToolOp::Read),
+                ("command", ToolOp::Run),
             ]),
             "Read 1 directory, 1 file; ran 1 search, 1 command"
+        );
+    }
+
+    /// A memory or skill write is counted as updated, not read: the summary
+    /// must not say a note was read when the agent wrote it.
+    #[test]
+    fn group_summary_counts_memory_writes_as_updates() {
+        let kind = |name: &str, args: serde_json::Value| tool_kind(name, &args);
+        let nouns = [
+            kind("memory", json!({ "op": "view", "name": "a" })),
+            kind("memory", json!({ "op": "write", "name": "b" })),
+            kind("memory", json!({ "op": "search", "query": "c" })),
+            kind("memory", json!({ "op": "delete", "name": "d" })),
+            kind("skill_write", json!({ "name": "deploy" })),
+            kind("skill_read", json!({ "name": "deploy" })),
+            kind("bash", json!({ "command": "ls" })),
+        ];
+        assert_eq!(
+            group_summary(&nouns),
+            "Read 2 memory notes, 1 skill; updated 2 memory notes, 1 skill; ran 1 command"
+        );
+        assert_eq!(
+            group_summary(&[kind("memory", json!({ "op": "edit", "name": "b" }))]),
+            "Updated 1 memory note"
+        );
+        // The memory tool's names before it became one tool, still in old
+        // journals a resume replays.
+        assert_eq!(
+            group_summary(&[
+                kind("memory_read", json!({ "name": "a" })),
+                kind("memory_list", json!({})),
+                kind("memory_write", json!({ "name": "b" })),
+            ]),
+            "Read 2 memory notes; updated 1 memory note"
         );
     }
 
@@ -28919,10 +33548,10 @@ mod tests {
             delta: "running 3 tests\n".into(),
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(live.contains("Running 2 commands"), "one row for the run: {live}");
-        assert!(live.contains("\u{2514} make (0s)"), "first command: {live}");
+        assert!(live.contains("\u{2022} Shell"), "one row for the run: {live}");
+        assert!(live.contains("\u{2514} \u{2022} Running make (0s)"), "first command: {live}");
         assert!(live.contains("compiling foo"), "first command output: {live}");
-        assert!(live.contains("    cargo test (0s)"), "second command: {live}");
+        assert!(live.contains("    \u{2022} Running cargo test (0s)"), "second command: {live}");
         assert!(live.contains("running 3 tests"), "second command output: {live}");
         assert!(
             live.find("compiling foo").unwrap() < live.find("cargo test (0s)").unwrap(),
@@ -28939,7 +33568,7 @@ mod tests {
             diff: None,
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(live.contains("\u{2514} make "), "the finished command stays: {live}");
+        assert!(live.contains("\u{2514} \u{2022} Ran make"), "the finished command stays: {live}");
         assert!(!live.contains("make (0s)"), "settled, so no clock: {live}");
         assert!(live.contains("      compiling foo"), "with its final output: {live}");
         assert!(live.contains("cargo test (0s)"), "the running one streams on: {live}");
@@ -29055,9 +33684,10 @@ mod tests {
         });
     }
 
-    /// Consecutive commands fold into one `Ran N commands` row listing each
-    /// command under the tree with a two-line preview, the failed one naming
-    /// its exit code and turning the bullet red.
+    /// Consecutive commands fold into one `Shell` row listing each command
+    /// under the tree as its own `Ran <cmd>` with its own status bullet and a
+    /// two-line preview, the failed one naming its exit code and turning both
+    /// its bullet and the header's red.
     #[test]
     fn consecutive_commands_group_under_one_row() {
         let mut app = test_app();
@@ -29076,16 +33706,129 @@ mod tests {
         assert_eq!(
             text,
             vec![
-                "\u{2022} Ran 3 commands",
-                "  \u{2514} cargo check",
+                "\u{2022} Shell",
+                "  \u{2514} \u{2022} Ran cargo check",
                 "      Finished dev",
-                "    git status --short",
+                "    \u{2022} Ran git status --short",
                 "      (no output)",
-                "    cargo test (exit 101)",
+                "    \u{2022} Ran cargo test (exit 101)",
                 "      test a ... FAILED",
                 "      l2",
                 "      \u{2026} +2 lines (Ctrl-O to expand)",
             ]
+        );
+    }
+
+    /// A long run lists only its five newest commands; the older ones fold into
+    /// one line that counts them and the whole group, and Ctrl-O's detail view
+    /// still names every command.
+    #[test]
+    fn a_long_command_group_shows_only_its_newest_five() {
+        let mut app = test_app();
+        let cmds: Vec<(String, String)> =
+            (1..=7).map(|n| (format!("c{n}"), format!("step {n}"))).collect();
+        let pairs: Vec<(&str, &str)> =
+            cmds.iter().map(|(id, c)| (id.as_str(), c.as_str())).collect();
+        run_commands(&mut app, &pairs);
+        for (id, _) in &pairs {
+            land(&mut app, id, "[exit 0]", false);
+        }
+        app.transcript.finalize_tool_group();
+        let group = app.transcript.groups.last().expect("folded group");
+        let text: Vec<String> =
+            group.row(super::GroupRow::Closed).lines(80).iter().map(line_text).collect();
+        assert_eq!(text[0], "\u{2022} Shell");
+        assert_eq!(
+            text[1],
+            "  \u{2514} \u{2026} +2 finished commands (7 in this group, Ctrl-O to expand)"
+        );
+        assert_eq!(text[2], "    \u{2022} Ran step 3");
+        let body = text.join("\n");
+        assert!(!body.contains("step 1") && !body.contains("step 2"), "{body}");
+        assert!(body.contains("Ran step 7"), "newest stays: {body}");
+        assert_eq!(body.matches('\u{2514}').count(), 1, "one corner: {body}");
+
+        let detail = super::group_detail_lines(group, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        for n in 1..=7 {
+            assert!(detail.contains(&format!("Ran step {n}")), "{n}: {detail}");
+        }
+    }
+
+    /// Five or fewer commands list in full, with no fold line.
+    #[test]
+    fn a_command_group_of_five_has_no_fold_line() {
+        let views: Vec<super::ShellView> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .map(|c| super::ShellView {
+                command: c,
+                result: Some(("[exit 0]", false)),
+                live: None,
+            })
+            .collect();
+        let text = super::shell_group_lines(ToolState::Success.bullet(), &views, None, false, 60)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!text.contains("finished command"), "{text}");
+        assert!(text.contains("\u{2514} \u{2022} Ran a"), "{text}");
+    }
+
+    /// The fold hides only settled commands: an early command still in flight
+    /// keeps its row (and in the live panel its clock and tail) while newer
+    /// finished ones fold away.
+    #[test]
+    fn the_fold_never_hides_a_command_still_running() {
+        let names = ["slow", "b", "c", "d", "e", "f", "g"];
+        let views: Vec<super::ShellView> = names
+            .iter()
+            .map(|c| super::ShellView {
+                command: c,
+                result: (*c != "slow").then_some(("[exit 0]", false)),
+                live: (*c == "slow").then_some(("tick", 12)),
+            })
+            .collect();
+        let text: Vec<String> =
+            super::shell_group_lines(ToolState::Running.bullet(), &views, Some(0), false, 80)
+                .iter()
+                .map(line_text)
+                .collect();
+        let body = text.join("\n");
+        assert!(body.contains("Running slow"), "in-flight command folded: {body}");
+        assert!(body.contains("tick"), "live tail lost: {body}");
+        assert!(body.contains("+2 finished commands (7 in this group"), "{body}");
+        for kept in ["Ran d", "Ran e", "Ran f", "Ran g"] {
+            assert!(body.contains(kept), "{kept}: {body}");
+        }
+        assert!(!body.contains("Ran b") && !body.contains("Ran c"), "{body}");
+    }
+
+    /// An aborted run marks its unresolved command interrupted even when a
+    /// failed sibling gives the header a different state.
+    #[test]
+    fn an_aborted_group_with_a_failure_marks_the_unresolved_command_interrupted() {
+        let mut app = test_app();
+        run_commands(&mut app, &[("a", "false"), ("b", "sleep 300")]);
+        land(&mut app, "a", "[exit 1]", true);
+        let group = app.transcript.tool_group.as_ref().expect("open group");
+        let row = group.row(super::GroupRow::Aborted);
+        assert!(
+            matches!(row.kind, RowKind::Shells { state: ToolState::Failure, aborted: true, .. }),
+            "failure outranks the abort in the header"
+        );
+        let lines = row.lines(70);
+        let sleep = lines
+            .iter()
+            .find(|l| line_text(l).contains("sleep 300"))
+            .expect("unresolved command row");
+        assert!(
+            sleep.spans.iter().any(|s| s.style == ToolState::Interrupted.bullet_style()),
+            "unresolved command left running: {}",
+            line_text(sleep)
         );
     }
 
@@ -29105,12 +33848,33 @@ mod tests {
             land(&mut app, id, "ok", false);
         }
         app.transcript.finalize_tool_group();
-        assert!(has_tool_row(&app, "Read 1 file; ran 2 commands", ToolState::Success));
+        assert!(has_tool_row(&app, "Worked \u{b7} 3 tool calls", ToolState::Success));
+        assert!(app
+            .transcript
+            .rows
+            .iter()
+            .any(|r| row_text(r).contains("\u{2514} Read 1 file; ran 2 commands")));
+        // Expanded, the calls carry the row's tree on, each call an event of
+        // its own with its output on its own corner one level in.
+        let group = app.transcript.groups.last().expect("folded group");
+        let detail: Vec<String> =
+            super::group_detail_lines(group, 80).iter().map(line_text).collect();
+        assert_eq!(
+            detail,
+            [
+                "    \u{2022} Ran make",
+                "      \u{2514} ok",
+                "    \u{2022} Read a.rs",
+                "      \u{2514} ok",
+                "    \u{2022} Ran make test",
+                "      \u{2514} ok",
+            ]
+        );
     }
 
-    /// While a command of the run is in flight the row reads `Running N
-    /// commands`, each running command with its own clock over its newest
-    /// lines, the finished ones with their preview.
+    /// While a command of the run is in flight it reads `Running <cmd>` under
+    /// the `Shell` header, with its own clock over its newest lines, the
+    /// finished ones `Ran <cmd>` with their preview.
     #[test]
     fn a_running_command_group_tails_each_command() {
         let mut app = test_app();
@@ -29132,10 +33896,10 @@ mod tests {
         assert_eq!(
             text,
             vec![
-                "\u{2022} Running 2 commands",
-                "  \u{2514} cargo fmt --check",
+                "\u{2022} Shell",
+                "  \u{2514} \u{2022} Ran cargo fmt --check",
                 "      (no output)",
-                "    cargo build (0s)",
+                "    \u{2022} Running cargo build (0s)",
                 "      \u{2026} +1 earlier line",
                 "      two",
                 "      three",
@@ -29164,7 +33928,9 @@ mod tests {
         assert!(matches!(row.kind, RowKind::Shells { state: ToolState::Backgrounded, .. }));
         let text = row.lines(70).iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
-            text.contains("\u{2514} npm run dev in the background\n      /shells to view"),
+            text.contains(
+                "\u{2514} \u{2022} Running npm run dev in the background\n      /shells to view"
+            ),
             "{text}"
         );
     }
@@ -29187,7 +33953,8 @@ mod tests {
             },
         ];
         for width in [16u16, 24, 40] {
-            let lines = super::shell_group_lines(ToolState::Running.bullet(), true, &views, width);
+            let lines =
+                super::shell_group_lines(ToolState::Running.bullet(), &views, None, false, width);
             for line in &lines {
                 assert!(row_width(line) <= width as usize, "{width}: {}", line_text(line));
             }
@@ -29256,6 +34023,91 @@ mod tests {
         ));
     }
 
+    /// A child's compaction note lands while the parent's command still runs,
+    /// committing the open group: the committed row has no result to report,
+    /// so it must read as running, not as a finished `Ran`, until it lands.
+    #[test]
+    fn a_mid_call_notice_leaves_the_command_reading_running() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo test" }),
+        });
+        app.apply(StreamEvent::Subagent {
+            run_id: "sub-1".into(),
+            name: "general-4".into(),
+            event: Box::new(StreamEvent::Compaction {
+                phase: CompactionPhase::Finished,
+                reason: CompactionReason::Preflight,
+                messages: Some(9),
+                report: None,
+            }),
+        });
+        let rows = render_rows(&mut app, 80, 20)
+            .iter()
+            .map(|r| r.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rows.contains("\u{2022} general-4\n  \u{2514} compacted 9 messages"), "{rows}");
+        assert!(rows.contains("Running cargo test"), "{rows}");
+        assert!(!rows.contains("Ran cargo test"), "{rows}");
+        let group = app.transcript.groups.last().expect("committed group");
+        assert!(matches!(
+            group.row(super::GroupRow::Closed).kind,
+            RowKind::Tool { state: ToolState::Running, .. }
+        ));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("Ran cargo test"), "{rows}");
+    }
+
+    /// The same for a run of commands committed mid-call: the `Shell` header
+    /// and the command without a result stay running.
+    #[test]
+    fn a_mid_call_notice_leaves_a_shell_run_reading_running() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        for (id, cmd) in [("c1", "make"), ("c2", "cargo test")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+        }
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Notice {
+            text: "Monitor mon-1: 'build' matched".into(),
+        });
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("Running cargo test"), "{rows}");
+        assert!(!rows.contains("Ran cargo test"), "{rows}");
+        let group = app.transcript.groups.last().expect("committed group");
+        assert!(matches!(
+            group.row(super::GroupRow::Closed).kind,
+            RowKind::Shells { state: ToolState::Running, .. }
+        ));
+        // The run ends without the result: nothing is running any more.
+        app.abort_tool_rows();
+        let idx = app.transcript.groups.last().expect("committed group").idx;
+        assert!(matches!(
+            app.transcript.rows[idx].kind,
+            RowKind::Shells { state: ToolState::Interrupted, aborted: true, .. }
+        ));
+    }
+
     /// Output streamed after a call's result landed (a backgrounded command
     /// printing on) has no live view to feed, so it must not re-create one.
     #[test]
@@ -29307,8 +34159,8 @@ mod tests {
         let group = app.transcript.tool_group.as_mut().expect("group open");
         group.calls[0].started = Instant::now() - Duration::from_secs(65);
         let rows = render_rows(&mut app, 80, 20).join("\n");
-        assert!(rows.contains("\u{2514} make build (1m 05s)"), "{rows}");
-        assert!(rows.contains("    make test (0s)"), "{rows}");
+        assert!(rows.contains("\u{2514} \u{2022} Running make build (1m 05s)"), "{rows}");
+        assert!(rows.contains("    \u{2022} Running make test (0s)"), "{rows}");
     }
 
     /// A signal and a truncation note no longer hide the exit marker: both
@@ -29421,9 +34273,60 @@ mod tests {
             "Reading main.rs"
         );
         assert_eq!(
-            tool_activity("memory_write", &json!({ "name": "decisions" })),
+            tool_activity("read", &json!({ "path": "src/main.rs", "offset": 10, "limit": 20 })),
+            "Reading main.rs [10-29]"
+        );
+        assert_eq!(
+            tool_activity("memory", &json!({ "op": "write", "name": "decisions" })),
             "Updating memory: decisions"
         );
+    }
+
+    /// A finished memory or skill call reads in the past tense like every
+    /// other tool row, live and after a resume replays it.
+    #[test]
+    fn memory_and_skill_rows_settle_into_the_past_tense() {
+        let cases = [
+            ("memory", json!({ "op": "view", "name": "drift.md" }), "Read memory: drift"),
+            ("memory", json!({ "op": "view" }), "Read memory notes"),
+            ("memory", json!({ "op": "search", "query": "yarn" }), "Searched memory: yarn"),
+            ("memory", json!({ "op": "write", "name": "decisions" }), "Updated memory: decisions"),
+            ("memory", json!({ "op": "edit", "name": "decisions" }), "Updated memory: decisions"),
+            ("memory", json!({ "op": "delete", "name": "old" }), "Deleted memory: old"),
+            ("memory", json!({ "op": "move", "name": "old", "to": "tui/old" }), "Moved memory: old"),
+            ("skill_read", json!({ "name": "deploy" }), "Read skill: deploy"),
+            ("skill_list", json!({}), "Read skills"),
+            ("skill_write", json!({ "name": "deploy" }), "Updated skill: deploy"),
+        ];
+        for (tool, args, done) in cases {
+            assert_eq!(tool_finished(tool, &args), done);
+            let mut app = test_app();
+            app.apply(StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: tool.into(),
+                args: args.clone(),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: "c1".into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::Token { text: "Done.".into() });
+            app.transcript.flush_assistant();
+            let live = transcript_text(&app);
+            assert!(!live.contains("ing "), "{tool} {args}: {live}");
+            let mut resumed = test_app();
+            replay_display_log(&mut resumed, app.transcript.display_log.clone());
+            let replayed = transcript_text(&resumed);
+            assert!(!replayed.contains("ing "), "{tool} {args}: {replayed}");
+            // A read lists its target on the `Explored` row; a change is
+            // titled by its own past-tense label.
+            if !done.starts_with("Read") && !done.starts_with("Searched") {
+                assert!(live.contains(&format!("\u{2022} {done}")), "{live}");
+                assert!(replayed.contains(&format!("\u{2022} {done}")), "{replayed}");
+            }
+        }
     }
 
     /// A `monitor` call must never fall through to the raw-JSON fallback: a
@@ -29475,6 +34378,10 @@ mod tests {
         assert_eq!(
             tool_finished("read", &json!({ "path": "src/main.rs" })),
             "Read main.rs"
+        );
+        assert_eq!(
+            tool_finished("read", &json!({ "path": "src/main.rs", "offset": 200 })),
+            "Read main.rs [200+]"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
         assert_eq!(
@@ -29745,6 +34652,34 @@ mod tests {
     }
 
     #[test]
+    fn resume_takes_back_only_full_object_ids_as_snapshots() {
+        let mut app = test_app();
+        let (base, s0) = ("b".repeat(40), "0".repeat(40));
+        let good = serde_json::json!({
+            "base_snapshot": base,
+            "checkpoints": [{ "user_index": 0, "preview": "one", "sha": s0 }],
+        });
+        super::restore_snapshots(&mut app, Some(&good));
+        assert_eq!(app.base_snapshot.as_deref(), Some(base.as_str()));
+        assert_eq!(app.checkpoints.len(), 1);
+
+        for meta in [
+            serde_json::json!({ "base_snapshot": "--index-output=/tmp/x" }),
+            serde_json::json!({
+                "base_snapshot": base,
+                "checkpoints": [
+                    { "user_index": 0, "preview": "one", "sha": s0 },
+                    { "user_index": 1, "preview": "two", "sha": "--output=/tmp/x" },
+                ],
+            }),
+        ] {
+            super::restore_snapshots(&mut app, Some(&meta));
+            assert!(app.base_snapshot.is_none(), "{meta}");
+            assert!(app.checkpoints.is_empty(), "{meta}");
+        }
+    }
+
+    #[test]
     fn base_snapshot_is_queued_off_loop_not_run_inline() {
         let mut app = test_app();
         app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
@@ -29838,12 +34773,15 @@ mod tests {
         rebuild_recall(&mut app);
         assert_eq!(app.input_history.len(), 2);
 
-        // The transcript row, the journal entry and the conversation agree, so
-        // rewinding to #1 empties all three.
+        // The transcript row, the recorded entry and the conversation agree, so
+        // rewinding to #1 empties all three, leaving only the rewind's note.
         assert_eq!(user_entries(&app.transcript.display_log), 2);
         rewind_to(&mut app, 0, false);
         assert!(app.history.is_empty());
-        assert!(app.transcript.display_log.is_empty());
+        assert!(matches!(
+            app.transcript.display_log.as_slice(),
+            [DisplayEntry::Note { .. }]
+        ));
         assert_eq!(app.input, typed, "the target message comes back verbatim");
     }
 
@@ -30283,6 +35221,143 @@ mod tests {
         let mut current: Option<CurrentRun> = None;
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         handle_key(app, esc, &registry, &mut current, &mcp_servers).await;
+    }
+
+    /// Submit `line` from the composer while `current` is the live run.
+    async fn enter_line_mid_run(app: &mut App, line: &str, current: &mut Option<CurrentRun>) {
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        app.input = line.to_string();
+        app.cursor = app.input.len();
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        handle_key(app, enter, &registry, current, &no_mcp()).await;
+    }
+
+    /// A run streaming the answer to "old question", as the loop holds it.
+    fn live_old_run(app: &mut App) -> (Option<CurrentRun>, mpsc::UnboundedSender<StreamEvent>) {
+        app.submit_user("old question".into());
+        app.want_start = false;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (_steering_tx, steering) = mpsc::unbounded_channel();
+        let handle = tokio::spawn(std::future::pending());
+        app.run_abort = Some(handle.abort_handle());
+        let current = Some(CurrentRun {
+            rx,
+            steering,
+            handle,
+        });
+        app.apply(StreamEvent::Token {
+            text: "old answer".into(),
+        });
+        (current, tx)
+    }
+
+    #[tokio::test]
+    async fn new_session_mid_run_ends_the_old_run() {
+        for cmd in ["/new", "/clear"] {
+            let mut app = test_app();
+            let (mut current, tx) = live_old_run(&mut app);
+            let old_thread = app.thread_id.clone();
+            enter_line_mid_run(&mut app, cmd, &mut current).await;
+
+            // The old run is gone, so nothing it still sends can reach the
+            // new session -- before, its `MessagesUpdated` copied the old
+            // conversation into it and saved that as a new thread.
+            assert!(current.is_none(), "{cmd} must abort the old run");
+            assert!(tx.is_closed());
+            assert!(!app.run_is_live(), "{cmd} leaves the new session idle");
+            assert!(app.history.is_empty(), "{cmd}");
+            assert!(app.thread_id.is_none(), "{cmd}");
+            // The interrupted turn is kept in the thread it belongs to.
+            let saved = super::super::load_thread_record(
+                &app.agent_dir,
+                old_thread.as_deref().unwrap(),
+            )
+            .unwrap()
+            .record
+            .messages;
+            assert_eq!(saved.last().unwrap()["content"], "old answer", "{cmd}");
+        }
+    }
+
+    #[tokio::test]
+    async fn resume_mid_run_ends_the_old_run() {
+        let mut app = test_app();
+        let other = vec![
+            json!({ "role": "user", "content": "other question" }),
+            json!({ "role": "assistant", "content": "other answer" }),
+        ];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &other, None).unwrap();
+        let (mut current, tx) = live_old_run(&mut app);
+        enter_line_mid_run(&mut app, &format!("/resume {id}"), &mut current).await;
+
+        // Left running, the old run's next `MessagesUpdated` would overwrite
+        // the resumed thread on disk with the old conversation.
+        assert!(current.is_none(), "/resume must abort the old run");
+        assert!(tx.is_closed());
+        assert!(!app.run_is_live());
+        assert_eq!(app.thread_id.as_deref(), Some(id.as_str()));
+        assert_eq!(app.history, other);
+    }
+
+    #[tokio::test]
+    async fn new_session_drops_a_run_not_yet_spawned() {
+        let mut app = test_app();
+        // Submitted, but still gated on MCP/snapshot readiness.
+        app.submit_user("old question".into());
+        assert!(app.want_start);
+        let mut current = None;
+        enter_line_mid_run(&mut app, "/new", &mut current).await;
+        // Otherwise the loop spawns it against the new, empty session.
+        assert!(!app.want_start);
+        assert!(!app.run_is_live());
+        assert!(app.history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn new_session_drops_an_in_flight_compaction() {
+        let mut app = test_app();
+        app.submit_user("old question".into());
+        app.want_start = false;
+        // An overflow error is being recovered: compaction, then a retry.
+        app.compacting = Some(CompactKind::Auto);
+        app.compact_started = Some(Instant::now());
+        app.retry_after_compact = true;
+        app.status = Status::Idle;
+        let mut current = None;
+        enter_line_mid_run(&mut app, "/new", &mut current).await;
+        // `compacting` gone is what tells the loop to abort the task, so its
+        // summary never lands and the old turn is never retried here.
+        assert!(app.compacting.is_none());
+        assert!(app.compact_started.is_none());
+        assert!(!app.retry_after_compact);
+    }
+
+    #[tokio::test]
+    async fn fork_mid_run_ends_the_old_run() {
+        let mut app = test_app();
+        app.submit_user("first question".into());
+        app.want_start = false;
+        app.apply(StreamEvent::Token {
+            text: "first answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        let source = app.thread_id.clone().expect("saved");
+        let (mut current, tx) = live_old_run(&mut app);
+
+        enter_line_mid_run(&mut app, "/fork", &mut current).await;
+        assert!(app.picker.is_some(), "/fork opens its picker");
+        // The newest message is preselected: fork before "old question".
+        enter_line_mid_run(&mut app, "", &mut current).await;
+
+        assert!(current.is_none(), "/fork must abort the old run");
+        assert!(tx.is_closed());
+        assert!(!app.run_is_live());
+        assert_ne!(app.thread_id.as_deref(), Some(source.as_str()));
+        assert!(
+            !app.history.iter().any(|m| m["content"] == "old answer"),
+            "{:?}",
+            app.history
+        );
     }
 
     #[tokio::test]
@@ -31707,7 +36782,7 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 10] = [
+        let setups: [DockSetup; 9] = [
             // The account OAuth dock takes every keystroke and outranks the
             // API-key one, so it has to block the field as hard as the rest.
             ("account_login", |app| {
@@ -31744,9 +36819,6 @@ mod tests {
             }),
             ("mcp_prompt", |app| {
                 app.mcp_prompt = Some(blank_mcp_prompt())
-            }),
-            ("agent_message", |app| {
-                app.agent_message = Some(super::AgentMessagePrompt::new("sub-a-1", "a"))
             }),
             ("provider_prompt", |app| {
                 app.provider_prompt = Some(super::ProviderPrompt::new())
@@ -31898,15 +36970,15 @@ mod tests {
     }
 
     #[test]
-    fn init_starts_a_turn_covering_all_three_artifacts() {
+    fn init_starts_a_turn_writing_only_the_instructions_file() {
         let mut app = test_app();
         super::init_command(&mut app);
         assert!(app.want_start, "/init must start a turn");
         let sent = app.history.last().expect("user message").to_string();
         assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
         assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
-        assert!(sent.contains("skill_write"), "{sent}");
-        assert!(sent.contains("memory_write"), "{sent}");
+        assert!(sent.contains("do not write skills, memory notes"), "{sent}");
+        assert!(!sent.contains("skill_write"), "/init writes only the instructions file: {sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -32240,6 +37312,8 @@ mod tests {
             run_id: "sub-a-1".into(),
             name: "a".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         if let Some((provider, model)) = child_on {
             app.apply(child_request_on(provider, model));
@@ -32321,6 +37395,8 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
+                    internal: false,
                 });
                 app.apply(child_request_on("tokamak", "tk-1"));
                 app.submit_user("go".into());
@@ -32359,6 +37435,8 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
+                    internal: false,
                 });
                 let rt = tokio::runtime::Runtime::new().expect("runtime");
                 let held = rt.block_on(args.provider_configs.lock());
@@ -32443,6 +37521,7 @@ mod tests {
             project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 4,
+            subagent_worktrees: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
@@ -32452,8 +37531,12 @@ mod tests {
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
             parent_link: None,
+            shell_detach: None,
+            shell_cwd: None,
             compaction: None,
             session_start: None,
+            memory_change_budget: None,
+            child_scope: None,
         })
     }
 
@@ -32576,6 +37659,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         let call = |i: u32, offset: u64| {
             wrap(
@@ -32604,6 +37689,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -32669,11 +37756,15 @@ mod tests {
             run_id: "r1".into(),
             name: "alpha".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r2",
@@ -32718,6 +37809,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
         let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
@@ -33351,6 +38444,32 @@ mod tests {
                 None,
                 "cleared field unsets the key"
             );
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// `bell` is read on every status transition, so its note must not tell
+    /// the user to wait for a next run the way other rows do.
+    #[test]
+    fn settings_prompt_says_bell_applies_now() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "bell").unwrap();
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            for ch in "always".chars() {
+                super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert_eq!(
+                crate::core::agent::global_config::bell_setting().as_deref(),
+                Some("always")
+            );
+            let note = transcript_text(&app);
+            assert!(note.contains("bell = always written; applies now"), "{note}");
+            assert!(!note.contains("next run"), "{note}");
 
             let _ = std::fs::remove_dir_all(&app.agent_dir);
         });
@@ -34822,6 +39941,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -34881,6 +40002,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r1",
@@ -34901,7 +40024,7 @@ mod tests {
             .transcript
             .rows
             .iter()
-            .any(|r| row_text(r).contains("Finished reviewer · 1 tool\n  └ Completed")));
+            .any(|r| row_text(r).contains("Finished reviewer · 1 tool · 0s\n  └ Completed")));
     }
 
     /// A background child reports its failure to the model (the `<SYSTEM>`
@@ -34915,6 +40038,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
@@ -34944,6 +40069,8 @@ mod tests {
             calls: Vec::new(),
             finished: true,
             error: Some("upstream: 429 rate limited".into()),
+            elapsed_secs: None,
+            workspace: None,
         };
         let encoded = serde_json::to_string(&entry).unwrap();
         assert_eq!(
@@ -34968,6 +40095,8 @@ mod tests {
                 calls: Vec::new(),
                 finished: true,
                 error: None,
+                elapsed_secs: None,
+                workspace: None,
             }
         );
     }
@@ -34979,6 +40108,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -35003,6 +40134,8 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r1",
@@ -35037,11 +40170,15 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r1",
@@ -35106,14 +40243,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "> hello▏");
+        assert_eq!(caret_text(&lines[0]), "\u{203a} hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "> one");
+        assert_eq!(line_text(&lines[0]), "\u{203a} one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -35122,7 +40259,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "> hi");
+        assert_eq!(line_text(&lines[0]), "\u{203a} hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -35131,14 +40268,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "> he▏llo");
+        assert_eq!(caret_text(&lines[0]), "\u{203a} he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "> o▏ne");
+        assert_eq!(caret_text(&lines[0]), "\u{203a} o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -35531,6 +40668,8 @@ mod tests {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -35639,6 +40778,52 @@ mod tests {
             wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
             "tool result missing from wire history on cancel: {wire}"
         );
+    }
+
+    /// A turn started by a skill or command is journaled as an `Invocation`, not
+    /// a `User` entry. Cancelling it must fold only its own calls: the previous
+    /// typed turn's calls, removed from history by a compaction, stay gone.
+    #[test]
+    fn cancelling_an_invocation_turn_does_not_bring_back_compacted_calls() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "old".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "old".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // A compaction replaces the history: the old exchange is summarized.
+        app.history = vec![crate::core::agent::compaction::summary_message("earlier work")];
+        app.transcript.display_log.push(DisplayEntry::Invocation {
+            label: "/someskill".into(),
+            detail: String::new(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "new".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "new".into(),
+            content: "a.txt\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.append_cancelled_turn_tools();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!wire.contains("\"old\""), "compacted call came back: {wire}");
+        assert!(wire.contains("\"tool_call_id\":\"new\""), "own call lost: {wire}");
     }
 
     #[test]
@@ -35991,18 +41176,24 @@ mod tests {
         });
         assert!(app.transcript.tool_group.is_some());
         // Prose begins streaming in the same turn (no intervening Step): the
-        // group's status must land in the timeline as resolved right away.
+        // group lands in the timeline right away, still running until its
+        // result does, then resolved.
         app.apply(StreamEvent::Token {
             text: "Here".into(),
         });
         assert!(app.transcript.tool_group.is_none());
-        let row = app
-            .transcript
-            .rows
-            .iter()
-            .rev()
-            .find(|r| row_text(r).contains("Ran grep"))
-            .unwrap();
+        let idx = app.transcript.groups[0].idx;
+        let row = &app.transcript.rows[idx];
+        assert!(row_text(row).contains("Running grep"), "{}", row_text(row));
+        assert_eq!(tool_state(row), Some(ToolState::Running), "{}", row_text(row));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "src/a.rs:1:foo".into(),
+            is_error: false,
+            diff: None,
+        });
+        let row = &app.transcript.rows[idx];
+        assert!(row_text(row).contains("Ran grep"), "{}", row_text(row));
         assert_eq!(tool_state(row), Some(ToolState::Success), "{}", row_text(row));
         // Later tokens must not re-trigger finalize work.
         app.apply(StreamEvent::Token {
@@ -36170,10 +41361,10 @@ mod tests {
     fn consecutive_collapsible_tools_fold_into_one_summary_row() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_list", json!({})),
+            ("c1", "memory", json!({ "op": "view" })),
             ("c2", "skill_list", json!({})),
-            ("c3", "memory_read", json!({ "name": "project-overview" })),
-            ("c4", "memory_read", json!({ "name": "top-p" })),
+            ("c3", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c4", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36225,8 +41416,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_keybinding() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36265,8 +41456,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_click() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36309,6 +41500,62 @@ mod tests {
         let text = lines_text(&running_group_rows(group, 2, 80));
         assert!(text.starts_with("• Exploring"), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
+    }
+
+    /// A memory read stays on screen while the group it opened keeps working:
+    /// the next call, a command or any other tool, is listed under it rather
+    /// than drawn over it, and the group folds to `Worked` once prose starts.
+    #[test]
+    fn a_memory_read_is_not_replaced_by_the_next_call() {
+        for (id, name, args, label) in [
+            ("b1", "bash", json!({ "command": "ls" }), "Running ls"),
+            ("w1", "web_fetch", json!({ "url": "https://x.test" }), "Fetching https://x.test"),
+        ] {
+            let mut app = test_app();
+            app.apply(StreamEvent::ToolCall {
+                id: "m1".into(),
+                name: "memory".into(),
+                args: json!({ "op": "view", "name": "notes" }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: "m1".into(),
+                content: "note body".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: name.into(),
+                args,
+            });
+            let running = render_rows(&mut app, 80, 30).join("\n");
+            assert!(running.contains("\u{2022} Read memory: notes"), "{running}");
+            assert!(running.contains(label), "{running}");
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok\n[exit 0]".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: "m2".into(),
+                name: "memory".into(),
+                args: json!({ "op": "search", "query": "yarn" }),
+            });
+            let later = render_rows(&mut app, 80, 30).join("\n");
+            assert!(later.contains("\u{2022} Read memory: notes"), "{later}");
+            assert!(later.contains("Searching memory: yarn"), "{later}");
+            app.apply(StreamEvent::ToolResult {
+                id: "m2".into(),
+                content: "none".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::Token { text: "Done.".into() });
+            app.transcript.flush_assistant();
+            let folded = render_rows(&mut app, 80, 30).join("\n");
+            assert!(folded.contains("\u{2022} Worked \u{b7} 3 tool calls"), "{folded}");
+        }
     }
 
     /// Feed `calls` (id, tool, args, result, is_error) through the stream as
@@ -36376,6 +41623,41 @@ mod tests {
         assert_eq!(span(1, "Read"), Style::new().fg(super::theme::accent()));
         assert_eq!(span(1, ","), dim);
         assert_eq!(span(2, " in "), dim);
+    }
+
+    /// The line span the tool was asked for, as the `read` tool counts lines:
+    /// offset 0 is line 1, a lone limit starts at line 1, a whole file has none.
+    #[test]
+    fn read_span_names_the_requested_lines() {
+        let span = |args: serde_json::Value| read_span(&args);
+        assert_eq!(span(json!({ "path": "a" })), "");
+        assert_eq!(span(json!({ "offset": 1 })), "");
+        assert_eq!(span(json!({ "offset": 0, "limit": 5 })), " [1-5]");
+        assert_eq!(span(json!({ "limit": 50 })), " [1-50]");
+        assert_eq!(span(json!({ "offset": 40, "limit": 1 })), " [40-40]");
+        assert_eq!(span(json!({ "offset": 40 })), " [40+]");
+        assert_eq!(span(json!({ "offset": 40, "limit": 0 })), "");
+        assert_eq!(
+            span(json!({ "offset": 2, "limit": u64::MAX })),
+            format!(" [2-{}]", u64::MAX)
+        );
+    }
+
+    /// Paging through one file names each page, so the row shows progress
+    /// rather than one file read once.
+    #[test]
+    fn explored_row_names_the_lines_of_each_paged_read() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[
+                ("c1", "read", json!({ "path": "src/a.rs", "offset": 1, "limit": 100 }), "a", false),
+                ("c2", "read", json!({ "path": "src/a.rs", "offset": 101, "limit": 100 }), "a", false),
+                ("c3", "read", json!({ "path": "src/b.rs" }), "b", false),
+            ],
+        );
+        let (text, _) = explored_row(&app);
+        assert_eq!(text, "• Explored\n  └ Read a.rs [1-100], a.rs [101-200], b.rs");
     }
 
     #[test]
@@ -36462,12 +41744,14 @@ mod tests {
             "• Explored\n  └ Search needle0\n    Search needle1\n    Search needle2\n    \
              Search needle3\n    … +2 more"
         );
-        assert_eq!(lines[5].spans[0].style, Style::new().dark_gray());
+        assert_eq!(lines[5].spans[1].style, Style::new().dark_gray());
         // Ctrl-O shows every call with its result, carried on the same tree.
         let detail = lines_text(&group_detail_lines(&app.transcript.groups[0], 80));
         assert!(detail.contains("Searched") && detail.contains("hit"), "{detail}");
         assert_eq!(detail.matches("Searched").count(), 6, "{detail}");
-        assert!(!detail.contains('└'), "{detail}");
+        // The calls carry the header's tree on; only each call's own output
+        // opens a corner, one level in.
+        assert!(detail.starts_with("    \u{2022} Searched\n      \u{2514} hit"), "{detail}");
     }
 
     #[test]
@@ -36522,7 +41806,7 @@ mod tests {
             ],
         );
         let (text, _) = explored_row(&app);
-        assert_eq!(text, "• Read 1 file; ran 1 tool call");
+        assert_eq!(text, "• Worked · 2 tool calls\n  └ Read 1 file; ran 1 tool call");
     }
 
     /// A lone in-flight call is specific enough to name: the live row shows its
@@ -36847,8 +42131,8 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
-            name: "memory_read".into(),
-            args: json!({ "name": "x" }),
+            name: "memory".into(),
+            args: json!({ "op": "view", "name": "x" }),
         });
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -36994,7 +42278,7 @@ mod tests {
             .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
-        assert!(has_tool_row(&app, "Ran 3 commands", ToolState::Success), "row: {row}");
+        assert!(has_tool_row(&app, "Shell", ToolState::Success), "row: {row}");
     }
 
     #[test]
@@ -37693,7 +42977,7 @@ mod tests {
             .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
-        assert!(has_tool_row(&app, "Ran 3 commands", ToolState::Success), "row: {row}");
+        assert!(has_tool_row(&app, "Shell", ToolState::Success), "row: {row}");
     }
 
     #[test]
@@ -37902,7 +43186,98 @@ mod tests {
         ));
         let group = app.subagents[0].transcript.tool_group.as_ref().unwrap();
         let kept = group.calls[0].content.as_deref().unwrap();
-        assert!(kept.starts_with("first line") && kept.len() <= CHILD_RESULT_MAX);
+        assert!(kept.starts_with("first line"));
+        assert!(
+            kept.contains("[tool result truncated in this view: kept the first"),
+            "a cut result says so: {}",
+            &kept[kept.len().saturating_sub(200)..]
+        );
+        assert!(kept.len() <= CHILD_RESULT_MAX + 200);
+    }
+
+    /// A finished child's session file, as its run would have left it in the
+    /// session scratch, for the `/agents` replay tests.
+    fn app_with_finished_child_file(record_run_id: &str) -> (TestApp, std::path::PathBuf) {
+        use crate::core::agent::subagent_session::{session_file, Recorder};
+        let mut app = test_app();
+        let session = format!(
+            "replay-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut args = (*test_args(&app, HashMap::new())).clone();
+        args.session_id = Some(session.clone());
+        app.args = Some(Arc::new(args));
+        start_subagent(&mut app, "sub-alpha-1", "alpha");
+        app.apply(wrap("sub-alpha-1", "alpha", StreamEvent::Token { text: "live only".into() }));
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-alpha-1".into(),
+            name: "alpha".into(),
+            error: None,
+        });
+        let root = app.args.as_ref().and_then(|a| a.project_root.clone()).expect("a project");
+        let scratch = crate::core::agent::project::scratch_dir(&root, &session);
+        std::fs::create_dir_all(scratch.join("subagents")).unwrap();
+        let dir = tauri_plugin_agent_tools::tools::spill::validated_subdir(
+            &scratch,
+            tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
+        )
+        .unwrap();
+        let mut rec = Recorder::start(&dir, "alpha", record_run_id, "the brief");
+        for ev in [
+            StreamEvent::Reasoning { text: "weighing it".into() },
+            StreamEvent::Token { text: "Reading the record.".into() },
+            StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "read".into(),
+                args: json!({ "path": "notes.txt" }),
+            },
+            StreamEvent::ToolResult {
+                id: "c1".into(),
+                content: "notes".into(),
+                is_error: false,
+                diff: None,
+            },
+        ] {
+            rec.record(&ev);
+        }
+        rec.user_message(&json!({ "role": "user", "content": "also check b" }));
+        rec.record(&StreamEvent::Token { text: "From the record file.".into() });
+        rec.finish(&Ok("From the record file.".into()));
+        assert!(session_file(&dir, "alpha").is_file());
+        (app, scratch)
+    }
+
+    /// Enter on a finished child in `/agents` replays it from its session
+    /// file, which holds the whole run, rather than the capped live rows.
+    #[tokio::test]
+    async fn agents_detail_replays_a_finished_child_from_its_session_file() {
+        let (mut app, scratch) = app_with_finished_child_file("sub-alpha-1");
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::AgentDetail);
+        let text = render_rows(&mut app, 100, 40).join("\n");
+        let _ = std::fs::remove_dir_all(&scratch);
+        for want in ["Reading the record.", "also check b", "From the record file."] {
+            assert!(text.contains(want), "{want:?} missing in:\n{text}");
+        }
+        assert!(!text.contains("live only"), "the file replaced the live rows:\n{text}");
+    }
+
+    /// A file that belongs to another run under the same name is not this
+    /// child's: the detail keeps the rows the screen saw.
+    #[tokio::test]
+    async fn agents_detail_ignores_a_session_file_from_another_run() {
+        let (mut app, scratch) = app_with_finished_child_file("sub-alpha-9");
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let text = render_rows(&mut app, 100, 40).join("\n");
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(text.contains("live only"), "{text}");
+        assert!(!text.contains("From the record file."), "{text}");
     }
 
     #[test]
@@ -37949,7 +43324,117 @@ mod tests {
             text: "Answer.".into(),
         });
         app.on_done("stop".into(), None);
-        app.join_journal();
+    }
+
+    /// The live TUI path end to end: a session carrying reasoning, an image, a
+    /// compaction summary, a result over 64 KB, a cancelled turn and an orphaned
+    /// call is saved, resumed, saved and resumed. Both resumes hold the history
+    /// byte for byte (so the next request shares the original's cached prefix)
+    /// and the same transcript entries, and a resume with no new turn leaves the
+    /// file untouched.
+    #[tokio::test]
+    async fn save_resume_save_resume_keeps_history_and_transcript_identical() {
+        let mut app = test_app();
+        app.pending_images.push(PendingImage {
+            name: "cat.png".into(),
+            data_url: "data:image/png;base64,iVBORw0KGgo=".into(),
+        });
+        app.submit_user("what is this?".to_string());
+        app.want_start = false;
+        app.apply(StreamEvent::Reasoning {
+            text: "Look at the picture.".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c_big".into(),
+            name: "read".into(),
+            args: json!({ "path": "big.txt" }),
+        });
+        let big = "line of output\n".repeat(6 * 1024);
+        assert!(big.len() > 64 * 1024);
+        app.apply(StreamEvent::ToolResult {
+            id: "c_big".into(),
+            content: big.clone(),
+            is_error: false,
+            diff: None,
+        });
+        let user = app.history[0].clone();
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![
+                crate::core::agent::compaction::summary_message("earlier: set up the repo"),
+                user,
+                json!({
+                    "role": "assistant", "content": "",
+                    "reasoning_content": "Look at the picture.",
+                    "tool_calls": [{ "id": "c_big", "type": "function",
+                        "function": { "name": "read", "arguments": "{ \"path\":\"big.txt\" }" } }],
+                }),
+                json!({ "role": "tool", "tool_call_id": "c_big", "content": big }),
+            ],
+        });
+        app.apply(StreamEvent::Token {
+            text: "A cat.".into(),
+        });
+        app.on_done("stop".into(), None);
+
+        // A cancelled turn: one call finished, one still in flight.
+        app.submit_user("now edit it".to_string());
+        app.want_start = false;
+        app.apply(StreamEvent::ToolCall {
+            id: "c_done".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c_done".into(),
+            content: "wrote 1 line".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c_live".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 9" }),
+        });
+        app.cancel_run();
+
+        // An orphaned call: the process died before its result was recorded.
+        app.history.push(json!({
+            "role": "assistant", "content": null,
+            "tool_calls": [{ "id": "c_orphan", "type": "function",
+                "function": { "name": "edit", "arguments": "{}" } }],
+        }));
+        app.persist();
+        let id = app.thread_id.clone().expect("saved");
+        let path = super::super::session_path(&app.agent_dir, &id).unwrap();
+        let history = serde_json::to_string(&app.history).unwrap();
+        assert!(history.contains("c_live"), "the cancelled call is kept");
+        let whole = "line of output\\n".repeat(6 * 1024);
+        assert!(history.contains(&whole), "the 64 KB+ result is kept whole");
+        let display = app.transcript.display_log.clone();
+        assert!(display.iter().any(|e| matches!(e, DisplayEntry::Note { .. })));
+        assert!(
+            SessionWriter::open(&path).is_err(),
+            "the live session holds the thread"
+        );
+        let agent_dir = app.agent_dir.clone();
+        // The session ends; `app` itself owns the temp store, so it stays.
+        app.session_writer = None;
+
+        let mut first = test_app();
+        first.agent_dir = agent_dir.clone();
+        apply_resume(&mut first, &ResumeRequest::resume(ResumeTarget::Id(id.clone()))).await;
+        assert_eq!(serde_json::to_string(&first.history).unwrap(), history);
+        assert_eq!(first.transcript.display_log, display);
+        let on_disk = std::fs::read(&path).unwrap();
+        first.persist();
+        assert_eq!(std::fs::read(&path).unwrap(), on_disk, "resaving a resume writes nothing");
+        first.session_writer = None;
+
+        let mut second = test_app();
+        second.agent_dir = agent_dir;
+        apply_resume(&mut second, &ResumeRequest::resume(ResumeTarget::Id(id))).await;
+        assert_eq!(serde_json::to_string(&second.history).unwrap(), history);
+        assert_eq!(second.transcript.display_log, display);
     }
 
     /// A resumed thread's turns were sent by another run, so the session cache
@@ -38017,7 +43502,7 @@ mod tests {
         assert!(resumed.contains("Thought"), "{resumed}");
         assert!(has_tool_row(&fresh, "Created a.txt", ToolState::Success), "tool row: {resumed}");
         assert!(
-            resumed.contains("    1 +x"),
+            resumed.contains("  \u{2514} 1 +x"),
             "diff panel: {resumed}"
         );
         assert!(resumed.contains("Answer."), "{resumed}");
@@ -38064,7 +43549,6 @@ mod tests {
             });
         }
         app.on_done("stop".into(), None);
-        app.join_journal();
         let live: String = app
             .transcript
             .rows
@@ -38141,12 +43625,31 @@ mod tests {
         assert_eq!(result["content"], "wrote 1 line");
     }
 
+    /// A thread from before display entries were kept has only its legacy
+    /// `messages.jsonl`: the transcript is rebuilt from the messages.
     #[tokio::test]
     async fn resume_falls_back_to_messages_without_a_journal() {
-        let mut app = test_app();
-        record_full_turn(&mut app);
-        let id = app.thread_id.clone().expect("saved");
-        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id)).unwrap();
+        let app = test_app();
+        let dir = crate::core::threads::utils::get_thread_dir(&app.agent_dir, "1e9acy00").unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("thread.json"),
+            json!({ "id": "1e9acy00", "title": "old", "updated": 1.0 }).to_string(),
+        )
+        .unwrap();
+        let record = |role: &str, text: &str| {
+            json!({
+                "object": "thread.message", "role": role,
+                "content": [{ "type": "text", "text": { "value": text, "annotations": [] } }],
+            })
+            .to_string()
+                + "\n"
+        };
+        std::fs::write(
+            dir.join("messages.jsonl"),
+            record("user", "do it") + &record("assistant", "Answer."),
+        )
+        .unwrap();
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
@@ -38230,6 +43733,53 @@ mod tests {
             .any(|t| t.contains("last worked in")));
     }
 
+    /// The subagent registry is the app's, but its roster is the
+    /// conversation's: `/new` must not hand the next conversation's
+    /// continuation state the previous one's children and blackboard paths.
+    /// Esc stops the children but keeps the conversation, and its roster.
+    #[test]
+    fn a_new_session_starts_with_no_subagent_roster() {
+        let mut app = test_app();
+        app.subagent_set
+            .roster_add("explore", "sub-explore-1", "map the repo", false, None);
+        app.stop_subagents();
+        assert_eq!(app.subagent_set.roster_lines().len(), 1, "Esc keeps the roster");
+        app.reset_session();
+        assert!(
+            app.subagent_set.roster_lines().is_empty(),
+            "{:?}",
+            app.subagent_set.roster_lines()
+        );
+    }
+
+    /// `/resume` replaces the conversation too, so the roster goes with it.
+    #[tokio::test]
+    async fn a_resumed_thread_starts_with_no_subagent_roster() {
+        let mut app = test_app();
+        app.subagent_set
+            .roster_add("explore", "sub-explore-1", "map the repo", false, None);
+        let history = vec![json!({ "role": "user", "content": "first" })];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        super::load_thread(&mut app, &json!({ "id": id }), "resumed").await;
+        assert!(
+            app.subagent_set.roster_lines().is_empty(),
+            "{:?}",
+            app.subagent_set.roster_lines()
+        );
+    }
+
+    /// `/resume` starts the loaded thread's shell in the project root, not
+    /// wherever the replaced conversation last `cd`ed.
+    #[tokio::test]
+    async fn a_resumed_thread_starts_its_shell_in_the_project_root() {
+        let mut app = test_app();
+        *app.shell_cwd.lock().unwrap() = Some(std::path::PathBuf::from("/somewhere"));
+        let history = vec![json!({ "role": "user", "content": "first" })];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        super::load_thread(&mut app, &json!({ "id": id }), "resumed").await;
+        assert_eq!(*app.shell_cwd.lock().unwrap(), None);
+    }
+
     /// `/new` keeps the checkout: it belongs to the invocation, not the thread.
     #[test]
     fn a_new_session_stays_in_the_same_worktree() {
@@ -38240,10 +43790,439 @@ mod tests {
         assert_eq!(app.workspace, Some(test_worktree("/tmp/wt-a")));
     }
 
-    #[test]
-    fn worktree_command_without_one_points_at_the_flag() {
+    /// `/worktree` the way the loop runs it: the command only asks, and the
+    /// report (git per worktree) is gathered on the blocking pool and shown
+    /// when it lands.
+    async fn run_worktree_command(app: &mut App) {
+        worktree_command(app);
+        assert!(app.transcript.rows.is_empty(), "nothing is shown before git answers");
+        assert!(std::mem::take(&mut app.worktree_request));
+        let mut task = Some(spawn_worktree_report(app));
+        let report = await_job(&mut task).await.unwrap();
+        finish_worktree_report(app, report);
+    }
+
+    #[tokio::test]
+    async fn worktree_command_lists_live_subagent_worktrees() {
+        use std::process::Command;
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path().to_string_lossy().to_string();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(["-C", &r, "-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        if !git(&["init", "-q"]) {
+            return;
+        }
+        std::fs::write(root.path().join("a.txt"), "a\n").unwrap();
+        assert!(git(&["add", "a.txt"]));
+        assert!(git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]));
         let mut app = test_app();
-        worktree_command(&mut app);
+        let ledger = app.subagent_set.workspaces.clone();
+        let (ws, lease) = ledger.assign(root.path(), "general", true, None, true).unwrap();
+        drop(lease);
+        let branch = ws.worktree.as_ref().unwrap().branch.clone();
+
+        run_worktree_command(&mut app).await;
+        let notes: String = app
+            .transcript
+            .rows
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(notes.contains("subagent worktrees:"), "{notes}");
+        assert!(notes.contains(&branch), "{notes}");
+        assert!(notes.contains("(0 commit(s), 0 uncommitted file(s))"), "{notes}");
+        assert!(notes.contains("--worktree"), "{notes}");
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    /// A repository with one commit for the conversation-end tests, or
+    /// `None` without git.
+    fn conversation_repo() -> Option<tempfile::TempDir> {
+        let root = tempfile::tempdir().unwrap();
+        let ok = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(root.path())
+                .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        std::fs::write(root.path().join("a.txt"), "a\n").ok()?;
+        (ok(&["init", "-q"]) && ok(&["add", "a.txt"])
+            && ok(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        .then_some(root)
+    }
+
+    /// An idle and a committed writer worktree in `app`'s ledger, returned as
+    /// (idle path, committed path, committed branch).
+    fn two_worktrees(
+        app: &App,
+        root: &std::path::Path,
+    ) -> (std::path::PathBuf, std::path::PathBuf, String) {
+        let ledger = app.subagent_set.workspaces.clone();
+        let (idle, l1) = ledger.assign(root, "general", true, None, true).unwrap();
+        let (work, l2) = ledger.assign(root, "general-2", true, None, true).unwrap();
+        drop((l1, l2));
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&work.root)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q"])
+            .args(["--no-gpg-sign", "--allow-empty", "-m", "b"])
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok);
+        // Work only the checkout holds, so it is kept: a clean one whose
+        // branch is brought back goes.
+        std::fs::write(work.root.join("notes.md"), "draft\n").unwrap();
+        let branch = work.worktree.as_ref().unwrap().branch.clone();
+        (idle.root, work.root, branch)
+    }
+
+    /// What the conversation's settle reports, once it is done.
+    async fn kept_report(app: &mut App) -> String {
+        tokio::time::timeout(Duration::from_secs(30), app.cleanup_rx.recv())
+            .await
+            .expect("the settle reports")
+            .expect("the channel is open")
+    }
+
+    #[tokio::test]
+    async fn new_and_clear_settle_the_conversations_subagent_worktrees() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let (idle, kept, branch) = two_worktrees(&app, root.path());
+        app.reset_session();
+        let report = kept_report(&mut app).await;
+        assert!(report.starts_with("subagent worktrees kept"), "{report}");
+        assert!(report.contains(&branch), "{report}");
+        assert!(!idle.exists(), "the empty worktree goes");
+        assert!(kept.is_dir());
+        assert!(app.subagent_set.workspaces.live().is_empty());
+        let reuse =
+            crate::core::agent::child_workspace::WorkspaceRequest::Reuse("general-2".into());
+        let err = app
+            .subagent_set
+            .workspaces
+            .assign(root.path(), "next", true, Some(&reuse), true)
+            .unwrap_err();
+        assert!(err.contains("no earlier subagent"), "{err}");
+        // Shown as the kept notice, one worktree per row.
+        app.notice(&report, None);
+        let shown: String = app.transcript.rows.iter().map(row_text).collect::<Vec<_>>().join("\n");
+        assert!(shown.contains(&branch), "{shown}");
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    #[tokio::test]
+    async fn resuming_a_thread_settles_the_previous_conversations_worktrees() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let history = vec![json!({ "role": "user", "content": "first" })];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        let (idle, kept, branch) = two_worktrees(&app, root.path());
+        super::load_thread(&mut app, &json!({ "id": id }), "resumed").await;
+        let report = kept_report(&mut app).await;
+        assert!(report.contains(&branch), "{report}");
+        assert!(!idle.exists());
+        assert!(kept.is_dir());
+        assert!(app.subagent_set.workspaces.live().is_empty());
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    /// Esc stops the children but keeps the conversation: its worktrees stay
+    /// and a later dispatch may still name them.
+    #[tokio::test]
+    async fn cancel_keeps_the_conversations_worktrees() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let (idle, kept, _) = two_worktrees(&app, root.path());
+        app.cancel_run();
+        assert!(idle.is_dir() && kept.is_dir());
+        let reuse = crate::core::agent::child_workspace::WorkspaceRequest::Reuse("general".into());
+        let ledger = app.subagent_set.workspaces.clone();
+        assert!(ledger.assign(root.path(), "next", true, Some(&reuse), true).is_ok());
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    /// Exit takes the reports already sent, then stops waiting: a settle
+    /// still fetching is not waited for, and its later report is refused, so
+    /// it does not count as shown.
+    #[tokio::test]
+    async fn exit_waits_for_a_replaced_conversations_settle_only_so_long() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send("kept a".to_string()).unwrap();
+        let late = tx.clone();
+        let started = Instant::now();
+        let got = super::drain_cleanup_reports(&mut rx, Duration::from_millis(200)).await;
+        let took = started.elapsed();
+        assert_eq!(got, ["kept a"]);
+        assert!(took < Duration::from_secs(2), "waited {took:?}");
+        assert!(late.send("kept b".to_string()).is_err(), "a late report is refused");
+    }
+
+    /// `/new` hands the git to the blocking pool: a slow worktree does not
+    /// stall the frame.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_switch_does_not_block_the_render_loop() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let (idle, kept, _) = two_worktrees(&app, root.path());
+        let exclude = idle.join(".git/info/exclude");
+        let _ = std::fs::remove_file(&exclude);
+        if !std::process::Command::new("mkfifo").arg(&exclude).status().is_ok_and(|s| s.success()) {
+            return;
+        }
+        // Let the settle's status read through a second from now, before the
+        // switch: a switch that ran the git itself would then come back late
+        // and fail, rather than wait on the FIFO forever. On a thread, as
+        // opening a FIFO waits for its reader. Status opens the file twice,
+        // so a plain one takes the FIFO's place before it is let go.
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(1));
+            let held = std::fs::OpenOptions::new().write(true).open(&exclude);
+            let _ = std::fs::remove_file(&exclude);
+            let _ = std::fs::write(&exclude, "");
+            drop(held);
+        });
+        let started = Instant::now();
+        app.reset_session();
+        let took = started.elapsed();
+        let report = tokio::time::timeout(Duration::from_secs(30), app.cleanup_rx.recv()).await;
+        assert!(took < Duration::from_millis(500), "/new took {took:?}");
+        assert!(matches!(report, Ok(Some(_))), "the settle reports: {report:?}");
+        let _ = std::fs::remove_dir_all(&idle);
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    /// A `/worktrees` listing with one checkout in each state.
+    fn worktrees_fixture() -> crate::core::agent::child_workspace::WorktreesReport {
+        use crate::core::agent::child_workspace::{
+            CheckoutInfo, CheckoutState, InUseBy, WorktreesReport,
+        };
+        let checkout = |id: &str, state| CheckoutInfo {
+            id: id.to_string(),
+            path: std::path::PathBuf::from(format!("/w/{id}")),
+            branch: format!("jan/agent/{id}"),
+            bytes: 2048,
+            build_output_bytes: 0,
+            state,
+        };
+        WorktreesReport {
+            dir: Some(std::path::PathBuf::from("/w")),
+            checkouts: vec![
+                checkout("child-0001", CheckoutState::InUse { by: InUseBy::Child }),
+                checkout("other-0002", CheckoutState::InUse { by: InUseBy::Session }),
+                checkout(
+                    "dirty-0003",
+                    CheckoutState::Uncommitted {
+                        files: vec!["a.txt".into(), ".env".into()],
+                        commits: 1,
+                        off_branch: 0,
+                        build_output: vec![],
+                    },
+                ),
+                checkout("ahead-0004", CheckoutState::Unbrought { commits: 3 }),
+                checkout("idle-0005", CheckoutState::Removable { commits: 0 }),
+            ],
+            build_cache_bytes: Some(3 << 30),
+            trash_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn worktrees_command_is_registered() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/worktrees"));
+    }
+
+    /// The actions come first, sized; then a row per checkout naming its
+    /// branch, size and state.
+    #[test]
+    fn worktrees_picker_lists_actions_then_each_checkouts_state() {
+        let items = worktrees_picker_items(&worktrees_fixture());
+        let labels: Vec<(&str, &str)> =
+            items.iter().map(|i| (i.value.as_str(), i.label.as_str())).collect();
+        assert_eq!(
+            labels,
+            [
+                ("safe", "Remove what is safe to remove  1 checkout(s), 2.0 KB"),
+                ("cache", "Clear build cache  3.0 GB"),
+                ("wt:child-0001", "jan/agent/child-0001  2.0 KB  in use by a running subagent"),
+                ("wt:other-0002", "jan/agent/other-0002  2.0 KB  in use by another live jan session"),
+                (
+                    "wt:dirty-0003",
+                    "jan/agent/dirty-0003  2.0 KB  holds uncommitted work: a.txt, .env; 1 commit(s)"
+                ),
+                ("wt:ahead-0004", "jan/agent/ahead-0004  2.0 KB  holds 3 commit(s) not in your repository"),
+                ("wt:idle-0005", "jan/agent/idle-0005  2.0 KB  removable (no work in it)"),
+            ]
+        );
+    }
+
+    /// Open `/worktrees` on the fixture with `row` selected, and press Enter.
+    async fn enter_on_worktrees_row(app: &mut App, row: &str) {
+        app.worktrees = Some(worktrees_fixture());
+        open_worktrees_picker(app);
+        let picker = app.picker.as_mut().unwrap();
+        picker.selected = picker.items.iter().position(|i| i.value == row).unwrap();
+        press(app, KeyCode::Enter, KeyModifiers::NONE).await;
+    }
+
+    #[tokio::test]
+    async fn worktrees_actions_run_off_the_render_loop() {
+        use crate::core::agent::child_workspace::Prune;
+        for (row, job) in [
+            ("safe", WorktreesJob::Prune(Prune::Safe)),
+            ("cache", WorktreesJob::ClearCache),
+            ("wt:idle-0005", WorktreesJob::Prune(Prune::One { id: "idle-0005".into(), force: false })),
+        ] {
+            let mut app = test_app();
+            enter_on_worktrees_row(&mut app, row).await;
+            assert_eq!(app.worktrees_request, Some(job), "{row}");
+            assert!(app.picker.is_none(), "{row}");
+        }
+    }
+
+    /// A checkout in use is never removed from here: Enter says why and asks
+    /// for nothing.
+    #[tokio::test]
+    async fn a_checkout_in_use_cannot_be_removed_from_worktrees() {
+        for row in ["wt:child-0001", "wt:other-0002"] {
+            let mut app = test_app();
+            enter_on_worktrees_row(&mut app, row).await;
+            assert_eq!(app.worktrees_request, None, "{row}");
+            let notes: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(notes.contains("is kept: in use by"), "{notes}");
+        }
+    }
+
+    /// Removing a checkout that holds work asks first, naming the loss, with
+    /// "keep" selected; only the remove row removes it, and Esc steps back.
+    #[tokio::test]
+    async fn removing_a_checkout_with_work_asks_first_and_names_the_loss() {
+        use crate::core::agent::child_workspace::Prune;
+        let mut app = test_app();
+        enter_on_worktrees_row(&mut app, "wt:dirty-0003").await;
+        let picker = app.picker.as_ref().unwrap();
+        assert_eq!(picker.kind, PickerKind::WorktreeConfirm);
+        let text: Vec<&str> = picker.items.iter().map(|i| i.label.as_str()).collect();
+        // Its branch is brought back first: only the files are lost.
+        assert!(text[1].ends_with("deletes 2 uncommitted file(s), for good"), "{text:?}");
+        assert!(text[2].contains("its branch (1 commit(s)) is brought back"), "{text:?}");
+        assert_eq!(picker.items[picker.selected].value, "keep");
+        assert_eq!(app.worktrees_request, None);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Worktrees));
+        assert_eq!(app.worktrees_request, None, "keep removes nothing");
+
+        enter_on_worktrees_row(&mut app, "wt:ahead-0004").await;
+        let text: Vec<String> =
+            app.picker.as_ref().unwrap().items.iter().map(|i| i.label.clone()).collect();
+        assert!(text[1].contains("deletes 3 commit(s) not in your repository"), "{text:?}");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Worktrees));
+
+        enter_on_worktrees_row(&mut app, "wt:ahead-0004").await;
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let force = Prune::One { id: "ahead-0004".into(), force: true };
+        assert_eq!(app.worktrees_request, Some(WorktreesJob::Prune(force)));
+        assert!(app.picker.is_none());
+    }
+
+    /// `/worktrees` the way the loop runs it, on a real project: the listing
+    /// lands as the picker, and the safe prune reports what it freed while
+    /// this session's busy checkout stays.
+    #[tokio::test]
+    async fn worktrees_lists_and_prunes_a_real_project() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        app.project_root = root.path().to_path_buf();
+        let ledger = app.subagent_set.workspaces.clone();
+        let (busy, lease) = ledger.assign(root.path(), "busy", true, None, true).unwrap();
+        let (idle, l2) = ledger.assign(root.path(), "idle", true, None, true).unwrap();
+        drop(l2);
+        let run = |app: &mut App| {
+            let job = app.worktrees_request.take().expect("a job was asked for");
+            Some(spawn_worktrees_job(app, job))
+        };
+        worktrees_command(&mut app);
+        let mut task = run(&mut app);
+        finish_worktrees_job(&mut app, await_job(&mut task).await.unwrap());
+        let picker = app.picker.as_ref().expect("the listing opens the picker");
+        let labels: String = picker.items.iter().map(|i| format!("{}\n", i.label)).collect();
+        assert!(labels.contains("in use by a running subagent"), "{labels}");
+        assert!(labels.contains("removable (no work in it)"), "{labels}");
+
+        worktrees_action(&mut app, "safe");
+        let mut task = run(&mut app);
+        finish_worktrees_job(&mut app, await_job(&mut task).await.unwrap());
+        let notes: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(notes.contains("removed 1 subagent worktree(s); moved "), "{notes}");
+        assert!(busy.root.is_dir() && !idle.root.exists());
+        assert!(app.worktrees.is_none(), "the listing it acted on is dropped");
+        drop(lease);
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    /// A listing that lands while the user is typing, or has something else
+    /// open, is kept and announced, never opened under their next Enter (its
+    /// first row prunes).
+    #[tokio::test]
+    async fn a_listing_landing_over_a_draft_or_another_view_does_not_open() {
+        let mut app = test_app();
+        app.input = "half a message".to_string();
+        finish_worktrees_job(&mut app, WorktreesDone::Listed(worktrees_fixture()));
+        assert!(app.picker.is_none());
+        assert!(app.worktrees.is_some(), "kept, so /worktrees shows it at once");
+        let notes: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(notes.contains("worktree listing ready"), "{notes}");
+
+        let mut app = test_app();
+        app.picker = Some(super::Picker {
+            kind: PickerKind::Agents,
+            items: vec![],
+            selected: 0,
+            search: None,
+            armed_delete: None,
+        });
+        finish_worktrees_job(&mut app, WorktreesDone::Listed(worktrees_fixture()));
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
+
+        let mut app = test_app();
+        finish_worktrees_job(&mut app, WorktreesDone::Listed(worktrees_fixture()));
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Worktrees));
+    }
+
+    /// Once a prune or a clear lands, the listing it acted on is stale: it is
+    /// dropped, so stepping back to the list lists again rather than showing
+    /// checkouts that are gone.
+    #[tokio::test]
+    async fn a_finished_prune_drops_the_stale_listing() {
+        use crate::core::agent::child_workspace::Pruned;
+        for done in [WorktreesDone::Pruned(Pruned::default()), WorktreesDone::Cleared(Ok(1))] {
+            let mut app = test_app();
+            app.worktrees = Some(worktrees_fixture());
+            finish_worktrees_job(&mut app, done);
+            assert!(app.worktrees.is_none());
+            open_worktrees_picker(&mut app);
+            assert!(app.picker.is_none());
+            assert_eq!(app.worktrees_request, Some(WorktreesJob::List));
+        }
+    }
+
+    #[tokio::test]
+    async fn worktree_command_without_one_points_at_the_flag() {
+        let mut app = test_app();
+        run_worktree_command(&mut app).await;
         let notes: String = app
             .transcript
             .rows
@@ -38297,7 +44276,7 @@ mod tests {
             .join("\n");
         assert!(
             has_tool_row(&app, "Created a.txt", ToolState::Success)
-                && after.contains("    1 +x"),
+                && after.contains("  \u{2514} 1 +x"),
             "the journal was carried, not just the wire history: {after}"
         );
         assert!(!after.contains("Second answer."), "{after}");
@@ -38342,8 +44321,8 @@ mod tests {
 
         fork_at(&mut forked, 1).await;
 
-        // Notes are transient by design and never journaled, so they are the one
-        // thing the two paths are allowed to disagree on.
+        // Each path ends on its own note ("forked ..." / "rewound ..."), the one
+        // thing the two are allowed to disagree on.
         let rows = |app: &App| {
             app.transcript
                 .rows
@@ -38352,12 +44331,17 @@ mod tests {
                 .filter(|t| !t.trim_start().starts_with('\u{2022}'))
                 .collect::<Vec<_>>()
         };
+        let entries = |app: &App| {
+            app.transcript
+                .display_log
+                .iter()
+                .filter(|e| !matches!(e, DisplayEntry::Note { .. }))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         assert_eq!(rows(&forked), rows(&rewound));
         assert_eq!(forked.history, rewound.history);
-        assert_eq!(
-            forked.transcript.display_log,
-            rewound.transcript.display_log
-        );
+        assert_eq!(entries(&forked), entries(&rewound));
     }
 
     /// The parent pointer has to survive the branch's own first save, which
@@ -38521,7 +44505,7 @@ mod tests {
             has_tool_row(&app, "Created a.txt", ToolState::Success),
             "first turn keeps its rows: {after}"
         );
-        assert!(after.contains("    1 +x"), "{after}");
+        assert!(after.contains("  \u{2514} 1 +x"), "{after}");
         assert!(
             !after.contains("Second answer."),
             "rewound turn is gone: {after}"
@@ -38823,6 +44807,66 @@ mod tests {
             assert!(restored.ends_with("\x1b[?25h"), "cursor shown last: {restored:?}");
             assert!(restored.starts_with("\x1b[?2026l"), "held frame ended first");
         }
+    }
+
+    /// The SIGTTIN handler cannot format, so it writes a prebuilt copy of the
+    /// restore; it must stay byte-for-byte what every other exit writes.
+    #[cfg(unix)]
+    #[test]
+    fn tty_stop_restore_bytes_match_write_restore() {
+        let mut restored = Vec::new();
+        super::write_restore(&mut restored);
+        assert_eq!(
+            String::from_utf8_lossy(&super::RESTORE_BYTES),
+            String::from_utf8_lossy(&restored)
+        );
+    }
+
+    /// Nothing pending: the render loop draws as normal and makes no syscall.
+    /// A stop still in its handler: the loop keeps off the terminal and the
+    /// re-arm stays owed. One test, since both drive the same process-wide
+    /// flags and parallel tests would race them.
+    #[cfg(unix)]
+    #[test]
+    fn rearm_waits_for_a_pending_stop_and_skips_without_one() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let mut app = test_app();
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(!super::rearm_after_tty_stop(&mut app, true));
+        assert!(!app.repaint, "no repaint without a stop");
+
+        super::TTY_REARM.store(true, SeqCst);
+        super::TTY_STOPPING.store(true, SeqCst);
+        let away = super::rearm_after_tty_stop(&mut app, true);
+        let still_owed = super::TTY_REARM.load(SeqCst);
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(away, "mid-stop: neither read nor draw");
+        assert!(still_owed, "the re-arm is not consumed mid-stop");
+        assert!(!app.repaint);
+    }
+
+    #[test]
+    fn retry_interrupted_retries_only_eintr() {
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(r.is_ok());
+        assert_eq!(calls, 3);
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            Err(std::io::Error::other("no"))
+        });
+        assert!(r.is_err());
+        assert_eq!(calls, 1);
     }
 
     /// Raw mode keeps the terminal from turning Ctrl-Z into SIGTSTP, so it
@@ -39461,7 +45505,7 @@ mod tests {
         let base_len = 4;
         finish_compaction(
             &mut app,
-            Ok(vec![json!({ "role": "user", "content": "summary" })]),
+            Ok((vec![json!({ "role": "user", "content": "summary" })], None)),
             base_len,
         );
         let contents: Vec<String> = app
@@ -39474,6 +45518,34 @@ mod tests {
         assert!(app.compact_started.is_none());
         let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("compacted 4 -> 2 messages"), "got: {text}");
+    }
+
+    /// A `/compact` is a billed request like any other: its usage lands in the
+    /// session totals `/usage` prices, even though no run is open to meter it.
+    #[test]
+    fn finish_compaction_charges_the_session_usage() {
+        use crate::core::agent::events::{CompactionReport, Usage};
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.history = (0..4)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        let report = CompactionReport {
+            model: Some("m".into()),
+            input_tokens: 100,
+            usage: Some(Usage {
+                prompt_tokens: Some(9_000),
+                completion_tokens: Some(400),
+                ..Default::default()
+            }),
+            summary: String::new(),
+        };
+        let compacted = vec![json!({ "role": "user", "content": "state" })];
+        finish_compaction(&mut app, Ok((compacted, Some(report))), 4);
+        let recorded = app.session_usage.values().next().expect("usage recorded");
+        assert_eq!(recorded.requests, 1);
+        assert_eq!(recorded.prompt_tokens, 9_000);
+        assert_eq!(recorded.completion_tokens, 400);
     }
 
     #[test]
@@ -39519,36 +45591,27 @@ mod tests {
             run_id: run_id.into(),
             name: name.into(),
             task: task.map(str::to_string),
+            workspace: None,
+            internal: false,
         });
     }
 
-    /// The dispatch prompt rides on the event, so the panel can say what the
-    /// fan-out is for. Only its first line: the panel is a pinned dock, and the
-    /// brief's later lines are already in the transcript.
+    /// The dispatch prompt rides on the event, so `/agents` can say what each
+    /// child is for. Only its first line: the later lines are already in the
+    /// transcript.
     #[test]
-    fn subagent_panel_shows_the_dispatch_prompt() {
+    fn subagent_detail_shows_the_dispatch_prompt() {
+        let mut app = test_app();
+        app.status = Status::Running;
         let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas";
-
-        let mut solo = test_app();
-        solo.status = Status::Running;
-        start_subagent_with_task(&mut solo, "r0", "space", Some(brief));
-        let out = render_rows(&mut solo, 100, 24).join("\n");
-        assert!(out.contains("Build Flappy Space"), "brief missing: {out}");
-        assert!(!out.contains("400x600"), "only the summary line: {out}");
-
-        let mut pair = test_app();
-        pair.status = Status::Running;
-        start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
-        start_subagent_with_task(
-            &mut pair,
-            "r1",
-            "fish",
-            Some("Build Flappy Fish\nUnderwater"),
-        );
-        let out = render_rows(&mut pair, 100, 24).join("\n");
-        assert!(out.contains("Build Flappy Space"), "{out}");
-        assert!(out.contains("Build Flappy Fish"), "{out}");
-        assert!(!out.contains("Underwater"), "{out}");
+        start_subagent_with_task(&mut app, "r0", "space", Some(brief));
+        start_subagent_with_task(&mut app, "r1", "fish", Some("Build Flappy Fish\nUnderwater"));
+        let space = agent_detail_text(&mut app, "r0", 100, 24);
+        assert!(space.contains("Build Flappy Space"), "brief missing: {space}");
+        assert!(!space.contains("400x600"), "only the summary line: {space}");
+        let fish = agent_detail_text(&mut app, "r1", 100, 24);
+        assert!(fish.contains("Build Flappy Fish"), "{fish}");
+        assert!(!fish.contains("Underwater"), "{fish}");
     }
 
     /// A dispatch with no task (or an older event without the field) still
@@ -39559,7 +45622,7 @@ mod tests {
         app.status = Status::Running;
         start_subagent(&mut app, "r0", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("1 agent") && out.contains("alpha"), "{out}");
+        assert!(out.contains("1 subagent running") && out.contains("alpha"), "{out}");
     }
 
     fn subagent_event(app: &mut App, run_id: &str, name: &str, event: StreamEvent) {
@@ -39588,7 +45651,7 @@ mod tests {
 
     /// A child's hit rate is a token share over all its requests (3000 of
     /// 4000), not a mean of per-request rates (which would read 66%), and it
-    /// shows on both the inline panel and the `/agents` row.
+    /// shows on both the `/agents` row and its detail.
     #[test]
     fn subagent_cache_rate_is_a_cumulative_token_share() {
         let mut app = test_app();
@@ -39596,9 +45659,7 @@ mod tests {
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(500));
         child_usage(&mut app, "r0", 3_000, Some(2_500));
-        let out = render_rows(&mut app, 120, 20).join("\n");
-        assert!(out.contains(" \u{b7} 75% cache hit"), "{out}");
-        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 200_000);
         assert!(items[0].label.contains("75% cache hit"), "{}", items[0].label);
         let detail = agent_detail_text(&mut app, "r0", 80, 20);
         assert!(detail.contains("75% cache hit"), "{detail}");
@@ -39611,9 +45672,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, None);
-        let out = render_rows(&mut app, 120, 20).join("\n");
-        assert!(!out.contains("cache hit"), "{out}");
-        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 200_000);
         assert!(!items[0].label.contains("cache hit"), "{}", items[0].label);
     }
 
@@ -39624,10 +45683,11 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(0));
-        let lines = agents_column(&mut app.subagents, 200_000, 120, 8, "-");
-        let span = lines
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 200_000);
+        let span = items[0]
+            .spans
             .iter()
-            .flat_map(|l| l.spans.iter())
+            .flatten()
             .find(|s| s.content.contains("0% cache hit"))
             .expect("a zero rate is shown");
         assert_eq!(span.style, Style::new().red().bold(), "{span:?}");
@@ -39659,6 +45719,7 @@ mod tests {
             phase: CompactionPhase::Started,
             reason: CompactionReason::SessionBudget,
             messages: None,
+            report: None,
         });
         assert!(app.run_compacting.is_some());
         let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
@@ -39668,6 +45729,7 @@ mod tests {
             phase: CompactionPhase::Finished,
             reason: CompactionReason::SessionBudget,
             messages: Some(12),
+            report: None,
         });
         assert!(app.run_compacting.is_none());
         let out = transcript_text(&app);
@@ -39783,11 +45845,105 @@ mod tests {
         start_subagent(&mut app, "r1", "scout");
         subagent_event(&mut app, "r1", "scout", retry(2));
         assert!(app.retrying.is_none());
-        assert!(transcript_text(&app).contains("scout: Upstream request failed"));
+        assert!(transcript_text(&app).contains("\u{2022} scout\n  \u{2514} Upstream request failed"));
 
         app.apply(retry(2));
         subagent_event(&mut app, "r1", "scout", StreamEvent::Token { text: "x".into() });
         assert!(app.retrying.is_some(), "a child's token is not the parent's resend");
+    }
+
+    /// #512: an event a subagent raised is that agent's: its name is the
+    /// title and the text hangs under the tree, wrapping in the tree's column
+    /// rather than under the bullet.
+    #[test]
+    fn a_child_notice_is_titled_by_the_agent_with_the_text_under_it() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "general-4");
+        let text = "Upstream request failed: connection reset by the peer while reading";
+        subagent_event(&mut app, "r1", "general-4", StreamEvent::Notice { text: text.into() });
+        assert_eq!(
+            last_row_lines(&app, 40),
+            [
+                "\u{2022} general-4",
+                "  \u{2514} Upstream request failed:",
+                "    connection reset by the peer",
+                "    while reading",
+            ]
+        );
+    }
+
+    /// A child's retry note follows the same layout as its other notes.
+    #[test]
+    fn a_child_retry_is_titled_by_the_agent_with_the_reason_under_it() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "general-4");
+        subagent_event(&mut app, "r1", "general-4", retry(2));
+        let lines = last_row_lines(&app, 80);
+        assert_eq!(lines[0], "\u{2022} general-4");
+        assert!(lines[1].starts_with("  \u{2514} Upstream request failed"), "{lines:?}");
+        assert!(lines[1].ends_with("; retrying"), "{lines:?}");
+    }
+
+    /// The child's note is journaled and a resume draws the same rows, in the
+    /// warning tone a failed background command earned.
+    #[test]
+    fn a_resumed_child_notice_keeps_its_layout() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        start_subagent(&mut app, "r1", "general-4");
+        let failed = format!("{}after 3s: make test", crate::core::agent::bg_shell::FAILED_PREFIX);
+        subagent_event(&mut app, "r1", "general-4", StreamEvent::Notice { text: failed.clone() });
+        let live = last_row_lines(&app, 60);
+        assert_eq!(live[0], "\u{26a0} general-4", "{live:?}");
+
+        let mut fresh = test_app();
+        super::replay_display_log(&mut fresh, app.transcript.display_log.clone());
+        let row = fresh
+            .transcript
+            .rows
+            .iter()
+            .rev()
+            .find(|r| matches!(r.kind, RowKind::Event(_)))
+            .expect("the note replays as an event");
+        let replayed: Vec<String> = row.lines(60).iter().map(line_text).collect();
+        assert_eq!(replayed, live);
+    }
+
+    /// The worktrees a session kept hang one per row under their headline.
+    #[test]
+    fn kept_worktrees_hang_under_their_headline() {
+        let mut app = test_app();
+        let notice = crate::core::agent::child_workspace::kept_notice(&[
+            "/tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))".to_string(),
+            "/tmp/wt-b on jan/agent/b (0 commit(s), 2 uncommitted file(s))".to_string(),
+        ]);
+        app.notice(&notice, None);
+        assert_eq!(
+            last_row_lines(&app, 90),
+            [
+                "\u{2022} subagent worktrees kept (they hold work)",
+                "  \u{2514} /tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))",
+                "    /tmp/wt-b on jan/agent/b (0 commit(s), 2 uncommitted file(s))",
+            ]
+        );
+    }
+
+    /// The turn receipt closes its block: the next event starts its own, off
+    /// a blank line, instead of running on under the receipt.
+    #[test]
+    fn an_event_after_the_turn_receipt_is_set_off_by_a_blank_line() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token { text: "done".into() });
+        app.on_done("stop".into(), None);
+        app.note("model switched to gpt-5-mini");
+        let text: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
+        let receipt = text
+            .iter()
+            .position(|t| t.contains("Worked for "))
+            .expect("a receipt");
+        assert_eq!(text[receipt + 1].trim(), "", "{text:#?}");
+        assert!(text[receipt + 2].contains("model switched"), "{text:#?}");
     }
 
     /// A failed compaction takes its throbber down and says so.
@@ -39800,10 +45956,174 @@ mod tests {
                 phase,
                 reason: CompactionReason::ContextOverflow,
                 messages: None,
+                report: None,
             });
         }
         assert!(app.run_compacting.is_none());
         assert!(transcript_text(&app).contains("compaction failed"));
+    }
+
+    /// The plain text of every `/agents` row.
+    fn agents_list(app: &mut App) -> Vec<String> {
+        agent_picker_items(
+            &mut app.subagents,
+            &app.transcript.subagent_blocks,
+            &app.internal_agents,
+            200_000,
+        )
+        .into_iter()
+        .map(|item| item.label)
+        .collect()
+    }
+
+    /// A compaction is an internal agent: `/agents` lists it while it runs and
+    /// once it lands, marked internal, with its model, tokens, duration, what
+    /// it read and the summary it wrote. The transcript gets one line.
+    #[test]
+    fn a_compaction_is_listed_in_agents_as_an_internal_agent() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason, CompactionReport};
+        let mut app = test_app();
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Started,
+            reason: CompactionReason::Preflight,
+            messages: None,
+            report: None,
+        });
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert!(rows[0].contains("compaction internal"), "{rows:?}");
+        assert!(rows[0].contains("Running"), "{rows:?}");
+        app.internal_agents[0].panel.started = Some(Instant::now() - Duration::from_secs(5));
+
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::Preflight,
+            messages: Some(12),
+            report: Some(CompactionReport {
+                model: Some("smol-model".into()),
+                input_tokens: 40_000,
+                usage: Some(Usage {
+                    prompt_tokens: Some(9_000),
+                    completion_tokens: Some(400),
+                    ..Default::default()
+                }),
+                summary: "The user is building a parser.\nIt reads JSON.".into(),
+            }),
+        });
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "the running record became the finished one: {rows:?}");
+        for part in [
+            "compaction internal",
+            "smol-model",
+            "9.0K in",
+            "400 out",
+            "5s",
+            "Completed - The user is building a parser.",
+        ] {
+            assert!(rows[0].contains(part), "missing {part}: {rows:?}");
+        }
+        let run_id = app.internal_agents[0].panel.run_id.clone();
+        let detail = agent_detail_text(&mut app, &run_id, 100, 24);
+        assert!(detail.contains("Summarized 12 messages (~40K tokens)"), "{detail}");
+        assert!(detail.contains("It reads JSON."), "{detail}");
+
+        let out = transcript_text(&app);
+        assert_eq!(out.lines().count(), 1, "one line in the transcript: {out}");
+        assert!(out.contains("compacted 12 messages into a summary"), "{out}");
+        assert!(!out.contains("parser"), "the summary stays in /agents: {out}");
+    }
+
+    /// A `/compact` is listed the same way, timed from when it was asked for.
+    #[test]
+    fn a_manual_compaction_is_listed_in_agents() {
+        use crate::core::agent::events::CompactionReport;
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now() - Duration::from_secs(3));
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        let report = CompactionReport {
+            model: Some("run-model".into()),
+            input_tokens: 1_200,
+            usage: None,
+            summary: "Short story.".into(),
+        };
+        finish_compaction(
+            &mut app,
+            Ok((vec![json!({ "role": "user", "content": "s" })], Some(report))),
+            5,
+        );
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        for part in ["compaction internal", "run-model", "3s", "Completed - Short story."] {
+            assert!(rows[0].contains(part), "missing {part}: {rows:?}");
+        }
+        // Nothing to compact made no summarizer call, so there is no agent.
+        app.compacting = Some(CompactKind::Manual);
+        let history = app.history.clone();
+        finish_compaction(&mut app, Ok((history, None)), 1);
+        assert_eq!(agents_list(&mut app).len(), 1);
+    }
+
+    /// Memory tidy is marked internal in `/agents` like compaction, and its
+    /// end leaves no subagent summary row in the main transcript: the
+    /// `memory tidied:` note is its one line.
+    #[test]
+    fn a_memory_tidy_is_an_internal_agent() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-memory-tidy-1".into(),
+            name: "memory-tidy".into(),
+            task: Some("Tidy the memory now.".into()),
+            workspace: None,
+            internal: true,
+        });
+        let tidy = |ev| StreamEvent::Subagent {
+            run_id: "sub-memory-tidy-1".into(),
+            name: "memory-tidy".into(),
+            event: Box::new(ev),
+        };
+        app.apply(tidy(StreamEvent::RequestProvenance {
+            run_id: Some("sub-memory-tidy-1".into()),
+            session_id: None,
+            provider: None,
+            model: "smol-model".into(),
+            api_type: None,
+            request_sha256: String::new(),
+            body_bytes: 0,
+            tools_sha256: None,
+            images: Vec::new(),
+        }));
+        app.apply(tidy(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(2_000),
+                completion_tokens: Some(30),
+                ..Default::default()
+            },
+            execution_id: None,
+        }));
+        let rows = agents_list(&mut app);
+        assert!(rows[0].contains("memory-tidy internal"), "{rows:?}");
+        assert!(rows[0].contains("Running"), "{rows:?}");
+        app.apply(tidy(StreamEvent::Token { text: "archived pr-1".into() }));
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-memory-tidy-1".into(),
+            name: "memory-tidy".into(),
+            error: None,
+        });
+        assert!(app.subagents.is_empty());
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        for part in ["memory-tidy internal", "smol-model", "2.0K in", "30 out", "Completed - archived pr-1"] {
+            assert!(rows[0].contains(part), "missing {part}: {rows:?}");
+        }
+        assert!(
+            !transcript_text(&app).contains("memory-tidy"),
+            "no subagent row: {}",
+            transcript_text(&app)
+        );
+        assert!(app.transcript.display_log.is_empty(), "nothing journaled");
     }
 
     /// A child's compaction gets a note but not the parent's throbber: the
@@ -39822,12 +46142,13 @@ mod tests {
                     phase,
                     reason: CompactionReason::Preflight,
                     messages,
+                    report: None,
                 },
             );
             assert!(app.run_compacting.is_none());
         }
         assert!(
-            transcript_text(&app).contains("alpha: compacted 5 messages"),
+            transcript_text(&app).contains("\u{2022} alpha\n  \u{2514} compacted 5 messages"),
             "{}",
             transcript_text(&app)
         );
@@ -39850,13 +46171,14 @@ mod tests {
         );
         let out = transcript_text(&app);
         assert!(
-            out.contains("alpha: compacted 12 messages into a summary"),
+            out.contains("\u{2022} alpha\n  \u{2514} compacted 12 messages into a summary"),
             "{out}"
         );
     }
 
-    /// Parallel agents collapse into one fixed-height block, each carrying the
-    /// numbers that say whether it is progressing or about to blow its context.
+    /// Parallel agents collapse into one fixed-height block, a row each with
+    /// what it is doing; `/agents` carries the numbers that say whether it is
+    /// progressing or about to blow its context.
     #[test]
     fn parallel_subagents_render_one_block_with_live_stats() {
         let mut app = test_app();
@@ -39894,15 +46216,11 @@ mod tests {
 
         let rows = render_rows(&mut app, 100, 24);
         let out = rows.join("\n");
-        assert!(out.contains("2 agents"), "no consolidated header: {out}");
-        for (name, pct) in [("alpha", "10% ctx"), ("beta", "20% ctx")] {
-            assert!(out.contains(name), "missing {name}: {out}");
-            assert!(out.contains(pct), "missing context share {pct}: {out}");
+        assert!(out.contains("2 subagents running"), "no consolidated header: {out}");
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
+        for (item, pct) in items.iter().zip(["1 tool \u{b7} 1 req \u{b7} 10% ctx", "1 tool \u{b7} 1 req \u{b7} 20% ctx"]) {
+            assert!(item.label.contains(pct), "missing {pct}: {}", item.label);
         }
-        assert!(
-            out.contains("1 tool \u{b7} 10% ctx") && out.contains("1 tool \u{b7} 20% ctx"),
-            "missing spelled-out call counts: {out}"
-        );
         // Two agents -> one activity line each, so the block stays scannable.
         assert_eq!(
             rows.iter()
@@ -39942,8 +46260,7 @@ mod tests {
         assert!(prose < panel, "the panel is docked, not inline: {rows:?}");
         assert!(panel < input, "and it sits above the input: {rows:?}");
         assert!(
-            rows.iter()
-                .any(|r| r.contains("2 agents") || r.contains("1 agent")),
+            rows.iter().any(|r| r.contains("1 subagent running")),
             "the fan-out is counted: {rows:?}"
         );
     }
@@ -39963,11 +46280,10 @@ mod tests {
         );
         let rows = render_rows(&mut app, 100, 24);
         assert_eq!(
-            rows.iter().filter(|r| r.contains("agents")).count(),
+            rows.iter().filter(|r| r.contains("subagents running")).count(),
             1,
             "one panel head only: {rows:?}"
         );
-        assert!(rows.iter().any(|r| r.contains("2 agents")), "{rows:?}");
     }
 
     /// The panel is live state: when the last child ends it vanishes, leaving
@@ -39984,7 +46300,7 @@ mod tests {
         assert!(app.subagents.is_empty(), "live panel closed");
         let rows = render_rows(&mut app, 100, 24);
         assert!(
-            !rows.iter().any(|r| r.contains("1 agent")),
+            !rows.iter().any(|r| r.contains("subagent running")),
             "panel must be gone: {rows:?}"
         );
         assert!(
@@ -40076,7 +46392,7 @@ mod tests {
             out.contains("flappy-2d.html"),
             "destination should surface: {out}"
         );
-        assert!(out.contains("flappy-2d  0 tools"), "still no completed call: {out}");
+        assert_eq!(app.subagents[0].calls.len(), 0, "still no completed call");
 
         // The completed call supersedes the in-progress row.
         subagent_event(
@@ -40089,8 +46405,7 @@ mod tests {
                 args: json!({ "path": "flappy-2d.html" }),
             },
         );
-        let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("flappy-2d  1 tool"), "completed call should count: {out}");
+        assert_eq!(app.subagents[0].calls.len(), 1, "completed call should count");
         assert!(
             app.subagents[0].active.is_none(),
             "in-flight view should clear once the call lands"
@@ -40105,11 +46420,12 @@ mod tests {
         app.status = Status::Running;
         start_subagent(&mut app, "r1", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("1 agent"), "{out}");
         assert!(out.contains("starting…"), "{out}");
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
         assert!(
-            !out.contains('%'),
-            "no share before the first response: {out}"
+            !items[0].label.contains('%'),
+            "no share before the first response: {}",
+            items[0].label
         );
     }
 
@@ -40189,7 +46505,7 @@ mod tests {
                     .into_iter()
                     .find(|r| r.contains("(Esc to cancel, type to steer"))
                     .expect("running row");
-                assert!(row.starts_with("> "), "{row:?}");
+                assert!(row.starts_with("\u{203a} "), "{row:?}");
                 let words = if think { &THINKING_WORDS } else { &WORKING_WORDS };
                 let word = words.iter().find(|w| row.contains(*w)).expect("word");
                 assert_eq!(col(&row, word), Some(idle_text), "{row:?}");
@@ -42174,7 +48490,7 @@ mod tests {
             app.transcript
                 .rows
                 .iter()
-                .all(|r| matches!(r.kind, RowKind::Line(_) | RowKind::System { .. })),
+                .all(|r| matches!(r.kind, RowKind::Line(_) | RowKind::Event(_))),
             "the readout must not be committed to the transcript as a row"
         );
     }
@@ -42783,7 +49099,15 @@ mod tests {
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
         run_command(&mut app, "help", &no_mcp()).await;
-        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        // Unwrapped, as `/find` reads it: the listing is one event whose rows
+        // wrap at the draw width.
+        let text: String = app
+            .transcript
+            .rows
+            .iter()
+            .flat_map(|r| r.flat().clone())
+            .collect::<Vec<_>>()
+            .join("\n");
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
             assert!(
@@ -43327,6 +49651,463 @@ mod tests {
         assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
     }
 
+    /// Point `app` at a fresh project of its own, so its memory store is not
+    /// shared with any other test's.
+    fn own_project(app: &mut App) {
+        app.project_root = tempfile::tempdir().unwrap().keep();
+        let _ = std::fs::remove_dir_all(crate::core::agent::project::store_root(&app.project_root));
+        app.args = Some(test_args(app, std::collections::HashMap::new()));
+    }
+
+    /// An app on a project whose memory index is far over its budget, with a
+    /// temp home so the config read is the default (auto-tidy on).
+    fn over_budget_app(app: &mut App) {
+        own_project(app);
+        fill_store(app);
+    }
+
+    /// Write enough notes into `app`'s own store to put its index over budget.
+    fn fill_store(app: &App) {
+        let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..200 {
+            std::fs::write(
+                dir.join(format!("n{i:03}.md")),
+                "A long finished note about a merged pull request and its review",
+            )
+            .unwrap();
+        }
+    }
+
+    /// Auto-tidy is on by default and fires once per session when the index is
+    /// over budget: a second turn does not queue another, and a new session
+    /// gets one fresh check.
+    #[test]
+    fn auto_tidy_queues_once_per_session_when_over_budget() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+            app.tidy_request = None;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "debounced: once per session");
+            app.reset_session();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a new session checks again");
+        });
+    }
+
+    /// Under budget nothing is queued and the check is not spent: a store that
+    /// outgrows its budget later in the session is tidied at that turn's end,
+    /// still only once.
+    #[test]
+    fn auto_tidy_rechecks_each_turn_until_the_index_outgrows_its_budget() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            own_project(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "a small index is left alone");
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None);
+            fill_store(&app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a later over-budget turn tidies");
+            app.tidy_request = None;
+            let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+            std::fs::write(dir.join("later.md"), "Another note").unwrap();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "still at most once per session");
+        });
+    }
+
+    /// With `memory` denied a tidy child could change nothing, so neither the
+    /// automatic nor the manual tidy starts one.
+    #[test]
+    fn no_tidy_starts_when_the_project_denies_memory() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            let mut args = (**app.args.as_ref().unwrap()).clone();
+            args.permissions = tauri_plugin_agent_tools::permissions::ToolPermissions::new(
+                tauri_plugin_agent_tools::permissions::PermissionDefault::Allow,
+                &[],
+                &["memory".to_string()],
+                &[],
+            );
+            app.args = Some(Arc::new(args));
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "no automatic tidy");
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "no manual tidy");
+        });
+    }
+
+    /// Plan mode is read-only, so auto-tidy waits it out rather than spending
+    /// the session's one automatic tidy.
+    #[test]
+    fn auto_tidy_waits_out_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+        });
+    }
+
+    /// A manual tidy changes memory, which plan mode refuses: it is turned
+    /// away with a pointer out of plan mode, and works once plan mode is left.
+    #[test]
+    fn manual_tidy_is_refused_in_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("plan mode") && text.contains("/plan exit"), "{text}");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
+        });
+    }
+
+    /// A tidy already running when plan mode is entered is stopped, not left
+    /// to change memory under a read-only mode: its child is aborted, its
+    /// bookkeeping released, and the user is told. Driven with a real spawned
+    /// tidy against an upstream that never answers, so it is mid-run.
+    #[tokio::test]
+    async fn entering_plan_mode_stops_a_running_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let held: Vec<_> = listener.incoming().collect();
+            drop(held);
+        });
+        let providers = std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, providers));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let facts = begin_memory_tidy(&mut app, TidyKind::Manual).expect("facts gathering");
+        let facts = facts.await.expect("facts task");
+        let task = start_memory_tidy(&mut app, facts, &tx).await.expect("tidy started");
+        assert_eq!(app.tidy_running, Some(TidyKind::Manual));
+        assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.subagent_set.live_run_ids().is_empty(), "the tidy child was aborted");
+        assert_eq!(app.tidy_running, None, "a later tidy may start once plan mode is left");
+        let collected = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(matches!(collected, Ok(Ok(Err(_)))), "the tidy produced no report");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+    }
+
+    /// Starting a tidy never waits on its git facts: the loop gets the facts
+    /// task back at once, and until it lands the tidy already counts as
+    /// running, so neither `/memory tidy` nor the auto trigger starts another.
+    #[tokio::test]
+    async fn a_tidy_gathers_its_facts_without_blocking_the_loop() {
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let facts = begin_memory_tidy(&mut app, TidyKind::Manual).expect("facts gathering");
+        assert_eq!(app.tidy_running, Some(TidyKind::Manual), "running while facts are pending");
+        assert_eq!(app.tidy_run_id, None, "no child before the facts land");
+        assert!(app.subagent_set.live_run_ids().is_empty());
+        memory_command(&mut app, "tidy");
+        assert_eq!(app.tidy_request, None);
+        app.auto_tidy_checked = false;
+        app.maybe_auto_tidy();
+        assert_eq!(app.tidy_request, None, "no auto tidy beside a pending one");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("tidying memory in the background"), "{text}");
+        assert!(text.contains("already running"), "{text}");
+        facts.abort();
+    }
+
+    /// An automatic tidy has already announced itself when its facts are sent
+    /// off, so a dispatch that fails afterwards must say so, or the transcript
+    /// promises a tidy that never reports back.
+    #[tokio::test]
+    async fn an_auto_tidy_that_fails_to_start_says_so() {
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let facts = begin_memory_tidy(&mut app, TidyKind::Auto).expect("facts gathering");
+        facts.abort();
+        // The project goes away before dispatch, so the spawn itself fails.
+        let mut args = (**app.args.as_ref().unwrap()).clone();
+        args.project_root = None;
+        app.args = Some(Arc::new(args));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        assert!(start_memory_tidy(&mut app, None, &tx).await.is_none());
+        assert_eq!(app.tidy_running, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("over its budget: tidying in the background"), "{text}");
+        assert!(text.contains("memory tidy failed to start"), "{text}");
+    }
+
+    /// Plan mode entered while a tidy's facts are being gathered stops it
+    /// there: the facts that land afterwards start no child, and an automatic
+    /// tidy gets its check back.
+    #[tokio::test]
+    async fn plan_mode_during_the_facts_phase_starts_no_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, stub_upstream("no changes")));
+        app.auto_tidy_checked = true;
+        let facts = begin_memory_tidy(&mut app, TidyKind::Auto).expect("facts gathering");
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert_eq!(app.tidy_running, None);
+        assert!(!app.auto_tidy_checked, "the auto tidy runs again after plan mode");
+        let facts = facts.await.expect("facts task");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        assert!(start_memory_tidy(&mut app, facts, &tx).await.is_none(), "no tidy started");
+        assert!(app.subagent_set.live_run_ids().is_empty(), "no child");
+        assert_eq!(app.tidy_run_id, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+    }
+
+    /// A queued tidy is dropped by entering plan mode, from `/plan` or by
+    /// resuming a thread saved in plan mode; with nothing to stop, nothing is
+    /// said.
+    #[tokio::test]
+    async fn entering_plan_mode_drops_a_queued_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.tidy_request = Some(TidyKind::Manual);
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.tidy_request, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+
+        let meta = json!({ "run_mode": "plan" });
+        let mut resumed = test_app();
+        resumed.tidy_request = Some(TidyKind::Auto);
+        resumed.tidy_running = Some(TidyKind::Auto);
+        restore_run_mode(&mut resumed, Some(&meta));
+        assert_eq!(resumed.run_mode, RunMode::Plan);
+        assert_eq!(resumed.tidy_request, None);
+        assert_eq!(resumed.tidy_running, None);
+        let text: String = resumed.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped"), "{text}");
+
+        let mut idle = test_app();
+        run_command(&mut idle, "plan", &no_mcp()).await;
+        let text: String = idle.transcript.rows.iter().map(row_text).collect();
+        assert!(!text.contains("memory tidy"), "{text}");
+    }
+
+    /// `memory_auto_tidy = false` turns the automatic trigger off; `/memory
+    /// tidy` still works.
+    #[test]
+    fn auto_tidy_can_be_turned_off_but_the_manual_tidy_still_runs() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "memory_auto_tidy = false\n").unwrap();
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None);
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
+            memory_command(&mut app, "tidy");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("already running"), "{text}");
+        });
+    }
+
+    /// A tidy's report is surfaced as one note; an automatic tidy that changed
+    /// nothing says nothing, a manual one says so.
+    #[test]
+    fn a_finished_tidy_reports_what_it_changed() {
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok("no changes".into()));
+        assert!(app.transcript.rows.is_empty(), "a quiet auto tidy adds no row");
+        assert!(app.tidy_running.is_none());
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok("archived pr-1\ndeleted old: superseded".into()));
+        app.tidy_running = Some(TidyKind::Manual);
+        finish_memory_tidy(&mut app, Ok("no changes".into()));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived pr-1"), "{text}");
+        assert!(text.contains("memory tidied: no changes"), "{text}");
+    }
+
+    /// A stub OpenAI-compatible upstream answering every request with `text`
+    /// as a plain final answer. Returns the provider configs pointing at it.
+    fn stub_upstream(
+        text: &'static str,
+    ) -> std::collections::HashMap<String, crate::core::state::ProviderConfig> {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "m", "choices": [{"index": 0, "delta": {"role": "assistant",
+                    "content": text}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect()
+    }
+
+    /// #497 bug 2: the `memory tidied:` note never showed in the live TUI.
+    /// The tidy's report is one line per change, and the whole report became
+    /// one note, so with dozens of changes its header scrolled off before a
+    /// frame painted it. Driven through the real select loop with a spawned
+    /// tidy against a stub provider, and checked on the rendered frame.
+    #[tokio::test]
+    async fn a_spawned_tidy_shows_its_note_in_the_live_frame() {
+        let report: &'static str = Box::leak(
+            (0..70)
+                .map(|i| format!("archived note-{i:03}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into_boxed_str(),
+        );
+        let mut app = test_app();
+        own_project(&mut app);
+        let args = test_args(&app, stub_upstream(report));
+        app.args = Some(args.clone());
+        app.tidy_request = Some(TidyKind::Manual);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        let registry: PermissionRegistry = Default::default();
+        let asks = crate::core::agent::interaction::new_registry();
+        let servers: crate::core::state::SharedMcpServers = Default::default();
+        // The loop has no exit of its own here; the tidy lands well inside this.
+        let _ = tokio::time::timeout(
+            Duration::from_secs(8),
+            super::chat_loop(&mut terminal, &args, &registry, &asks, &mut app, None, None, &servers, false),
+        )
+        .await;
+        assert!(app.tidy_running.is_none(), "the tidy was collected");
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let frame: String = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>() + "\n")
+            .collect();
+        assert!(frame.contains("memory tidied: archived 70"), "{frame}");
+        assert!(!frame.contains("archived note-030"), "one line, not the full list: {frame}");
+    }
+
+    /// A tidy the harness stopped at its cap says so in its note, even when
+    /// the model's report does not.
+    #[test]
+    fn a_capped_tidy_reports_the_cap() {
+        let budget = tauri_plugin_agent_tools::memory::ChangeBudget::new(2);
+        assert_eq!(with_cap_note("archived a".into(), &budget), "archived a");
+        let dir = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(dir.path(), dir.path(), &[])
+            .with_memory_change_budget(Some(&budget));
+        let memory = tauri_plugin_agent_tools::tools::lookup("memory").unwrap();
+        for i in 0..3 {
+            rt.block_on(tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+                memory,
+                &json!({"op": "write", "name": format!("n{i}"), "content": "x"}),
+                &ctx,
+            ));
+        }
+        let report = with_cap_note("archived a\narchived b".into(), &budget);
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok(report));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived a; archived b; cap reached (2 changes)"), "{text}");
+    }
+
+    /// A tidy never touches the conversation: no turn is started and the
+    /// history is unchanged, so the session's prompt is not rewritten.
+    #[test]
+    fn a_tidy_never_starts_a_turn_or_edits_history() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        let before = app.history.clone();
+        app.tidy_running = Some(TidyKind::Manual);
+        finish_memory_tidy(&mut app, Ok("archived pr-1".into()));
+        assert!(!app.want_start);
+        assert_eq!(app.history, before);
+    }
+
+    #[test]
+    fn memory_is_a_slash_command() {
+        let row = SLASH_COMMANDS.iter().find(|c| c.name == "/memory").unwrap();
+        assert_eq!(row.hint, "[tidy]");
+        assert!(AGENT_SETTINGS.iter().any(|d| d.key == "memory_auto_tidy"
+            && matches!(d.kind, super::AgentSettingKind::Bool { default: true })));
+    }
+
+    /// A compaction rewrites the history anyway, so the session takes a fresh
+    /// memory index there; the date and branch stay the session's.
+    #[test]
+    fn a_compaction_refreshes_only_the_memory_snapshot() {
+        let mut app = test_app();
+        let mut args = (*test_args(&app, std::collections::HashMap::new())).clone();
+        let stale = crate::core::agent::context::SessionStart::fixed("1999-01-01", Some("stale"));
+        args.session_start = Some(stale.clone());
+        app.args = Some(std::sync::Arc::new(args));
+        app.compacting = Some(CompactKind::Manual);
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        finish_compaction(&mut app, Ok((vec![json!({ "role": "user", "content": "s" })], None)), 5);
+        let start = app.args.as_ref().and_then(|a| a.session_start.clone()).unwrap();
+        let root = app.args.as_ref().and_then(|a| a.project_root.clone()).unwrap_or(app.project_root.clone());
+        assert_eq!(start, stale.with_fresh_memory(&root));
+        assert!(start.memory().is_some(), "the memory index was re-taken");
+    }
+
     /// A fork continues the source's prefix, so it keeps the source's snapshot
     /// (same date, same branch, same system prompt bytes) and sends no resume
     /// notice, where a resume of the same thread takes a fresh snapshot.
@@ -43682,20 +50463,34 @@ mod tests {
         assert!(lines[3].contains("☑ gamma"), "{lines:?}");
     }
 
-    /// The panel belongs to the input dock: it must render ABOVE the horizontal
-    /// rule that separates the transcript from the input, not stranded between
-    /// that rule and the prompt.
+    /// The live state belongs to the input dock: the plan, then the background
+    /// work, both ABOVE the rule that separates the transcript from the input,
+    /// and the rule directly on the input row.
     #[test]
     fn status_panel_sits_above_the_input_separator_rule() {
         use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
         app.todos = todos_from(vec![("only", vec![("alpha", InProgress)])]);
+        app.bg_shells = vec![tauri_plugin_agent_tools::tools::proc::ShellInfo {
+            pid: 4242,
+            command: "npm run dev".into(),
+            elapsed_secs: 65,
+            backgrounded: true,
+        }];
         let rows = render_rows(&mut app, 60, 20);
 
         let todo_row = rows
             .iter()
             .position(|r| r.contains("Todos"))
             .expect("todos");
+        let shells_row = rows
+            .iter()
+            .position(|r| r.contains("1 background shell running"))
+            .expect("background head");
+        let child_row = rows
+            .iter()
+            .position(|r| r.contains("npm run dev"))
+            .expect("background child");
         let input_row = rows
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
@@ -43707,13 +50502,81 @@ mod tests {
             .expect("separator rule above the input");
 
         assert!(
-            todo_row < rule_row,
-            "the panel must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
+            todo_row < shells_row,
+            "the plan sits above the background work: {rows:#?}"
         );
-        assert!(
-            rule_row < input_row,
+        assert_eq!(
+            child_row + 1,
+            rule_row,
+            "the background work sits directly on the rule: {rows:#?}"
+        );
+        assert_eq!(
+            rule_row + 1,
+            input_row,
             "the rule must sit directly above the input: {rows:#?}"
         );
+    }
+
+    /// The background-work block holds its place on the rule whatever the
+    /// input row is showing: idle, a running turn, a compaction, a retry wait,
+    /// or a permission prompt docked over the input.
+    #[test]
+    fn the_background_block_stays_pinned_on_the_rule_in_every_state() {
+        let mut app = test_app();
+        app.bg_shells = vec![tauri_plugin_agent_tools::tools::proc::ShellInfo {
+            pid: 4242,
+            command: "npm run dev".into(),
+            elapsed_secs: 65,
+            backgrounded: true,
+        }];
+        // (head row, child row, rule row) for the current state.
+        let place = |app: &mut App| {
+            let rows = render_rows(app, 80, 24);
+            let head = rows.iter().position(|r| r.contains("1 background shell running"));
+            let child = rows.iter().position(|r| r.contains("\u{2514} npm run dev"));
+            let rule = rows.iter().rposition(|r| r.starts_with('\u{2500}'));
+            (head, child, rule, rows)
+        };
+        let (head, child, rule, rows) = place(&mut app);
+        let (head, child, rule) = (head.unwrap(), child.unwrap(), rule.unwrap());
+        assert_eq!((head + 1, child + 1), (child, rule), "{rows:#?}");
+        assert!(rows[rule + 1].contains("Type here to chat"), "{rows:#?}");
+
+        let check = |app: &mut App, what: &str, input: &str| {
+            let (h, c, r, rows) = place(app);
+            assert_eq!((h, c, r), (Some(head), Some(child), Some(rule)), "{what}: {rows:#?}");
+            assert!(rows[rule + 1].contains(input), "{what}: {rows:#?}");
+        };
+        app.submit_user("go".into());
+        check(&mut app, "running", "Esc to cancel");
+        app.compacting = Some(CompactKind::Manual);
+        check(&mut app, "compacting", "conversation");
+        app.compacting = None;
+        app.retrying = Some(RetryWait {
+            attempt: 1,
+            max_attempts: 3,
+            at: Instant::now() + Duration::from_secs(5),
+            reason: "rate limited".into(),
+        });
+        check(&mut app, "retrying", "retrying");
+        app.retrying = None;
+        app.apply(StreamEvent::PermissionRequest {
+            request_id: "perm-1".into(),
+            tool_name: "bash".into(),
+            capability: "exec".into(),
+            path: None,
+            command: Some("ls".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+            justification: None,
+        });
+        // The prompt docks over the rows above the input, the block included,
+        // and the block comes back on the same rows once it is answered.
+        let rows = render_rows(&mut app, 80, 24);
+        assert!(rows.iter().any(|r| r.contains("ls")), "{rows:#?}");
+        app.pending_queue.clear();
+        check(&mut app, "after the prompt", "Esc to cancel");
     }
 
     /// A session with nothing live keeps the original look: one rule directly
@@ -43851,6 +50714,30 @@ mod tests {
         assert_eq!(format_elapsed(3599), "59m 59s");
         assert_eq!(format_elapsed(3600), "1h 00m");
         assert_eq!(format_elapsed(3720), "1h 02m");
+    }
+
+    /// A subagent's notice that lands after a turn closed starts its own
+    /// block, titled by the agent with the text hung under it.
+    #[test]
+    fn a_subagent_notice_after_the_turn_receipt_is_its_own_titled_block() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.run_started = Some(Instant::now());
+        // A turn that answered, so no "no answer" warning follows the receipt.
+        app.transcript.assistant_buf.push_str("done");
+        app.on_done("stop".into(), None);
+        app.notice("something happened", Some("general-4"));
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
+        let receipt = rows
+            .iter()
+            .rposition(|r| r.contains("Worked for "))
+            .expect("no receipt");
+        assert!(rows[receipt + 1].trim().is_empty(), "{rows:#?}");
+        assert_eq!(
+            rows[receipt + 2].lines().map(str::trim_end).collect::<Vec<_>>(),
+            vec!["\u{2022} general-4", "  \u{2514} something happened"],
+            "{rows:#?}"
+        );
     }
 
     #[test]
@@ -44185,7 +51072,6 @@ mod tests {
             assert_eq!(glyph.width(), 1, "{glyph}");
         }
         assert_eq!(states.iter().collect::<std::collections::HashSet<_>>().len(), 2);
-        assert_eq!(super::TODO_PANEL_GLYPH.width(), super::AGENT_PANEL_GLYPH.width());
         assert_eq!(super::TODO_PANEL_GLYPH.width(), 2, "glyph plus a space");
     }
 
@@ -44238,11 +51124,10 @@ mod tests {
         }
     }
 
-    /// Running monitors are live state like the fan-out, so they dock in the
-    /// status panel: one line each with the name and poll count, the script
-    /// beneath when the budget allows, beside any live agents.
+    /// Running monitors join the background-work block, one row each with
+    /// the poll count; the script stays in `/monitors`.
     #[test]
-    fn running_monitors_dock_in_the_status_panel() {
+    fn running_monitors_list_in_the_background_block() {
         let mut app = test_app();
         app.submit_user("go".into());
         app.apply(StreamEvent::Monitors {
@@ -44252,24 +51137,59 @@ mod tests {
             ],
         });
         let text = render_rows(&mut app, 100, 24).join("\n");
-        assert!(text.contains("2 monitors"), "{text}");
-        assert!(text.contains("mon-1 build"), "{text}");
-        assert!(text.contains("3 polls"), "{text}");
-        assert!(text.contains("grep OK build.log"), "{text}");
-        assert!(text.contains("mon-2 tests"), "{text}");
+        assert!(text.contains(" 2 monitors watching \u{b7} /monitors to view or stop"), "{text}");
+        assert!(text.contains("\u{2514} mon-1 build \u{b7} 3 polls"), "{text}");
+        assert!(text.contains("    mon-2 tests \u{b7} 1 poll"), "{text}");
+        assert!(!text.contains("grep OK build.log"), "no script: {text}");
 
         start_subagent(&mut app, "r0", "alpha");
         let text = render_rows(&mut app, 100, 24).join("\n");
-        assert!(text.contains("1 agent"), "{text}");
+        assert!(text.contains("1 subagent running"), "{text}");
         assert!(text.contains("2 monitors"), "{text}");
 
-        // The set is replaced wholesale; an emptied set drops the column.
+        // The set is replaced wholesale; an emptied set drops the group.
         app.apply(StreamEvent::Monitors {
             monitors: Vec::new(),
         });
         let text = render_rows(&mut app, 100, 24).join("\n");
         assert!(!text.contains("monitor"), "{text}");
-        assert!(text.contains("1 agent"), "{text}");
+        assert!(text.contains("1 subagent running"), "{text}");
+    }
+
+    /// The background block is sized first, but a full one (all three groups
+    /// at their cap) must not squeeze a live plan out of a 24-row terminal:
+    /// the plan keeps its head and one item, and every group keeps its head.
+    #[test]
+    fn a_full_background_block_leaves_the_plan_its_floor() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![(
+            "only",
+            vec![("wire routes", InProgress), ("add tests", Pending), ("ship", Pending)],
+        )]);
+        app.monitors = (1..=4)
+            .map(|i| monitor(&format!("mon-{i}"), "build", "grep OK build.log", i))
+            .collect();
+        for i in 0..4 {
+            start_subagent(&mut app, &format!("r{i}"), &format!("child-{i}"));
+        }
+        app.bg_shells = (0..4)
+            .map(|i| tauri_plugin_agent_tools::tools::proc::ShellInfo {
+                pid: 4000 + i,
+                command: format!("npm run dev-{i}"),
+                elapsed_secs: 5,
+                backgrounded: true,
+            })
+            .collect();
+        // A three-line draft grows the input, which is what leaves the block
+        // and the plan competing for the same spare rows.
+        app.set_input("one\ntwo\nthree".into());
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(text.contains("Todos"), "plan head: {text}");
+        assert!(text.contains("wire routes"), "one plan item: {text}");
+        assert!(text.contains("monitors watching"), "{text}");
+        assert!(text.contains("subagents running"), "{text}");
+        assert!(text.contains("background shells running"), "{text}");
     }
 
     /// The loop parks only to hand over a notice already queued, and steps
@@ -44335,10 +51255,9 @@ mod tests {
             .collect()
     }
 
-    /// `subagent_rows` as plain text, at a fixed `now`.
+    /// `background_rows` as plain text, at a fixed `now`, with room to spare.
     fn subagent_text(app: &mut App, width: u16, now: Instant) -> Vec<String> {
-        super::subagent_rows(app, width, now)
-            .unwrap_or_default()
+        super::background_rows(app, width, 20, now)
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect()
@@ -44366,9 +51285,9 @@ mod tests {
             subagent_text(&mut app, 100, now),
             vec![
                 " 2 subagents running \u{b7} 1 queued \u{b7} /agents to view or stop",
-                "  \u{2514} kv-review  Running  1m 05s  Read src/kv.rs",
-                "    perf-scan  Running  12s  starting\u{2026}",
-                "    docs-writer  Queued (1)",
+                "  \u{2514} kv-review \u{b7} 1m 05s \u{b7} Read src/kv.rs",
+                "    perf-scan \u{b7} 12s \u{b7} starting\u{2026}",
+                "    docs-writer \u{b7} Queued (1)",
             ]
         );
         let screen = render_rows(&mut app, 100, 30).join("\n");
@@ -44377,15 +51296,46 @@ mod tests {
         assert!(!screen.contains("Esc"), "Esc stops nothing here: {screen}");
     }
 
-    /// While the turn runs the children stay in the dock with their stats, so
-    /// the one-row working input never grows under the user.
+    /// The children hold one place whether the main turn runs or not: every
+    /// ping a finishing child sends flips the session to Running and back, and
+    /// a block that moved with each flip jumped between the dock and the
+    /// input.
     #[test]
-    fn a_running_turn_keeps_its_subagents_in_the_dock() {
+    fn subagents_hold_their_rows_across_a_turn() {
         let mut app = test_app();
-        app.submit_user("go".into());
         start_subagent(&mut app, "r0", "kv-review");
-        assert!(super::subagent_rows(&mut app, 100, Instant::now()).is_none());
-        assert!(render_rows(&mut app, 100, 30).join("\n").contains("1 agent"));
+        start_subagent(&mut app, "r1", "perf-scan");
+        let rows_of = |app: &mut App| -> Vec<(usize, String)> {
+            render_rows(app, 100, 30)
+                .into_iter()
+                .enumerate()
+                .filter(|(_, r)| r.contains("subagent") || r.contains("kv-review") || r.contains("perf-scan"))
+                .collect()
+        };
+        let idle = rows_of(&mut app);
+        app.status = Status::Running;
+        let running = rows_of(&mut app);
+        assert!(!idle.is_empty(), "{idle:#?}");
+        assert_eq!(running, idle, "same rows, same text in both states");
+    }
+
+    /// A short terminal trims the block from its tail, then its head, before
+    /// the conversation gives up a row; a picker hides it rather than moving it.
+    #[test]
+    fn the_subagent_block_yields_to_a_short_frame_and_a_picker() {
+        let mut app = test_app();
+        for (i, name) in ["a", "b", "c"].iter().enumerate() {
+            start_subagent(&mut app, &format!("r{i}"), name);
+        }
+        app.status = Status::Running;
+        let block = |rows: &[String]| {
+            rows.iter().filter(|r| r.contains("subagent") || r.contains(" \u{2514} ")).count()
+        };
+        assert_eq!(block(&render_rows(&mut app, 80, 30)), 2, "head + tree head row");
+        assert_eq!(block(&render_rows(&mut app, 80, 11)), 1, "trimmed to its head");
+        assert_eq!(block(&render_rows(&mut app, 80, 9)), 0, "gone before the conversation");
+        open_agents_picker(&mut app);
+        assert!(subagent_text(&mut app, 80, Instant::now()).is_empty());
     }
 
     /// A finished child drops out of the block, and the block goes with the
@@ -44409,11 +51359,12 @@ mod tests {
             name: "perf-scan".into(),
             error: None,
         });
-        assert!(super::subagent_rows(&mut app, 100, now).is_none());
+        assert!(subagent_text(&mut app, 100, now).is_empty());
     }
 
-    /// Past `SUBAGENT_DETAIL_ROWS` the last row counts the rest and points at
-    /// `/agents`, and a later phase reads as waiting, not running.
+    /// Past `BACKGROUND_GROUP_ROWS` the last row counts the rest, without
+    /// repeating the `/agents` the head already names, and a later phase reads
+    /// as queued, not running.
     #[test]
     fn a_wide_fan_out_overflows_to_agents() {
         let mut app = test_app();
@@ -44426,24 +51377,211 @@ mod tests {
             ..SubagentPanel::new(String::new(), "collector".into(), String::new())
         });
         let rows = subagent_text(&mut app, 100, Instant::now());
-        assert_eq!(rows.len(), 1 + super::SUBAGENT_DETAIL_ROWS, "{rows:#?}");
-        assert!(rows[0].contains("4 subagents running \u{b7} 1 waiting"), "{rows:#?}");
-        assert_eq!(rows[3], "  +3 more \u{b7} /agents", "{rows:#?}");
+        assert_eq!(rows.len(), 1 + super::BACKGROUND_GROUP_ROWS, "{rows:#?}");
+        assert!(rows[0].contains("4 subagents running \u{b7} 1 queued"), "{rows:#?}");
+        assert_eq!(rows[3], "    +3 more", "{rows:#?}");
+        assert_eq!(rows.join("\n").matches("/agents").count(), 1, "{rows:#?}");
+    }
+
+    /// A one-child group for the width tests: `name` with `facts`, in order.
+    fn work_group(name: &str, facts: &[&str]) -> super::WorkGroup {
+        super::WorkGroup {
+            head: super::WorkHead {
+                noun: "subagent",
+                counts: vec![("running", 2), ("queued", 1)],
+                hints: &[("/agents", " to view or stop")],
+            },
+            children: vec![super::WorkChild {
+                name: name.into(),
+                facts: facts
+                    .iter()
+                    .map(|f| vec![ratatui::text::Span::raw(f.to_string())])
+                    .collect(),
+                cut_last: false,
+            }],
+        }
+    }
+
+    fn group_text(group: &super::WorkGroup, max: usize) -> Vec<String> {
+        super::work_group_lines(group, 3, max).iter().map(line_text).collect()
+    }
+
+    /// A child row too wide for the terminal gives up its facts from the last
+    /// one in, whole, before its name is touched; the name is cut only once
+    /// it alone does not fit, and then with a visible `...`.
+    #[test]
+    fn a_narrow_child_row_drops_facts_before_cutting_its_name() {
+        let group = work_group("kv-review", &["Queued (1)", "1m 05s", "Read src/kv.rs"]);
+        let at = |max: usize| group_text(&group, max)[1].clone();
+        let full = "  \u{2514} kv-review \u{b7} Queued (1) \u{b7} 1m 05s \u{b7} Read src/kv.rs";
+        assert_eq!(at(80), full);
+        assert_eq!(at(full.width() - 1), "  \u{2514} kv-review \u{b7} Queued (1) \u{b7} 1m 05s");
+        assert_eq!(at(30), "  \u{2514} kv-review \u{b7} Queued (1)");
+        assert_eq!(at(20), "  \u{2514} kv-review", "every fact goes before the name");
+
+        let long = work_group("npm run dev -- --port 3000", &["1m 05s"]);
+        let row = group_text(&long, 20)[1].clone();
+        assert_eq!(row, "  \u{2514} npm run dev -...");
+        assert!(!row.contains("1m 05s"), "{row}");
+    }
+
+    /// The head sheds its hint words, then its commands, then every count
+    /// but the first, and only then cuts the first with `...`.
+    #[test]
+    fn a_narrow_head_sheds_hints_then_counts_then_cuts() {
+        let group = work_group("a", &[]);
+        let head = |max: usize| group_text(&group, max)[0].clone();
+        assert_eq!(head(80), " 2 subagents running \u{b7} 1 queued \u{b7} /agents to view or stop");
+        assert_eq!(head(45), " 2 subagents running \u{b7} 1 queued \u{b7} /agents");
+        assert_eq!(head(35), " 2 subagents running \u{b7} 1 queued");
+        assert_eq!(head(25), " 2 subagents running");
+        assert_eq!(head(15), " 2 subagents...");
+    }
+
+    /// Below `BACKGROUND_CHILD_MIN_NAME` columns of name a child row would be
+    /// noise, so the group is its head alone, whatever height it was given.
+    #[test]
+    fn a_very_narrow_group_collapses_to_its_head() {
+        let group = work_group("kv-review", &["12s"]);
+        let min = super::child_prefix(true).width() + super::BACKGROUND_CHILD_MIN_NAME;
+        assert_eq!(group_text(&group, min - 1).len(), 1, "{:?}", group_text(&group, min - 1));
+        assert_eq!(group_text(&group, min).len(), 2, "{:?}", group_text(&group, min));
+    }
+
+    /// Measured in display columns: a wide-glyph name or fact cannot push a
+    /// row past the terminal, and nothing is ever cut without a `...`.
+    #[test]
+    fn work_group_rows_fit_any_width_in_display_columns() {
+        let groups = [
+            work_group(
+                "\u{6771}\u{4eac}-build-\u{6771}\u{4eac}-watch",
+                &["\u{5f85}\u{3061} 3", "1m 05s"],
+            ),
+            work_group("tail -f /var/log/a-very-long-file-name.log", &["7s"]),
+        ];
+        for group in &groups {
+            for max in 1..120 {
+                for line in super::work_group_lines(group, 3, max) {
+                    assert!(spans_width(&line.spans) <= max, "{max}: {line:?}");
+                    let text = line_text(&line);
+                    let name = &group.children[0].name;
+                    if text.starts_with("  \u{2514}") && !text.contains(name.as_str()) {
+                        assert!(text.ends_with("..."), "{max}: cut without a mark: {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// A frame with room for the heads alone shows them, still on the rule,
+    /// and the conversation keeps its rows.
+    #[test]
+    fn a_short_frame_keeps_the_heads_on_the_rule() {
+        let mut app = test_app();
+        for (i, name) in ["a", "b", "c"].iter().enumerate() {
+            start_subagent(&mut app, &format!("r{i}"), name);
+        }
+        let rows = render_rows(&mut app, 80, 11);
+        let rule = rows.iter().rposition(|r| r.starts_with('\u{2500}')).expect("rule");
+        assert!(rows[rule - 1].starts_with(" 3 subagents running"), "{rows:#?}");
+        assert!(!rows.iter().any(|r| r.contains("\u{2514} a")), "heads only: {rows:#?}");
+        assert!(rows[rule + 1].starts_with('\u{203a}'), "{rows:#?}");
     }
 
     /// No row outgrows the terminal, however narrow.
     #[test]
-    fn subagent_rows_fit_any_width() {
+    fn background_rows_fit_any_width() {
         let mut app = test_app();
         let now = Instant::now();
         start_subagent(&mut app, "r0", "a-subagent-with-a-long-name");
         app.subagents[0].started = Some(now - Duration::from_secs(3_700));
         app.subagents[0].calls.push("Read a/very/long/path/to/some/file.rs".into());
         for width in 1..120 {
-            for line in super::subagent_rows(&mut app, width, now).expect("shown") {
+            for line in super::background_rows(&mut app, width, 8, now) {
                 assert!(spans_width(&line.spans) <= width as usize, "{width}: {line:?}");
             }
         }
+    }
+
+    /// Every group of the background-work block reads alike: its head one
+    /// column in, with `.` between parts and the commands in the accent; its
+    /// children on the transcript's tree prefix, name in the accent and facts
+    /// behind the same `.`. This is what keeps a new group from growing its
+    /// own look.
+    #[test]
+    fn every_background_group_shares_one_grammar() {
+        let mut app = test_app();
+        let now = Instant::now();
+        app.monitors = vec![
+            monitor("mon-1", "build", "grep OK build.log", 3),
+            monitor("mon-2", "boot", "curl -sf localhost", 1),
+        ];
+        start_subagent(&mut app, "r0", "kv-review");
+        start_subagent(&mut app, "r1", "perf-scan");
+        app.subagents[0].started = Some(now - Duration::from_secs(5));
+        for (pid, command) in [(1, "npm run dev"), (2, "tail -f app.log")] {
+            app.bg_shells.push(tauri_plugin_agent_tools::tools::proc::ShellInfo {
+                pid,
+                command: command.into(),
+                elapsed_secs: 65,
+                backgrounded: true,
+            });
+        }
+        let lines = super::background_rows(&mut app, 100, 20, now);
+        assert_eq!(lines.len(), 9, "three heads, two children each: {lines:#?}");
+        let accent = Some(super::theme::accent());
+        let muted = Some(super::theme::muted());
+        for group in lines.chunks(3) {
+            let head = &group[0];
+            assert!(line_text(head).starts_with(' ') && !line_text(head).starts_with("  "), "{head:?}");
+            for span in &head.spans {
+                let command = span.content.starts_with('/');
+                let sep = span.content.as_ref() == " \u{b7} ";
+                assert_eq!(span.style.fg, if command { accent } else { muted }, "{span:?}");
+                assert!(!span.content.contains('\u{b7}') || sep || command, "{span:?}");
+            }
+            for (i, child) in group[1..].iter().enumerate() {
+                assert_eq!(child.spans[0], super::child_prefix(i == 0), "{child:?}");
+                assert_eq!(child.spans[1].style, Style::new().fg(super::theme::accent()).bold());
+                let facts = &child.spans[2..];
+                assert!(!facts.is_empty(), "{child:?}");
+                assert_eq!(facts[0].content.as_ref(), " \u{b7} ", "{child:?}");
+                assert_eq!(facts[0].style.fg, muted, "{child:?}");
+            }
+        }
+        let heads: Vec<String> = lines.chunks(3).map(|g| line_text(&g[0])).collect();
+        assert!(heads[0].starts_with(" 2 monitors watching \u{b7} /monitors"), "{heads:?}");
+        assert!(heads[1].starts_with(" 2 subagents running \u{b7} /agents"), "{heads:?}");
+        assert!(heads[2].starts_with(" 2 background shells running \u{b7} /shells"), "{heads:?}");
+    }
+
+    /// A short frame gives up child rows first, every group alike, then whole
+    /// groups from the bottom, and a head is the last thing a group loses.
+    #[test]
+    fn a_short_frame_trims_children_before_heads() {
+        let mut app = test_app();
+        let now = Instant::now();
+        app.monitors = vec![monitor("mon-1", "build", "grep OK build.log", 3)];
+        for (i, name) in ["a", "b", "c", "d"].iter().enumerate() {
+            start_subagent(&mut app, &format!("r{i}"), name);
+        }
+        let heads = |app: &mut App, n: usize| {
+            super::background_rows(app, 100, n, now)
+                .iter()
+                .map(line_text)
+                .filter(|r| !r.starts_with("  "))
+                .count()
+        };
+        let at = |app: &mut App, n: usize| super::background_rows(app, 100, n, now).len();
+        assert_eq!(at(&mut app, 20), 2 + 4, "full: 1 monitor, 3 agents and a +1 row");
+        assert_eq!(at(&mut app, 5), 5, "two children a group");
+        assert_eq!(heads(&mut app, 5), 2);
+        assert_eq!(at(&mut app, 4), 4, "one row a group: mon-1, then +4 more");
+        assert_eq!(heads(&mut app, 4), 2);
+        assert_eq!(at(&mut app, 3), 2, "not enough for both: heads only");
+        assert_eq!(at(&mut app, 2), 2, "heads only");
+        assert_eq!(heads(&mut app, 2), 2);
+        assert_eq!(heads(&mut app, 1), 1, "the bottom group goes first");
     }
 
     /// A child that finishes after the turn parked to deliver a ping leaves its
@@ -44492,6 +51630,7 @@ mod tests {
         tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
             project_root: root.to_path_buf(),
             scratch_root: None,
+            pkg_cache: None,
             mask_root: None,
             hidden_root: None,
             read_roots: Vec::new(),
@@ -44500,6 +51639,7 @@ mod tests {
             home_readonly: false,
             // Bare shell: these exercise the TUI wiring, not the jail.
             sandbox: false,
+            workspace_readonly: false,
         }
     }
 
@@ -44730,6 +51870,30 @@ mod tests {
         );
     }
 
+    /// A child's message that lands while the main agent is idle is taken
+    /// here, not by a loop: it is shown and journaled once, as the loop's
+    /// delivery would show it, and reaches the model.
+    #[test]
+    fn a_child_message_delivered_between_runs_is_shown_once() {
+        let mut app = test_app();
+        app.history
+            .push(serde_json::json!({ "role": "user", "content": "look" }));
+        app.subagent_set.send_test_message("sub-debug-1", "debug", "Found it in parse_command.");
+
+        app.submit_background_notices();
+
+        assert!(app.want_start, "the message arms a turn");
+        let last = app.history.last().unwrap();
+        assert!(last["content"].as_str().unwrap().contains("Found it"), "{last}");
+        let shown = transcript_text(&app);
+        let got = "\u{2022} Message from debug\n  \u{2514} Found it in parse_command.";
+        assert!(shown.contains(got), "{shown}");
+        assert_eq!(shown.matches("Found it").count(), 1, "{shown}");
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        assert!(transcript_text(&resumed).contains(got), "{}", transcript_text(&resumed));
+    }
+
     /// The loop drains the registry itself while a run is up, so the TUI's
     /// wait must stay parked then rather than racing it for the same ping.
     #[tokio::test]
@@ -44791,7 +51955,7 @@ mod tests {
             assert!(app.subagents.is_empty(), "{finish}: live panel must close");
             let rows = render_rows(&mut app, 100, 24);
             assert!(
-                !rows.iter().any(|r| r.contains("1 agent")),
+                !rows.iter().any(|r| r.contains("subagent running")),
                 "{finish}: panel must be gone: {rows:?}"
             );
             // Not silently: the child did work, so it gets the same kind of
@@ -44846,49 +52010,6 @@ mod tests {
         render_rows(&mut app, 80, 20);
         assert!(app.todos_closed_at.is_none(), "open work arms nothing");
         assert!(!app.todos_expired());
-    }
-
-    /// A wide terminal sets the plan and the fan-out side by side, each in its
-    /// own half, so the panel spends rows once instead of twice.
-    #[test]
-    fn wide_panel_sets_the_columns_side_by_side() {
-        use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.status = Status::Running;
-        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
-        start_subagent(&mut app, "r0", "alpha");
-        let rows = render_rows(&mut app, 120, 24);
-        let head = rows
-            .iter()
-            .find(|r| r.contains("Todos"))
-            .expect("panel head");
-        assert!(
-            head.contains("│") && head.contains("1 agent"),
-            "both columns share the row: {head:?}"
-        );
-        assert!(
-            head.find("Todos") < head.find("1 agent"),
-            "plan on the left, agents on the right: {head:?}"
-        );
-    }
-
-    /// Too narrow to split: the columns stack rather than being squeezed into
-    /// halves too thin to hold a task or an agent name.
-    #[test]
-    fn narrow_panel_stacks_the_columns() {
-        use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.status = Status::Running;
-        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
-        start_subagent(&mut app, "r0", "alpha");
-        let rows = render_rows(&mut app, super::PANEL_SPLIT_MIN_WIDTH - 1, 24);
-        assert!(
-            !rows.iter().any(|r| r.contains("│")),
-            "no divider when stacked: {rows:?}"
-        );
-        let todos = rows.iter().position(|r| r.contains("Todos")).expect("plan");
-        let agents = rows.iter().position(|r| r.contains("≡")).expect("agents");
-        assert!(todos < agents, "plan first when stacked: {rows:?}");
     }
 
     /// The dock is one unit and the conversation is another:
@@ -45003,8 +52124,8 @@ mod tests {
         assert!(rows.last().unwrap().contains("/tmp/repo"), "{rows:?}");
     }
 
-    /// Many parallel agents cannot push the plan off the screen: the column
-    /// shows what fits and counts the rest.
+    /// Many parallel agents cannot push the conversation off the screen: the
+    /// block shows what fits and counts the rest.
     #[test]
     fn crowded_fan_out_elides_with_a_running_count() {
         let mut app = test_app();
@@ -45014,14 +52135,7 @@ mod tests {
         let rows = render_rows(&mut app, 100, 24);
         let shown = rows.iter().filter(|r| r.contains("agent-")).count();
         assert!(shown < 9, "not every agent fits: {rows:?}");
-        // The overflow row counts the hidden agents, in either elision form: the
-        // `/agents` hint when the column is wide enough, the compact "more
-        // running" otherwise.
-        assert!(
-            rows.iter()
-                .any(|r| r.contains("more · /agents") || r.contains("more running")),
-            "the rest are counted: {rows:?}"
-        );
+        assert!(rows.iter().any(|r| r.contains("+7 more")), "the rest are counted: {rows:?}");
     }
 
     #[tokio::test]
@@ -45455,14 +52569,15 @@ mod tests {
         app.cursor = app.input.len();
         app.slash_dismissed = true;
         assert!(app.slash_matches().is_empty());
-        // Editing the buffer re-shows the popup; fuzzy matching offers both
-        // commands whose name contains `res` as a subsequence, resume first.
+        // Editing the buffer re-shows the popup; fuzzy matching offers every
+        // command whose name contains `res` as a subsequence, resume first.
         app.input_insert('s');
         assert_eq!(
             names(&app),
             vec![
                 "/resume".to_string(),
                 "/reasoning".to_string(),
+                "/worktrees".to_string(),
                 "/threads".to_string(),
             ]
         );
@@ -45694,13 +52809,14 @@ mod tests {
         app.input = "/res".into();
         let all = names(&app);
         // Built-in wins the `/resume` collision: no `/command:x:resume` row and
-        // no skill row. `/reasoning` and `/threads` are separate fuzzy hits
-        // (res is a subsequence of both names), not collisions.
+        // no skill row. `/reasoning`, `/worktrees` and `/threads` are separate
+        // fuzzy hits (res is a subsequence of each name), not collisions.
         assert_eq!(
             all,
             vec![
                 "/resume".to_string(),
                 "/reasoning".to_string(),
+                "/worktrees".to_string(),
                 "/threads".to_string(),
             ],
             "built-in only"
@@ -46045,7 +53161,7 @@ mod tests {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         std::fs::write(root.join("AGENTS.md"), "# Agents\n\nUse make.\n").unwrap();
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
-        let out = transcript_text(&app);
+        let out = flat_transcript(&app);
         assert!(out.contains("AGENTS.md (") && !out.contains("fallback"), "{out}");
 
         std::fs::write(root.join("JAN.md"), "# Rules\n").unwrap();
@@ -46612,7 +53728,7 @@ mod tests {
                 },
             ])),
         );
-        let text = transcript_text(&app);
+        let text = flat_transcript(&app);
         assert!(text.contains("1 tools, 1 hooks"), "{text}");
         assert!(text.contains("hook PreToolUse (bash): ./audit.sh"), "{text}");
         assert!(text.contains("tool scan: ./scan.sh"), "{text}");
@@ -47017,7 +54133,7 @@ mod tests {
         app.on_error("upstream_error".into(), overflow_error());
         app.compacting = app.compact_request.take();
         let compacted = vec![serde_json::json!({ "role": "system", "content": "summary" })];
-        finish_compaction(&mut app, Ok(compacted), 7);
+        finish_compaction(&mut app, Ok((compacted, None)), 7);
         assert!(
             app.want_start,
             "a landed compaction resumes the errored turn"
@@ -47035,7 +54151,7 @@ mod tests {
         app.compacting = app.compact_request.take();
         let unchanged = app.history.clone();
         let base = unchanged.len();
-        finish_compaction(&mut app, Ok(unchanged), base);
+        finish_compaction(&mut app, Ok((unchanged, None)), base);
         assert!(!app.want_start);
         assert!(!app.retry_after_compact);
     }
@@ -47049,7 +54165,7 @@ mod tests {
             app.compacting = app.compact_request.take();
             let shorter = app.history[..app.history.len() - 1].to_vec();
             let base = app.history.len();
-            finish_compaction(&mut app, Ok(shorter), base);
+            finish_compaction(&mut app, Ok((shorter, None)), base);
         }
         app.on_error("upstream_error".into(), overflow_error());
         assert_eq!(
@@ -47277,10 +54393,10 @@ mod tests {
 
         finish_compaction(
             &mut app,
-            Ok(vec![
+            Ok((vec![
                 serde_json::json!({ "role": "system", "content": "summary" }),
                 serde_json::json!({ "role": "user", "content": "x".repeat(2_000_000) }),
-            ]),
+            ], None)),
             10,
         );
 
@@ -47641,6 +54757,40 @@ mod tests {
         });
     }
 
+    /// A new conversation starts its shell back in the project root, as its
+    /// prompt says, whatever the last one `cd`ed into.
+    #[test]
+    fn reset_session_returns_the_shell_to_the_project_root() {
+        let mut app = test_app();
+        *app.shell_cwd.lock().unwrap() = Some(std::path::PathBuf::from("/somewhere"));
+        app.reset_session();
+        assert_eq!(*app.shell_cwd.lock().unwrap(), None);
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// Instructions past the budget warn, summed over every loaded file and
+    /// naming each; at or under it nothing is said.
+    #[test]
+    fn instructions_size_warning_fires_only_past_the_budget() {
+        let file = |path: &str, chars: usize| crate::core::agent::context::ContextFile {
+            path: path.into(),
+            content: "x".repeat(chars),
+            fallback: true,
+        };
+        let limit = super::INSTRUCTIONS_WARN_CHARS;
+        assert_eq!(super::instructions_size_warning(&[]), None);
+        assert_eq!(super::instructions_size_warning(&[file("/r/AGENTS.md", limit)]), None);
+        let warning = super::instructions_size_warning(&[
+            file("/r/AGENTS.md", limit / 2 + 1),
+            file("/r/pkg/AGENTS.md", limit / 2),
+        ])
+        .expect("the total is past the budget");
+        assert!(warning.contains("/r/AGENTS.md"), "{warning}");
+        assert!(warning.contains("/r/pkg/AGENTS.md"), "{warning}");
+        assert!(warning.contains("/init"), "{warning}");
+        assert!(warning.contains(&format!("{} characters", limit + 1)), "{warning}");
+    }
+
     /// `/context` lists the files the project context holds, labelling a legacy
     /// JAN.md and a CLAUDE.md fallback.
     #[test]
@@ -47975,13 +55125,16 @@ mod tests {
         );
 
         let lines = last_row_lines(&app, 50);
-        assert!(lines.len() > 1, "expected a wrap: {lines:?}");
-        for line in &lines {
+        assert_eq!(lines[0], "\u{2022} commands:", "{lines:?}");
+        assert!(lines[1].starts_with("  \u{2514} /plan"), "{lines:?}");
+        assert!(lines.len() > 2, "expected a wrap: {lines:?}");
+        for line in &lines[2..] {
             assert!(
-                line.starts_with("\u{2506} "),
-                "the block's left edge breaks on a wrap: {line:?}"
+                line.starts_with("    ") && !line[4..].starts_with(' '),
+                "the description's edge breaks on a wrap: {line:?}"
             );
         }
+        assert!(lines.iter().all(|l| l.chars().count() <= 50), "{lines:?}");
     }
 
     #[test]

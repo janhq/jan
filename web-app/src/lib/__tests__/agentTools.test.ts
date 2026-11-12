@@ -4,28 +4,38 @@ const toolSchemas = vi.fn()
 const executeTool = vi.fn()
 const threadWorkspaceDelete = vi.fn()
 const threadWorkspaceSweep = vi.fn()
+const sessionWorkspaceCopyToThread = vi.fn()
 const sandboxStatus = vi.fn()
 const memoryCatalog = vi.fn()
 const memoryRead = vi.fn()
 const subagentResultReserve = vi.fn()
 const subagentResultFill = vi.fn()
+const attachmentImport = vi.fn()
+const startMonitor = vi.fn()
 const getJanDataFolder = vi.fn()
+const coreInvoke = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   toolSchemas: () => toolSchemas(),
   executeTool: (...args: unknown[]) => executeTool(...args),
   threadWorkspaceDelete: (...args: unknown[]) => threadWorkspaceDelete(...args),
   threadWorkspaceSweep: (...args: unknown[]) => threadWorkspaceSweep(...args),
+  sessionWorkspaceCopyToThread: (...args: unknown[]) =>
+    sessionWorkspaceCopyToThread(...args),
   sandboxStatus: () => sandboxStatus(),
   memoryCatalog: (...args: unknown[]) => memoryCatalog(...args),
   memoryRead: (...args: unknown[]) => memoryRead(...args),
   subagentResultReserve: (...args: unknown[]) => subagentResultReserve(...args),
   subagentResultFill: (...args: unknown[]) => subagentResultFill(...args),
-  attachmentImport: vi.fn(),
+  attachmentImport: (...args: unknown[]) => attachmentImport(...args),
+  startMonitor: (...args: unknown[]) => startMonitor(...args),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({ app: () => ({ getJanDataFolder }) }),
+  getServiceHub: () => ({
+    app: () => ({ getJanDataFolder }),
+    core: () => ({ invoke: coreInvoke }),
+  }),
 }))
 
 const schemaFor = (name: string) => ({
@@ -40,6 +50,9 @@ describe('agentTools', () => {
     executeTool.mockReset()
     threadWorkspaceDelete.mockReset().mockResolvedValue(undefined)
     threadWorkspaceSweep.mockReset().mockResolvedValue(0)
+    sessionWorkspaceCopyToThread
+      .mockReset()
+      .mockResolvedValue({ copied: true, files: 2, skipped: 0 })
     sandboxStatus
       .mockReset()
       .mockResolvedValue({ backend: 'bubblewrap', enforces: true })
@@ -47,7 +60,12 @@ describe('agentTools', () => {
     memoryRead.mockReset().mockResolvedValue('')
     subagentResultReserve.mockReset()
     subagentResultFill.mockReset()
+    attachmentImport.mockReset()
+    startMonitor.mockReset()
     getJanDataFolder.mockReset().mockResolvedValue('/data')
+    coreInvoke.mockReset().mockImplementation(async (cmd: string) =>
+      cmd === 'get_jan_data_folder_path' ? '/data' : undefined
+    )
   })
 
   // The chat surface offers the sandboxed shell alone; everything else is
@@ -91,12 +109,12 @@ describe('agentTools', () => {
     toolSchemas.mockResolvedValue([
       schemaFor('read'),
       schemaFor('write'),
-      schemaFor('memory_write'),
+      schemaFor('memory'),
       schemaFor('web_search'),
     ])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
-    expect(names).toEqual(['read', 'write', 'memory_write'])
+    expect(names).toEqual(['read', 'write', 'memory'])
   })
 
   /// The diff must reach the caller so the UI can render it, but stay out of
@@ -187,7 +205,8 @@ describe('agentTools', () => {
       false,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -213,7 +232,8 @@ describe('agentTools', () => {
       true,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -247,7 +267,8 @@ describe('agentTools', () => {
       false,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -271,7 +292,8 @@ describe('agentTools', () => {
       false,
       '/home/u/repo',
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -316,7 +338,8 @@ describe('agentTools', () => {
       true,
       '/repo',
       true,
-      'session'
+      'session',
+      undefined
     )
   })
 
@@ -363,18 +386,19 @@ describe('agentTools', () => {
   it('coerces a non-object input to empty args', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
-    await executeAgentTool('memory_list', undefined, 'thread-1')
+    await executeAgentTool('skill_list', undefined, 'thread-1')
     expect(executeTool).toHaveBeenCalledWith(
       '/data',
       'thread-1',
-      'memory_list',
+      'skill_list',
       {},
       undefined,
       undefined,
       false,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -442,16 +466,26 @@ describe('agentTools', () => {
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
   })
 
-  // Cowork's memory_write goes through executeAgentTool, so a note the model
+  // Cowork's memory writes go through executeAgentTool, so a note the model
   // records mid-session must reach the next run/send without a restart.
-  it('invalidates the snapshot when the memory_write tool succeeds', async () => {
+  it('invalidates the snapshot when a memory write succeeds', async () => {
     executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
     const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
     memoryCatalog.mockResolvedValue([])
     await getMemoryCatalog()
-    await executeAgentTool('memory_write', { name: 'a', content: 'b' }, 't1')
+    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1')
     await getMemoryCatalog()
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the snapshot across a memory view', async () => {
+    executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
+    const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([])
+    await getMemoryCatalog()
+    await executeAgentTool('memory', { op: 'view', name: 'a' }, 't1')
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(1)
   })
 
   it('degrades to empty recall when the store is unreachable', async () => {
@@ -482,6 +516,55 @@ describe('agentTools', () => {
     const { sweepThreadWorkspaces } = await import('../agentTools')
     await expect(sweepThreadWorkspaces(['a', 'b'])).resolves.toBe(3)
     expect(threadWorkspaceSweep).toHaveBeenCalledWith('/data', ['a', 'b'])
+  })
+
+  // A Cowork conversation is a thread now, so an attachment must land in the
+  // sandbox its tools run in, not the legacy sessions/ tree.
+  it('imports an attachment into the thread sandbox', async () => {
+    attachmentImport.mockResolvedValue({ path: '/p/a.txt', textPath: null })
+    const { importAttachment } = await import('../agentTools')
+    await importAttachment('c1', '/src/a.txt', 'text')
+    expect(attachmentImport).toHaveBeenCalledWith(
+      '/data',
+      'c1',
+      '/src/a.txt',
+      'text',
+      'thread'
+    )
+  })
+
+  it('starts a monitor in the thread sandbox', async () => {
+    startMonitor.mockResolvedValue('m1')
+    const { startAgentMonitor } = await import('../agentTools')
+    await startAgentMonitor('c1', { path: 'a' }, () => {})
+    expect(startMonitor.mock.calls.at(-1)?.[4]).toMatchObject({
+      scope: 'thread',
+    })
+  })
+
+  it('copies a session sandbox into the thread workspace of the same id', async () => {
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).resolves.toMatchObject({
+      copied: true,
+    })
+    expect(sessionWorkspaceCopyToThread).toHaveBeenCalledWith('/data', 's1')
+  })
+
+  // The migration must not commit a thread whose files did not arrive.
+  it('lets a failed sandbox copy reject instead of swallowing it', async () => {
+    sessionWorkspaceCopyToThread.mockRejectedValue({ message: 'disk full' })
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).rejects.toEqual({
+      message: 'disk full',
+    })
+  })
+
+  // Skipping the copy would commit the thread without its files.
+  it('rejects when the data folder is not known, so the session is retried', async () => {
+    coreInvoke.mockResolvedValue('')
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).rejects.toThrow()
+    expect(sessionWorkspaceCopyToThread).not.toHaveBeenCalled()
   })
 
   it('reports zero swept when the sweep fails', async () => {

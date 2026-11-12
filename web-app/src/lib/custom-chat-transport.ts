@@ -29,6 +29,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { CHAT_FOLDER_TOOL_NAMES, chatFolderOf } from '@/lib/chatFolder'
 import { useChatShell } from '@/hooks/useChatShell'
 import {
   WEB_SEARCH_DESCRIPTION,
@@ -47,18 +48,15 @@ import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
-import { ExtensionManager } from '@/lib/extension'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { extensionAuthorMetadata } from '@/lib/extensions/authorship'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
   tokensForThinkingBudgetLevel,
   isThinkingBudgetLevelKey,
 } from '@/lib/thinkingBudget'
 import { buildReasoningProviderOptions } from '@/lib/reasoningProviderOptions'
-import {
-  ExtensionTypeEnum,
-  VectorDBExtension,
-  type MCPTool,
-} from '@janhq/core'
+import { ServiceKeys, type MCPTool } from '@janhq/core'
 import {
   trimMessages,
   compactMessages,
@@ -101,7 +99,13 @@ export type ModelSelection = {
   selectedModel: Model | null
 }
 /** Partial assistant output replayed as a prefill to resume a stopped turn. */
-export type ContinuationContent = { text?: string; reasoning?: string }
+export type ContinuationContent = {
+  text?: string
+  reasoning?: string
+  /** The extension that wrote the stopped reply, if one did: the continued
+   * reply replaces it and must keep its author (see extensions/authorship). */
+  extensionAuthor?: string
+}
 export type ServiceHub = {
   rag(): {
     getTools(): Promise<
@@ -544,15 +548,28 @@ export function stripUnsupportedImageParts(
       .map((part) => {
         // A tool image (see tool-image-sentinel.ts) would decode into an
         // image_url part on the tool message; a text-only model rejects that.
-        const output = (part as { output?: unknown }).output
-        if (typeof output !== 'string' || !hasToolImageSentinel(output)) {
-          return part
+        // An error reaches the model the same way a result does.
+        const next: Record<string, string> = {}
+        if (
+          'output' in part &&
+          typeof part.output === 'string' &&
+          hasToolImageSentinel(part.output)
+        ) {
+          next.output = stripToolImageSentinels(part.output, TOOL_IMAGE_OMITTED)
         }
+        if (
+          'errorText' in part &&
+          typeof part.errorText === 'string' &&
+          hasToolImageSentinel(part.errorText)
+        ) {
+          next.errorText = stripToolImageSentinels(
+            part.errorText,
+            TOOL_IMAGE_OMITTED
+          )
+        }
+        if (Object.keys(next).length === 0) return part
         touched = true
-        return {
-          ...part,
-          output: stripToolImageSentinels(output, TOOL_IMAGE_OMITTED),
-        } as typeof part
+        return { ...part, ...next } as typeof part
       })
     if (!touched) return message
     return { ...message, parts: nextParts } as UIMessage
@@ -1094,11 +1111,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const projectId = thread?.metadata?.project?.id
         if (projectId) {
           try {
-            const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-              ExtensionTypeEnum.VectorDB
+            const vectorDB = getExtensionHost().services.get(
+              ServiceKeys.VectorDB
             )
-            if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+            if (vectorDB) {
+              const projectFiles =
+                await vectorDB.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -1224,16 +1242,37 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // The main chat offers exactly one built-in agent tool: the sandboxed
-      // shell, with no network. The full toolset lives in Cowork. Schemas come
-      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it. A user
-      // who switched it off (#9222) gets none of it.
+      // Tools contributed by extensions, under their prefixed wire names so
+      // they can never shadow an MCP or built-in tool. Toggled per
+      // extension like an MCP server.
+      for (const tool of useAppState.getState().extensionTools) {
+        if (isToolDisabled(tool.server, tool.wireName)) continue
+        toolsRecord[tool.wireName] = {
+          description: tool.description,
+          inputSchema: jsonSchema(
+            normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+          ),
+        } as Tool
+      }
+
+      // Built-in agent tools. Without a folder chat offers one: the sandboxed
+      // shell, with no network. A folder the user attached to this thread adds
+      // the file tools, served on that folder (Rust reads it from the thread's
+      // record, see chatFolder.ts). Schemas come from Rust so they are never
+      // re-typed here, and `getAgentToolSchemas` already withholds shell when
+      // no sandbox backend can confine it. A user who switched the shell off
+      // (#9222) does not get it, folder or not.
       try {
         const shellOn = useChatShell.getState().shellEnabled
-        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
-          if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
-          toolsRecord[schema.function.name] = {
+        const hasFolder = chatFolderOf(this.threadId) !== null
+        const wanted = shellOn || hasFolder
+        for (const schema of wanted ? await getAgentToolSchemas() : []) {
+          const name = schema.function.name
+          const offered =
+            (shellOn && CHAT_AGENT_TOOL_NAMES.has(name)) ||
+            (hasFolder && CHAT_FOLDER_TOOL_NAMES.has(name))
+          if (!offered) continue
+          toolsRecord[name] = {
             description: schema.function.description,
             inputSchema: jsonSchema(schema.function.parameters),
           } as Tool
@@ -1384,6 +1423,37 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     useAppState
       .getState()
       .setCurrentStreamThreadId(threadId, this.streamRoutesToCowork)
+    try {
+      return await this.openStream(options, threadId, myGeneration)
+    } catch (error) {
+      // No stream exists yet, so its onError/onFinish will never release this.
+      this.releaseStream(threadId, myGeneration)
+      throw error
+    }
+  }
+
+  /**
+   * Clears the per-request UI state, unless a newer request (e.g. after
+   * Reload) has since taken it over.
+   */
+  private releaseStream(threadId: string, generation: number) {
+    if (this.streamGeneration !== generation) return
+    const app = useAppState.getState()
+    app.updatePromptProgress(undefined)
+    app.updateThreadPromptProgress(threadId, undefined)
+    this.setLoadingModel(threadId, false)
+    app.updateLiveTokenStats(undefined)
+    app.updateThreadLiveTokenStats(threadId, undefined)
+    if (app.currentStreamThreadId === threadId) {
+      app.setCurrentStreamThreadId(undefined)
+    }
+  }
+
+  private async openStream(
+    options: Parameters<CustomChatTransport['sendMessages']>[0],
+    threadId: string,
+    myGeneration: number
+  ): Promise<ReadableStream<UIMessageChunk>> {
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -1681,25 +1751,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
     })
 
-    const stepMetadata = createStepMetadata()
+    // A reply from an extension's provider names its author from the first
+    // chunk, so it never renders a remote image (see extensions/authorship).
+    // So does one continuing such a reply, whatever model it runs on now.
+    const author =
+      continueContent?.extensionAuthor ?? provider.source?.extensionId
+    const stepMetadata = createStepMetadata(
+      author ? extensionAuthorMetadata(author) : undefined
+    )
 
     const uiStream = result.toUIMessageStream({
       // Usage and token speed, assembled by the one implementation every
       // streaming surface shares (see `lib/stepMetadata`).
       messageMetadata: ({ part }) => stepMetadata.onPart(part),
       onError: (error) => {
-        // A superseded request (e.g. after Reload) must not clear loading/stream
-        // state the newer request already owns.
-        if (this.streamGeneration === myGeneration) {
-          useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          this.setLoadingModel(threadId, false)
-          useAppState.getState().updateLiveTokenStats(undefined)
-          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
-          if (useAppState.getState().currentStreamThreadId === threadId) {
-            useAppState.getState().setCurrentStreamThreadId(undefined)
-          }
-        }
+        this.releaseStream(threadId, myGeneration)
         const unwrapped = unwrapRetryError(error)
         const rawMessage = unwrapped == null
           ? 'Unknown error'
@@ -1717,16 +1783,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return baseMessage
       },
       onFinish: ({ responseMessage }) => {
-        if (this.streamGeneration === myGeneration) {
-          useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          this.setLoadingModel(threadId, false)
-          useAppState.getState().updateLiveTokenStats(undefined)
-          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
-          if (useAppState.getState().currentStreamThreadId === threadId) {
-            useAppState.getState().setCurrentStreamThreadId(undefined)
-          }
-        }
+        this.releaseStream(threadId, myGeneration)
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>
@@ -1746,15 +1803,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? prependContinuationToUIStream(uiStream, continueContent)
       : uiStream
 
-    // A call to the built-in shell while the user has it switched off is not in
+    // A call to a built-in the thread does not offer right now (the shell
+    // switched off, a file tool after the folder was detached) is not in
     // `this.tools`, so the SDK would reject it and end the turn. Hand it to the
-    // tool loop instead, which answers it with the "turned off" refusal.
+    // tool loop instead, which answers it with a refusal the model can read.
     return routeRefusedToolCalls(
       continuedStream,
       (toolName) =>
-        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
         !(toolName in this.tools) &&
-        !useChatShell.getState().shellEnabled
+        ((CHAT_AGENT_TOOL_NAMES.has(toolName) &&
+          !useChatShell.getState().shellEnabled) ||
+          (CHAT_FOLDER_TOOL_NAMES.has(toolName) &&
+            chatFolderOf(this.threadId) === null))
     )
   }
 
@@ -1892,26 +1952,51 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces or when the user has turned
-   * the shell off, because shell is then withheld too — stating limits for a
-   * tool that is not offered would only confuse the model, and an empty string
-   * keeps the prompt prefix stable.
+   * Static instruction for the built-in tools chat offers: the sandboxed shell,
+   * and the file tools while a folder is attached. Empty when none of them is
+   * offered, because stating limits for a tool the model was not given only
+   * confuses it, and an empty string keeps the prompt prefix stable.
    */
   buildAgentToolsSystemInstruction(): string {
-    // Describing a tool the model was not given only invites it to ask for it.
-    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
-    // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused.
-    return [
-      '# Shell',
-      'shell runs commands in an isolated scratch workspace under an OS',
-      'sandbox: it starts there, can only write there, and cannot read files',
-      "in the user's home directory. The workspace belongs to this",
-      'conversation alone and is deleted with it, so do not keep anything',
-      'there that should last. It has no network access, so commands that',
-      'download or upload will fail.',
-    ].join(' ')
+    const folder = chatFolderOf(this.threadId)
+    const shell = useChatShell.getState().shellEnabled && sandboxEnforces()
+    const sections: string[] = []
+    if (folder) {
+      sections.push(
+        [
+          '# Folder',
+          `The user attached the folder \`${folder}\` to this conversation.`,
+          'It is your working directory: relative paths resolve against it.',
+          'Read, list and search it with read, ls, find and grep. write and edit',
+          'change its files in place, and the user is asked to approve every',
+          'such call (and every shell command) before it runs; a declined call',
+          'did not happen, so do not retry it unchanged.',
+        ].join(' ')
+      )
+    }
+    // Stating the shell's limits up front is cheaper than letting the model
+    // discover them by having a command refused.
+    if (shell) {
+      sections.push(
+        folder
+          ? [
+              '# Shell',
+              'shell runs commands in the attached folder under an OS sandbox:',
+              "it cannot read the rest of the user's home directory, and it has",
+              'no network access, so commands that download or upload will fail.',
+            ].join(' ')
+          : [
+              '# Shell',
+              'shell runs commands in an isolated scratch workspace under an OS',
+              'sandbox: it starts there, can only write there, and cannot read files',
+              "in the user's home directory. The workspace belongs to this",
+              'conversation alone and is deleted with it, so do not keep anything',
+              'there that should last. It has no network access, so commands that',
+              'download or upload will fail.',
+            ].join(' ')
+      )
+    }
+    return sections.join('\n\n')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

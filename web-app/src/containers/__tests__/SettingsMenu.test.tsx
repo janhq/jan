@@ -65,7 +65,7 @@ vi.mock('@/containers/dialogs', () => ({
 vi.mock('@/lib/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/utils')>()),
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
-  getProviderTitle: (provider: string) => provider,
+  getProviderTitle: (provider: { provider: string }) => provider.provider,
   isLocalProvider: (provider: string) =>
     provider === 'llama.cpp' || provider === 'mlx',
 }))
@@ -119,16 +119,24 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  it('lists the Cowork settings entry where Cowork ships', () => {
+  it('lists the Agent settings entry where Cowork ships', () => {
     render(<SettingsMenu />)
-    expect(screen.getByText('common:cowork')).toBeInTheDocument()
+    expect(screen.getByText('common:agentSettings')).toBeInTheDocument()
   })
 
-  it('omits the Cowork settings entry on builds that do not ship Cowork', () => {
+  it('omits the Agent settings entry on builds that do not ship Cowork', () => {
     channel.cowork = false
     render(<SettingsMenu />)
-    expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:agentSettings')).not.toBeInTheDocument()
     expect(screen.getByText('common:general')).toBeInTheDocument()
+  })
+
+  it('links to the Extensions settings page', () => {
+    render(<SettingsMenu />)
+    expect(screen.getByText('common:extensions').closest('a')).toHaveAttribute(
+      'href',
+      '/settings/extensions'
+    )
   })
 
   it('renders integrations links', () => {

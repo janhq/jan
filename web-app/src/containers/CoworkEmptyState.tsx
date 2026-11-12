@@ -30,13 +30,12 @@ export function CoworkEmptyState({ folder, onPick }: Props) {
   const scope = name ? 'folder' : 'sandbox'
 
   return (
-    // No horizontal padding here: the column must match the composer's
-    // (mx-auto w-4/5) exactly so the invitation shares its left edge instead of
-    // a coincidentally-close one. The px-2 below mirrors the input's own text
-    // inset, and the examples pull back by the same amount so their labels line
-    // up under the heading while the hover target keeps its breathing room.
+    // The column matches the composer's (mx-auto, same width fractions and
+    // px-6 gutter) so the invitation shares its left edge. The examples pull
+    // back by -mx-2 so their labels line up under the heading while the hover
+    // target keeps its breathing room.
     <div className="absolute inset-0 flex flex-col justify-end pb-3">
-      <div className="mx-auto w-full px-2 md:w-4/5 xl:w-4/6">
+      <div className="mx-auto w-full px-6 md:w-4/5 xl:w-4/6">
         <div className="animate-in fade-in-0 duration-500 motion-reduce:animate-none">
           <Handshake size={20} className="text-primary" aria-hidden />
           <h1 className="mt-3 font-studio text-2xl font-medium tracking-tight">

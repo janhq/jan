@@ -25,6 +25,10 @@ permissions = [
     "allow-end-engine-restart",
     "allow-erase-thread-slot-state",
 
+    # The ggml op diagnostic
+    "allow-start-diagnostics",
+    "allow-cancel-diagnostics",
+
     # GGUF
     "allow-read-gguf-metadata",
     "allow-find-gguf-tensors",

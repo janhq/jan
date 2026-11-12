@@ -182,11 +182,29 @@ describe('describeNativeToolCall for agent tools', () => {
   })
 
   it('leads with the name for memory and skill tools', () => {
-    expect(describeNativeToolCall(agent, 'memory_read', { name: 'prefs' })).toEqual({
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view', name: 'prefs' })).toEqual({
       variant: 'workspace',
-      tool: 'memory_read',
+      tool: 'memory',
       target: 'prefs',
+      op: 'view',
     })
+  })
+
+  // `memory` is one tool with many ops: the op decides the verb, and a search
+  // is about its query, not a name it does not have.
+  it('carries the memory op and leads a search with its query', () => {
+    expect(
+      describeNativeToolCall(agent, 'memory', { op: 'search', query: 'cuda' })
+    ).toEqual({ variant: 'workspace', tool: 'memory', target: 'cuda', op: 'search' })
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view' })).toEqual({
+      variant: 'workspace',
+      tool: 'memory',
+      target: '',
+      op: 'view',
+    })
+    expect(
+      describeNativeToolCall(agent, 'memory', { op: 'move', name: 'a', to: 'b' })
+    ).toEqual({ variant: 'workspace', tool: 'memory', target: 'a', op: 'move' })
   })
 })
 
@@ -227,6 +245,18 @@ describe('parseBashOutput', () => {
     )
     expect(r.exit).toBe(2)
     expect(r.truncated).toBe(true)
+    expect(r.text).toBe('tail lines')
+  })
+
+  // The current order: notices above the exit marker, which is the final line.
+  it('strips notices that come before a final exit marker', () => {
+    const r = parseBashOutput(
+      'tail lines\n[output truncated at 100 of 900 bytes]\n' +
+        '[sandbox: writes are limited to X.]\n[exit 2]'
+    )
+    expect(r.exit).toBe(2)
+    expect(r.truncated).toBe(true)
+    expect(r.sandboxNote).toBe('writes are limited to X.')
     expect(r.text).toBe('tail lines')
   })
 

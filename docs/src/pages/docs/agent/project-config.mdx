@@ -118,6 +118,8 @@ set `fallback_files = []`.
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# subagent_worktrees = false  # true: a subagent that can write gets its own git worktree; false: it edits this checkout
+# subagent_build_cache_max_gb = 20  # clear the subagents' shared build cache past this size; 0 never
 # show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
 # send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
 # worktree = true         # give each session its own git checkout instead of editing this one
@@ -165,6 +167,8 @@ The running agent reads this file at startup. After editing `context_window`, `c
 | `compaction_reserve_tokens` | unset | Absolute headroom instead of the ratio, in tokens. Wins over `compaction_ratio` when set |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
+| `subagent_worktrees` | `false` | Give a subagent that can write or edit, and names no `workspace`, its own git worktree. Off, it works in your checkout, shared with other writers (nothing serializes them). `workspace: "new"` or a `ref` still get a worktree. Overridden by `--subagent-worktrees` / `--no-subagent-worktrees`. See [Where a subagent works](/docs/agent/subagents#where-a-subagent-works) |
+| `subagent_build_cache_max_gb` | `20` | Size in GB past which the subagents' shared build cache (`cargo-target` under `~/.jan/worktrees/<project>/`) is moved to the trash, at session end or the next start, so the next build starts cold. Skipped while any subagent of any session may be building there. `0` never clears it. Falls back to the same key in `~/.jan/config.toml` |
 | `thread_retention_days` | `90` | Saved threads untouched for this many days are deleted at session start, once `prune_threads = true` in `~/.jan/config.toml` turns pruning on (it is off by default); `0` disables. The newest few, the resumed thread, a fork's parent, worktree-owning threads and threads with no timestamp are always kept |
 | `max_threads` | `500` | Most saved threads a project keeps; with pruning on, the oldest past it are deleted at session start, with the same exemptions. `0` disables |
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
@@ -200,8 +204,9 @@ A marker for how far one run has gone, distinct from the per-request context win
 run's marginal token spend (replayed context is not recharged each turn).
 
 <Callout type="warning">
-Passing this ceiling does not stop a run. The agent compacts its history, records a note that the
-ceiling was crossed, and carries on, tool calls included. For a hard bound on an unattended run use
+Passing this ceiling does not stop a run. The agent records a note that the ceiling was crossed and
+carries on, tool calls included. It does not compact the history: spend is not context size, and
+only the context window triggers [compaction](/docs/agent/context). For a hard bound on an unattended run use
 `--max-turns` (see the [CLI reference](/docs/agent/cli)), or cancel it.
 </Callout>
 
@@ -248,7 +253,7 @@ prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"
 | Key | Default | Description |
 | --- | --- | --- |
 | `prefix_allow` | unset | Contributor ids allowed above the cache line. Unset keeps the placement each contributor declares in code; setting it narrows the prefix to exactly the ids listed. An id that names nothing is an error, not a silent no-op |
-| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
+| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`memory_changes`, `memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
 
 All current contributors either declare their placement or vary, so changing `default` alone has
 no effect today. Use `prefix_allow` to narrow the current prefix. The tool schemas are a request
@@ -260,7 +265,7 @@ jan cli agent status   # the resolved placement of every contributor, and why
 
 Contributor ids: `assistant_instructions`, `guidelines`, `working_directory`, `runtime_environment`,
 `session_start`, `subagent_guide`, `skill_guide`, `web_tools_guide`, `project_context`, `skills`,
-`memory_catalog`, `tool_schemas`, `memory_recall`, `plan_addendum`, `todo_addendum`.
+`memory_catalog`, `tool_schemas`, `memory_changes`, `memory_recall`, `plan_addendum`, `todo_addendum`.
 `session_start` is the date and git branch taken once when the session starts ("Session start date",
 "Starting branch"); it stays fixed for the session so it can sit above the cache line. See
 [Context and Compaction](/docs/agent/context) for what the split buys.

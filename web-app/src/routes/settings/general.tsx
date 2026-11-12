@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
+import { relaunchAfterSave } from '@/lib/coworkSync'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,7 +141,7 @@ function General() {
             await serviceHub.app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful
-            window.core?.api?.relaunch()
+            await relaunchAfterSave(() => window.core?.api?.relaunch())
             setSelectedNewPath(null)
             setIsDialogOpen(false)
           } catch (error) {

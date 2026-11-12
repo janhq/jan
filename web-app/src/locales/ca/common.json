@@ -229,10 +229,6 @@
       "cancel": "Cancel·la",
       "changeLocation": "Canvia la ubicació"
     },
-    "deleteAllThreads": {
-      "title": "Suprimeix tots els fils",
-      "description": "Se suprimiran tots els fils. Aquesta acció no es pot desfer."
-    },
     "deleteThread": {
       "description": "Segur que vols suprimir aquest fil? Aquesta acció no es pot desfer."
     },
@@ -241,10 +237,15 @@
     },
     "messageMetadata": {
       "title": "Metadades del missatge"
+    },
+    "deleteAllChats": {
+      "title": "Suprimeix les converses fora dels projectes",
+      "description": "Això suprimeix les converses que no són en cap projecte. Es conserven les converses dels projectes, les converses destacades i les tasques. Aquesta acció no es pot desfer."
     }
   },
   "projects": {
     "title": "Projectes",
+    "new": "Projecte nou",
     "addProject": "Afegeix un projecte",
     "addToProject": "Afegeix al projecte",
     "removeFromProject": "Elimina del projecte",
@@ -260,9 +261,8 @@
     "projectNotFoundDesc": "El projecte que busques no existeix o s’ha suprimit.",
     "deleteProjectDialog": {
       "title": "Suprimeix el projecte",
-      "permanentDelete": "Això suprimirà definitivament tots els fils.",
+      "permanentDelete": "Això suprimirà permanentment \"{{projectName}}\" i totes les seves converses. Aquesta acció no es pot desfer.",
       "permanentDeleteWarning": "Aquesta acció suprimirà TOTS els fils del projecte!",
-      "deleteEmptyProject": "Aquesta acció suprimirà el projecte \"{{projectName}}\".",
       "saveThreadsAdvice": "Per conservar els fils, mou-los a la llista de fils o a un altre projecte abans de suprimir-lo.",
       "starredWarning": "Encara tens fils marcats com a preferits al projecte.",
       "deleteButton": "Suprimeix",
@@ -283,7 +283,6 @@
       "renameSuccess": "Projecte reanomenat de \"{{oldName}}\" a \"{{newName}}\""
     },
     "noConversationsIn": "No hi ha converses a {{projectName}}",
-    "startNewConversation": "Inicia una conversa nova amb {{projectName}} a continuació",
     "conversationsIn": "Converses a {{projectName}}",
     "conversationsDescription": "Fes clic a qualsevol conversa per continuar parlant o inicia’n una de nova a continuació.",
     "thread": "fil",
@@ -296,7 +295,9 @@
     "noProjectsFound": "No s’han trobat projectes",
     "tryDifferentSearch": "Prova amb un terme de cerca diferent",
     "uploadingFiles": "S’estan processant els fitxers…",
-    "processButton": "Afegeix"
+    "processButton": "Afegeix",
+    "viewProject": "Mostra el projecte",
+    "sendMessageToStart": "Envia un missatge a dalt per començar-ne una."
   },
   "attachmentsIngestion": {
     "title": "Tria com ingerir els adjunts",
@@ -400,6 +401,14 @@
     "threadRemovedFromProject": {
       "title": "Fil eliminat del projecte",
       "description": "El fil s’ha eliminat de \"{{projectName}}\" correctament"
+    },
+    "threadProjectMoveFailed": {
+      "title": "No s'ha pogut moure",
+      "description": "No s'ha pogut moure aquesta conversa. La seva sessió no està disponible."
+    },
+    "deleteAllChats": {
+      "title": "S'han suprimit les converses",
+      "description": "S'han suprimit les converses fora dels projectes. S'han conservat les converses dels projectes i les tasques."
     }
   },
   "llamacppBusyOnExit": {
@@ -408,5 +417,166 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Encara no s'ha produït res. Els fitxers creats a les converses apareixen aquí.",
+  "workspace": {
+    "chatFootnote": "Jan llegeix aquesta carpeta lliurement i et demana permís abans de cada edició o ordre que s'hi executi.",
+    "saveFailed": "No s'ha pogut desar la carpeta d'aquest xat"
+  },
+  "budget": {
+    "stoppedTokens": "Aturat: aquesta conversa ha arribat al seu límit de tokens."
+  },
+  "artifacts": "Artefactes",
+  "skills": "Habilitats",
+  "deleteSessionTitle": "Vols suprimir la sessió?",
+  "deleteSessionBody": "«{{title}}» i la seva transcripció se suprimiran de manera permanent. Aquesta acció no es pot desfer.",
+  "sidebar": {
+    "more": "Més",
+    "toggle": "Mostra/amaga la barra lateral",
+    "navigation": "Navegació",
+    "navigationDescription": "Vés als xats, projectes, artefactes, habilitats i configuració."
+  },
+  "chats": "Xats",
+  "coworkSessionUnavailable": "Aquesta conversa encara no té res a mostrar.",
+  "coworkSync": {
+    "journalUnreadableTitle": "Algunes converses importades de Cowork estan amagades",
+    "journalUnreadableDescription": "Jan no pot llegir el registre d'eliminacions. Per això, les converses importades d'una versió anterior continuen amagades, per no arriscar-se a restaurar-ne alguna que ja hagis suprimit. A més, de moment no es pot suprimir cap conversa de Cowork. Les teves dades no s'han tocat. Per recuperar-les, primer surt completament de Jan. Mentre s'executa, Jan reescriu settings.json des de la memòria i desfaria la teva modificació. Després corregeix o elimina l'entrada 'cowork_deleted_ids' de settings.json. Si l'elimines, es restauraran totes les converses importades, incloses les que havies suprimit.",
+    "missingThreadTitle": "No s'ha pogut desar una conversa de Cowork",
+    "missingThreadDescription": "Falta el fil emmagatzemat, de manera que els canvis ja no es desen. Encara la pots llegir, exportar o suprimir.",
+    "writeRefusedTitle": "Una conversa de Cowork no es pot desar",
+    "writeRefusedDescription": "Jan no pot emmagatzemar aquesta conversa amb el seu identificador actual, de manera que els canvis no es desen. Encara la pots llegir, exportar o suprimir.",
+    "closeFailedTitle": "Jan no ho ha pogut desar tot, així que s'ha mantingut obert",
+    "closeFailedDescription": "Els teus canvis més recents encara són a la memòria. Torna a tancar la finestra per tornar a provar de desar-los.",
+    "closeForceDescription": "No es pot desar de cap manera. Pots tancar sense desar, però perdràs els canvis que no s'hagin pogut escriure.",
+    "closeAnyway": "Tanca sense desar",
+    "quitFailedDescription": "Els teus canvis més recents encara són a la memòria. Torna a sortir per tornar a provar de desar-los.",
+    "quitAnyway": "Surt sense desar"
+  },
+  "messageWrites": {
+    "failedTitle": "No s'han pogut desar alguns missatges",
+    "failedDescription": "Jan continua provant-ho. Fins que no ho aconsegueixi, els missatges recents només existeixen en aquesta finestra.",
+    "retry": "Torna-ho a provar ara"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Aquesta conversa encara no està a punt",
+    "notReadyDescription": "Jan no ha pogut confirmar si aquesta conversa és un xat o una tasca de Cowork. Torna-ho a provar; si el problema continua, reinicia l'aplicació.",
+    "retry": "Torna-ho a provar"
+  },
+  "agentSettings": "Agent",
+  "composer": {
+    "addControls": "Afegeix fitxers adjunts i controls",
+    "assistant": "Assistent",
+    "allTools": "Totes les eines",
+    "samplingParameters": "Paràmetres de mostreig",
+    "openAssistantSettings": "Obre la configuració de l'assistent",
+    "samplingSaveFailed": "No s'han pogut desar els paràmetres de mostreig. Torna-ho a provar.",
+    "context": "Context: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Selecciona un model",
+    "none": "Cap",
+    "triggerLabel": "Selecciona el model: {{name}}",
+    "dialogLabel": "Tria un model",
+    "searchLabel": "Cerca models o proveïdors",
+    "searchPlaceholder": "Cerca models o proveïdors...",
+    "listLabel": "Models",
+    "noMatches": "Cap model coincideix",
+    "noModels": "No hi ha cap model configurat",
+    "optionsLabel": "Opcions del model",
+    "reasoning": "Raonament",
+    "reasoningMode": "Mode de raonament",
+    "reasoningEffort": "Esforç de raonament",
+    "thinkingBudget": "Pressupost de reflexió",
+    "modelSettings": "Configuració del model",
+    "manageModels": "Gestiona els models",
+    "effort": {
+      "default": "Per defecte",
+      "auto": "Automàtic",
+      "on": "Activat",
+      "off": "Desactivat",
+      "low": "Baix",
+      "medium": "Mitjà",
+      "high": "Alt",
+      "xhigh": "Molt alt",
+      "unlimited": "Il·limitat"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Afegeix a un projecte",
+    "newProject": "Projecte nou",
+    "noProjects": "Encara no hi ha cap projecte",
+    "addFolderAction": "Afegeix una carpeta"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Selecciona un model compatible amb eines abans d'afegir accés a una carpeta.",
+    "folderUnsupported": "Aquest model no pot fer servir eines, així que no es pot afegir cap carpeta. El xat normal continua funcionant.",
+    "removeProject": "Treu la selecció del projecte",
+    "temporary": "Un xat temporal no conserva l'accés a cap carpeta."
+  },
+  "skillDestination": "Desa les habilitats noves a",
+  "skillDestinationFolder": "Aquesta carpeta",
+  "skillDestinationGlobal": "Global (totes les converses)",
+  "overview": {
+    "title": "Resum de la conversa",
+    "description": "Progrés, fitxers i tasques en segon pla d'aquesta conversa.",
+    "resize": "Canvia la mida del tauler lateral",
+    "close": "Amaga el resum de la conversa",
+    "progress": "Progrés",
+    "files": "Fitxers",
+    "backgroundTasks": "Tasques en segon pla",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitors",
+    "noProgress": "Els passos apareixeran a mesura que Jan treballi.",
+    "noFiles": "Els fitxers apareixeran aquí."
+  },
+  "artifactsLibraryDescription": "Fitxers creats a les teves converses, tots en un sol lloc.",
+  "artifactsLibraryCount_one": "{{count}} fitxer",
+  "artifactsLibraryCount_other": "{{count}} fitxers",
+  "artifactsLibraryFilter": "Filtra per tipus de fitxer",
+  "artifactsLibraryReset": "Esborra els filtres",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "No s'ha pogut importar aquesta tasca",
+      "body": "Jan no ha pogut traslladar aquesta tasca des de la versió anterior i ha deixat de provar-ho. No s'ha perdut res: l'original encara es conserva. Pots tornar-ho a provar o exportar-la a un fitxer."
+    },
+    "id-collision": {
+      "title": "No s'ha pogut importar aquesta tasca",
+      "body": "Una altra conversa ja fa servir el mateix identificador, així que aquesta tasca es mostra només de lectura i l'altra conversa no es modifica. Exporta-la per conservar-ne una còpia."
+    },
+    "missing-sidecar": {
+      "title": "Falta l'historial d'aquesta tasca",
+      "body": "No s'ha trobat l'historial desat d'aquesta tasca, així que es mostra només de lectura. Els seus fitxers al disc es conserven tal com són."
+    },
+    "unreadable-sidecar": {
+      "title": "No es pot llegir l'historial d'aquesta tasca",
+      "body": "L'historial desat d'aquesta tasca està malmès o és d'una versió més nova de Jan, així que es mostra només de lectura i no se sobreescriu mai."
+    },
+    "missing-thread": {
+      "title": "Aquesta tasca s'ha eliminat de l'emmagatzematge",
+      "body": "La conversa d'aquesta tasca ja no és al disc. El que es mostra és la còpia que encara hi ha a la memòria; exporta-la per conservar-la."
+    },
+    "reason": "Motiu: {{reason}}",
+    "retry": "Torna-ho a provar",
+    "retrying": "S'està provant...",
+    "export": "Exporta",
+    "exported": "S'ha exportat la tasca",
+    "exportFailed": "No s'ha pogut exportar la tasca",
+    "imported": "S'ha importat la tasca",
+    "retryFailed": "Encara no s'ha pogut importar la tasca",
+    "revealFailed": "No s'ha pogut obrir la carpeta",
+    "leftOut": {
+      "title": "Alguns fitxers no s'han copiat",
+      "body_one": "No s'ha copiat {{count}} element de la carpeta antiga d'aquesta tasca (un enllaç o un fitxer que Jan no tenia permís per llegir). La carpeta original es conserva tal com estava.",
+      "body_other": "No s'han copiat {{count}} elements de la carpeta antiga d'aquesta tasca (enllaços o fitxers que Jan no tenia permís per llegir). La carpeta original es conserva tal com estava.",
+      "show": "Mostra la carpeta original"
+    }
+  },
+  "deleteThreadFailed": "No s'ha pogut suprimir la conversa. És possible que torni a aparèixer després de reiniciar.",
+  "continueAsTask": {
+    "action": "Continua com a tasca",
+    "title": "Vols continuar aquest xat com a tasca?",
+    "description": "Jan conserva aquesta conversa i la continua com a tasca de Cowork. Una tasca pot fer servir eines, escriure fitxers i executar ordres al seu propi espai de treball sense preguntar a cada pas. No es pot tornar a convertir en xat.",
+    "descriptionFolder": "Jan conserva aquesta conversa i la continua com a tasca de Cowork. Una tasca pot editar fitxers i executar ordres a {{folder}} sense preguntar a cada canvi. No es pot tornar a convertir en xat.",
+    "confirm": "Continua com a tasca"
   }
 }

@@ -1,0 +1,22 @@
+{
+  // Type-checks sources and tests. The published output comes from
+  // tsconfig.build.json, which excludes the tests.
+  "compilerOptions": {
+    "target": "ES2022",
+    // NodeNext so the emitted ESM carries explicit `.js` specifiers and loads
+    // under plain Node, letting authors run validateManifest in their tooling.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

@@ -174,6 +174,20 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     .any(|m| line_lower.contains(m))
 }
 
+/// Whether a worker log line says auto-fit could not fit the model even into
+/// system memory. llama.cpp then loads with the unfitted parameters anyway, so
+/// the load that follows fails with an error that does not name the cause.
+///
+/// fit.cpp throws this only when there is no GPU at all (`nd == 0`); with a GPU
+/// it shrinks the context and offloads instead, and a model still too big shows
+/// up as an ordinary out-of-memory load failure (see `commands::explain_load_failure`).
+/// The other reasons fit gives (an explicit n_gpu_layers or tensor split, a
+/// split mode it does not handle) are fit declining to run, not a model that is
+/// too big. None of them is a runtime fault, so `classify_fault` ignores them.
+pub fn is_fit_failure_line(line_lower: &str) -> bool {
+    line_lower.contains("failed to fit params") && line_lower.contains("unable to fit model")
+}
+
 /// Turns worker stderr lines into faults, one call per line.
 ///
 /// Metal reports a failed command buffer as two lines: a status line that
@@ -252,10 +266,77 @@ const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
 /// The last few stderr lines, shared between the drain task and the handle.
 type StderrTail = Arc<Mutex<VecDeque<String>>>;
 
+/// Fit-failure lines the worker printed. Counted rather than taken, so a load
+/// can ask for the lines printed since it started without clearing a line that
+/// a concurrent load on the same worker is still waiting for.
+#[derive(Default)]
+struct FitNotes {
+    count: u64,
+    last: Option<String>,
+}
+
+type FitFailure = Arc<Mutex<FitNotes>>;
+
+/// Everything the worker printed to stderr, newest last, for a load-failure
+/// report. `total` counts every line ever seen, so a load can ask for the lines
+/// printed since it started even after older ones were evicted.
+#[derive(Default)]
+struct LogBuffer {
+    total: u64,
+    lines: VecDeque<String>,
+    /// Backend modules ggml announced (`load_backend: loaded CUDA backend from
+    /// ...`), as "CUDA (libggml-cuda.so)". Kept apart from `lines` because they
+    /// are printed once at start and would be evicted long before a load fails.
+    backends: Vec<String>,
+}
+
+type WorkerLog = Arc<Mutex<LogBuffer>>;
+
+/// Lines kept for a failure report. Enough for a verbose load (tensor and
+/// device tables run to a few hundred lines) without growing for the life of a
+/// long-running worker.
+const WORKER_LOG_LINES: usize = 600;
+
+/// Per line, so a runaway progress line cannot fill the buffer.
+const WORKER_LOG_LINE_CHARS: usize = 1000;
+
+fn record_log_line(log: &WorkerLog, line: &str) {
+    let Ok(mut log) = log.lock() else { return };
+    if let Some(backend) = parse_backend_line(line) {
+        if !log.backends.contains(&backend) {
+            log.backends.push(backend);
+        }
+    }
+    log.total += 1;
+    if log.lines.len() == WORKER_LOG_LINES {
+        log.lines.pop_front();
+    }
+    log.lines
+        .push_back(line.chars().take(WORKER_LOG_LINE_CHARS).collect());
+}
+
+/// `load_backend: loaded CUDA backend from /opt/jan/libggml-cuda.so` as
+/// `CUDA (libggml-cuda.so)`; the directory is dropped because it is a local path.
+pub fn parse_backend_line(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("load_backend: loaded ")?;
+    let (name, path) = rest.split_once(" backend from ")?;
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path).trim();
+    Some(format!("{} ({file})", name.trim()))
+}
+
+/// How far a worker's output had got at some moment: its fit-failure lines
+/// (see [`WorkerHandle::fit_failure_since`]) and its log (see
+/// [`WorkerHandle::log_since`]).
+#[derive(Debug, Clone, Copy)]
+pub struct FitMark {
+    fit: u64,
+    log: u64,
+}
+
 /// Lines that are kept out of the tail, though still logged. ggml prints one
 /// `load_backend: loaded ... from <path>` per backend at start, which says
 /// nothing about a crash and would fill the error with local paths.
-fn is_tail_noise(line: &str) -> bool {
+pub fn is_tail_noise(line: &str) -> bool {
     line.starts_with("load_backend:")
 }
 
@@ -453,7 +534,7 @@ impl std::fmt::Debug for WorkerHandle {
 /// A job object whose last handle dies with this process is the one reaping the
 /// OS will do on our behalf. Unix gets this from `process_group(0)`.
 #[cfg(windows)]
-mod reap {
+pub(crate) mod reap {
     use std::os::windows::io::RawHandle;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
@@ -463,7 +544,7 @@ mod reap {
     };
 
     /// Closing this kills every process still in the job.
-    pub struct Job(HANDLE);
+    pub(crate) struct Job(HANDLE);
 
     // The handle is opaque to everything but `Drop`, which owns it exclusively.
     unsafe impl Send for Job {}
@@ -477,7 +558,7 @@ mod reap {
 
     /// Best effort: a Jan already confined to a job that forbids nesting should
     /// lose the reaping guarantee, not the engine.
-    pub fn confine(child: RawHandle) -> Option<Job> {
+    pub(crate) fn confine(child: RawHandle) -> Option<Job> {
         let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if job.is_null() {
             log::warn!("could not create a job object for the worker");
@@ -519,8 +600,13 @@ pub struct WorkerHandle {
     /// not in the webview, so it survives a page reload and always describes
     /// the worker that is actually running.
     pub devices: Option<Vec<DeviceIdentity>>,
+    /// The preset the worker was started from. Jan regenerates it in place and
+    /// the worker reloads the same path, so it also describes later loads.
+    pub preset_path: PathBuf,
     child: Child,
     stderr_tail: StderrTail,
+    fit_failure: FitFailure,
+    log: WorkerLog,
     /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
     stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
@@ -597,6 +683,52 @@ impl WorkerHandle {
         self.child.try_wait().ok().flatten()
     }
 
+    /// Taken before a load, so only a fit failure printed during that load is
+    /// blamed for it: a stale one would pin the next, unrelated failure on fit.
+    pub fn fit_mark(&self) -> FitMark {
+        FitMark {
+            fit: self.fit_failure.lock().map(|f| f.count).unwrap_or(0),
+            log: self.log.lock().map(|l| l.total).unwrap_or(0),
+        }
+    }
+
+    /// Whatever the worker printed after `mark`, oldest first, and whether the
+    /// start of it was already evicted.
+    pub fn log_since(&self, mark: FitMark) -> (Vec<String>, bool) {
+        let Ok(log) = self.log.lock() else {
+            return (Vec::new(), false);
+        };
+        let wanted = log.total.saturating_sub(mark.log) as usize;
+        let skip = log.lines.len().saturating_sub(wanted);
+        (
+            log.lines.iter().skip(skip).cloned().collect(),
+            wanted > log.lines.len(),
+        )
+    }
+
+    /// The backend modules the worker loaded, as ggml announced them.
+    pub fn backends(&self) -> Vec<String> {
+        self.log.lock().map(|l| l.backends.clone()).unwrap_or_default()
+    }
+
+    /// The latest fit-failure line, if one was printed after `mark`.
+    ///
+    /// The line names no model: llama.cpp logs it from inside the load. The
+    /// worker loads one model at a time, but two loads sent at once can each
+    /// see a line printed after both marks, so a model that failed for another
+    /// reason can be reported as not fitting when the other one did not fit.
+    /// Tagging the line would take a marker that llama.cpp's own (asynchronous)
+    /// logger orders against, which it does not offer. Rare in practice: the
+    /// frontend loads one chat model at a time.
+    pub fn fit_failure_since(&self, mark: FitMark) -> Option<String> {
+        let notes = self.fit_failure.lock().ok()?;
+        if notes.count > mark.fit {
+            notes.last.clone()
+        } else {
+            None
+        }
+    }
+
     /// None while still running, otherwise how it ended and what it last said.
     ///
     /// Waits up to [`STDERR_DRAIN_WAIT`] for the rest of its stderr first, so
@@ -619,6 +751,30 @@ async fn wait_for_drain(drain: Option<tokio::task::JoinHandle<()>>) {
     }
 }
 
+/// The working directory every worker spawn pins.
+///
+/// ggml's backend scan puts `fs::current_path()` in its search paths and
+/// calls dl_load_library on every `ggml-*` filename match *before* reading
+/// its score, so a planted module in an inherited cwd runs its DllMain /
+/// constructor even if it is never selected -- and `best_score` is one
+/// accumulator across all search paths, so a higher-scoring plant wins
+/// outright rather than losing to path order. Pinning the cwd to the
+/// worker's own directory, which is where the bundled modules already live,
+/// removes the attacker-writable entry from that list.
+///
+/// Absolute only: `current_dir` also changes how the OS resolves a *relative*
+/// program path, so doing this unconditionally would make a dev's
+/// `--bin build/jan-llama-worker` be looked up inside `build/`. Every shipped
+/// path is absolute (`resource_dir()`, or `sidecar_path` off
+/// `current_exe`), so the hardening lands exactly where it matters.
+pub(crate) fn worker_cwd(exe: &Path) -> Option<&Path> {
+    if exe.is_absolute() {
+        exe.parent()
+    } else {
+        None
+    }
+}
+
 /// Spawns the worker and waits for its handshake line.
 #[allow(clippy::too_many_arguments)]
 pub async fn spawn(
@@ -638,24 +794,8 @@ pub async fn spawn(
     // Without this the worker flashes a console window on Windows, the way
     // every other spawn in this plugin already avoids.
     jan_utils::system::setup_windows_process_flags(&mut cmd);
-    // ggml's backend scan puts `fs::current_path()` in its search paths and
-    // calls dl_load_library on every `ggml-*` filename match *before* reading
-    // its score, so a planted module in an inherited cwd runs its DllMain /
-    // constructor even if it is never selected -- and `best_score` is one
-    // accumulator across all search paths, so a higher-scoring plant wins
-    // outright rather than losing to path order. Pinning the cwd to the
-    // worker's own directory, which is where the bundled modules already live,
-    // removes the attacker-writable entry from that list.
-    //
-    // Absolute only: `current_dir` also changes how the OS resolves a *relative*
-    // program path, so doing this unconditionally would make a dev's
-    // `--bin build/jan-llama-worker` be looked up inside `build/`. Every shipped
-    // path is absolute (`resource_dir()`, or `sidecar_path` off
-    // `current_exe`), so the hardening lands exactly where it matters.
-    if exe.is_absolute() {
-        if let Some(dir) = exe.parent() {
-            cmd.current_dir(dir);
-        }
+    if let Some(dir) = worker_cwd(exe) {
+        cmd.current_dir(dir);
     }
     cmd.args(&args)
         .envs(envs)
@@ -681,9 +821,13 @@ pub async fn spawn(
     // Drained on its own task: a full stderr pipe would otherwise block the
     // worker mid-generation, which is a hang with no error message.
     let stderr_tail = StderrTail::default();
+    let fit_failure = FitFailure::default();
+    let log = WorkerLog::default();
     let mut stderr_drain = None;
     if let Some(stderr) = child.stderr.take() {
         let tail = stderr_tail.clone();
+        let fit_note = fit_failure.clone();
+        let worker_log = log.clone();
         stderr_drain = Some(tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             let mut reader = FaultReader::default();
@@ -714,6 +858,13 @@ pub async fn spawn(
                 let Ok(Some(line)) = next else { break };
                 log::debug!("jan-llama-worker: {line}");
                 remember_stderr_line(&tail, &line);
+                record_log_line(&worker_log, &line);
+                if is_fit_failure_line(&line.to_lowercase()) {
+                    if let Ok(mut notes) = fit_note.lock() {
+                        notes.count += 1;
+                        notes.last = Some(line.trim().to_string());
+                    }
+                }
                 for (fault, text) in reader.feed(&line) {
                     report(fault, text);
                 }
@@ -780,8 +931,11 @@ pub async fn spawn(
         models: hs.models,
         cuda_toolkit: hs.cuda_toolkit,
         devices: hs.devices,
+        preset_path: preset_path.to_path_buf(),
         child,
         stderr_tail,
+        fit_failure,
+        log,
         stderr_drain,
         #[cfg(windows)]
         _job: job,
@@ -819,6 +973,14 @@ pub fn sidecar_path() -> Option<PathBuf> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn worker_cwd_is_the_exe_dir_only_for_absolute_paths() {
+        let exe = std::env::temp_dir().join("bin").join("jan-llama-worker");
+        assert_eq!(worker_cwd(&exe), exe.parent());
+        assert!(worker_cwd(Path::new("build/jan-llama-worker")).is_none());
+        assert!(worker_cwd(Path::new("jan-llama-worker")).is_none());
+    }
 
     // Restored with the marker lists intact: each entry came from a real crash
     // report, and a fault the classifier misses is a silent hang for the user.
@@ -875,6 +1037,19 @@ pub(crate) mod tests {
             classify_fault("common_fit_params: failed to allocate a plan"),
             None
         );
+    }
+
+    // fit declining to run (the user pinned the layers) is not a model that is
+    // too big, and must not be reported as one.
+    #[test]
+    fn fit_declining_to_run_is_not_a_fit_failure() {
+        for line in [
+            "common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort",
+            "common_fit_params: successfully fit params to free device memory",
+            "alloc_tensor_range: failed to allocate cuda0 buffer of size 2491323904",
+        ] {
+            assert!(!is_fit_failure_line(&line.to_lowercase()), "{line:?}");
+        }
     }
 
     #[test]
@@ -1199,6 +1374,41 @@ pub(crate) mod tests {
             stderr_lines(&tail),
             vec!["ggml_metal_init: error: failed to allocate".to_string()]
         );
+    }
+
+    #[test]
+    fn the_log_since_a_mark_holds_only_what_came_after_it() {
+        let log = WorkerLog::default();
+        record_log_line(&log, "before");
+        let mark = FitMark { fit: 0, log: log.lock().unwrap().total };
+        record_log_line(&log, "during 1");
+        record_log_line(&log, "during 2");
+        let buf = log.lock().unwrap();
+        let wanted = buf.total.saturating_sub(mark.log) as usize;
+        let tail: Vec<_> = buf.lines.iter().skip(buf.lines.len() - wanted).collect();
+        assert_eq!(tail, ["during 1", "during 2"]);
+    }
+
+    #[test]
+    fn the_log_is_bounded_and_backends_survive_eviction() {
+        let log = WorkerLog::default();
+        record_log_line(&log, "load_backend: loaded CUDA backend from /home/u/jan/libggml-cuda.so");
+        for i in 0..(WORKER_LOG_LINES + 50) {
+            record_log_line(&log, &format!("line {i}"));
+        }
+        let buf = log.lock().unwrap();
+        assert_eq!(buf.lines.len(), WORKER_LOG_LINES);
+        assert_eq!(buf.backends, ["CUDA (libggml-cuda.so)"]);
+    }
+
+    #[test]
+    fn a_backend_line_drops_the_local_directory() {
+        assert_eq!(
+            parse_backend_line(r"load_backend: loaded Vulkan backend from C:\Users\bob\jan\ggml-vulkan.dll")
+                .as_deref(),
+            Some("Vulkan (ggml-vulkan.dll)")
+        );
+        assert_eq!(parse_backend_line("ggml_vulkan: Found 1 Vulkan devices"), None);
     }
 
     #[cfg(unix)]

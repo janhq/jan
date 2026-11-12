@@ -1,0 +1,30 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• Dispatched explore
+  └ Find the parser and report its entry point.
+• Dispatched general
+  └ Write the docs.
+• Finished explore · 0 tools
+  └ Error - stopped by the parent agent
+-- collapsed
+
+• Dispatched explore
+  └ Find the parser and report its entry point.
+• Dispatched general
+  └ Write the docs.
+• Finished explore · 0 tools
+  └ Error - stopped by the parent agent
+-- narrow (28)
+
+• Dispatched explore
+  └ Find the parser and r…
+• Dispatched general
+  └ Write the docs.
+• Finished explore · 0
+  tools
+  └ Error - stopped by
+    the parent agent

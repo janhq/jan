@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate } from '../formatDate'
+import { formatDate, formatMessageTime } from '../formatDate'
 
 describe('formatDate', () => {
   it('formats Date objects correctly', () => {
@@ -99,5 +99,29 @@ describe('formatDate', () => {
     expect(formatted).toMatch(/\d{4}/)
     expect(formatted).not.toMatch(/\d{1,2}:\d{2}/i)
     expect(formatted).not.toMatch(/(AM|PM)/i)
+  })
+})
+
+describe('formatMessageTime', () => {
+  const now = new Date(2026, 9, 30, 12, 0, 0)
+
+  it('shows only the time on the same day', () => {
+    const out = formatMessageTime(new Date(2026, 9, 30, 15, 30), now)
+    expect(out).toBe('3:30 PM')
+  })
+
+  it('drops the year within the same year', () => {
+    const out = formatMessageTime(new Date(2026, 9, 29, 17, 32), now)
+    expect(out).toBe('Oct 29, 5:32 PM')
+  })
+
+  it('keeps the year and drops the time for an earlier year', () => {
+    const out = formatMessageTime(new Date(2025, 11, 25, 9, 5), now)
+    expect(out).toBe('Dec 25, 2025')
+  })
+
+  it('treats the day boundary by local calendar date, not 24 hours', () => {
+    const out = formatMessageTime(new Date(2026, 9, 29, 23, 59), now)
+    expect(out).toBe('Oct 29, 11:59 PM')
   })
 })

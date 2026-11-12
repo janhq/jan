@@ -24,7 +24,7 @@ vi.mock('fzf', () => ({
 }))
 
 const mockCreateThread = vi.fn()
-const mockDeleteThread = vi.fn()
+const mockDeleteThread = vi.fn().mockResolvedValue(undefined)
 const mockUpdateThread = vi.fn()
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -49,16 +49,12 @@ vi.mock('@/hooks/useAgentMode', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { VectorDB: 'VectorDB' },
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => null,
-    }),
-  },
+const vectorDB = vi.hoisted(() => ({ deleteCollection: vi.fn() }))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({ services: { get: () => vectorDB } }),
 }))
 
 vi.mock('@/constants/chat', () => ({
@@ -309,6 +305,35 @@ describe('useThreads - coverage', () => {
     expect(result.current.threads['t1']).toBeDefined()
     expect(result.current.threads['t2']).toBeUndefined()
     expect(result.current.threads['t3']).toBeDefined()
+  })
+
+  it('drops the vector DB collection of each thread deleted in bulk', async () => {
+    const { result } = renderHook(() => useThreads())
+    act(() => {
+      result.current.setThreads([{ id: 't2', title: 'Normal' } as Thread])
+    })
+    act(() => {
+      result.current.deleteAllThreads()
+    })
+    await vi.waitFor(() =>
+      expect(vectorDB.deleteCollection).toHaveBeenCalledWith('attachments_t2')
+    )
+  })
+
+  // A delete that fails brings the thread back on restart, so what lives
+  // outside the thread store must still be there for it.
+  it('keeps the artifacts of a thread whose delete failed', async () => {
+    mockDeleteThread.mockRejectedValueOnce(new Error('file in use'))
+    const { result } = renderHook(() => useThreads())
+    act(() => {
+      result.current.setThreads([{ id: 't2', title: 'Normal' } as Thread])
+    })
+    act(() => {
+      result.current.deleteThread('t2')
+    })
+    await vi.waitFor(() => expect(mockDeleteThread).toHaveBeenCalledWith('t2'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(vectorDB.deleteCollection).not.toHaveBeenCalled()
   })
 
   // Removing the chat session is what ends a turn still running in the

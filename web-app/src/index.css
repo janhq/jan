@@ -8,7 +8,9 @@
 /* Accent tint for neutral toasts (Appearance > Accent color, --primary).
    Set via class, not an inline style prop, so WebView2's hashed style-src
    CSP doesn't drop it. richColors typed toasts keep their semantics. */
-.toaster {
+.toaster[data-sonner-toaster] {
+  /* Override Sonner's library default (999999999) with the shared tier. */
+  z-index: var(--layer-toast);
   --normal-bg: color-mix(in oklch, var(--popover) 92%, var(--primary));
   --normal-text: var(--popover-foreground);
   --normal-border: color-mix(in oklch, var(--border) 55%, var(--primary));
@@ -83,8 +85,14 @@
 /* Chat message zoom. --font-size-base is set inline on this element; the scale
    has to be redeclared here because the :root copies substitute the root's
    --font-size-base before inheriting, so overriding it alone changes nothing
-   for rules reading var(--text-*) (markdown.css). */
+   for rules reading var(--text-*) (markdown.css).
+
+   font-size is set here for the same reason: body's text-sm resolves to a
+   fixed length at the root, and message text with no text-* class of its own
+   (paragraphs, lists, the user bubble) inherits that length, so without this
+   the zoom reached only the elements that carry a class. */
 .message-zoom {
+  font-size: var(--text-sm);
   --text-xs: calc(var(--font-size-base) * 0.75);
   --text-sm: calc(var(--font-size-base) * 0.875);
   --text-base: var(--font-size-base);
@@ -95,7 +103,14 @@
   --text-4xl: calc(var(--font-size-base) * 2.25);
 }
 
+/* Shared overlay contract. Portals escape panel stacking contexts; modal
+   descendants use React context (not DOM inheritance) to select the 90 tier. */
 :root {
+  --layer-panel: 40;
+  --layer-floating: 60;
+  --layer-modal: 80;
+  --layer-modal-floating: 90;
+  --layer-toast: 100;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -128,6 +143,7 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  color-scheme: light;
 }
 
 .dark {
@@ -162,6 +178,7 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  color-scheme: dark; 
 }
 
 @layer base {

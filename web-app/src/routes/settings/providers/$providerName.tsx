@@ -14,6 +14,8 @@ import { ImportLlamacppModelDialog } from '@/containers/dialogs/ImportLlamacppMo
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { LlamacppEngineInfo } from '@/containers/LlamacppEngineInfo'
+import { LlamacppDiagnostics } from '@/containers/LlamacppDiagnostics'
+import { isEngineWorkInFlight } from '@/containers/dialogs/llamacppRouterError'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { DialogDeleteAllModels } from '@/containers/dialogs/DeleteAllModels'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -57,10 +59,23 @@ import {
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
   component: ProviderDetail,
-  validateSearch: (search: Record<string, unknown>): { step?: string } => {
-    // validate and parse the search params into a typed state
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { step?: string; diagnose?: string; diagnoseModel?: string } => {
+    // An absent step stays absent: String(undefined) put `?step=undefined` in
+    // the URL.
     return {
-      step: String(search?.step),
+      ...(search?.step === undefined ? {} : { step: String(search.step) }),
+      // The hardware page's per-device entry point; it preselects a device in
+      // the hardware check rather than starting one.
+      diagnose:
+        typeof search?.diagnose === 'string' ? search.diagnose : undefined,
+      // A failed load's entry point, carrying the model whose shapes the check
+      // should be narrowed to. Also only preselects.
+      diagnoseModel:
+        typeof search?.diagnoseModel === 'string'
+          ? search.diagnoseModel
+          : undefined,
     }
   },
 })
@@ -72,6 +87,10 @@ function ProviderDetail() {
   const [activeModels, setActiveModels] = useAppState(
     useShallow((state) => [state.activeModels, state.setActiveModels])
   )
+  // This page is the llama.cpp one when the panel below renders, so engine
+  // work in flight is this engine's work.
+  const engineBusy = useAppState(isEngineWorkInFlight)
+  const { diagnose: diagnoseDevice, diagnoseModel } = Route.useSearch()
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
@@ -86,6 +105,9 @@ function ProviderDetail() {
   const { getProviderByName, setProviders, updateProvider, addDeletedModels } =
     useModelProvider()
   const provider = getProviderByName(providerName)
+  // An extension's provider takes its key, address and models from the
+  // extension, and leaves when the extension stops: nothing here edits it.
+  const extensionSource = provider?.source
   const isLlamacpp = provider?.provider === 'llamacpp'
   const isPredefinedProvider = useMemo(
     () => predefinedProviders.some((p) => p.provider === providerName),
@@ -636,7 +658,7 @@ function ProviderDetail() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <div className="flex items-center justify-between">
               <h1 className="font-medium text-base">
-                {getProviderTitle(providerName)}
+                {getProviderTitle(provider ?? providerName)}
               </h1>
               <Switch
                 checked={provider?.active ?? false}
@@ -644,7 +666,26 @@ function ProviderDetail() {
               />
             </div>
 
+            {extensionSource && (
+              <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
+                <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  {t('providers:extensionManaged', {
+                    extension: extensionSource.extensionName,
+                  })}{' '}
+                  <Link
+                    to={route.settings.extension}
+                    params={{ extensionId: extensionSource.extensionId }}
+                    className="underline"
+                  >
+                    {t('providers:openExtensionSettings')}
+                  </Link>
+                </span>
+              </div>
+            )}
+
             {provider &&
+              !extensionSource &&
               !isLocalProvider(provider.provider) &&
               !supportsRemoteCatalog(provider) && (
                 <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
@@ -659,6 +700,13 @@ function ProviderDetail() {
               )}
 
             {isLlamacpp && <LlamacppEngineInfo />}
+            {isLlamacpp && (
+              <LlamacppDiagnostics
+                busy={engineBusy}
+                deviceHint={diagnoseDevice}
+                modelHint={diagnoseModel}
+              />
+            )}
 
             {provider?.provider === 'mlx' && (
               <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
@@ -683,7 +731,8 @@ function ProviderDetail() {
             >
               {/* Settings — hidden for predefined remote providers since
                   api-key + base-url are both surfaced elsewhere / hidden. */}
-              {!(
+              {!extensionSource &&
+                !(
                 isPredefinedProvider &&
                 provider?.provider !== 'llamacpp' &&
                 provider?.provider !== 'mlx'
@@ -783,16 +832,6 @@ function ProviderDetail() {
                             className="![>p]:text-muted-foreground select-none"
                             content={setting.description}
                             components={{
-                              // Make links open in a new tab
-                              a: ({ ...props }) => {
-                                return (
-                                  <a
-                                    {...props}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                )
-                              },
                               p: ({ ...props }) => (
                                 <p {...props} className="mb-0!" />
                               ),
@@ -810,6 +849,7 @@ function ProviderDetail() {
               )}
 
               {provider &&
+                !extensionSource &&
                 provider.provider !== 'llamacpp' &&
                 provider.provider !== 'mlx' && (
                   <Card>
@@ -1012,7 +1052,10 @@ function ProviderDetail() {
                       {t('providers:models')}
                     </h1>
                     <div className="flex items-center gap-2">
-                      {provider && provider.provider !== 'llamacpp' && provider.provider !== 'mlx' && (
+                      {provider &&
+                        !extensionSource &&
+                        provider.provider !== 'llamacpp' &&
+                        provider.provider !== 'mlx' && (
                         <>
                           <Button
                             variant="secondary"
@@ -1138,10 +1181,12 @@ function ProviderDetail() {
                                 providerHasRemoteApiKeys(provider))) && (
                               <FavoriteModelAction model={model} />
                             )}
-                            <DialogDeleteModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
+                            {!extensionSource && (
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                            )}
                             {provider &&
                               (provider.provider === 'llamacpp' ||
                                 provider.provider === 'mlx') && (
@@ -1192,7 +1237,9 @@ function ProviderDetail() {
                       </h6>
                     </div>
                     <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                      {provider && !isLocalProvider(provider.provider) ? (
+                      {extensionSource ? (
+                        t('providers:noModelFoundExtensionDesc')
+                      ) : provider && !isLocalProvider(provider.provider) ? (
                         t('providers:noModelFoundRemoteDesc')
                       ) : (
                         <>

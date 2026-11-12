@@ -20,6 +20,7 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
+    mcp::identity,
     mcp::oauth,
     mcp::progress::JanClientHandler,
     state::{AppState, RunningMcpService, SharedMcpServers},
@@ -454,7 +455,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         match client {
             Ok(client) => {
                 log::info!("Connected to server: {:?}", client.peer_info());
-                servers.lock().await.insert(name.clone(), client);
+                identity::insert_server(&mut *servers.lock().await, &name, client);
 
                 emit_mcp_update_event(&app, &name);
             }
@@ -546,11 +547,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
             // Make the child a process-group leader (pgid == pid) so teardown can
             // signal the whole tree; MCP bridges fork grandchildren that hold the
-            // port and outlive a single-PID kill.
+            // port and outlive a single-PID kill. A new session, not just a new
+            // group, so the server can never take over a terminal Jan runs in.
             #[cfg(unix)]
-            {
-                cmd.process_group(0);
-            }
+            tauri_plugin_agent_tools::tools::proc::detach_from_terminal(&mut cmd);
             cmd.kill_on_drop(true);
             config_params
                 .args
@@ -638,10 +638,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             });
         }
         log::trace!("Connected to server: {:#?}", server.peer_info());
-        servers
-            .lock()
-            .await
-            .insert(name.clone(), server);
+        identity::insert_server(&mut *servers.lock().await, &name, server);
         log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
@@ -988,7 +985,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("taskkill");
+    let mut cmd = Command::new(jan_utils::windows_system_tool("taskkill.exe"));
     cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
 
     #[cfg(windows)]

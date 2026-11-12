@@ -9,7 +9,6 @@ import {
 } from '@/hooks/useAnalytic'
 import { useHardware } from '@/hooks/useHardware'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
@@ -20,11 +19,11 @@ import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
-import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import { useChatShell } from '@/hooks/useChatShell'
 import { useCoTDuration } from '@/hooks/useCoTDuration'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { grantCoworkFolders } from '@/lib/assetScope'
 
 /**
  * Stores persisted through `backendStorage` set `skipHydration: true` so they
@@ -45,7 +44,6 @@ const secondaryStores = [
   useProductAnalyticPrompt,
   useHardware,
   useLocalApiServer,
-  useToolApproval,
   useToolAvailable,
   useDownloadStore,
   useProxyConfig,
@@ -56,7 +54,6 @@ const secondaryStores = [
   useDefaultEmbeddingModel,
   useAgentMode,
   useWebSearchConfig,
-  useCoworkSessions,
   useCoworkConfig,
   useChatShell,
   useCoTDuration,
@@ -68,4 +65,6 @@ export async function hydrateBackendStores(): Promise<void> {
   await Promise.all(
     secondaryStores.map((store) => Promise.resolve(store.persist.rehydrate()))
   )
+  // After rehydration, so the folders persisted by earlier sessions are seen.
+  grantCoworkFolders()
 }

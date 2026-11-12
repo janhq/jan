@@ -6,7 +6,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import { BrainIcon, ChevronDownIcon } from 'lucide-react'
+import { BrainIcon, ChevronRightIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
@@ -17,6 +17,8 @@ import {
   useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
+import type { Components } from 'react-markdown'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
 import { Shimmer } from './shimmer'
 
 type ReasoningContextValue = {
@@ -147,10 +149,12 @@ export const ReasoningTrigger = memo(
           <>
             <BrainIcon className="size-4" />
             {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
+            {/* Right when folded, turning down as it opens: the same cue as
+                every other expandable row. */}
+            <ChevronRightIcon
               className={cn(
                 'size-4 transition-transform',
-                isOpen ? 'rotate-180' : 'rotate-0'
+                isOpen ? 'rotate-90' : 'rotate-0'
               )}
             />
           </>
@@ -166,6 +170,17 @@ export type ReasoningContentProps = ComponentProps<
   children: string
 }
 
+/** Reasoning is model output, so its links take the same path as the message
+ * body's: a web or mail link opens outside the app, anything else is inert. */
+const REASONING_COMPONENTS: Components = {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  a: ({ node: _node, href, children, ...rest }) => (
+    <ExternalAnchor {...rest} href={href}>
+      {children}
+    </ExternalAnchor>
+  ),
+}
+
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
@@ -177,7 +192,12 @@ export const ReasoningContent = memo(
       {...props}
     >
       <div className="ml-2 pl-4 border-l-2 border-dotted">
-        <Streamdown animate={true} animationDuration={500} {...props}>
+        <Streamdown
+          animate={true}
+          animationDuration={500}
+          {...props}
+          components={REASONING_COMPONENTS}
+        >
           {children}
         </Streamdown>
       </div>

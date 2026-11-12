@@ -5,6 +5,8 @@ import type * as ProviderCaps from '@/lib/providerCaps'
 // Capture every streamText({...}) call so we can compare the prompt prefix
 // (system + tools + prior model messages) across consecutive turns.
 const streamTextCalls: Array<Record<string, unknown>> = []
+// What each request stamps on its reply's start part.
+const startMetadata: unknown[] = []
 
 const h = vi.hoisted(() => ({
   disabledTools: [] as string[],
@@ -37,12 +39,18 @@ vi.mock('ai', async () => {
     streamText: (args: Record<string, unknown>) => {
       streamTextCalls.push(args)
       return {
-        toUIMessageStream: () =>
-          new ReadableStream({
+        toUIMessageStream: (opts?: {
+          messageMetadata?: (o: { part: { type: string } }) => unknown
+        }) => {
+          startMetadata.push(
+            opts?.messageMetadata?.({ part: { type: 'start' } })
+          )
+          return new ReadableStream({
             start(controller) {
               controller.close()
             },
-          }),
+          })
+        },
       }
     },
   }
@@ -95,14 +103,15 @@ vi.mock('@/hooks/useMCPServers', () => ({
   },
 }))
 // Every getState() setter is a no-op; unknown reads (currentStreamThreadId)
-// resolve to undefined.
+// resolve to undefined. No extension contributes tools.
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: {
     getState: () =>
       new Proxy(
         {},
         {
-          get: () => () => undefined,
+          get: (_target, key) =>
+            key === 'extensionTools' ? [] : () => undefined,
         }
       ),
   },
@@ -361,6 +370,23 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
     )
   })
 
+  // The continued reply replaces the stopped one, so it has to keep that
+  // reply's author even when it now runs on a built-in model.
+  it('stamps the continued reply with the partial reply author', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    startMetadata.length = 0
+    transport.setContinueFromContent({
+      text: 'Roses are red,',
+      extensionAuthor: 'acme.provider',
+    })
+    await drain(await send(transport, history))
+    await drain(await send(transport, history))
+    expect(startMetadata).toEqual([
+      { extensionAuthor: 'acme.provider' },
+      undefined,
+    ])
+  })
+
   it('consumes the prefill once (next send appends nothing)', async () => {
     const transport = new CustomChatTransport('you are jan', 'thread-1')
 
@@ -468,7 +494,9 @@ it('sends an MCP image result to an OpenAI-compatible provider as a sentinel', a
   const transport = new CustomChatTransport('you are jan', 'thread-1')
   await drain(await send(transport, mcpImageTurn()))
   const sent = JSON.stringify(streamTextCalls[0].messages)
-  expect(sent).toContain('__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=')
+  expect(sent).toMatch(
+    /__JAN_TOOL_IMAGE__[0-9a-f]{32}:data:image\/png;base64,iVBORw0KGgo=/
+  )
   expect(sent).not.toContain('mimeType')
 })
 

@@ -25,8 +25,10 @@
 //! Windows has no argv to wrap -- see [`super::appcontainer`], which re-execs this
 //! binary because the confinement is a `CreateProcessW` token attribute.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
+
+use crate::workspace::{CargoConfig, PkgCache};
 
 use super::appcontainer;
 use super::proc::ShellConfig;
@@ -80,13 +82,17 @@ pub struct Policy {
     /// stay out of the shell's reach.
     pub home_readonly: bool,
     /// A session-scoped host directory the shell may write to for the whole run,
-    /// instead of a scratch that vanishes between commands. How it is exposed is
-    /// per backend: bubblewrap binds it over `/tmp`, replacing the volatile
-    /// overlay that would otherwise discard scratch files with each command;
-    /// Seatbelt grants it by `SCRATCH` parameter; AppContainer grants it an ACE.
-    /// The directory must already exist before the sandbox is built (the
-    /// backends reference it, they do not create it).
+    /// instead of a scratch that vanishes between commands. Every backend makes
+    /// it writable at its own real path, so the shell, the filesystem tools and
+    /// an escalated (unconfined) command all name it the same way: bubblewrap
+    /// binds it onto itself, Seatbelt grants it by `SCRATCH` parameter,
+    /// AppContainer grants it an ACE. The directory must already exist before
+    /// the sandbox is built (the backends reference it, they do not create it).
     pub scratch_root: Option<PathBuf>,
+    /// The project's package cache, writable at its real path like the
+    /// scratch, with the user's cargo config inside it read-only. See
+    /// [`crate::workspace::prepare_pkg_cache`]; it must already exist.
+    pub pkg_cache: Option<PkgCache>,
     /// Folders the user attached read-only. Bound after the `$HOME`/data-folder
     /// masks (so a project under either survives) and before the workspace bind
     /// (so one can never shadow the only writable path).
@@ -99,6 +105,10 @@ pub struct Policy {
     /// read-only `$HOME`, inside the workspace (running in `$HOME`), or around
     /// it (a Jan worktree in `~/.jan/worktrees/`). See [`Policy::with_hide_root`].
     pub hide_root: Option<PathBuf>,
+    /// Bind the workspace read-only: a read-only subagent works in the user's
+    /// checkout and must not change it, `.git` included. The scratch and any
+    /// `write_roots` stay writable. See [`Policy::with_workspace_readonly`].
+    pub workspace_readonly: bool,
 }
 
 impl Policy {
@@ -109,10 +119,69 @@ impl Policy {
             allow_network,
             home_readonly: false,
             scratch_root: None,
+            pkg_cache: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             hide_root: None,
+            workspace_readonly: false,
         }
+    }
+
+    /// Expose the project's package cache. See [`Policy::pkg_cache`].
+    pub fn with_pkg_cache(mut self, pkg: &PkgCache) -> Self {
+        self.pkg_cache = Some(pkg.clone());
+        self
+    }
+
+    /// The folders writable at their own path besides the workspace and the
+    /// attached roots: the scratch and the package cache.
+    fn own_path_dirs(&self) -> impl Iterator<Item = &Path> {
+        self.scratch_root
+            .as_deref()
+            .into_iter()
+            .chain(self.pkg_cache.as_ref().map(|p| p.root.as_path()))
+    }
+
+    /// The Jan cache root (`<cache>/jan`) holding every project's package
+    /// cache and scratch, hidden whenever this run has a folder in it (a
+    /// package cache, or a scratch under the real cache root): with `$HOME`
+    /// readable (the CLI), with an attached root containing `~/.cache` (the
+    /// desktop), or with `XDG_CACHE_HOME` outside `$HOME`, other sessions'
+    /// scratch and caches would otherwise be readable, and a tampered tarball
+    /// could be read across projects. This run's own scratch and cache are
+    /// exposed again on top of it. A workspace or attached root containing the
+    /// cache root (running in `$HOME`) would show it again, so there it is
+    /// masked a second time after those binds ([`Self::cache_under_a_bind`]).
+    fn cache_mask(&self) -> Option<PathBuf> {
+        if let Some(pkg) = &self.pkg_cache {
+            return pkg.root.parent()?.parent().map(Path::to_path_buf);
+        }
+        // Only the real cache root: a scratch elsewhere (a test's temp dir)
+        // has no ancestor that is safe to mask.
+        let root = crate::workspace::jan_cache_root();
+        self.scratch_root
+            .as_deref()
+            .is_some_and(|scratch| scratch.starts_with(&root) && scratch != root)
+            .then_some(root)
+    }
+
+    /// [`Self::cache_mask`] when a bind contains it and it must be masked
+    /// again after that bind.
+    fn cache_under_a_bind(&self) -> Option<PathBuf> {
+        self.cache_mask().filter(|cache| self.hide_under_a_bind(cache))
+    }
+
+    /// The user's cargo config, when the package cache offers one.
+    fn cargo_config(&self) -> Option<&CargoConfig> {
+        self.pkg_cache.as_ref()?.cargo_config.as_ref()
+    }
+
+    /// Keep the workspace readable but not writable. AppContainer grants its
+    /// workspace by a write ACE and has no read-only form, so [`wrap`] refuses
+    /// such a policy there: no shell rather than a writable one.
+    pub fn with_workspace_readonly(mut self, readonly: bool) -> Self {
+        self.workspace_readonly = readonly;
+        self
     }
 
     /// Hide `hide_root` from the sandboxed shell. The gate's token scan of the
@@ -231,21 +300,6 @@ fn detect() -> Backend {
     }
 }
 
-/// Where the session scratch is reachable from *inside* the sandbox, which is
-/// what the shell's `TMPDIR`/`TMP`/`TEMP` must name. Bubblewrap binds the
-/// scratch over `/tmp`, so the host path does not exist in that namespace;
-/// Seatbelt and AppContainer mount nothing, so the real path is the only one
-/// that resolves -- and it is the same name the filesystem tools use there, so
-/// a file written by `bash` can be read back by `read`. `None` when the caller
-/// set no scratch: the shell then keeps the host's own temp dir.
-pub fn scratch_env_path(backend: Backend, policy: &Policy) -> Option<PathBuf> {
-    let scratch = policy.scratch_root.as_ref()?;
-    Some(match backend {
-        Backend::Bubblewrap => PathBuf::from("/tmp"),
-        _ => scratch.clone(),
-    })
-}
-
 /// Wrap `cfg` so the shell it describes runs confined. The returned config keeps
 /// the same shape -- program, fixed args, command appended last -- so the spawn
 /// path is unchanged. Returns `None` when no backend can enforce the policy, in
@@ -267,11 +321,13 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
         // a re-exec of this binary that performs the confined spawn itself. If
         // the running binary cannot be located there is no wrapper to run, and
         // returning `cfg` unchanged would run the command with no confinement.
+        Backend::AppContainer if policy.workspace_readonly => None,
         Backend::AppContainer => Some(ShellConfig {
             program: std::env::current_exe().ok()?,
             args: appcontainer::helper_args(
                 &policy.workspace,
                 policy.scratch_root.as_deref(),
+                policy.pkg_cache.as_ref().map(|p| p.root.as_path()),
                 policy.allow_network,
                 &cfg.program,
                 &cfg.args,
@@ -280,6 +336,71 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
         }),
         Backend::None => None,
     }
+}
+
+/// True when `path`, as a shell confined by `policy` names it, is not the
+/// host's directory of that name: it sits on a mount only the sandbox has
+/// (bubblewrap's private `/tmp`, the tmpfs masks over `$HOME` and the Jan
+/// home, its own `/proc` and `/dev`). An unconfined command naming the same
+/// path would reach another directory, or none.
+///
+/// Seatbelt and AppContainer only filter access to the host's filesystem and
+/// remap nothing, so there every path is the host's.
+pub fn sandbox_private(policy: &Policy, path: &Path) -> bool {
+    backend() == Backend::Bubblewrap && bwrap_private(policy, path)
+}
+
+/// [`sandbox_private`] for bubblewrap, read off the argv [`bwrap_args`]
+/// builds so the mount table is described in one place. Mounts apply in
+/// order and a later one over a path hides every earlier one beneath it, so
+/// the last mount covering `path` decides: a tmpfs, `/proc` or `/dev` is the
+/// sandbox's own, a bind of a folder onto its own path is the host's.
+///
+/// A mount lands where its target resolves, and the shell reports where it
+/// stands with `pwd -P`, so a `$HOME` behind a symlink (`/home -> /var/home`)
+/// must be compared resolved or no mask over it would match and `--ro-bind /`
+/// would claim the path. Each mount target is tried in both spellings, so a
+/// caller naming the literal path still matches, and a target that does not
+/// exist falls back to its literal. `path` itself is taken as written: it is
+/// physical inside the sandbox, and resolving it through the host's symlinks
+/// (a host `/tmp/x -> ~/proj/sub`) would name another directory.
+fn bwrap_private(policy: &Policy, path: &Path) -> bool {
+    use crate::tools::sandbox::{canonicalize_lenient, lexical_normalize};
+    let cfg = ShellConfig {
+        program: PathBuf::from("/bin/sh"),
+        args: Vec::new(),
+        kind: super::proc::ShellKind::Posix,
+    };
+    let args = bwrap_args(policy, &cfg);
+    let spellings = |p: &Path| {
+        let literal = lexical_normalize(p);
+        let resolved = canonicalize_lenient(&literal).unwrap_or_else(|_| literal.clone());
+        [literal, resolved]
+    };
+    let path = lexical_normalize(path);
+    let covers = |dest: &str| spellings(Path::new(dest)).iter().any(|d| path.starts_with(d));
+    let mut private = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--tmpfs" | "--proc" | "--dev" if i + 1 < args.len() => {
+                private |= covers(&args[i + 1]);
+                i += 2;
+            }
+            "--bind" | "--ro-bind" if i + 2 < args.len() => {
+                if covers(&args[i + 2]) {
+                    // A file bound onto another name (the cargo config) is
+                    // not the host's file of that name.
+                    private = args[i + 1] != args[i + 2];
+                }
+                i += 3;
+            }
+            // The shell's own argv follows; nothing after it is a mount.
+            "--" => break,
+            _ => i += 1,
+        }
+    }
+    private
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +569,64 @@ fn push(args: &mut Vec<String>, parts: &[&str]) {
     args.extend(parts.iter().map(|s| s.to_string()));
 }
 
+/// The folders bubblewrap binds onto their own paths for this policy.
+fn bound_roots(policy: &Policy) -> impl Iterator<Item = &Path> {
+    std::iter::once(policy.workspace.as_path())
+        .chain(policy.read_roots.iter().map(PathBuf::as_path))
+        .chain(policy.write_roots.iter().map(PathBuf::as_path))
+}
+
+/// Top ancestors of bound folders under a writable sandbox tmpfs, remounted read-only so
+/// `../x` is refused rather than discarded (#9678). Skips ones covering writable or masked dirs.
+fn escape_anchors(policy: &Policy, home: Option<&Path>) -> Vec<PathBuf> {
+    let bases: Vec<&Path> = std::iter::once(Path::new("/tmp"))
+        .chain(home.filter(|_| !policy.home_readonly))
+        .collect();
+    let kept: Vec<PathBuf> = bases
+        .iter()
+        .map(|base| base.to_path_buf())
+        .chain(policy.mask_root.clone())
+        .chain(policy.hide_root.clone())
+        .chain(policy.cache_mask())
+        .chain(policy.own_path_dirs().map(Path::to_path_buf))
+        .collect();
+    let mut anchors: Vec<PathBuf> = bound_roots(policy)
+        .flat_map(|root| {
+            bases.iter().filter_map(move |base| {
+                let first = root.strip_prefix(base).ok()?.components().next()?;
+                let anchor = match first {
+                    Component::Normal(name) => base.join(name),
+                    _ => return None,
+                };
+                (anchor != root).then_some(anchor)
+            })
+        })
+        .filter(|anchor| !kept.iter().any(|k| k.starts_with(anchor)))
+        .filter(|anchor| !bound_roots(policy).any(|root| anchor.starts_with(root)))
+        .collect();
+    anchors.sort();
+    anchors.dedup();
+    anchors
+}
+
+/// Masks remounted read-only like [`escape_anchors`]; one under or replaced by a bind is
+/// no longer the top mount at its path, so it is skipped.
+fn read_only_masks(policy: &Policy) -> Vec<PathBuf> {
+    policy
+        .mask_root
+        .iter()
+        .chain(&policy.hide_root)
+        .cloned()
+        .chain(policy.cache_mask())
+        .filter(|mask| !policy.hide_under_a_bind(mask))
+        .filter(|mask| {
+            !bound_roots(policy)
+                .chain(policy.own_path_dirs())
+                .any(|dir| dir == mask.as_path())
+        })
+        .collect()
+}
+
 /// Build bubblewrap's argv. Operations apply in order, which the layering below
 /// depends on: the read-only root comes first, then the tmpfs that hides `$HOME`,
 /// then the workspace bind that punches back through it.
@@ -460,16 +639,10 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // rather than the host's, and so an unshared pid namespace has a valid /proc.
     push(&mut args, &["--proc", "/proc"]);
     push(&mut args, &["--dev", "/dev"]);
-    // `/tmp`: by default a private tmpfs, writable and discarded with the
-    // sandbox. When a session-scoped scratch root is set, bind it over `/tmp`
-    // instead (the tmpfs would shadow it), so scratch files persist across
-    // `bash` calls for the whole run.
-    if let Some(scratch) = &policy.scratch_root {
-        let scratch = scratch.to_string_lossy();
-        push(&mut args, &["--bind", &scratch, "/tmp"]);
-    } else {
-        push(&mut args, &["--tmpfs", "/tmp"]);
-    }
+    // `/tmp`: always a private tmpfs, writable and discarded with the sandbox,
+    // so the shell never sees the machine's other temp files. Persistent work
+    // goes in the scratch, bound at its real path below.
+    push(&mut args, &["--tmpfs", "/tmp"]);
 
     // An empty tmpfs over $HOME hides user files without needing a deny rule.
     // The workspace is re-bound on top, so it survives while its siblings (the
@@ -505,6 +678,17 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(hide) = &policy.hide_root {
         push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
     }
+    // Other projects' caches, masked with the rest; this run's own are bound
+    // back below.
+    if let Some(cache) = policy.cache_mask() {
+        push(&mut args, &["--tmpfs", &cache.to_string_lossy()]);
+    }
+    // Before the binds, which create their mount points inside these; made
+    // read-only after them.
+    let anchors = escape_anchors(policy, home_dir().as_deref());
+    for anchor in &anchors {
+        push(&mut args, &["--tmpfs", &anchor.to_string_lossy()]);
+    }
 
     // Between the masks above and the workspace below, and that position is the
     // enforcement: after the `$HOME`/data-folder tmpfs so a project living under
@@ -528,12 +712,63 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
         let root = root.to_string_lossy();
         push(&mut args, &["--bind", &root, &root]);
     }
-
-    push(&mut args, &["--bind", &ws, &ws]);
+    // The scratch at its real path, so the name the shell uses also exists
+    // outside the sandbox. After the `$HOME`/data-folder/Jan-home tmpfs
+    // masks, because it lives under the OS cache dir (`~/.cache` sits under
+    // `$HOME`) and a later mask would hide it again; after a `/tmp` tmpfs too,
+    // for the temp-dir fallback. Before the workspace bind, like the roots.
+    // The package cache goes the same way, for the same reasons.
+    for dir in policy.own_path_dirs() {
+        let dir = dir.to_string_lossy();
+        push(&mut args, &["--bind", &dir, &dir]);
+    }
+    let bind = if policy.workspace_readonly { "--ro-bind" } else { "--bind" };
+    push(&mut args, &[bind, &ws, &ws]);
+    // A workspace containing the Jan cache root (running in `$HOME`) has just
+    // shown every project's cache again: mask it once more, then bind this
+    // run's own folders back, which also restores their write access under a
+    // read-only workspace.
+    if let Some(cache) = policy.cache_under_a_bind() {
+        push(&mut args, &["--tmpfs", &cache.to_string_lossy()]);
+        for dir in policy.own_path_dirs() {
+            let dir = dir.to_string_lossy();
+            push(&mut args, &["--bind", &dir, &dir]);
+        }
+    } else if policy.workspace_readonly {
+        // A read-only workspace that contains the scratch or the package
+        // cache (a reader working in `$HOME`) would otherwise make them
+        // read-only too.
+        for dir in policy.own_path_dirs().filter(|d| d.starts_with(&policy.workspace)) {
+            let dir = dir.to_string_lossy();
+            push(&mut args, &["--bind", &dir, &dir]);
+        }
+    }
+    // The user's cargo config, read-only, after every rw bind (the package
+    // cache, a workspace that contains it) so none can shadow it: mounted
+    // rather than trusted to the copy's mode, which the file's owner could
+    // change. Over both names cargo reads, since it prefers the legacy
+    // `config` when both exist, so neither can be written or planted. Cargo's
+    // folder is bound onto itself first: a mount point cannot be renamed
+    // (EBUSY), so the shell cannot move it aside and make a fresh one with a
+    // config of its own. `pkg` itself already is a mount point.
+    if let Some(config) = policy.cargo_config() {
+        if let Some(cargo) = config.copy.parent() {
+            let cargo = cargo.to_string_lossy();
+            push(&mut args, &["--bind", &cargo, &cargo]);
+        }
+        let host = config.host.to_string_lossy();
+        push(&mut args, &["--ro-bind", &host, &config.copy.to_string_lossy()]);
+        push(&mut args, &["--ro-bind", &host, &config.legacy().to_string_lossy()]);
+    }
     // And again after, when a bind contains it (running in `$HOME`): the
     // workspace bind would otherwise shadow the mask above and re-expose it.
     if let Some(hide) = policy.hide_root.as_deref().filter(|h| policy.hide_under_a_bind(h)) {
         push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
+    }
+    // Last, after every bind: a remount covers only its own mount, so the
+    // binds beneath stay writable while a write beside them is refused.
+    for dir in anchors.iter().chain(&read_only_masks(policy)) {
+        push(&mut args, &["--remount-ro", &dir.to_string_lossy()]);
     }
     push(&mut args, &["--chdir", &ws]);
 
@@ -573,11 +808,110 @@ fn seatbelt_program() -> &'static str {
 const HIDE_RULES: &str = "(deny file-read* (subpath (param \"HIDE_ROOT\")))\n\
                           (deny file-write* (subpath (param \"HIDE_ROOT\")))\n";
 
+/// The resolved form of `path` when it differs from `path` itself. Seatbelt
+/// matches a `subpath` against the real path, so a rule naming a path through
+/// a symlink (`/var/folders/...` and `/tmp` are links to `/private/...` on
+/// macOS) never fires unless the resolved form is named too.
+fn real_form(path: &Path) -> Option<PathBuf> {
+    path.canonicalize().ok().filter(|real| real != path)
+}
+
+/// The paths a Seatbelt profile names beyond the policy's own fields, worked
+/// out once so the profile and its `-D` arguments always agree: sandbox-exec
+/// refuses a profile referencing a parameter no argument supplies.
+struct SeatbeltPaths {
+    scratch_real: Option<PathBuf>,
+    pkg_real: Option<PathBuf>,
+    /// What stays unwritable in cargo's folder: the config copy, the legacy
+    /// `config` name and the folder's own path (so it cannot be renamed away
+    /// and recreated), each in every form it has.
+    cargo_config: Vec<PathBuf>,
+    /// The Jan cache root ([`Policy::cache_mask`]), in every form it has.
+    cache_mask: Vec<PathBuf>,
+    /// The folders between the cache root and this run's own scratch and
+    /// package cache, the root included, in every form. The root's read deny
+    /// covers their metadata too, so `mkdir -p` or `realpath` into the run's
+    /// own folders would fail; stat alone is given back, never a listing.
+    cache_ancestors: Vec<PathBuf>,
+    /// The read-only checkout and read roots, each in every form it has.
+    deny_write: Vec<PathBuf>,
+}
+
+impl SeatbeltPaths {
+    fn of(policy: &Policy) -> Self {
+        let readonly = policy
+            .workspace_readonly
+            .then_some(&policy.workspace)
+            .into_iter()
+            .chain(policy.read_roots.iter().filter(|r| !policy.write_roots.contains(r)));
+        let mut deny_write: Vec<PathBuf> = Vec::new();
+        for root in readonly {
+            for form in std::iter::once(root.clone()).chain(real_form(root)) {
+                if !deny_write.contains(&form) {
+                    deny_write.push(form);
+                }
+            }
+        }
+        let forms = |path: &Path| -> Vec<PathBuf> {
+            std::iter::once(path.to_path_buf()).chain(real_form(path)).collect()
+        };
+        // The legacy name usually does not exist, so its resolved form comes
+        // from its folder's.
+        let child_forms = |path: &Path| -> Vec<PathBuf> {
+            let real = path
+                .parent()
+                .and_then(real_form)
+                .zip(path.file_name())
+                .map(|(dir, name)| dir.join(name));
+            std::iter::once(path.to_path_buf()).chain(real).collect()
+        };
+        let cargo_config = policy
+            .cargo_config()
+            .map(|c| {
+                let mut all = child_forms(&c.copy);
+                all.extend(child_forms(&c.legacy()));
+                all.extend(c.copy.parent().map(forms).unwrap_or_default());
+                all.dedup();
+                all
+            })
+            .unwrap_or_default();
+        let cache_mask = policy.cache_mask().map(|c| forms(&c)).unwrap_or_default();
+        let mut cache_ancestors: Vec<PathBuf> = Vec::new();
+        for dir in policy.own_path_dirs() {
+            for form in forms(dir) {
+                let Some(root) = cache_mask.iter().find(|root| form.starts_with(root)) else {
+                    continue;
+                };
+                for ancestor in form.ancestors().skip(1) {
+                    if !ancestor.starts_with(root) {
+                        break;
+                    }
+                    if !cache_ancestors.iter().any(|a| a == ancestor) {
+                        cache_ancestors.push(ancestor.to_path_buf());
+                    }
+                }
+            }
+        }
+        Self {
+            scratch_real: policy.scratch_root.as_deref().and_then(real_form),
+            pkg_real: policy.pkg_cache.as_ref().and_then(|p| real_form(&p.root)),
+            cargo_config,
+            cache_mask,
+            cache_ancestors,
+            deny_write,
+        }
+    }
+}
+
 /// Seatbelt profile. `(deny default)` closes everything, then each section opens
 /// the narrowest thing that works. Later rules win, which is what lets the
 /// workspace be re-allowed after `$HOME` is denied (or, with `home_readonly`,
 /// lets the home stay readable while writes remain confined).
 pub fn seatbelt_policy(policy: &Policy) -> String {
+    seatbelt_profile(policy, &SeatbeltPaths::of(policy))
+}
+
+fn seatbelt_profile(policy: &Policy, paths: &SeatbeltPaths) -> String {
     let mut p = String::from(
         "(version 1)\n\
          (deny default)\n\
@@ -610,6 +944,13 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     if policy.mask_root.is_some() {
         p.push_str("(deny file-read* (subpath (param \"MASK_ROOT\")))\n");
     }
+    // Other projects' caches, even with `$HOME` readable; this run's scratch
+    // and package cache are allowed back below.
+    for i in 0..paths.cache_mask.len() {
+        p.push_str(&format!(
+            "(deny file-read* (subpath (param \"CACHE_MASK_{i}\")))\n"
+        ));
+    }
     // Later rules win. Denied here, before the allows below, when the
     // workspace lives under the Jan home (a worktree) so it is read back; when
     // the home lies inside an allowed root instead, the deny goes last.
@@ -620,24 +961,29 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     if policy.hide_root.is_some() && !hide_last {
         p.push_str(HIDE_RULES);
     }
+    p.push_str("(allow file-read* (subpath (param \"WORKSPACE\")))\n");
+    // Not the host temp dir (`$TMPDIR`, `/var/folders/...`): the shell's
+    // `TMPDIR` is the session scratch, granted by name below, and the host
+    // one holds other programs' files, which must not be writable here.
     p.push_str(
-        "(allow file-read* (subpath (param \"WORKSPACE\")))\n\
-         ; Writes: the workspace and the temp dir, nothing else.\n\
-         (allow file-write* (subpath (param \"WORKSPACE\")))\n\
-         (allow file-write* (subpath (param \"TMPDIR\")))\n\
+        "; Writes: the workspace, the scratch and /private/tmp, nothing else.\n\
          (allow file-write* (subpath \"/private/tmp\"))\n",
     );
-    // The session scratch by name, rather than trusting it to sit under TMPDIR:
-    // a relocated scratch must stay usable, and it is read back after the home
-    // denial above, which would otherwise cover a scratch inside $HOME. Emitted
-    // only with the matching `-DSCRATCH`, since sandbox-exec refuses a profile
-    // that references a parameter no argument supplies.
-    if policy.scratch_root.is_some() {
-        p.push_str(
-            "(allow file-read* (subpath (param \"SCRATCH\")))\n\
-             (allow file-write* (subpath (param \"SCRATCH\")))\n",
-        );
+    // The `/private/tmp` grant above is broad, so a read-only checkout or read
+    // root under it (a project in `/tmp`) would be writable through it. Denied
+    // after them, and before the scratch and write-root allows below so those
+    // stay writable even inside such a root.
+    for i in 0..paths.deny_write.len() {
+        p.push_str(&format!(
+            "(deny file-write* (subpath (param \"DENY_WRITE_{i}\")))\n"
+        ));
     }
+    // After the denials, as bubblewrap binds the workspace after the read
+    // roots: a writable workspace inside a read root stays writable.
+    if !policy.workspace_readonly {
+        p.push_str("(allow file-write* (subpath (param \"WORKSPACE\")))\n");
+    }
+    push_own_dirs(&mut p, policy, paths);
     // After the HOME/MASK denials, so an attached folder inside either is read
     // back: in Seatbelt the later rule wins. Read only — no matching
     // `file-write*`, so `(deny default)` keeps the folder unwritable. Emitted
@@ -655,6 +1001,18 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
             "(allow file-read* (subpath (param \"WRITE_ROOT_{i}\")))\n\
              (allow file-write* (subpath (param \"WRITE_ROOT_{i}\")))\n"
         ));
+    }
+    // A workspace or attached root containing the Jan cache root (running in
+    // `$HOME`) has just allowed every project's cache again: deny it once
+    // more, then allow this run's own folders back, as bubblewrap does.
+    if policy.cache_under_a_bind().is_some() {
+        for i in 0..paths.cache_mask.len() {
+            p.push_str(&format!(
+                "(deny file-read* (subpath (param \"CACHE_MASK_{i}\")))\n\
+                 (deny file-write* (subpath (param \"CACHE_MASK_{i}\")))\n"
+            ));
+        }
+        push_own_dirs(&mut p, policy, paths);
     }
     if hide_last {
         p.push_str(HIDE_RULES);
@@ -677,11 +1035,63 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     p
 }
 
+/// Allow the scratch and the package cache, then deny writes to cargo's
+/// config inside the latter (the later rule wins).
+fn push_own_dirs(p: &mut String, policy: &Policy, paths: &SeatbeltPaths) {
+    for i in 0..paths.cache_ancestors.len() {
+        p.push_str(&format!(
+            "(allow file-read-metadata (literal (param \"CACHE_ANCESTOR_{i}\")))\n"
+        ));
+    }
+    // The session scratch by name, rather than trusting it to sit under TMPDIR:
+    // a relocated scratch must stay usable, and it is read back after the home
+    // denial above, which would otherwise cover a scratch inside $HOME. Emitted
+    // only with the matching `-DSCRATCH`, since sandbox-exec refuses a profile
+    // that references a parameter no argument supplies.
+    if policy.scratch_root.is_some() {
+        p.push_str(
+            "(allow file-read* (subpath (param \"SCRATCH\")))\n\
+             (allow file-write* (subpath (param \"SCRATCH\")))\n",
+        );
+    }
+    if paths.scratch_real.is_some() {
+        p.push_str(
+            "(allow file-read* (subpath (param \"SCRATCH_REAL\")))\n\
+             (allow file-write* (subpath (param \"SCRATCH_REAL\")))\n",
+        );
+    }
+    // The package cache, granted the same way and for the same reasons.
+    if policy.pkg_cache.is_some() {
+        p.push_str(
+            "(allow file-read* (subpath (param \"PKG\")))\n\
+             (allow file-write* (subpath (param \"PKG\")))\n",
+        );
+    }
+    if paths.pkg_real.is_some() {
+        p.push_str(
+            "(allow file-read* (subpath (param \"PKG_REAL\")))\n\
+             (allow file-write* (subpath (param \"PKG_REAL\")))\n",
+        );
+    }
+    // The user's cargo config copy stays read-only inside the writable cache:
+    // it can name programs cargo runs. After the cache allow, since the later
+    // rule wins. `literal`, so the legacy `config` name cannot be created
+    // either, and cargo's folder itself cannot be renamed or removed (which
+    // would let the shell make a fresh one with a config of its own); what
+    // it holds below stays writable.
+    for i in 0..paths.cargo_config.len() {
+        p.push_str(&format!(
+            "(deny file-write* (literal (param \"CARGO_CONFIG_{i}\")))\n"
+        ));
+    }
+}
+
 /// Build `sandbox-exec`'s argv. Paths travel as `-D` parameters rather than being
 /// interpolated into the profile so a path containing profile syntax cannot
 /// rewrite the policy.
 pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
-    let mut args = vec!["-p".to_string(), seatbelt_policy(policy)];
+    let paths = SeatbeltPaths::of(policy);
+    let mut args = vec!["-p".to_string(), seatbelt_profile(policy, &paths)];
     args.push(format!(
         "-DWORKSPACE={}",
         policy.workspace.to_string_lossy()
@@ -698,12 +1108,29 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     for (i, root) in policy.write_roots.iter().enumerate() {
         args.push(format!("-DWRITE_ROOT_{i}={}", root.to_string_lossy()));
     }
-    args.push(format!(
-        "-DTMPDIR={}",
-        std::env::temp_dir().to_string_lossy()
-    ));
+    for (i, root) in paths.deny_write.iter().enumerate() {
+        args.push(format!("-DDENY_WRITE_{i}={}", root.to_string_lossy()));
+    }
     if let Some(scratch) = &policy.scratch_root {
         args.push(format!("-DSCRATCH={}", scratch.to_string_lossy()));
+    }
+    if let Some(real) = &paths.scratch_real {
+        args.push(format!("-DSCRATCH_REAL={}", real.to_string_lossy()));
+    }
+    if let Some(pkg) = &policy.pkg_cache {
+        args.push(format!("-DPKG={}", pkg.root.to_string_lossy()));
+    }
+    if let Some(real) = &paths.pkg_real {
+        args.push(format!("-DPKG_REAL={}", real.to_string_lossy()));
+    }
+    for (i, path) in paths.cargo_config.iter().enumerate() {
+        args.push(format!("-DCARGO_CONFIG_{i}={}", path.to_string_lossy()));
+    }
+    for (i, path) in paths.cache_mask.iter().enumerate() {
+        args.push(format!("-DCACHE_MASK_{i}={}", path.to_string_lossy()));
+    }
+    for (i, path) in paths.cache_ancestors.iter().enumerate() {
+        args.push(format!("-DCACHE_ANCESTOR_{i}={}", path.to_string_lossy()));
     }
     if let Some(home) = home_dir() {
         args.push(format!("-DHOME_ROOT={}", home.to_string_lossy()));
@@ -744,6 +1171,10 @@ pub fn looks_denied(output: &str) -> bool {
     DENIAL_MARKERS.iter().any(|m| lower.contains(m))
 }
 
+/// How every [`denial_hint`] begins (after its newline), so a reader can tell
+/// the note from the command's own output.
+pub const DENIAL_HINT_TAG: &str = "[sandbox:";
+
 /// Sentence appended to a denied command's output, telling the model the limits
 /// rather than leaving it to infer them from `Permission denied`.
 pub fn denial_hint(policy: &Policy) -> String {
@@ -759,7 +1190,7 @@ pub fn denial_hint(policy: &Policy) -> String {
     };
     // Naming only the workspace would send the model away from the scratch,
     // which is writable too and is where temporary work belongs.
-    let scratch = match scratch_env_path(backend(), policy) {
+    let scratch = match &policy.scratch_root {
         Some(path) => format!(" and the scratch dir ({})", path.display()),
         None => String::new(),
     };
@@ -803,8 +1234,22 @@ pub fn denial_hint(policy: &Policy) -> String {
         }
         s
     };
+    // A read-only workspace is not a place writes may go: naming it as one sends
+    // the model straight back to retry there.
+    if policy.workspace_readonly {
+        let scratch = scratch.strip_prefix(" and ").unwrap_or("");
+        let writes = if scratch.is_empty() {
+            " and nothing here is writable".to_string()
+        } else {
+            format!("; writes are limited to {scratch}")
+        };
+        return format!(
+            "\n{DENIAL_HINT_TAG} the workspace ({}) is read-only{writes}{home}.{net}{attached}]",
+            policy.workspace.display()
+        );
+    }
     format!(
-        "\n[sandbox: writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
+        "\n{DENIAL_HINT_TAG} writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
         policy.workspace.display()
     )
 }
@@ -823,6 +1268,102 @@ mod tests {
 
     fn policy() -> Policy {
         Policy::new(Path::new("/data/agent-workspace/threads/t1"), false)
+    }
+
+    /// A directory on a tmpfs the sandbox mounts is not the host's, unless a
+    /// later bind puts a host folder back at that path.
+    #[test]
+    fn bwrap_private_follows_the_mount_order() {
+        let home = home_dir().expect("a home");
+        let scratch = PathBuf::from("/tmp/jan-scratch");
+        let p = Policy::new(&home.join("proj"), false)
+            .with_scratch_root(&scratch)
+            .with_hide_root(&home.join(".jan"))
+            .with_read_roots(vec![home.join(".jan/worktrees/p/child")]);
+        for private in ["/tmp/x", "/tmp", "/proc/1", "/dev/shm"] {
+            assert!(bwrap_private(&p, Path::new(private)), "{private}");
+        }
+        for private in [home.join("docs"), home.join(".jan/worktrees/p")] {
+            assert!(bwrap_private(&p, &private), "{}", private.display());
+        }
+        for shared in [
+            PathBuf::from("/usr/lib"),
+            PathBuf::from("/"),
+            scratch.join("sub"),
+            home.join("proj/src"),
+            home.join(".jan/worktrees/p/child/src"),
+        ] {
+            assert!(!bwrap_private(&p, &shared), "{}", shared.display());
+        }
+        // A readable home is the host's own.
+        let p = p.with_home_readonly(true);
+        assert!(!bwrap_private(&p, &home.join("docs")));
+        assert!(bwrap_private(&p, &home.join(".jan/x")), "still hidden");
+    }
+
+    /// The shell reports where it landed with `pwd -P`, the physical path,
+    /// while the mounts name a home behind a symlink (Fedora Atomic's
+    /// `/home -> /var/home`); the kernel puts each mount at the resolved
+    /// path, so that is the one the landed path must be compared with. The
+    /// home is passed as the data-folder mask here: `$HOME` itself is
+    /// process-wide and cannot be swapped under parallel tests. The real home
+    /// is mounted read-only (the host's own), and the fixture lives under the
+    /// crate's `target/`, not the private `/tmp`, so only the fake home's
+    /// mounts decide.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_private_sees_mounts_through_a_symlinked_home() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target/jail-tests")
+            .join(format!("symhome_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let real = base.join("var/home/u");
+        std::fs::create_dir_all(real.join(".jan/x")).unwrap();
+        std::fs::create_dir_all(real.join("proj/src")).unwrap();
+        std::fs::create_dir_all(real.join("docs")).unwrap();
+        std::fs::create_dir_all(base.join("r")).unwrap();
+        std::os::unix::fs::symlink(base.join("var/home"), base.join("home")).unwrap();
+        let home = base.join("home/u");
+        let p = Policy::new(&home.join("proj"), false)
+            .with_home_readonly(true)
+            .with_mask_root(&home)
+            .with_hide_root(&home.join(".jan"));
+        for private in [real.join("docs"), real.join(".jan/x"), home.join("docs")] {
+            assert!(bwrap_private(&p, &private), "{}", private.display());
+        }
+        for shared in [real.join("proj/src"), home.join("proj/src"), base.join("r")] {
+            assert!(!bwrap_private(&p, &shared), "{}", shared.display());
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The landed path is physical inside the sandbox already: a `/tmp/x`
+    /// the shell reports is on the private `/tmp`, even when the host's
+    /// `/tmp/x` is a symlink into the project. Resolving it on the host would
+    /// call it the project's folder and let an unconfined command land there.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_private_does_not_resolve_the_landed_path_on_the_host() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target/jail-tests")
+            .join(format!("tmplink_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let project = base.join("proj");
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        let link = PathBuf::from("/tmp").join(format!("jan_tmplink_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(project.join("sub"), &link).unwrap();
+        let p = Policy::new(&project, false);
+        let private = bwrap_private(&p, &link);
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(private, "{}", link.display());
     }
 
     #[cfg(unix)]
@@ -1157,6 +1698,26 @@ mod tests {
         assert!(!seatbelt_policy(&policy()).contains("HIDE_ROOT"));
     }
 
+    /// A read-only subagent's checkout is bound read-only, `.git` included
+    /// (it is inside the bind), while the scratch stays writable.
+    #[test]
+    fn bwrap_binds_a_read_only_workspace_read_only() {
+        let ws = "/data/agent-workspace/threads/t1";
+        let text = joined(&bwrap_args(&policy().with_workspace_readonly(true), &cfg()));
+        assert!(text.contains(&format!("--ro-bind {ws} {ws}")), "{text}");
+        assert!(!text.contains(&format!("--bind {ws} {ws}")), "{text}");
+        assert!(text.contains(&format!("--chdir {ws}")), "{text}");
+    }
+
+    #[test]
+    fn seatbelt_never_allows_writes_to_a_read_only_workspace() {
+        let write = "(allow file-write* (subpath (param \"WORKSPACE\")))";
+        assert!(seatbelt_policy(&policy()).contains(write));
+        let p = seatbelt_policy(&policy().with_workspace_readonly(true));
+        assert!(!p.contains(write), "{p}");
+        assert!(p.contains("(allow file-read* (subpath (param \"WORKSPACE\")))"), "{p}");
+    }
+
     #[test]
     fn bwrap_mounts_root_read_only_before_layering_on_it() {
         let args = bwrap_args(&policy(), &cfg());
@@ -1271,6 +1832,123 @@ mod tests {
         assert!(home_tmpfs < rw && rw < ws_bind, "{text}");
     }
 
+    fn paths(items: &[&str]) -> Vec<PathBuf> {
+        items.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn escape_anchors_are_the_top_ancestor_under_tmp_and_home() {
+        let home = Path::new("/home/u");
+        let p = Policy::new(Path::new("/srv/ws"), false)
+            .with_write_roots(paths(&["/home/u/Projects/app", "/tmp/qa/folders/f"]));
+        assert_eq!(
+            escape_anchors(&p, Some(home)),
+            paths(&["/home/u/Projects", "/tmp/qa"])
+        );
+    }
+
+    #[test]
+    fn escape_anchors_skip_what_has_no_ancestor_to_protect() {
+        let home = Path::new("/home/u");
+        // Directly in the tmpfs: its parent is the tmpfs itself (the known gap).
+        let direct = Policy::new(Path::new("/srv/ws"), false)
+            .with_write_roots(paths(&["/home/u/app", "/tmp/f"]));
+        assert!(escape_anchors(&direct, Some(home)).is_empty());
+        // A read-only `$HOME` is the host's own directories, already refusing.
+        let ro = Policy::new(Path::new("/srv/ws"), false)
+            .with_home_readonly(true)
+            .with_write_roots(paths(&["/home/u/Projects/app"]));
+        assert!(escape_anchors(&ro, Some(home)).is_empty());
+        // Outside both tmpfs mounts the read-only root already refuses.
+        let outside = Policy::new(Path::new("/srv/a/ws"), false);
+        assert!(escape_anchors(&outside, Some(home)).is_empty());
+    }
+
+    /// An anchor never covers what must stay writable or is masked on its own,
+    /// and never sits on a bound root, where the remount would hit the bind.
+    #[test]
+    fn escape_anchors_never_cover_writable_or_bound_paths() {
+        let home = Path::new("/home/u");
+        let ws = Path::new("/home/u/.local/share/Jan/data/ws/t1");
+        let desktop =
+            Policy::new(ws, false).with_mask_root(Path::new("/home/u/.local/share/Jan/data"));
+        assert!(
+            escape_anchors(&desktop, Some(home)).is_empty(),
+            "the mask covers the workspace"
+        );
+        let scratch = Policy::new(Path::new("/home/u/.cache/proj"), false)
+            .with_scratch_root(Path::new("/home/u/.cache/jan/s1"));
+        assert!(
+            escape_anchors(&scratch, Some(home)).is_empty(),
+            "~/.cache holds the scratch"
+        );
+        let nested = Policy::new(Path::new("/srv/ws"), false)
+            .with_write_roots(paths(&["/home/u/Projects", "/home/u/Projects/app"]));
+        assert!(
+            escape_anchors(&nested, Some(home)).is_empty(),
+            "~/Projects is itself bound"
+        );
+        // A `$HOME` inside `/tmp` must not be buried under a `/tmp` anchor.
+        let tmp_home = Policy::new(Path::new("/srv/ws"), false)
+            .with_write_roots(paths(&["/tmp/qa/folders/f"]));
+        assert!(escape_anchors(&tmp_home, Some(Path::new("/tmp/qa/home"))).is_empty());
+    }
+
+    /// The anchor is mounted before the root it protects and remounted
+    /// read-only after every bind, so the binds stay writable beneath it.
+    #[test]
+    fn bwrap_mounts_an_anchor_before_the_root_and_remounts_it_read_only_after() {
+        let home = home_dir().expect("a home dir");
+        let repo = home.join("jan-anchor-test/app");
+        let anchor = home.join("jan-anchor-test");
+        let (repo, anchor) = (repo.to_string_lossy(), anchor.to_string_lossy());
+        let text = joined(&bwrap_args(
+            &policy().with_write_roots(vec![PathBuf::from(&*repo)]),
+            &cfg(),
+        ));
+        let tmpfs = text
+            .find(&format!("--tmpfs {anchor} "))
+            .expect("anchor tmpfs");
+        let bind = text
+            .find(&format!("--bind {repo} {repo}"))
+            .expect("root bind");
+        let ws_bind = text
+            .find("--bind /data/agent-workspace/threads/t1")
+            .expect("ws bind");
+        let remount = text
+            .find(&format!("--remount-ro {anchor} "))
+            .expect("anchor remount");
+        let chdir = text.find("--chdir").expect("chdir");
+        assert!(
+            tmpfs < bind && bind < ws_bind && ws_bind < remount && remount < chdir,
+            "{text}"
+        );
+    }
+
+    /// Writes into the masks are refused rather than discarded; a mask inside a
+    /// bind is no longer the top mount there and is left alone.
+    #[test]
+    fn bwrap_remounts_the_masks_read_only_unless_a_bind_contains_them() {
+        let mask = "/data";
+        let hide = "/srv/u/.jan";
+        let p = policy()
+            .with_mask_root(Path::new(mask))
+            .with_hide_root(Path::new(hide));
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let ws_bind = text
+            .find("--bind /data/agent-workspace/threads/t1")
+            .expect("ws bind");
+        let remount = text
+            .find(&format!("--remount-ro {mask} "))
+            .expect("mask remount");
+        assert!(ws_bind < remount, "{text}");
+        assert!(text.contains(&format!("--remount-ro {hide} ")), "{text}");
+        let around =
+            Policy::new(Path::new("/srv/u"), false).with_mask_root(Path::new("/srv/u/data"));
+        let text = joined(&bwrap_args(&around, &cfg()));
+        assert!(!text.contains("--remount-ro /srv/u/data"), "{text}");
+    }
+
     #[test]
     fn seatbelt_allows_a_write_root_to_write() {
         let repo = "/Users/u/repo";
@@ -1352,21 +2030,303 @@ mod tests {
         assert!(text.contains("--tmpfs /tmp"));
     }
 
+    /// The scratch is bound at its own real path, never over `/tmp`, which
+    /// stays a private tmpfs either way: the name the shell uses must exist
+    /// outside the sandbox too.
     #[test]
-    fn bwrap_binds_scratch_over_tmp_instead_of_a_tmpfs() {
-        let scratch = Path::new("/data/agent-workspace/threads/t1/agent-scratch");
-        let scratch_bind = format!("--bind {} /tmp", scratch.to_string_lossy());
+    fn bwrap_binds_the_scratch_at_its_real_path_and_keeps_tmp_private() {
+        let scratch = "/home/u/.cache/jan/chat/scratch/t1";
+        let scratch_bind = format!("--bind {scratch} {scratch}");
 
-        // Default: a throwaway tmpfs per command, no scratch bind.
         let default = joined(&bwrap_args(&policy(), &cfg()));
         assert!(default.contains("--tmpfs /tmp"), "{default}");
         assert!(!default.contains(&scratch_bind), "{default}");
 
-        // With a scratch root, /tmp is a real bind so files written there by one
-        // bash call survive into the next.
-        let bound = joined(&bwrap_args(&policy().with_scratch_root(scratch), &cfg()));
-        assert!(!bound.contains("--tmpfs /tmp"), "{bound}");
+        let bound = joined(&bwrap_args(&policy().with_scratch_root(Path::new(scratch)), &cfg()));
+        assert!(bound.contains("--tmpfs /tmp"), "{bound}");
         assert!(bound.contains(&scratch_bind), "{bound}");
+        assert!(!bound.contains(&format!("--bind {scratch} /tmp")), "{bound}");
+    }
+
+    /// The scratch lives under `~/.cache`, so its bind must come after every
+    /// tmpfs mask that could cover it (`$HOME`, the data folder, the Jan
+    /// home) and before the workspace bind; the Jan home re-mask after the
+    /// workspace still comes last.
+    #[test]
+    fn bwrap_binds_the_scratch_after_the_masks_and_before_the_workspace() {
+        let Some(home) = home_dir() else {
+            return;
+        };
+        let scratch = home.join(".cache/jan/p-1/scratch/s1");
+        let hide = home.join(".jan");
+        let p = Policy::new(&home, false)
+            .with_mask_root(Path::new("/data"))
+            .with_hide_root(&hide)
+            .with_scratch_root(&scratch);
+        let args = bwrap_args(&p, &cfg());
+        let text = joined(&args);
+        let s = scratch.to_string_lossy();
+        let h = home.to_string_lossy();
+        let at = text.find(&format!("--bind {s} {s}")).expect(&text);
+        assert!(text.find(&format!("--tmpfs {h} ")).expect(&text) < at, "{text}");
+        assert!(text.find("--tmpfs /data").expect(&text) < at, "{text}");
+        let hide_at = text.find(&format!("--tmpfs {}", hide.to_string_lossy())).expect(&text);
+        assert!(hide_at < at, "{text}");
+        let ws_at = text.find(&format!("--bind {h} {h}")).expect(&text);
+        assert!(at < ws_at, "{text}");
+        assert!(text.rfind(&format!("--tmpfs {}", hide.to_string_lossy())).unwrap() > ws_at);
+    }
+
+    /// A read-only workspace that contains the scratch (a reader working in
+    /// `$HOME`) must not take the scratch's write access with it.
+    #[test]
+    fn bwrap_rebinds_a_scratch_inside_a_read_only_workspace() {
+        let p = Policy::new(Path::new("/home/u"), false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(Path::new("/home/u/.cache/jan/p/scratch/s1"));
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let ws = text.find("--ro-bind /home/u /home/u").expect(&text);
+        let rebind = text
+            .rfind("--bind /home/u/.cache/jan/p/scratch/s1 /home/u/.cache/jan/p/scratch/s1")
+            .expect(&text);
+        assert!(ws < rebind, "{text}");
+    }
+
+    fn pkg_cache(root: &str, config: bool) -> PkgCache {
+        PkgCache {
+            root: PathBuf::from(root),
+            cargo_config: config.then(|| CargoConfig {
+                host: PathBuf::from("/home/u/.cargo/config.toml"),
+                copy: Path::new(root).join("cargo/config.toml"),
+            }),
+        }
+    }
+
+    /// The package cache is bound writable at its real path in the scratch's
+    /// position (after the masks, before the workspace), and the user's cargo
+    /// config read-only over its copy after every rw bind, so none shadows it.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_binds_the_pkg_cache_and_the_cargo_config_read_only() {
+        let pkg = "/home/u/.cache/jan/p-1/pkg";
+        let p = Policy::new(Path::new("/home/u/proj"), true)
+            .with_pkg_cache(&pkg_cache(pkg, true));
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let bind = text.find(&format!("--bind {pkg} {pkg}")).expect(&text);
+        let mask = text.find("--tmpfs /home/u/.cache/jan ").expect(&text);
+        assert!(mask < bind, "other projects' caches are masked first: {text}");
+        let ws = text.find("--bind /home/u/proj /home/u/proj").expect(&text);
+        assert!(bind < ws, "{text}");
+        let ro = text
+            .find(&format!("--ro-bind /home/u/.cargo/config.toml {pkg}/cargo/config.toml"))
+            .expect(&text);
+        assert!(ro > ws, "{text}");
+
+        // No config on the host: no bind (bubblewrap would fail on a missing
+        // source), and no package cache at all without one in the policy.
+        let bare = joined(&bwrap_args(
+            &Policy::new(Path::new("/w"), true).with_pkg_cache(&pkg_cache(pkg, false)),
+            &cfg(),
+        ));
+        assert!(bare.contains(&format!("--bind {pkg} {pkg}")), "{bare}");
+        assert!(!bare.contains("config.toml"), "{bare}");
+        assert!(!joined(&bwrap_args(&policy(), &cfg())).contains("pkg"));
+    }
+
+    /// With no package cache (desktop chat, the MCP server), a scratch under
+    /// the Jan cache root still masks the root: an attached folder holding
+    /// `~/.cache`, or an `XDG_CACHE_HOME` outside `$HOME`, would otherwise
+    /// show every other session's scratch. A scratch elsewhere masks nothing.
+    #[test]
+    fn bwrap_masks_the_cache_root_for_a_scratch_without_a_pkg_cache() {
+        let root = crate::workspace::jan_cache_root();
+        let root_s = root.to_string_lossy().to_string();
+        let scratch = root.join("chat/scratch/t1");
+        let scratch_s = scratch.to_string_lossy().to_string();
+        let p = Policy::new(Path::new("/w"), false)
+            .with_read_roots(vec![root.parent().unwrap().to_path_buf()])
+            .with_scratch_root(&scratch);
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let mask = text.find(&format!("--tmpfs {root_s} ")).expect(&text);
+        let bind = text.rfind(&format!("--bind {scratch_s} {scratch_s}")).expect(&text);
+        assert!(mask < bind, "the run's own scratch is bound back: {text}");
+        assert_eq!(text.matches(&format!("--tmpfs {root_s} ")).count(), 2, "{text}");
+
+        let elsewhere = Policy::new(Path::new("/w"), false)
+            .with_scratch_root(Path::new("/var/tmp/s1"));
+        assert!(!joined(&bwrap_args(&elsewhere, &cfg())).contains(&root_s));
+    }
+
+    /// A read-only workspace containing the package cache rebinds it, and the
+    /// cargo config still lands read-only after that rebind.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_rebinds_a_pkg_cache_inside_a_read_only_workspace() {
+        let pkg = "/home/u/.cache/jan/p/pkg";
+        let p = Policy::new(Path::new("/home/u"), false)
+            .with_workspace_readonly(true)
+            .with_pkg_cache(&pkg_cache(pkg, true));
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let ws = text.find("--ro-bind /home/u /home/u").expect(&text);
+        let rebind = text.rfind(&format!("--bind {pkg} {pkg}")).expect(&text);
+        let ro = text.rfind(&format!("{pkg}/cargo/config.toml")).expect(&text);
+        assert!(ws < rebind && rebind < ro, "{text}");
+    }
+
+    /// Cargo's own folder is a mount point (so it cannot be renamed away and
+    /// recreated), and both names cargo reads its config from are the host
+    /// file, read-only: neither can be written or planted. One inode under
+    /// both names, so cargo (1.79+) sees one file and does not warn.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_pins_cargos_folder_and_both_config_names() {
+        let pkg = "/home/u/.cache/jan/p-1/pkg";
+        let cargo = format!("{pkg}/cargo");
+        let p = Policy::new(Path::new("/home/u/proj"), true).with_pkg_cache(&pkg_cache(pkg, true));
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let ws = text.find("--bind /home/u/proj /home/u/proj").expect(&text);
+        let pin = text.find(&format!("--bind {cargo} {cargo} ")).expect(&text);
+        assert!(ws < pin, "{text}");
+        for name in ["config.toml", "config"] {
+            let ro = text
+                .find(&format!("--ro-bind /home/u/.cargo/config.toml {cargo}/{name} "))
+                .unwrap_or_else(|| panic!("{name} not read-only: {text}"));
+            assert!(pin < ro, "{text}");
+        }
+    }
+
+    /// A workspace containing the Jan cache root (running in `$HOME`) would
+    /// show every project's cache again, so the cache root is masked again
+    /// after the workspace bind and this run's scratch and package cache are
+    /// bound back on top, with cargo's config pinned after that.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_masks_the_cache_root_again_inside_the_workspace() {
+        let pkg = "/home/u/.cache/jan/p-1/pkg";
+        let scratch = "/home/u/.cache/jan/p-1/scratch/s1";
+        let p = Policy::new(Path::new("/home/u"), true)
+            .with_scratch_root(Path::new(scratch))
+            .with_pkg_cache(&pkg_cache(pkg, true));
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let ws = text.find("--bind /home/u /home/u").expect(&text);
+        let remask = text.rfind("--tmpfs /home/u/.cache/jan ").expect(&text);
+        assert!(ws < remask, "{text}");
+        for dir in [pkg, scratch] {
+            let rebind = text.rfind(&format!("--bind {dir} {dir} ")).expect(&text);
+            assert!(remask < rebind, "{dir}: {text}");
+        }
+        let config = text.rfind(&format!("{pkg}/cargo/config.toml")).expect(&text);
+        assert!(remask < config, "{text}");
+
+        // A workspace beside the cache root needs no second mask.
+        let apart = joined(&bwrap_args(
+            &Policy::new(Path::new("/home/u/proj"), true).with_pkg_cache(&pkg_cache(pkg, true)),
+            &cfg(),
+        ));
+        assert_eq!(apart.matches("--tmpfs /home/u/.cache/jan ").count(), 1, "{apart}");
+    }
+
+    /// Seatbelt's equivalent: with the cache root inside the workspace, it is
+    /// denied again (reads and writes) after the workspace allows, and this
+    /// run's own folders are allowed back after that.
+    #[test]
+    fn seatbelt_denies_the_cache_root_again_inside_the_workspace() {
+        let pkg = "/Users/u/Library/Caches/jan/p-1/pkg";
+        let p = Policy::new(Path::new("/Users/u"), true)
+            .with_scratch_root(Path::new("/Users/u/Library/Caches/jan/p-1/scratch/s1"))
+            .with_pkg_cache(&pkg_cache(pkg, true));
+        let profile = seatbelt_policy(&p);
+        let ws = profile
+            .find("(allow file-write* (subpath (param \"WORKSPACE\")))")
+            .expect(&profile);
+        let deny = profile
+            .rfind("(deny file-write* (subpath (param \"CACHE_MASK_0\")))")
+            .expect(&profile);
+        assert!(ws < deny, "{profile}");
+        let read = profile
+            .rfind("(deny file-read* (subpath (param \"CACHE_MASK_0\")))")
+            .expect(&profile);
+        assert!(ws < read, "{profile}");
+        for allow in [
+            "(allow file-write* (subpath (param \"PKG\")))",
+            "(allow file-write* (subpath (param \"SCRATCH\")))",
+        ] {
+            assert!(deny < profile.rfind(allow).expect(&profile), "{allow}: {profile}");
+        }
+        let cargo = profile
+            .rfind("(deny file-write* (literal (param \"CARGO_CONFIG_0\")))")
+            .expect(&profile);
+        assert!(profile.rfind("(param \"PKG\")").unwrap() < cargo, "{profile}");
+
+        let apart = seatbelt_policy(&policy().with_pkg_cache(&pkg_cache(pkg, true)));
+        assert!(!apart.contains("(deny file-write* (subpath (param \"CACHE_MASK_0\")))"), "{apart}");
+    }
+
+    /// The cache root's read deny would also refuse a `stat` of the folders
+    /// above the run's own package cache and scratch, which breaks `mkdir -p`
+    /// and `realpath` into them: their metadata alone is allowed back, after
+    /// the deny, by literal path (no listing of other projects' folders).
+    #[test]
+    fn seatbelt_lets_the_shell_stat_the_folders_above_its_own() {
+        let pkg = "/Users/u/Library/Caches/jan/p-1/pkg";
+        let p = policy()
+            .with_scratch_root(Path::new("/Users/u/Library/Caches/jan/p-1/scratch/s1"))
+            .with_pkg_cache(&pkg_cache(pkg, true));
+        let args = seatbelt_args(&p, &cfg());
+        let want = [
+            "/Users/u/Library/Caches/jan/p-1/scratch",
+            "/Users/u/Library/Caches/jan/p-1",
+            "/Users/u/Library/Caches/jan",
+        ];
+        let ancestors: Vec<&str> = args
+            .iter()
+            .filter_map(|a| a.strip_prefix("-DCACHE_ANCESTOR_"))
+            .map(|a| a.split_once('=').unwrap().1)
+            .collect();
+        assert_eq!(ancestors, want, "{args:?}");
+        let profile = &args[1];
+        let deny = profile.find("(deny file-read* (subpath (param \"CACHE_MASK_0\")))").unwrap();
+        for i in 0..want.len() {
+            let allow = format!("(allow file-read-metadata (literal (param \"CACHE_ANCESTOR_{i}\")))");
+            assert!(deny < profile.find(&allow).expect(profile), "{profile}");
+        }
+    }
+
+    /// Seatbelt grants the package cache by parameter and denies writes to
+    /// the cargo config copy after that grant; every parameter has its `-D`.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
+    #[test]
+    fn seatbelt_grants_the_pkg_cache_and_denies_the_cargo_config() {
+        let pkg = "/Users/u/Library/Caches/jan/p-1/pkg";
+        let p = policy().with_pkg_cache(&pkg_cache(pkg, true));
+        let profile = seatbelt_policy(&p);
+        let allow = profile
+            .find("(allow file-write* (subpath (param \"PKG\")))")
+            .expect(&profile);
+        let deny = profile
+            .find("(deny file-write* (literal (param \"CARGO_CONFIG_0\")))")
+            .expect(&profile);
+        assert!(allow < deny, "{profile}");
+        let args = seatbelt_args(&p, &cfg());
+        assert!(args.iter().any(|a| *a == format!("-DPKG={pkg}")), "{args:?}");
+        assert!(
+            args.iter().any(|a| *a == format!("-DCARGO_CONFIG_0={pkg}/cargo/config.toml")),
+            "{args:?}"
+        );
+        assert!(!args[1].contains(pkg), "path must not be inlined");
+
+        let none = seatbelt_policy(&policy());
+        assert!(!none.contains("PKG") && !none.contains("CARGO_CONFIG"), "{none}");
     }
 
     #[test]
@@ -1417,13 +2377,151 @@ mod tests {
         }
     }
 
+    /// The `/private/tmp` grant is broad, and in Seatbelt the later rule wins:
+    /// a read-only checkout under it must be denied writes after it, by every
+    /// name it has, or it is writable after all.
+    #[test]
+    fn seatbelt_denies_writes_to_a_read_only_checkout_under_the_temp_grants() {
+        let ws = Path::new("/private/tmp/checkout");
+        let ro = Policy::new(ws, false)
+            .with_workspace_readonly(true)
+            .with_read_roots(vec![PathBuf::from("/private/tmp/worktrees")]);
+        let p = seatbelt_policy(&ro);
+        let deny = "(deny file-write* (subpath (param \"DENY_WRITE_0\")))";
+        let at = p.find(deny).expect(&p);
+        assert!(p.find("(allow file-write* (subpath \"/private/tmp\"))").unwrap() < at, "{p}");
+        assert!(p.contains("(deny file-write* (subpath (param \"DENY_WRITE_1\")))"), "{p}");
+        let args = seatbelt_args(&ro, &cfg());
+        assert!(args.iter().any(|a| a == "-DDENY_WRITE_0=/private/tmp/checkout"), "{args:?}");
+        assert!(args.iter().any(|a| a == "-DDENY_WRITE_1=/private/tmp/worktrees"), "{args:?}");
+        // A writable workspace, and a read root also marked writable, get none.
+        let rw = Policy::new(ws, false)
+            .with_read_roots(vec![PathBuf::from("/r")])
+            .with_write_roots(vec![PathBuf::from("/r")]);
+        assert!(!seatbelt_policy(&rw).contains("DENY_WRITE"));
+        assert!(!seatbelt_args(&rw, &cfg()).iter().any(|a| a.contains("DENY_WRITE")));
+    }
+
+    /// The scratch and the write roots stay writable even inside a read-only
+    /// checkout: their allows come after its denial.
+    #[test]
+    fn seatbelt_keeps_the_scratch_and_write_roots_writable_past_the_denial() {
+        let ro = Policy::new(Path::new("/Users/u"), false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(Path::new("/Users/u/.jan/scratch/s1"))
+            .with_write_roots(vec![PathBuf::from("/Users/u/.jan/worktrees/r/cargo-target")]);
+        let p = seatbelt_policy(&ro);
+        let deny = p.find("(param \"DENY_WRITE_0\")").expect(&p);
+        assert!(deny < p.find("(allow file-write* (subpath (param \"SCRATCH\")))").unwrap(), "{p}");
+        assert!(deny < p.find("(allow file-write* (subpath (param \"WRITE_ROOT_0\")))").unwrap());
+        // A parent session in a Jan worktree reads its children's worktrees
+        // beside it: that read root's denial must not cover its own checkout.
+        let parent = Policy::new(Path::new("/Users/u/.jan/worktrees/r/feat"), false)
+            .with_read_roots(vec![PathBuf::from("/Users/u/.jan/worktrees/r")]);
+        let p = seatbelt_policy(&parent);
+        let deny = p.find("(param \"DENY_WRITE_0\")").expect(&p);
+        let ws = p.find("(allow file-write* (subpath (param \"WORKSPACE\")))").unwrap();
+        assert!(deny < ws, "{p}");
+    }
+
+    /// Seatbelt matches a `subpath` against the resolved path, so a path that
+    /// goes through a symlink (`/var` -> `/private/var` on macOS) is named in
+    /// both forms, or the rule never fires.
+    #[cfg(unix)]
+    #[test]
+    fn seatbelt_names_symlinked_paths_in_their_resolved_form_too() {
+        let base = std::env::temp_dir().join(format!("jan-sb-forms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let real = base.join("real");
+        std::fs::create_dir_all(real.join("ws")).unwrap();
+        std::fs::create_dir_all(real.join("scratch")).unwrap();
+        std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
+        let real = real.canonicalize().unwrap();
+        let (ws, scratch) = (base.join("link/ws"), base.join("link/scratch"));
+        let ro = Policy::new(&ws, false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(&scratch);
+        let p = seatbelt_policy(&ro);
+        let args = seatbelt_args(&ro, &cfg());
+        let has = |arg: String| args.contains(&arg);
+        assert!(has(format!("-DDENY_WRITE_0={}", ws.display())), "{args:?}");
+        assert!(has(format!("-DDENY_WRITE_1={}", real.join("ws").display())), "{args:?}");
+        assert!(p.contains("(deny file-write* (subpath (param \"DENY_WRITE_1\")))"), "{p}");
+        assert!(has(format!("-DSCRATCH_REAL={}", real.join("scratch").display())), "{args:?}");
+        assert!(p.contains("(allow file-write* (subpath (param \"SCRATCH_REAL\")))"), "{p}");
+        assert!(p.contains("(allow file-read* (subpath (param \"SCRATCH_REAL\")))"), "{p}");
+        // Unresolvable or already resolved: one form, and no stray parameter.
+        let plain = policy().with_scratch_root(Path::new("/var/scratch/jan-agent-s1"));
+        assert!(!seatbelt_policy(&plain).contains("SCRATCH_REAL"));
+        assert!(!seatbelt_args(&plain, &cfg()).iter().any(|a| a.contains("SCRATCH_REAL")));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// bubblewrap layers in order, so a read-only checkout under `/tmp` is
+    /// bound read-only after the `/tmp` tmpfs and the scratch, never shadowed
+    /// by either.
+    #[test]
+    fn bwrap_binds_a_read_only_checkout_under_tmp_after_the_scratch() {
+        let ws = "/tmp/checkout";
+        let ro = Policy::new(Path::new(ws), false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(Path::new("/tmp/scratch-s1"))
+            .with_read_roots(vec![PathBuf::from("/tmp/worktrees")]);
+        let text = joined(&bwrap_args(&ro, &cfg()));
+        let tmp = text.find("--tmpfs /tmp").expect(&text);
+        let scratch = text.find("--bind /tmp/scratch-s1 /tmp/scratch-s1").expect(&text);
+        let checkout = text.find(&format!("--ro-bind {ws} {ws}")).expect(&text);
+        assert!(tmp < scratch && scratch < checkout, "{text}");
+        assert!(tmp < text.find("--ro-bind /tmp/worktrees /tmp/worktrees").unwrap());
+        assert!(!text.contains(&format!("--bind {ws} ")), "{text}");
+    }
+
     #[test]
     fn seatbelt_confines_writes_to_the_workspace_and_temp() {
         let p = seatbelt_policy(&policy());
         assert!(p.contains("(allow file-write* (subpath (param \"WORKSPACE\")))"));
-        assert!(p.contains("(allow file-write* (subpath (param \"TMPDIR\")))"));
+        assert!(p.contains("(allow file-write* (subpath \"/private/tmp\"))"));
         // No blanket write rule anywhere.
         assert!(!p.contains("(allow file-write*)"));
+    }
+
+    /// The host temp dir is not the shell's: its `TMPDIR` is the session
+    /// scratch, granted by name. No write allow may name the host temp dir,
+    /// in its given or resolved form (`/var/folders/...` resolves to
+    /// `/private/var/folders/...` on macOS), or anything above it.
+    #[test]
+    fn seatbelt_never_grants_writes_to_the_host_temp_dir() {
+        let tmp = std::env::temp_dir();
+        let forms: Vec<PathBuf> = std::iter::once(tmp.clone()).chain(real_form(&tmp)).collect();
+        let scratch = tmp.join(format!("jan-agent-tmpgrant-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let ws = Path::new("/data/agent-workspace/threads/t1");
+        let policy = Policy::new(ws, false).with_scratch_root(&scratch);
+        let p = seatbelt_policy(&policy);
+        let args = seatbelt_args(&policy, &cfg());
+        let _ = std::fs::remove_dir_all(&scratch);
+        for line in p.lines().filter(|l| l.starts_with("(allow file-write*")) {
+            let granted = match line.split_once("(param \"") {
+                Some((_, rest)) => {
+                    let name = rest.split('"').next().unwrap();
+                    let value = args
+                        .iter()
+                        .find_map(|a| a.strip_prefix(&format!("-D{name}=")))
+                        .unwrap_or_else(|| panic!("{name} has no argument: {args:?}"));
+                    PathBuf::from(value)
+                }
+                None => match line.split_once("(subpath \"") {
+                    Some((_, rest)) => PathBuf::from(rest.split('"').next().unwrap()),
+                    None => continue,
+                },
+            };
+            for form in &forms {
+                assert!(!form.starts_with(&granted), "{line} grants {form:?}:\n{p}");
+            }
+        }
+        // The scratch inside it stays writable, by its resolved name too.
+        assert!(p.contains("(allow file-write* (subpath (param \"SCRATCH\")))"), "{p}");
+        assert!(!args.iter().any(|a| a.starts_with("-DTMPDIR")), "{args:?}");
     }
 
     /// The scratch is granted by name rather than relying on it happening to sit
@@ -1451,29 +2549,6 @@ mod tests {
         assert!(!p.contains("SCRATCH"));
         let args = seatbelt_args(&policy(), &cfg());
         assert!(!args.iter().any(|a| a.starts_with("-DSCRATCH=")));
-    }
-
-    /// What `TMPDIR` must say inside the sandbox: bubblewrap binds the scratch
-    /// over `/tmp`, so the host path is meaningless there; the other backends
-    /// have no mount, so the real path is the only one that resolves.
-    #[test]
-    fn scratch_env_path_follows_what_the_backend_actually_mounts() {
-        let scratch = Path::new("/var/scratch/jan-agent-s1");
-        let with = policy().with_scratch_root(scratch);
-        assert_eq!(
-            scratch_env_path(Backend::Bubblewrap, &with).as_deref(),
-            Some(Path::new("/tmp"))
-        );
-        for backend in [Backend::Seatbelt, Backend::AppContainer] {
-            assert_eq!(
-                scratch_env_path(backend, &with).as_deref(),
-                Some(scratch),
-                "{backend:?} has no mount, so the real path is the scratch"
-            );
-        }
-        // No scratch, nothing to point at: the shell keeps the default temp dir.
-        assert_eq!(scratch_env_path(Backend::Bubblewrap, &policy()), None);
-        assert_eq!(scratch_env_path(Backend::Seatbelt, &policy()), None);
     }
 
     #[test]
@@ -1528,17 +2603,16 @@ mod tests {
     }
 
     /// A denied write must not send the model away from the one other place it
-    /// is allowed to write, named as the sandbox exposes it.
+    /// is allowed to write, by its real path (the same on every backend).
     #[test]
     fn denial_hint_names_the_scratch_when_there_is_one() {
-        let scratch = Path::new("/var/scratch/jan-agent-s1");
+        let scratch = Path::new("/home/u/.cache/jan/chat/scratch/s1");
         let hint = denial_hint(&policy().with_scratch_root(scratch));
-        let expected = scratch_env_path(backend(), &policy().with_scratch_root(scratch))
-            .expect("a scratch was set");
         assert!(
-            hint.contains(&format!("scratch dir ({})", expected.display())),
+            hint.contains(&format!("scratch dir ({})", scratch.display())),
             "got: {hint}"
         );
+        assert!(!denial_hint(&policy()).contains("scratch dir"));
     }
 
     #[test]
@@ -1596,13 +2670,17 @@ mod enforcement_tests {
     /// Run `command` under `policy`, spawning in `ws`.
     async fn run_policy(policy: Policy, ws: &Path, command: &str) -> (bool, String) {
         let wrapped = wrap(super::super::proc::shell(), &policy).expect("backend");
-        // Mirrors the bash handler: the temp env follows what the backend mounts.
-        let tmp = scratch_env_path(backend(), &policy);
+        // Mirrors the bash handler: the env names the scratch and the package
+        // cache at their real paths.
+        let env = super::super::proc::SandboxEnv::new(
+            policy.scratch_root.as_deref(),
+            policy.pkg_cache.as_ref().map(|p| p.root.as_path()),
+        );
         let child = super::super::proc::spawn(
             &wrapped,
             command,
             ws,
-            tmp.as_deref(),
+            Some(&env),
             super::super::proc::ShellEnv::default(),
             None,
         )
@@ -1664,20 +2742,22 @@ mod enforcement_tests {
     }
 
     #[tokio::test]
-    async fn scratch_persists_across_bash_calls_when_bound_over_tmp() {
+    async fn scratch_persists_across_bash_calls_at_its_real_path() {
         require_backend!();
         let ws = workspace();
-        let scratch = ws.join("agent-scratch");
-        std::fs::create_dir_all(&scratch).unwrap();
+        let scratch = workspace();
         let policy = Policy::new(&ws, false).with_scratch_root(&scratch);
 
-        // Write into /tmp in the first call, then read it back in a second,
-        // separate sandboxed process. This is exactly the pattern the fix
-        // exists for: a scratch pad that outlives a single bash invocation.
-        let (ok, out) = run_policy(policy.clone(), &ws, "echo persistent > /tmp/scratch.txt").await;
+        // Write through `$TMPDIR` in the first call, then read it back in a
+        // second, separate sandboxed process: a scratch pad that outlives a
+        // single bash invocation.
+        let (ok, out) = run_policy(policy.clone(), &ws, "echo persistent > \"$TMPDIR/scratch.txt\"").await;
         assert!(ok, "scratch write must succeed: {out}");
-        let (ok, out) = run_policy(policy, &ws, "cat /tmp/scratch.txt").await;
+        let (ok, out) = run_policy(policy, &ws, "cat \"$TMPDIR/scratch.txt\"").await;
+        let on_host = std::fs::read_to_string(scratch.join("scratch.txt")).unwrap_or_default();
         let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_eq!(on_host.trim(), "persistent", "the file is at the same path on the host");
         assert!(ok, "scratch read must succeed: {out}");
         assert!(
             out.contains("persistent"),
@@ -1814,6 +2894,125 @@ mod enforcement_tests {
         assert!(!ok, "the write into the home must fail: {out}");
     }
 
+    /// A folder for a fake Jan cache root outside `/tmp`, which every backend
+    /// hides or replaces on its own: a cache root there would be unreachable
+    /// whether or not the cache mask exists, and prove nothing about it. Under
+    /// the crate's `target/`, which `$HOME` read-only exposes like the real
+    /// `~/.cache`. `None` when that is under the temp dir too.
+    fn cache_base_outside_tmp() -> Option<PathBuf> {
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("jan_jail_cache_{}_{}", std::process::id(), n));
+        if dir.starts_with(temp_dir()) || dir.starts_with("/tmp") {
+            return None;
+        }
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir)
+    }
+
+    /// End to end on the real backend: the shell writes its package cache at
+    /// the real path, cannot change the user's cargo config there, and sees
+    /// no credentials; another project's cache is out of reach even with
+    /// `$HOME` readable (the CLI), which only the cache mask provides.
+    #[tokio::test]
+    async fn the_pkg_cache_is_writable_but_its_cargo_config_is_not() {
+        require_backend!();
+        let Some(base) = cache_base_outside_tmp() else {
+            eprintln!("skipping: no cache root outside the temp dir");
+            return;
+        };
+        let ws = workspace();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(&host).unwrap();
+        std::fs::write(host.join("config.toml"), "# user config\n").unwrap();
+        std::fs::write(host.join("credentials.toml"), "token = \"SECRET\"\n").unwrap();
+        let mine = crate::workspace::prepare_pkg_cache_in(&base.join("jan/mine"), Some(&host))
+            .await
+            .unwrap();
+        let theirs = crate::workspace::prepare_pkg_cache_in(&base.join("jan/theirs"), None)
+            .await
+            .unwrap();
+        std::fs::write(theirs.root.join("other.txt"), "OTHER_PROJECT").unwrap();
+        let other = theirs.root.join("other.txt");
+        // Control: with `$HOME` readable and no package cache in force (so no
+        // mask), the other project's file is readable. Without this the
+        // denial below could come from anything but the mask.
+        let unmasked = Policy::new(&ws, false).with_home_readonly(true);
+        let (_, out) = run_policy(unmasked, &ws, &format!("cat {}", other.to_string_lossy())).await;
+        assert!(out.contains("OTHER_PROJECT"), "control: the cache root must be readable: {out}");
+        let policy = Policy::new(&ws, false).with_home_readonly(true).with_pkg_cache(&mine);
+
+        let (ok, out) = run_policy(
+            policy.clone(),
+            &ws,
+            "mkdir -p \"$CARGO_HOME/registry\" && echo cached > \"$CARGO_HOME/registry/x\" \
+             && mkdir -p \"$npm_config_cache\" && echo npm > \"$npm_config_cache/y\" && cat \"$CARGO_HOME/config.toml\"",
+        )
+        .await;
+        assert!(ok, "package cache writes must succeed: {out}");
+        assert!(out.contains("# user config"), "config must be readable: {out}");
+        let cached = mine.root.join("cargo/registry/x");
+        assert_eq!(std::fs::read_to_string(&cached).unwrap_or_default().trim(), "cached");
+
+        let (_, out) = run_policy(
+            policy.clone(),
+            &ws,
+            "echo '[build]' >> \"$CARGO_HOME/config.toml\"; chmod u+w \"$CARGO_HOME/config.toml\"; \
+             echo '[build]' >> \"$CARGO_HOME/config.toml\"; ls -A \"$CARGO_HOME\"",
+        )
+        .await;
+        let host_config = std::fs::read_to_string(host.join("config.toml")).unwrap();
+        let copy = std::fs::read_to_string(mine.root.join("cargo/config.toml")).unwrap();
+        assert_eq!(host_config, "# user config\n", "{out}");
+        if backend() == Backend::Bubblewrap {
+            assert_eq!(copy, "# user config\n", "the config must stay read-only: {out}");
+        }
+        assert!(!out.contains("credentials"), "no credentials in CARGO_HOME: {out}");
+
+        // Neither the legacy name nor a fresh cargo folder can carry a config
+        // of the shell's own.
+        let (_, out) = run_policy(
+            policy.clone(),
+            &ws,
+            "echo '[build]' > \"$CARGO_HOME/config\"; mv \"$CARGO_HOME\" \"$CARGO_HOME.moved\"; \
+             mkdir -p \"$CARGO_HOME\" && echo '[build]' > \"$CARGO_HOME/config.toml\"; \
+             cat \"$CARGO_HOME/config\" \"$CARGO_HOME/config.toml\"",
+        )
+        .await;
+        if backend() == Backend::Bubblewrap {
+            assert!(!out.contains("[build]"), "cargo read a planted config: {out}");
+            assert!(!mine.root.join("cargo.moved").exists(), "{out}");
+            let legacy = std::fs::read_to_string(mine.root.join("cargo/config")).unwrap_or_default();
+            assert!(legacy.is_empty(), "{legacy}: {out}");
+        }
+
+        let (ok, out) = run_policy(policy, &ws, &format!("cat {}", other.to_string_lossy())).await;
+        assert!(!ok && !out.contains("OTHER_PROJECT"), "another project's cache: {out}");
+
+        // A user with no cargo config gets an empty one, which lives under
+        // the masked cache root and must still mount (bubblewrap reads bind
+        // sources from the host's view).
+        let bare = Policy::new(&ws, false).with_home_readonly(true).with_pkg_cache(&theirs);
+        let (ok, out) = run_policy(bare, &ws, "cat \"$CARGO_HOME/config.toml\" && echo READ").await;
+        assert!(ok && out.contains("READ"), "empty config: {out}");
+
+        // A workspace holding the cache root (running in `$HOME`) still hides
+        // the other project's cache, and this run's own stays writable.
+        let around = Policy::new(&base, false).with_home_readonly(true).with_pkg_cache(&mine);
+        let (_, out) = run_policy(
+            around,
+            &base,
+            &format!("cat {}; echo mine > \"$CARGO_HOME/registry/z\"", other.to_string_lossy()),
+        )
+        .await;
+        let wrote = mine.root.join("cargo/registry/z").is_file();
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(!out.contains("OTHER_PROJECT"), "workspace around the cache root: {out}");
+        assert!(wrote, "this run's cache must stay writable: {out}");
+    }
+
     #[tokio::test]
     async fn the_network_is_unreachable_by_default() {
         require_backend!();
@@ -1822,6 +3021,33 @@ mod enforcement_tests {
         let (ok, _) = run(&ws, false, "exec 3<>/dev/tcp/1.1.1.1/53 && echo connected").await;
         let _ = std::fs::remove_dir_all(&ws);
         assert!(!ok, "network must be denied by default");
+    }
+
+    /// A read-only subagent cannot change its checkout from the shell, not even
+    /// its `.git`, while the scratch it was given stays writable.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn a_read_only_workspace_refuses_writes_but_the_scratch_does_not() {
+        require_backend!();
+        let ws = workspace();
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        std::fs::write(ws.join("kept.txt"), b"original").unwrap();
+        let scratch = workspace();
+        let policy = Policy::new(&ws, false)
+            .with_scratch_root(&scratch)
+            .with_workspace_readonly(true);
+        let (ok, out) = run_policy(policy.clone(), &ws, "echo changed > kept.txt").await;
+        assert!(!ok, "{out}");
+        let (ok, out) = run_policy(policy.clone(), &ws, "touch .git/index.lock").await;
+        assert!(!ok, "{out}");
+        let (ok, out) = run_policy(policy, &ws, "cat kept.txt && echo s > \"$TMPDIR/s.txt\"").await;
+        let kept = std::fs::read_to_string(ws.join("kept.txt")).unwrap();
+        let scratched = scratch.join("s.txt").exists();
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(ok && out.contains("original"), "reads still work: {out}");
+        assert_eq!(kept, "original");
+        assert!(scratched, "the scratch stays writable");
     }
 
     /// A relocated store root (e.g. `JAN_DATA_FOLDER` outside `$HOME`) must not
@@ -1843,5 +3069,54 @@ mod enforcement_tests {
             !out.contains("STORESECRET"),
             "a relocated store root must be unreadable, got: {out}"
         );
+    }
+
+    /// #9678: a write beside an attached folder is refused, not discarded, while the
+    /// folder, a bare `/tmp` path and `$HOME` (where caches go) stay writable.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn a_write_beside_an_attached_folder_is_refused_not_discarded() {
+        require_backend!();
+        let ws = workspace();
+        let base = workspace();
+        let folder = base.join("folders/f");
+        std::fs::create_dir_all(&folder).unwrap();
+        let policy = Policy::new(&ws, false).with_write_roots(vec![folder.clone()]);
+        let in_folder = format!("cd {} && echo in > in.txt", folder.to_string_lossy());
+        let (ok, out) = run_policy(policy.clone(), &ws, &in_folder).await;
+        assert!(ok, "the folder stays writable: {out}");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("in.txt"))
+                .unwrap_or_default()
+                .trim(),
+            "in"
+        );
+        for target in ["../x", "../../x"] {
+            let cmd = format!("cd {} && echo x > {target}", folder.to_string_lossy());
+            let (ok, out) = run_policy(policy.clone(), &ws, &cmd).await;
+            assert!(!ok, "{target} must be refused, not discarded: {out}");
+            assert!(looks_denied(&out), "{out}");
+        }
+        let (ok, out) = run_policy(policy, &ws, "echo t > /tmp/t && mkdir -p \"$HOME/.npm\"").await;
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(ok, "/tmp and $HOME stay writable for tools: {out}");
+    }
+
+    /// The same for the thread workspace, which sits inside the masked data
+    /// folder on the desktop: `../x` would land in the mask's tmpfs.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn a_write_beside_the_workspace_in_a_masked_store_is_refused() {
+        require_backend!();
+        let store = workspace();
+        let ws = store.join("threads/t1");
+        std::fs::create_dir_all(&ws).unwrap();
+        let policy = Policy::new(&ws, false).with_mask_root(&store);
+        let (ok, out) = run_policy(policy.clone(), &ws, "echo in > in.txt").await;
+        assert!(ok, "{out}");
+        let (ok, out) = run_policy(policy, &ws, "echo x > ../x").await;
+        let _ = std::fs::remove_dir_all(&store);
+        assert!(!ok && looks_denied(&out), "../x must be refused: {out}");
     }
 }

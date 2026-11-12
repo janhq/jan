@@ -46,6 +46,10 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # question's recommended option (else its
 #                                     # first). 0 or unset waits forever, the
 #                                     # default
+# bell = "off"                       # TUI terminal bell: "attention" (the
+#                                     # default) rings when a permission prompt
+#                                     # or ask question needs you, "always"
+#                                     # also when a turn finishes, "off" never
 # terminal_hint = false               # stop the startup note that offers
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
@@ -61,10 +65,19 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # memory_cross_project = false        # hide other projects' memory from the
 #                                     # agent (the root ~/.jan/MEMORY.md lists
 #                                     # them by default)
+# memory_auto_tidy = false            # stop the TUI tidying memory in the
+#                                     # background when its index outgrows the
+#                                     # prompt budget (on by default; /memory
+#                                     # tidy still runs it on demand)
 # prune_threads = true                # delete old saved threads at TUI start,
 #                                     # under each project's agent.toml
 #                                     # thread_retention_days / max_threads.
 #                                     # Off by default: nothing is deleted
+# subagent_build_cache_max_gb = 20    # clear a project's shared subagent
+#                                     # cargo-target at session end once it
+#                                     # is larger than this (default 20; 0
+#                                     # never). A project's agent.toml
+#                                     # [agent] key of the same name wins
 #
 # [tui]
 # animations = false                  # hold the TUI still: no shimmer and
@@ -153,6 +166,11 @@ struct GlobalConfigToml {
     /// wait forever, blocking the run on the ask exactly as it does today.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ask_timeout_secs: Option<u64>,
+    /// TUI terminal bell: `"off"`, `"attention"` or `"always"`. `None` = the
+    /// default, attention. Any other string also reads as the default so a
+    /// typo never silences a prompt the user asked to hear.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bell: Option<String>,
     /// Offer `/terminal-setup` at startup when a config file proves this
     /// terminal is dropping a modified key. `None` = the default, on. For the
     /// user who has read the note and decided to keep `Option` composing
@@ -173,11 +191,21 @@ struct GlobalConfigToml {
     /// memory to itself (user-wide `user:` notes still apply everywhere).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memory_cross_project: Option<bool>,
+    /// Tidy memory in the background once its index outgrows the prompt
+    /// budget. `None` = the default, on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_auto_tidy: Option<bool>,
     /// Prune old saved threads at TUI start. `None` = the default, off: a
     /// deleted thread is not recoverable, so removing the user's history is
     /// something they turn on, not something they find out about.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     prune_threads: Option<bool>,
+    /// The user-wide default for how large, in GB, a project's shared
+    /// subagent build directory may grow before a session end clears it.
+    /// `None` = the default, 20; `0` never clears. A project's
+    /// `[agent].subagent_build_cache_max_gb` wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subagent_build_cache_max_gb: Option<u64>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
     /// beyond the fixed base allowlist. Empty by default, so the shell env is
     /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
@@ -356,8 +384,11 @@ pub(crate) struct ProviderUpdate {
 
 /// `~/.jan`, the user-wide config directory.
 pub(crate) fn global_jan_dir() -> Result<PathBuf, String> {
-    dirs::home_dir()
-        .map(|home| home.join(".jan"))
+    #[cfg(test)]
+    let home = TEST_HOME.with(|home| Some(home.borrow().path().to_path_buf()));
+    #[cfg(not(test))]
+    let home = dirs::home_dir();
+    home.map(|home| home.join(".jan"))
         .ok_or_else(|| "could not resolve the user's home directory".to_string())
 }
 
@@ -529,6 +560,13 @@ pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
 /// [`sandbox_setting`]: a preference must not block a session from starting.
 pub(crate) fn worktree_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.worktree)
+}
+
+/// `subagent_build_cache_max_gb` in `~/.jan/config.toml`; `None` when unset
+/// or unreadable, so the project's setting or the default decides.
+#[cfg(feature = "cli")]
+pub(crate) fn subagent_build_cache_max_gb_setting() -> Option<u64> {
+    load_raw().ok().and_then(|config| config.subagent_build_cache_max_gb)
 }
 
 /// Whether saved threads are pruned at TUI start (`prune_threads` in
@@ -715,6 +753,17 @@ pub(crate) fn memory_cross_project_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// Whether the TUI tidies memory on its own when the index outgrows its budget
+/// (`memory_auto_tidy` in `~/.jan/config.toml`), defaulting to on. Unreadable
+/// config yields the default, like the other preferences.
+#[cfg(feature = "cli")]
+pub(crate) fn memory_auto_tidy_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.memory_auto_tidy)
+        .unwrap_or(true)
+}
+
 /// Whether the TUI streams reasoning into its live tail while folding is on
 /// (`stream_reasoning` in `~/.jan/config.toml`), defaulting to on. `false` keeps
 /// a folded block off screen entirely, leaving the header badge to stand for it.
@@ -734,6 +783,13 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
 /// so a display preference never blocks startup.
 pub(crate) fn theme_setting() -> Option<String> {
     load_raw().ok().and_then(|config| config.theme)
+}
+
+/// The TUI bell preference (`bell` in `~/.jan/config.toml`), `None` when unset.
+/// Read on every status transition so a `/settings` change applies at once; an
+/// unreadable config yields `None` (the default) rather than an error.
+pub(crate) fn bell_setting() -> Option<String> {
+    load_raw().ok().and_then(|config| config.bell)
 }
 
 /// How long an unanswered `ask` prompt waits before it auto-answers with each
@@ -765,7 +821,10 @@ const ROOT_KEYS: &[&str] = &[
     "stream_reasoning",
     "theme",
     "ask_timeout_secs",
+    "bell",
     "terminal_hint",
+    "memory_cross_project",
+    "memory_auto_tidy",
     "hooks",
 ];
 
@@ -1041,30 +1100,54 @@ pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Redirect `HOME` to a scratch dir for the duration of `f`. Every test that
-/// touches `~/.jan` must go through this one helper: `HOME` is process-wide, so
-/// a second lock elsewhere would let those tests race each other.
+// Resolve config paths independently of platform home APIs in unit tests. Each
+// thread starts with a fresh directory, including tests outside with_temp_home.
+#[cfg(test)]
+thread_local! {
+    static TEST_HOME: std::cell::RefCell<tempfile::TempDir> =
+        std::cell::RefCell::new(tempfile::tempdir().expect("test config home"));
+}
+
+/// Give config resolution a fresh scratch home on every platform. Keep HOME
+/// redirected for existing callers that also exercise HOME-based code. That
+/// environment variable is process-wide, so all such callers share this lock.
+/// Both overrides are restored on unwind; the scratch directory is RAII-owned.
+///
+/// All fixture config access must run on the calling OS thread: `TEST_HOME` is
+/// thread-local and is not inherited by spawned threads or runtime workers.
+/// A runtime's root `block_on` future stays on the caller and is safe; do not
+/// move fixture-dependent work into `std::thread::spawn`, `spawn_blocking`, or
+/// `tokio::spawn` tasks that may run on another OS thread.
 #[cfg(test)]
 pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let home = std::env::temp_dir().join(format!("jan_global_cfg_test_{n}"));
-    std::fs::create_dir_all(&home).unwrap();
-    let prev = std::env::var_os("HOME");
-    std::env::set_var("HOME", &home);
-    let result = f(&home);
-    match prev {
-        Some(p) => std::env::set_var("HOME", p),
-        None => std::env::remove_var("HOME"),
+    let home = tempfile::tempdir().expect("test config home");
+    let path = home.path().to_path_buf();
+    let previous = TEST_HOME.with(|slot| slot.replace(home));
+    struct Restore {
+        home: Option<tempfile::TempDir>,
+        env: Option<std::ffi::OsString>,
     }
-    let _ = std::fs::remove_dir_all(&home);
-    result
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_HOME.with(|slot| {
+                slot.replace(self.home.take().unwrap());
+            });
+            match &self.env {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+    let _restore = Restore {
+        home: Some(previous),
+        env: std::env::var_os("HOME"),
+    };
+    std::env::set_var("HOME", &path);
+    f(&path)
 }
 
 // The suite covers the provider records and the TUI's settings writers, which
@@ -1075,10 +1158,53 @@ mod tests {
     use super::*;
 
     #[test]
+    fn config_resolver_uses_fixture_and_restores_after_panic() {
+        let before = global_config_path().unwrap();
+        let mut scratch = None;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_temp_home(|home| {
+                scratch = Some(home.to_path_buf());
+                assert_eq!(global_config_path().unwrap(), home.join(".jan/config.toml"));
+                ensure_global_config().unwrap();
+                panic!("exercise fixture cleanup");
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(global_config_path().unwrap(), before);
+        assert!(!scratch.unwrap().exists());
+    }
+
+    #[test]
     fn missing_file_yields_empty_map() {
         with_temp_home(|_| {
             let configs = load_global_config().expect("load");
             assert!(configs.is_empty());
+        });
+    }
+
+    #[test]
+    fn memory_auto_tidy_is_on_by_default_and_reads_its_key() {
+        with_temp_home(|home| {
+            assert!(memory_auto_tidy_enabled(), "missing file");
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "memory_auto_tidy = false\n").unwrap();
+            assert!(!memory_auto_tidy_enabled());
+            std::fs::write(&path, "memory_auto_tidy = [").unwrap();
+            assert!(memory_auto_tidy_enabled(), "fails open to the default");
+        });
+    }
+
+    #[test]
+    fn bell_is_unset_by_default_and_reads_its_key() {
+        with_temp_home(|home| {
+            assert_eq!(bell_setting(), None, "missing file");
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "bell = \"always\"\n").unwrap();
+            assert_eq!(bell_setting().as_deref(), Some("always"));
+            std::fs::write(&path, "bell = [").unwrap();
+            assert_eq!(bell_setting(), None, "fails open to the default");
         });
     }
 

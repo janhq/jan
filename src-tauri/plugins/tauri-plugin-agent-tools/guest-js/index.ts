@@ -6,6 +6,7 @@ import {
   ToolOutputChunk,
   ToolResult,
   ToolSchema,
+  WorkspaceCopy,
   WorkspaceScope,
 } from './types'
 
@@ -17,8 +18,26 @@ export {
   ToolOutputChunk,
   ToolResult,
   ToolSchema,
+  WorkspaceCopy,
   WorkspaceScope,
 } from './types'
+import type {
+  ConsentAnswer,
+  ConsentRequest,
+  ConsentVerdict,
+  GrantKind,
+  SavedGrants,
+  ToolOrigin,
+} from './types'
+
+export type {
+  ConsentAnswer,
+  ConsentRequest,
+  ConsentVerdict,
+  GrantKind,
+  SavedGrants,
+  ToolOrigin,
+}
 
 /**
  * Every call takes the Jan data folder, because the plugin derives its
@@ -100,11 +119,40 @@ export async function previewUnregisterRoot(root: string): Promise<void> {
   await invoke('plugin:agent-tools|preview_unregister_root', { root })
 }
 
+/**
+ * Open an agent-written file in its OS default app. The host checks the file
+ * itself and rejects a link, a file outside `roots` (the session's sandbox and
+ * attached folder), a type the OS would run, or an executable.
+ */
+export async function openArtifact(
+  dataFolder: string,
+  roots: string[],
+  path: string
+): Promise<void> {
+  await invoke('plugin:agent-tools|open_artifact', { dataFolder, roots, path })
+}
+
 export async function sessionWorkspacePath(
   dataFolder: string,
   sessionId: string
 ): Promise<string> {
   return await invoke('plugin:agent-tools|session_workspace_path', {
+    dataFolder,
+    sessionId,
+  })
+}
+
+/**
+ * Copy a Cowork session's sandbox into the thread workspace of the same id
+ * (`threads/<id>`), for the Cowork-to-threads migration. A copy: the session
+ * sandbox stays where it was as the rollback source. Symlinks are skipped, and
+ * a thread workspace that holds files the copy did not make is refused.
+ */
+export async function sessionWorkspaceCopyToThread(
+  dataFolder: string,
+  sessionId: string
+): Promise<WorkspaceCopy> {
+  return await invoke('plugin:agent-tools|session_workspace_copy_to_thread', {
     dataFolder,
     sessionId,
   })
@@ -326,19 +374,22 @@ export type ImportedAttachment = {
 /**
  * Copy a user attachment into `sessionId`'s workspace, writing `text` beside
  * it when given, so the agent can read a file picked from outside its roots.
- * Same-named files are suffixed, never overwritten.
+ * Same-named files are suffixed, never overwritten. `scope` defaults to the
+ * thread sandbox, where every conversation (Cowork included) runs.
  */
 export async function attachmentImport(
   dataFolder: string,
   sessionId: string,
   source: string,
-  text?: string
+  text?: string,
+  scope?: WorkspaceScope
 ): Promise<ImportedAttachment> {
   return await invoke('plugin:agent-tools|attachment_import', {
     dataFolder,
     sessionId,
     source,
     text: text ?? null,
+    scope,
   })
 }
 
@@ -532,4 +583,74 @@ export async function stopSessionMonitors(threadId: string): Promise<void> {
  */
 export async function cancelThreadBash(threadId: string): Promise<void> {
   await invoke('plugin:agent-tools|cancel_thread_bash', { threadId })
+}
+
+/**
+ * Whether a tool call needs the user's answer before it runs. Rust keeps the
+ * grants and the one-use authorization its executor takes; `allowed` means the
+ * call is authorized, `ask` that it waits for {@link consentAnswer}.
+ */
+export async function consentRequest(
+  request: ConsentRequest
+): Promise<ConsentVerdict> {
+  return await invoke('plugin:agent-tools|consent_request', { request })
+}
+
+/** Record the user's answer to an asked call; resolves whether it may run. */
+export async function consentAnswer(
+  callId: string,
+  answer: ConsentAnswer
+): Promise<boolean> {
+  return await invoke('plugin:agent-tools|consent_answer', { callId, answer })
+}
+
+/**
+ * Use up the authorization of a call the webview runs itself (an extension's
+ * tool). Rejects when the call was not approved as exactly this call.
+ */
+export async function consentConsume(
+  threadId: string,
+  callId: string,
+  tool: string,
+  server: string | undefined,
+  origin: ToolOrigin
+): Promise<void> {
+  await invoke('plugin:agent-tools|consent_consume', {
+    threadId,
+    callId,
+    tool,
+    server,
+    origin,
+  })
+}
+
+/**
+ * Deny a thread's pending asks and drop its unused authorizations; with
+ * `forgetGrants` its thread-scoped grants too.
+ */
+export async function consentCancelThread(
+  threadId: string,
+  forgetGrants = false
+): Promise<void> {
+  await invoke('plugin:agent-tools|consent_cancel_thread', {
+    threadId,
+    forgetGrants,
+  })
+}
+
+/** The saved, configuration-level grants. */
+export async function consentSaved(): Promise<SavedGrants> {
+  return await invoke('plugin:agent-tools|consent_saved')
+}
+
+/** Remove one saved grant; resolves whether it existed. */
+export async function consentRevoke(
+  kind: GrantKind,
+  name: string
+): Promise<boolean> {
+  return await invoke('plugin:agent-tools|consent_revoke', { kind, name })
+}
+
+export async function consentSetAllowAllMcp(allow: boolean): Promise<void> {
+  await invoke('plugin:agent-tools|consent_set_allow_all_mcp', { allow })
 }

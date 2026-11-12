@@ -83,18 +83,22 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      # wdio.conf.ts creates a throwaway profile per run and deletes it, but an
-      # inherited JAN_E2E_HOME is used and never removed (`ownsTestHome`) -- so
-      # naming one is what leaves the profile behind for the artifact step.
-      # Exported from a step rather than set in the job's `env`, because the
-      # `runner` context does not exist yet at job level.
-      - name: Pin the test profile inside the runner temp dir
-        shell: bash
-        run: echo "JAN_E2E_HOME=${{ runner.temp }}/jan-e2e-home" >> "$GITHUB_ENV"
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
+
+      # Use Node's temp root, which need not equal runner.temp. An inherited
+      # profile is validated but never deleted, so artifacts can retain it.
+      - name: Allocate the test profile inside the OS temp dir
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, mkdtempSync, realpathSync } from 'node:fs'
+          import { tmpdir } from 'node:os'
+          import { join } from 'node:path'
+          const home = mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-'))
+          appendFileSync(process.env.GITHUB_ENV, `JAN_E2E_HOME=${home}\n`)
+          NODE
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -179,7 +183,7 @@ jobs:
           name: e2e-logs-${{ matrix.name }}
           path: |
             e2e/logs
-            ${{ runner.temp }}/jan-e2e-home
-            !${{ runner.temp }}/jan-e2e-home/AppData/Local/*/EBWebView
+            ${{ env.JAN_E2E_HOME }}
+            !${{ env.JAN_E2E_HOME }}/AppData/Local/*/EBWebView
           retention-days: 7
           if-no-files-found: warn

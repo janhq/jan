@@ -148,7 +148,7 @@ function ModelProviders() {
                       <ProvidersAvatar provider={provider} />
                       <div>
                         <h3 className="font-medium">
-                          {getProviderTitle(provider.provider)}
+                          {getProviderTitle(provider)}
                         </h3>
                         <p className="text-xs text-muted-foreground mt-1">
                           {provider.models.length} Models

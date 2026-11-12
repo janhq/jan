@@ -9,6 +9,10 @@
 
 use serde_json::{json, Value};
 
+/// The `memory` tool's description: what it is for and the reconcile rule that
+/// keeps the index small (janhq/jan-internal#497).
+const MEMORY_DESCRIPTION: &str = "Your long-term memory: durable facts (decisions, conventions, preferences, gotchas) kept across sessions. It is yours to curate; no op asks the user. Before writing, `search` or `view` for an existing note on the topic and update it (`edit`, or `write` over it) rather than adding another. When a new fact supersedes a note, `delete` the old one. When work a note tracks is finished, archive it by adding front matter `status: done` (it stays readable and searchable but leaves the index). Group related notes in a folder with `move` (`name` to `tui/scroll`); never write an index or overview note, the index is built for you. Keep notes short; never store secrets or session-only state.";
+
 /// The `bash` tool's description before any shell-specific note.
 const BASH_DESCRIPTION: &str = "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output.";
 
@@ -25,6 +29,39 @@ pub fn bash_description(kind: super::proc::ShellKind) -> String {
 
 /// Appended to the shell description when the run offers escalation.
 const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command that matters to the task fails because of the sandbox (a read-only file system or permission error outside the project, such as a package manager writing its cache, or a blocked download), rerun the same command with `escalate: true` and a one-line `justification`: the user is asked to approve running it outside the sandbox. Never escalate pre-emptively, and never to work around a denial the user gave.";
+
+/// Appended to the shell description when the caller rings a completion
+/// doorbell (`ToolContext::shell_done_sink`), so the model learns up front --
+/// not only from a hand-off result -- that a backgrounded command needs no polling.
+const BACKGROUND_NOTE: &str = " A command that outlives its `timeout` keeps running in the background and you are notified automatically when it finishes, with where its output was written: do not poll, sleep, or re-run it to check; carry on with other work or end your turn.";
+
+/// Appended for an agent run, which leaves off `[exit 0]` after output (see
+/// `handlers::model_shell_result`). An MCP client keeps every marker, as the
+/// plain description promises.
+const EXIT_NOTE: &str = " In this session `[exit 0]` is left off when the command printed output: output with no exit line means it succeeded. A nonzero exit or a signal is always reported.";
+
+/// Appended when the caller carries the shell's directory across calls
+/// (`ToolContext::shell_cwd`), so the model stops prefixing every command with
+/// `cd <path> &&`.
+const CWD_NOTE: &str = " The working directory persists between calls: after `cd dir`, later calls start in `dir` until you `cd` elsewhere, and a note in the result tells you whenever it changes. Do not repeat `cd <path> &&` in every command. Other tools still resolve relative paths against the project root.";
+
+/// Add the agent session's shell notes to the `shell` schema in `schemas`:
+/// [`BACKGROUND_NOTE`] and [`EXIT_NOTE`] always, [`CWD_NOTE`] with
+/// `persistent_cwd`. An MCP client served the same schemas gets none of these
+/// behaviours, so it keeps the plain description.
+pub fn offer_session_shell(schemas: &mut [Value], persistent_cwd: bool) {
+    for schema in schemas.iter_mut() {
+        let function = &mut schema["function"];
+        if function["name"] != super::SHELL_TOOL {
+            continue;
+        }
+        if let Some(description) = function["description"].as_str() {
+            let cwd = if persistent_cwd { CWD_NOTE } else { "" };
+            function["description"] =
+                Value::String(format!("{description}{EXIT_NOTE}{BACKGROUND_NOTE}{cwd}"));
+        }
+    }
+}
 
 /// Add the escalation arguments to the `shell` schema in `schemas`, for a run
 /// whose shell is sandboxed and whose user can be asked to lift it. Applied
@@ -60,7 +97,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "read",
-                "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by signature or extension) are returned as a vision image instead of text.",
+                "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first), with a notice naming the offset to continue from; a single line over 64KB is cut and the notice says where. Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by their file signature, not the extension) are returned as a vision image instead of text.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -83,7 +120,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "screenshot",
-                "description": "Render a local HTML or SVG file with headless Chrome and return a PNG screenshot of it, so you can see what you built and iterate on the visual result. Use after writing an HTML/SVG artifact to check its appearance; the returned image is what a viewer would see. Relative assets (images, css, js) resolve against the file's own directory. Non-HTML/SVG files are rejected.",
+                "description": "Render a local HTML or SVG file and return a PNG screenshot of it, so you can see what you built and iterate on the visual result. Use after writing an HTML/SVG artifact to check its appearance; the returned image is what a viewer would see. Relative assets (images, css, js) resolve against the file's own directory. Non-HTML/SVG files are rejected.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -154,37 +191,21 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "memory_list",
-                "description": "List your memory notes (durable facts stored across sessions): this project's, then your user-wide ones as `user:<name>`. No arguments.",
-                "parameters": { "type": "object", "properties": {}, "required": [] }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "memory_read",
-                "description": "Read a memory note by name. `name` is this project's note, `user:name` a user-wide note, `project:<slug>` another project's index and `project:<slug>/name` one of its notes.",
+                "name": super::MEMORY_TOOL,
+                "description": MEMORY_DESCRIPTION,
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension), optionally scoped with `user:` or `project:<slug>/`." }
+                        "op": { "type": "string", "enum": ["view", "search", "write", "edit", "delete", "move"], "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included. write: create or overwrite. edit: replace one exact, unique `old` with `new`. delete: remove a note. move: rename `name` to `to` (e.g. into a folder), keeping its content." },
+                        "name": { "type": "string", "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project, read-only). Required for write, edit, delete and move. `index` and `MEMORY` are reserved: the index is built for you." },
+                        "to": { "type": "string", "description": "move: the new name, `note` or `folder/note`; must not exist yet." },
+                        "query": { "type": "string", "description": "search: words that must all appear in the note." },
+                        "title": { "type": "string", "description": "write: one-line title, stored as the note's first line and shown in the index." },
+                        "content": { "type": "string", "description": "write: the note's Markdown body. Front matter `status: done` archives it." },
+                        "old": { "type": "string", "description": "edit: exact text to replace; must occur exactly once." },
+                        "new": { "type": "string", "description": "edit: replacement text." }
                     },
-                    "required": ["name"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "memory_write",
-                "description": "Create or overwrite a memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short. Plain `name` is this project's; `user:name` applies to every project (personal preferences, cross-project conventions).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note. Prefix `user:` for a user-wide note." },
-                        "content": { "type": "string", "description": "Full Markdown content of the note." }
-                    },
-                    "required": ["name", "content"]
+                    "required": ["op"]
                 }
             }
         }),
@@ -293,7 +314,7 @@ pub fn search_tool_schemas() -> Vec<Value> {
                     "properties": {
                         "pattern": { "type": "string", "description": "Glob pattern to match against each path, e.g. **/*.rs." },
                         "path": { "type": "string", "description": "Directory to search under, relative to the project root. Defaults to the root." },
-                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000)." }
+                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000). A notice says when more matched." }
                     },
                     "required": ["pattern"]
                 }
@@ -313,7 +334,7 @@ pub fn search_tool_schemas() -> Vec<Value> {
                         "ignore_case": { "type": "boolean", "description": "Match case-insensitively (default false)." },
                         "literal": { "type": "boolean", "description": "Treat pattern as a literal string rather than a regex (default false)." },
                         "context": { "type": "integer", "description": "Lines of context to include around each match (default 0)." },
-                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
+                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100). A notice says when more matched." }
                     },
                     "required": ["pattern"]
                 }
@@ -327,6 +348,32 @@ pub fn search_tool_schemas() -> Vec<Value> {
 mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
+
+    /// The plain array (what an MCP client is served) promises neither a
+    /// completion notice nor a persistent directory; offering them touches only
+    /// the shell entry, and the directory note only when asked for.
+    #[test]
+    fn session_shell_notes_are_offered_only_on_request_and_only_on_the_shell() {
+        let plain = builtin_tool_schemas();
+        let plain_text = serde_json::to_string(&plain).unwrap();
+        assert!(!plain_text.contains("notified automatically"));
+        assert!(!plain_text.contains("directory persists"));
+        for persistent_cwd in [false, true] {
+            let mut offered = plain.clone();
+            offer_session_shell(&mut offered, persistent_cwd);
+            for (before, after) in plain.iter().zip(&offered) {
+                if before["function"]["name"] == crate::tools::SHELL_TOOL {
+                    let text = after["function"]["description"].as_str().unwrap();
+                    assert!(text.contains("notified automatically when it finishes"), "{text}");
+                    assert!(text.contains("do not poll"), "{text}");
+                    assert!(text.contains("output with no exit line means it succeeded"), "{text}");
+                    assert_eq!(text.contains("directory persists"), persistent_cwd, "{text}");
+                } else {
+                    assert_eq!(before, after);
+                }
+            }
+        }
+    }
 
     /// The plain array never mentions escalation; offering it touches only the
     /// shell entry, adding both arguments and the when-to-use note.
@@ -406,6 +453,28 @@ mod tests {
         let once = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         let twice = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         assert_eq!(once, twice);
+    }
+
+    /// One `memory` tool carries every op and the reconcile rule; the three
+    /// old tools are gone with no aliases.
+    #[test]
+    fn memory_is_one_tool_with_six_ops_and_the_reconcile_rule() {
+        let schemas = builtin_tool_schemas();
+        let names: Vec<&str> = schemas.iter().filter_map(|s| s["function"]["name"].as_str()).collect();
+        assert!(names.contains(&"memory"));
+        assert!(!names.iter().any(|n| n.starts_with("memory_")), "{names:?}");
+        let memory = schemas.iter().find(|s| s["function"]["name"] == "memory").unwrap();
+        let params = &memory["function"]["parameters"];
+        assert_eq!(params["required"], json!(["op"]));
+        assert_eq!(
+            params["properties"]["op"]["enum"],
+            json!(["view", "search", "write", "edit", "delete", "move"])
+        );
+        assert!(params["properties"]["to"].is_object(), "move takes `to`");
+        let description = memory["function"]["description"].as_str().unwrap();
+        for rule in ["`search` or `view`", "`delete` the old one", "`status: done`", "no op asks the user"] {
+            assert!(description.contains(rule), "{rule}: {description}");
+        }
     }
 
     /// A PowerShell or cmd host says so before the generic text, so the model

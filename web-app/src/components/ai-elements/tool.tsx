@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { ToolUIPart } from 'ai'
-import { ChevronDownIcon, WrenchIcon, SearchIcon, GlobeIcon } from 'lucide-react'
+import { ChevronRightIcon, WrenchIcon, SearchIcon, GlobeIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
@@ -188,8 +188,10 @@ export const ToolHeader = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          'cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors',
-          !isOpen && 'hover:bg-secondary',
+          // Hover brightens the label like the trace header above it and
+          // fades the chevron in, rather than painting a full-width square
+          // block behind the row.
+          'group/tool-header cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
           className
         )}
       >
@@ -224,6 +226,18 @@ export const ToolHeader = memo(
             {summary}
           </span>
         )}
+        {/* Right when folded, turning down as it opens, inline after the
+            label: the same cue as the trace header and every other
+            expandable row. Shown while open (it is the collapse cue), on
+            hover, on keyboard focus, and always where nothing can hover. */}
+        <ChevronRightIcon
+          className={cn(
+            '-ml-1 size-4 shrink-0 transition-[opacity,transform]',
+            isOpen
+              ? 'rotate-90 opacity-100'
+              : 'rotate-0 opacity-0 group-hover/tool-header:opacity-100 group-focus-visible/tool-header:opacity-100 [@media(hover:none)]:opacity-100'
+          )}
+        />
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {queuePosition > 0 && (
             <span className="text-xs text-muted-foreground/60">
@@ -234,12 +248,6 @@ export const ToolHeader = memo(
             startedAt={startedAt}
             endedAt={endedAt}
             className="text-muted-foreground/60"
-          />
-          <ChevronDownIcon
-            className={cn(
-              'size-4 shrink-0 transition-transform',
-              isOpen ? 'rotate-180' : 'rotate-0'
-            )}
           />
         </span>
       </CollapsibleTrigger>
@@ -363,83 +371,114 @@ export const ToolApprovalActions = memo(() => {
         >
           {t('tools:toolApproval.allowOnce')}
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => resolveApproval(toolCallId, 'allow-thread')}
-        >
-          {t('tools:toolApproval.allowInThread')}
-        </Button>
-        <Button
-          size="sm"
-          autoFocus
-          onClick={() => resolveApproval(toolCallId, 'allow-always')}
-        >
-          {/* Trusting a server tool-by-tool is the same decision repeated. */}
-          {pending.serverName
-            ? t('tools:toolApproval.allowServerAlways', {
-                server: pending.serverName,
-              })
-            : t('tools:toolApproval.allowToolAlways', {
-                tool: pending.toolName,
-              })}
-        </Button>
+        {/* A strict request saves no grant (see ApprovalOptions.strict), so
+            offering a wider scope would be a promise it does not keep. */}
+        {!pending.strict && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => resolveApproval(toolCallId, 'allow-thread')}
+            >
+              {t('tools:toolApproval.allowInThread')}
+            </Button>
+            <Button
+              size="sm"
+              autoFocus
+              onClick={() => resolveApproval(toolCallId, 'allow-always')}
+            >
+              {/* Trusting a server tool-by-tool is the same decision repeated. */}
+              {pending.serverName
+                ? t('tools:toolApproval.allowServerAlways', {
+                    server: pending.serverName,
+                  })
+                : t('tools:toolApproval.allowToolAlways', {
+                    tool: pending.toolName,
+                  })}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )
 })
 
-type ToolImageProps = {
-  data: string
-  index: number
-  resolver: (input: string) => Promise<string>
+type ContentBlock = {
+  type?: string
+  text?: string
+  data?: string
+  mimeType?: string
+  image?: { url?: string }
 }
 
-const ToolImage = memo(({ data, index }: ToolImageProps) => {
-  // Prepare the URL - convert base64 to data URL if needed
-  const [preparedUrl, setPreparedUrl] = useState<string | undefined>(undefined)
+type ToolImageSource = { data: string; mimeType?: string }
 
-  useEffect(() => {
-    if (data.startsWith('data:image') || data.startsWith('http')) {
-      // Already a data URL or HTTP URL
-      setPreparedUrl(data)
-    } else {
-      // Assume it's base64 encoded
-      setPreparedUrl(`data:image/png;base64,${data}`)
+const REMOTE_URL = /^https?:/i
+
+/**
+ * The image blocks of an MCP result, stored bare or as `{ content }`. Only
+ * inline data is drawn: a block that points at a URL is not fetched just
+ * because a tool returned it.
+ */
+function toolImages(output: unknown): ToolImageSource[] {
+  const items: ContentBlock[] = Array.isArray(output)
+    ? output
+    : isPlainObject(output) && Array.isArray(output.content)
+      ? output.content
+      : []
+  return items.flatMap((item) => {
+    if (item?.type !== 'image') return []
+    const data = item.data || item.image?.url
+    return data && !REMOTE_URL.test(data)
+      ? [{ data, mimeType: item.mimeType }]
+      : []
+  })
+}
+
+/** The raw view of image blocks: what came back, without the inline data. */
+function redactImages(items: ContentBlock[]): ContentBlock[] {
+  const elide = (value: string) => `<${value.length} characters elided>`
+  const inline = (value?: string): value is string =>
+    !!value && !REMOTE_URL.test(value)
+  return items.map((item) => {
+    if (item?.type !== 'image') return item
+    return {
+      ...item,
+      ...(inline(item.data) ? { data: elide(item.data) } : {}),
+      ...(inline(item.image?.url)
+        ? { image: { ...item.image, url: elide(item.image.url) } }
+        : {}),
     }
-  }, [data])
+  })
+}
 
-  const isLoading = !preparedUrl
+/**
+ * `src` for an inline image: a data URL as given, otherwise bare base64 with
+ * the media type the server declared (png when it declared none, or something
+ * that is not an image type).
+ */
+function toolImageSrc(data: string, mimeType?: string): string {
+  const value = data.replace(/\s+/g, '')
+  if (/^data:image\//i.test(value)) return value
+  const mime = mimeType?.toLowerCase().startsWith('image/')
+    ? mimeType.toLowerCase()
+    : 'image/png'
+  return `data:${mime};base64,${value}`
+}
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center">
-        <div className="flex size-24 items-center justify-center rounded-md bg-muted">
-          <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!preparedUrl) {
-    return null
-  }
-
-  return (
-    <div key={index} className="inline-block">
-      <img
-        src={preparedUrl}
-        alt="Tool output"
-        className="max-w-full max-h-96 w-auto h-auto object-contain rounded-md border"
-      />
-    </div>
-  )
-})
+const ToolImage = memo(({ data, mimeType }: ToolImageSource) => (
+  <div className="inline-block">
+    <img
+      src={toolImageSrc(data, mimeType)}
+      alt="Tool output"
+      className="max-w-full max-h-96 w-auto h-auto object-contain rounded-md border"
+    />
+  </div>
+))
 
 export type ToolOutputProps = ComponentProps<'div'> & {
   output: ToolUIPart['output']
   errorText: ToolUIPart['errorText']
-  resolver: (input: string) => Promise<string>
   // Running count of citations from earlier tool calls in this turn, so each
   // card's numbering/anchors continue the global sequence the markers use.
   citationOffset?: number
@@ -450,7 +489,6 @@ export const ToolOutput = memo(
     className,
     output,
     errorText,
-    resolver,
     citationOffset = 0,
     ...props
   }: ToolOutputProps) => {
@@ -470,6 +508,10 @@ export const ToolOutput = memo(
       [citationPayload, errorText, output]
     )
 
+    // MCP image blocks are the result itself, not an attachment to it: they show
+    // in the card without opening the raw payload (#9547).
+    const images = useMemo(() => toolImages(output), [output])
+
     const copyText = useMemo(
       () => (errorText ? errorText : stringifyToolInput(output)),
       [errorText, output]
@@ -477,8 +519,12 @@ export const ToolOutput = memo(
     // Only offer expansion for payloads long enough to be clipped. Citation
     // output (native web search, RAG) renders as cards outside the scroll box,
     // so there is no height for the control to act on.
+    // The raw view elides image data, so image bytes are not what makes a
+    // payload long enough to need the expand control.
+    const imageChars = images.reduce((n, image) => n + image.data.length, 0)
     const isLong =
-      !citationPayload && copyText.length > OUTPUT_EXPAND_THRESHOLD
+      !citationPayload &&
+      copyText.length - imageChars > OUTPUT_EXPAND_THRESHOLD
     const boxClassName = cn(
       'rounded-md overflow-auto border',
       expanded ? 'max-h-[32rem]' : 'max-h-40'
@@ -509,93 +555,45 @@ export const ToolOutput = memo(
       }
 
       if (typeof output === 'object' && !isValidElement(output)) {
-        // Check if output has content array (new structure: {content: [{text, type}, {data, type: image}]})
+        // MCP content envelope: { content: [{ text, type }, { data, type: image }] }.
+        // The images are drawn by the card itself (see `images`), so the raw
+        // view carries the text blocks, or the blocks with the base64 elided.
         if (
           output &&
           typeof output === 'object' &&
           'content' in output &&
           Array.isArray(output.content)
         ) {
-          const content = output.content as Array<{
-            type: string
-            text?: string
-            data?: string
-            mimeType?: string
-          }>
-
+          const content = output.content as ContentBlock[]
           const textItems = content.filter((item) => item.type === 'text')
-          const imageItems = content.filter((item) => item.type === 'image')
 
+          if (textItems.length > 0) {
+            return (
+              <div className="space-y-2">
+                {textItems.map((item, index) => (
+                  <div key={index} className={boxClassName}>
+                    <CodeBlock code={item.text || ''} language="markdown" />
+                  </div>
+                ))}
+              </div>
+            )
+          }
           return (
-            <div className="space-y-4">
-              {textItems.length > 0 && (
-                <div className="space-y-2">
-                  {textItems.map((item, index) => (
-                    <div key={index} className={boxClassName}>
-                      <CodeBlock code={item.text || ''} language="markdown" />
-                    </div>
-                  ))}
-                </div>
-              )}
-              {imageItems.length > 0 && (
-                <div className="space-y-2">
-                  {imageItems.map((item, index) => (
-                    <ToolImage
-                      key={index}
-                      data={item.data || ''}
-                      index={index}
-                      resolver={resolver}
-                    />
-                  ))}
-                </div>
-              )}
+            <div className={boxClassName}>
+              <CodeBlock
+                code={JSON.stringify(redactImages(content), null, 2)}
+                language="json"
+              />
             </div>
           )
         }
 
-        // Handle old array format for backward compatibility
+        // Bare content array, which is how a stored MCP result looks.
         if (Array.isArray(output)) {
-          const hasImages = output.some(
-            (item) => item?.type === 'image' && (item?.data || item?.image)
-          )
-
-          if (hasImages) {
-            // Filter out images from JSON and render images separately
-            const nonImageOutput = output.filter(
-              (item) => item?.type !== 'image'
-            )
-
-            return (
-              <div className="space-y-4">
-                {nonImageOutput.length > 0 && (
-                  <div className={boxClassName}>
-                    <CodeBlock
-                      code={JSON.stringify(nonImageOutput, null, 2)}
-                      language="json"
-                    />
-                  </div>
-                )}
-                {output
-                  .filter(
-                    (item) =>
-                      item?.type === 'image' && (item?.data || item?.image?.url)
-                  )
-                  .map((item, index) => (
-                    <ToolImage
-                      key={index}
-                      data={item.data ?? item.image?.url}
-                      index={index}
-                      resolver={resolver}
-                    />
-                  ))}
-              </div>
-            )
-          }
-
           return (
             <div className={boxClassName}>
               <CodeBlock
-                code={JSON.stringify(output, null, 2)}
+                code={JSON.stringify(redactImages(output), null, 2)}
                 language="json"
               />
             </div>
@@ -614,7 +612,6 @@ export const ToolOutput = memo(
     }, [
       output,
       errorText,
-      resolver,
       citationPayload,
       messageId,
       citationOffset,
@@ -668,6 +665,17 @@ export const ToolOutput = memo(
           {errorText && (
             <div className="m-2 p-2 bg-destructive/10 text-destructive rounded-md">
               {errorText}
+            </div>
+          )}
+          {images.length > 0 && (
+            <div className="space-y-2">
+              {images.map((image, index) => (
+                <ToolImage
+                  key={index}
+                  data={image.data}
+                  mimeType={image.mimeType}
+                />
+              ))}
             </div>
           )}
           {(!summary || showRaw) && Output}

@@ -103,7 +103,11 @@ export const useLandscape = (): boolean => {
   return useMediaQuery('(orientation: landscape)')
 }
 
-// Touch device detection
+// Devices whose primary input cannot hover (touch screens), so hover-revealed
+// controls must be shown outright. Read synchronously so the first paint is
+// already right instead of fading controls in on mount.
 export const useTouchDevice = (): boolean => {
-  return useMediaQuery('(pointer: coarse)')
+  return useMediaQuery('(hover: none)', undefined, {
+    getInitialValueInEffect: false,
+  })
 }

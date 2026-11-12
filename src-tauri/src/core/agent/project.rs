@@ -235,6 +235,18 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Give a subagent that can write or edit, and asked for no `workspace`, a
+    /// git worktree of its own. `None` and `false`: it works in the parent's
+    /// checkout, so concurrent writers edit the same files. Overridden by
+    /// `--subagent-worktrees`.
+    #[serde(default)]
+    pub subagent_worktrees: Option<bool>,
+    /// Largest the build directory shared by this project's subagents
+    /// (`~/.jan/worktrees/<slug>/cargo-target`) may grow, in GB, before a
+    /// session end moves it to the trash so the next build starts cold.
+    /// `None` defers to `~/.jan/config.toml`, then 20; 0 never trims.
+    #[serde(default)]
+    pub subagent_build_cache_max_gb: Option<u64>,
     /// Saved threads untouched for this many days are pruned at session start
     /// (default 90; 0 disables), when `prune_threads = true` in
     /// `~/.jan/config.toml` turns pruning on. The newest few, the resumed thread, forks'
@@ -328,6 +340,10 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# subagent_worktrees = false  # true: a subagent that can write gets its own git worktree; false
+#                             # (default): it edits your checkout, shared with its siblings
+# subagent_build_cache_max_gb = 20  # clear the subagents' shared cargo-target at session end once
+#                                   # it is larger than this; 0 never clears it
 # thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
 # max_threads = 500  # keep at most this many saved threads; 0 disables
 #                    # (both apply only with prune_threads = true in ~/.jan/config.toml)
@@ -442,6 +458,42 @@ pub(crate) fn jan_home() -> Option<PathBuf> {
     }
 }
 
+/// The Jan cache root (`<OS cache dir>/jan`), where session scratch lives.
+/// Tests resolve a per-process temp directory instead, so no test writes into
+/// the developer's real cache.
+pub(crate) fn jan_cache_root() -> PathBuf {
+    #[cfg(test)]
+    {
+        std::env::temp_dir().join(format!("jan-app-test-cache-{}", std::process::id()))
+    }
+    #[cfg(not(test))]
+    {
+        tauri_plugin_agent_tools::workspace::jan_cache_root()
+    }
+}
+
+/// `project_root`'s folder under the Jan cache root, `<cache>/jan/<slug>`,
+/// with the same slug as its store under `~/.jan/projects/`.
+pub(crate) fn project_cache_dir(project_root: &Path) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::project_cache_dir_in(&jan_cache_root(), Some(project_root))
+}
+
+/// A CLI/TUI session's scratch: `<cache>/jan/<slug>/scratch/<session>`. The
+/// one place the app derives it, so the prompt, the tools, the subagent
+/// replay and the exit trash all name the same directory.
+pub(crate) fn scratch_dir(project_root: &Path, session: &str) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::scratch_dir_in(&project_cache_dir(project_root), session)
+}
+
+/// Prepare `project_root`'s package cache, `<cache>/jan/<slug>/pkg`, for a
+/// sandboxed run: shared by the project's sessions (subagent worktrees map to
+/// the same slug), never by another project's.
+pub(crate) async fn prepare_pkg_cache(
+    project_root: &Path,
+) -> Result<tauri_plugin_agent_tools::workspace::PkgCache, String> {
+    tauri_plugin_agent_tools::workspace::prepare_pkg_cache(&project_cache_dir(project_root)).await
+}
+
 /// The Jan home the general tools and the sandboxed shell may not reach while
 /// `sandbox` is on (see `workspace::hidden_root`). Resolved through [`jan_home`]
 /// so tests hide their temp home, not the developer's.
@@ -548,10 +600,11 @@ pub(crate) struct RunSettings {
     /// like the `[agent]` section it comes from.
     #[cfg(feature = "cli")]
     pub worktree: Option<bool>,
-    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names the
-    /// shell tool's old name `bash`, which now matches nothing. Reported at run
-    /// start with the hook-load notices, so a deny rule that stopped applying
-    /// does not do so silently.
+    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names a
+    /// tool by an old name: the shell's `bash`, which now matches nothing, or
+    /// an old memory tool, which now applies to all of `memory`. Reported at
+    /// run start with the hook-load notices, so a rule whose reach changed does
+    /// not do so silently.
     pub tool_notices: Vec<String>,
 }
 
@@ -577,6 +630,24 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     }
 }
 
+/// The default cap, in GB, on a project's shared subagent build directory.
+#[cfg(feature = "cli")]
+pub(crate) const DEFAULT_SUBAGENT_BUILD_CACHE_MAX_GB: u64 = 20;
+
+/// The cap, in bytes, on `project_root`'s shared subagent build directory:
+/// `[agent].subagent_build_cache_max_gb` in its agent.toml, else the same key
+/// in `~/.jan/config.toml`, else [`DEFAULT_SUBAGENT_BUILD_CACHE_MAX_GB`].
+/// `0` never trims. An unreadable agent.toml falls through, like every knob.
+#[cfg(feature = "cli")]
+pub(crate) fn subagent_build_cache_cap(project_root: &Path) -> u64 {
+    let gb = load_agent_config(project_root)
+        .ok()
+        .and_then(|cfg| cfg.agent.subagent_build_cache_max_gb)
+        .or_else(crate::core::agent::global_config::subagent_build_cache_max_gb_setting)
+        .unwrap_or(DEFAULT_SUBAGENT_BUILD_CACHE_MAX_GB);
+    gb.saturating_mul(1 << 30)
+}
+
 /// See [`RunSettings::tool_notices`].
 fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
     [
@@ -587,7 +658,7 @@ fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
     .into_iter()
     .flat_map(|(where_, list)| {
         list.iter().filter_map(move |name| {
-            tauri_plugin_agent_tools::tools::renamed_shell_notice(name, where_)
+            tauri_plugin_agent_tools::tools::renamed_tool_notice(name, where_)
         })
     })
     .collect()
@@ -895,6 +966,20 @@ mod tests {
         assert!(notices[0].starts_with("[tools] deny names `bash`"), "{}", notices[0]);
     }
 
+    /// A `[tools]` entry on an old memory tool name still applies, to the
+    /// whole `memory` tool, and is reported so the user renames it.
+    #[test]
+    fn a_tools_list_naming_an_old_memory_tool_still_applies_and_is_reported() {
+        let root = unique_root("renamed_memory");
+        write_agent_toml(&root, "[tools]\ndeny = [\"memory_write\"]\n");
+        let notices = run_settings(&root).tool_notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].starts_with("[tools] deny names `memory_write`"), "{}", notices[0]);
+        let cfg = load_agent_config(&root).unwrap();
+        assert!(permissions_from(&cfg).is_denied("memory"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn run_settings_reads_allow_network_both_ways() {
         let root = unique_root("allow_net");
@@ -1157,6 +1242,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The project's cap wins, 0 is kept as "never", and an unset key falls
+    /// back to 20 GB.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn subagent_build_cache_cap_reads_the_project_key_in_gb() {
+        let root = unique_root("build_cache_cap");
+        ensure_project(&root).expect("scaffold");
+        assert_eq!(subagent_build_cache_cap(&root), 20 << 30, "template leaves it unset");
+        let path = agent_toml_path(&root);
+        for (value, bytes) in [(3i64, 3u64 << 30), (0, 0)] {
+            set_agent_key(&path, "subagent_build_cache_max_gb", Some(toml_edit::value(value)))
+                .expect("set");
+            assert_eq!(subagent_build_cache_cap(&root), bytes, "{value}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[cfg(feature = "cli")]
     #[test]
     fn max_parallel_subagents_parses_and_defaults_to_none() {
@@ -1182,6 +1284,19 @@ mod tests {
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Off unless asked for: the scaffold leaves the key unset, and an explicit
+    /// value reads back both ways.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn subagent_worktrees_parses_and_defaults_to_none() {
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.agent.subagent_worktrees, None, "template leaves it unset");
+        let on: AgentToml = toml::from_str("[agent]\nsubagent_worktrees = true\n").expect("parses");
+        assert_eq!(on.agent.subagent_worktrees, Some(true));
+        let off: AgentToml = toml::from_str("[agent]\nsubagent_worktrees = false\n").expect("parses");
+        assert_eq!(off.agent.subagent_worktrees, Some(false));
     }
 
     #[cfg(feature = "cli")]

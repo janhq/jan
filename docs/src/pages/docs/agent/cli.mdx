@@ -45,6 +45,8 @@ jan <COMMAND>
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
 | `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
+| `--subagent-worktrees` | Give each subagent that can write its own git worktree unless it asks for another `workspace`. Off by default: it edits your checkout. See [Where a subagent works](/docs/agent/subagents#where-a-subagent-works) |
+| `--no-subagent-worktrees` | Subagents edit your checkout, overriding `[agent].subagent_worktrees` |
 | `--provider <ID>` | Target a specific provider for this run |
 | `--api-key <KEY>` | API key for that provider |
 | `--base-url <URL>` | Base URL for the `--provider` named, e.g. a gateway. Requires `--provider`. See [Using a gateway](/docs/agent/providers#using-a-gateway) |
@@ -81,7 +83,8 @@ bounded by `--max-turns` or by cancelling it.
 
 <Callout type="warning">
 `--max-session-tokens` and `[budget].max_tokens` do **not** stop a run. Crossing the ceiling is
-advisory: the run compacts its history, records a note, and carries on, tool calls included. Use
+advisory: the run records a note and carries on, tool calls included. It does not compact the
+history; only the context window does that. Use
 `--max-budget-usd` to bound what an unattended run may spend, or `--max-turns` to bound how many
 turns it may take.
 </Callout>
@@ -107,8 +110,10 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
 | `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
+| `--subagent-worktrees` | Give each subagent that can write its own git worktree unless it asks for another `workspace`. Off by default: it edits your checkout |
+| `--no-subagent-worktrees` | Subagents edit your checkout, overriding `[agent].subagent_worktrees` |
 | `--max-turns <N>` | Hard cap on agentic turns. If the model is still calling tools at N the run fails with `reached the N-turn limit...` and exits `53`; with `--output-format json` the partial answer is still in `result`. Bounds the parent run only - subagent turns are not counted. `0` means unbounded, which is the default |
-| `--max-session-tokens <N>` | Advisory token ceiling for this run, overriding `[budget].max_tokens`. Triggers compaction and a recorded note when passed; it does not terminate the run. `0` means no ceiling |
+| `--max-session-tokens <N>` | Advisory token ceiling for this run, overriding `[budget].max_tokens`. Records a note when passed (it does not compact); it does not terminate the run. `0` means no ceiling |
 | `--max-budget-usd <USD>` | Stop the run once it has spent this much, overriding `[budget].max_usd`. Priced from the provider's published rates, so a model with no published price is **refused** rather than run uncapped - including a subagent whose definition names its own model. Subagents inherit the ceiling. Compaction is billed against it like any other request. Stopping this way exits `0` with `stop_reason: budget_exceeded`; `0` as a limit stops at the first billed request |
 | `--provider`, `--api-key`, `--base-url` | Provider overrides for this run. `--base-url` requires `--provider`; see [Using a gateway](/docs/agent/providers#using-a-gateway) |
 | `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object; `stream-json` prints one JSON event per line |
@@ -478,7 +483,7 @@ The `initialize` result carries the same `input_content_parts` object `init` doe
 
 The `item/*` payload contains the existing `StreamEvent` object unchanged. A client can also call `session/list`, `session/resume`, `session/fork`, `session/archive`, `turn/steer`, `turn/interrupt` and `permission/respond {requestId,decision}`. Session ids address this **process**, not another RPC process. `turn/interrupt` closes the turn with one `turn/completed` carrying `stopReason: "interrupted"`, and puts that record on the wire before it answers the request. A client that closes stdin ends the process, and the turn that is still running is closed with `stopReason: "interrupted"` before it exits. An outstanding permission request is never granted - closing the channel is not an approval, and the gate's fallback for a request that is dropped without an answer is denial. Only one turn is active per process; a second `turn/start` returns `-32001` with `data.retryable: true` rather than silently queueing it, and so does a `turn/start` arriving while the output queue has no room left for the terminal record - the turn is refused instead of accepted and then lost. `turn/completed.stopReason` is the turn's outcome (`completed`, `error`, `interrupted`), not the upstream finish reason: that one is the `stop_reason` inside `item/done`. Transport errors (`-32700` malformed JSON, `-32600` invalid request, `-32601` unknown method, `-32602` bad params) differ from an agent failure reported by `turn/completed` with `stopReason: "error"`.
 
-Input frames are capped at 16 MiB and the writer queue holds at most 1025 records. If a client stops reading, the queue stops growing and the turn ends with a terminal overload outcome rather than the run accumulating deltas without bound; the process stays alive while the writer is blocked on the full stdout pipe, and that outcome is delivered as soon as the client reads again. The server exits when stdin closes, or when a later record finds the client gone. `--max-turns` is a one-shot flag rather than a session setting: an RPC turn runs until it finishes or a client sends `turn/interrupt`. `ephemeral: true` skips thread persistence and automatic memory recall: the session neither indexes its answers nor has earlier answers recalled into its prompt. Memory notes written with `memory_write` still apply. Host tools are declared on `session/start` (`tools`, `builtins`) and answered with `tool/respond`; see [Protocol](./protocol#rpc-host-tools). The `schema` command below documents the older `stream-json` channel, while `rpc-schema` describes this RPC envelope, accepted requests and event types. RPC clients use `turn/completed`, not the process exit code, to classify an individual turn.
+Input frames are capped at 16 MiB and the writer queue holds at most 1025 records. If a client stops reading, the queue stops growing and the turn ends with a terminal overload outcome rather than the run accumulating deltas without bound; the process stays alive while the writer is blocked on the full stdout pipe, and that outcome is delivered as soon as the client reads again. The server exits when stdin closes, or when a later record finds the client gone. `--max-turns` is a one-shot flag rather than a session setting: an RPC turn runs until it finishes or a client sends `turn/interrupt`. `ephemeral: true` skips thread persistence and automatic memory recall: the session neither indexes its answers nor has earlier answers recalled into its prompt. Memory notes written with the `memory` tool still apply. Host tools are declared on `session/start` (`tools`, `builtins`) and answered with `tool/respond`; see [Protocol](./protocol#rpc-host-tools). The `schema` command below documents the older `stream-json` channel, while `rpc-schema` describes this RPC envelope, accepted requests and event types. RPC clients use `turn/completed`, not the process exit code, to classify an individual turn.
 
 ### `schema`
 
@@ -605,6 +610,38 @@ jan cli threads get <ID>
 jan cli threads messages <THREAD_ID>
 jan cli threads delete <ID>
 ```
+
+## `jan cli worktrees`
+
+See and prune the checkouts subagents left under `~/.jan/worktrees/<project>/` and their shared
+build cache. The agent cannot clean these itself: its sandbox mounts `~/.jan` read-only.
+
+```bash
+jan cli worktrees list [--project <DIR>] [--json]
+jan cli worktrees prune [--project <DIR>] [--build-cache] [--all --yes]
+```
+
+`list` prints each checkout's branch, size and state (in use by a live session, holds uncommitted
+work, holds commits not in your repository, or removable), then the build cache and trash sizes.
+`prune` removes only what is safe to remove, the same rule a session end uses: a clean checkout
+whose commits are all in your repository (its branch is brought back first). Clean means no
+changed, untracked or ignored file, except ignored build output (anything under `target/`,
+`node_modules/`, `dist/`, `build/`, `.next/`, `__pycache__/`, `.venv/` or `.gradle/` that the
+ignore rule naming that folder hides, and `*.o`, `*.pyc`, `*.class` files): an ignored `.env` or
+local config keeps the checkout, listed as holding uncommitted work with the files named. Only a
+rule in a `.gitignore` committed at the checkout's HEAD, unchanged since, names a folder; one the
+subagent wrote (in a `.gitignore` it did not commit or edited, or in the checkout's
+`.git/info/exclude`) exempts nothing, except the `*` that `python -m venv` writes into `.venv/`. A rule like `build/` matches at any depth, so ignored files
+in a tracked folder such as `tools/build/` are treated as build output too (a `.env` or key there
+still keeps the checkout). With
+`--json`, an uncommitted checkout's `build_output` is an array of those build output paths and
+`build_output_bytes` their size. What it removes is moved to the trash under the same
+directory, kept 7 days and emptied at a later start. `--build-cache` also clears the build cache,
+refused while any subagent may be building there or a live session holds a checkout of the
+project. `--all --yes` deletes every checkout no live session holds at once, uncommitted work and
+commits not in your repository included; committed branches are still brought back first, and a
+checkout with uncommitted work whose branch cannot be brought back is kept. A checkout a live
+session holds is never removed.
 
 ## `jan cli models`
 

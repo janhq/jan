@@ -136,6 +136,11 @@ pub(crate) struct OrchestrationArgs {
     /// (`[agent].max_parallel_subagents` in agent.toml, default 10). Snapshot
     /// taken at run start: a mid-run config edit affects the *next* run only.
     pub max_parallel_subagents: u32,
+    /// Whether a subagent that can write and asked for no `workspace` gets a
+    /// worktree of its own (`--subagent-worktrees`, `[agent].subagent_worktrees`).
+    /// Off: it works in the parent's checkout. CLI-only in effect, like the
+    /// worktrees themselves.
+    pub subagent_worktrees: bool,
     /// Auto-allow every tool call that would otherwise prompt (built-in
     /// reads/writes/exec and MCP). The CLI default, since the OS jail in the
     /// tools plugin confines exec regardless; `--safe` turns it off. Desktop
@@ -143,12 +148,12 @@ pub(crate) struct OrchestrationArgs {
     /// subagents via the cloned parent args.
     pub auto_approve: bool,
     /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
-    /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
+    /// skill_write, MCP, subagent dispatch) are neither advertised
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
     /// Stable identity for this run's session, used to key the persistent
-    /// `bash` `/tmp` scratch directory (`<temp>/jan-agent-<session_id>`) and
+    /// `bash` scratch directory (`<cache>/jan/<project slug>/scratch/<session_id>`),
     /// wiped at the session boundary specific to each surface. `None` on
     /// code paths with no session (server proxy runs) keeps the default
     /// throwaway per-command tmpfs.
@@ -194,6 +199,20 @@ pub(crate) struct OrchestrationArgs {
     /// to child) rides the steering channel, since the child's loop already has
     /// the safe boundary to apply it at.
     pub parent_link: Option<crate::core::agent::subagent::ParentLink>,
+    /// Raised by the owner while the user has a message waiting for this run:
+    /// a `bash` call still running then moves to the background instead of
+    /// holding the message until it ends (see
+    /// `ToolContext::detach_signal`). Only meaningful with a session-owned
+    /// `bg_shells`, which reports the command's end as a turn of its own.
+    /// Never inherited by a child run, which the user's message is not for.
+    pub shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
+    /// The session's shell directory, so a `cd` holds across turns (see
+    /// `ToolContext::shell_cwd`). `None` carries nothing: every call starts in
+    /// the root, which is right for a caller that cannot keep one across its
+    /// turns (the API server starts a fresh run per request). A child run gets
+    /// a fresh one of its own: it works in its own workspace, not wherever the
+    /// parent last `cd`ed.
+    pub shell_cwd: Option<tauri_plugin_agent_tools::tools::ShellCwd>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -209,6 +228,14 @@ pub(crate) struct OrchestrationArgs {
     /// turn composes the same bytes. `None` for a one-off run with no session to
     /// freeze across, which snapshots at the start of that run instead.
     pub session_start: Option<crate::core::agent::context::SessionStart>,
+    /// The cap on this run's memory mutations. Set only for Jan's memory tidy
+    /// subagent (`subagent::spawn_memory_tidy`), which shares it with the TUI
+    /// so a hit cap is reported; `None` everywhere else.
+    pub memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// Set only on a dispatched child: whether its `project_root` is
+    /// read-only, the extra paths its sandboxed shell may write and the
+    /// environment it gets (see [`crate::core::agent::child_workspace`]).
+    pub child_scope: Option<crate::core::agent::child_workspace::ChildScope>,
 }
 
 #[async_trait]
@@ -227,6 +254,12 @@ pub(crate) trait ModelInvoker: Send + Sync {
     fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
         None
     }
+
+    /// The route `model_id` is served on rejected a resent
+    /// `reasoning_content`. An invoker that knows its route records it, so no
+    /// later run on that route sends the field again. Nothing to record for one
+    /// that does not.
+    fn reasoning_rejected(&self, _model_id: &str) {}
 }
 
 /// One tool call's outcome: `content` is the model-facing result string,
@@ -307,10 +340,13 @@ fn mark_parts_as_error(mut parts: Vec<serde_json::Value>) -> Vec<serde_json::Val
 /// reminder; `headline`, when set, is shown to the user at delivery as
 /// [`StreamEvent::Notice`]. Subagent completions carry no headline -- their
 /// `SubagentEnd` row already reported the fact -- while a monitor match has no
-/// other on-screen account.
+/// other on-screen account. `message` is set for a subagent's
+/// `message_main_agent` as `(from, text)`, announced at delivery as
+/// [`StreamEvent::AgentMessage`].
 pub(crate) struct BackgroundNotice {
     pub headline: Option<String>,
     pub text: String,
+    pub message: Option<(String, String)>,
 }
 
 #[async_trait]
@@ -370,6 +406,54 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// the default does nothing, which is right for every invoker that has no
     /// project and therefore no hook files to read.
     async fn pre_compact(&self, _message_count: usize) {}
+
+    /// The harness context this invoker can see, for a compaction's
+    /// continuation state: the workspace and its git status, background work
+    /// with its ids, and for a child its identity and tools. The default knows
+    /// nothing, which is right for an invoker with no workspace.
+    fn harness_context(&self) -> crate::core::agent::continuation::HarnessContext {
+        crate::core::agent::continuation::HarnessContext::default()
+    }
+
+    /// The `# Memory Changes` block, when it differs from the one this run
+    /// last sent: called after a batch with a successful `memory` call, so a
+    /// later request in the same run learns what changed. `None` when nothing
+    /// new is to be said, and for every invoker without a memory snapshot.
+    fn fresh_memory_changes(&self) -> Option<String> {
+        None
+    }
+}
+
+/// The session's memory snapshot and the `# Memory Changes` block this run
+/// last sent. The block is part of the run's tail, built once per run; a note
+/// written mid-run would otherwise reach the model only on the next run.
+pub(crate) struct MemoryChangesTracker {
+    snapshot: crate::core::agent::context::MemorySnapshot,
+    sent: std::sync::Mutex<Option<String>>,
+}
+
+impl MemoryChangesTracker {
+    /// `sent` is the block the run's tail already carries, if any.
+    pub(crate) fn new(
+        snapshot: crate::core::agent::context::MemorySnapshot,
+        sent: Option<String>,
+    ) -> Self {
+        Self {
+            snapshot,
+            sent: std::sync::Mutex::new(sent),
+        }
+    }
+
+    /// The current block when it is not the one last sent, marking it sent.
+    fn fresh(&self, project_root: &std::path::Path) -> Option<String> {
+        let now = self.snapshot.changes_block(project_root)?;
+        let mut sent = self.sent.lock().unwrap();
+        if sent.as_deref() == Some(now.as_str()) {
+            return None;
+        }
+        *sent = Some(now.clone());
+        Some(now)
+    }
 }
 
 /// Emit [`StreamEvent::Monitors`] when the set differs from what was last
@@ -559,6 +643,10 @@ impl ModelInvoker for HttpModelInvoker {
             .map(|(id, model)| (id.as_str(), model as &dyn ModelInvoker))
     }
 
+    fn reasoning_rejected(&self, model_id: &str) {
+        crate::core::agent::reasoning_routes::remember(self.provenance.provider.as_deref(), model_id);
+    }
+
     async fn invoke(
         &self,
         request: &serde_json::Value,
@@ -646,7 +734,7 @@ impl ModelInvoker for HttpModelInvoker {
 }
 
 struct McpToolInvoker {
-    tool_to_server: HashMap<String, String>,
+    tool_to_server: crate::core::mcp::identity::ToolRoutes,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
 }
@@ -736,9 +824,13 @@ struct CompositeToolInvoker {
     /// with it, so the two cannot disagree.
     hidden_root: Option<std::path::PathBuf>,
     /// Session-scoped scratch directory the shell and the filesystem tools share
-    /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
+    /// (see [`scratch_root_for`]), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
+    /// The project's package cache, for a sandboxed run (see
+    /// [`crate::core::agent::project::prepare_pkg_cache`]); `None` unconfined,
+    /// where the shell keeps the host's own caches.
+    pkg_cache: Option<tauri_plugin_agent_tools::workspace::PkgCache>,
     /// Host env-var names/globs the shell may inherit beyond the base allowlist,
     /// and explicit key=value overrides. Resolved once per run by merging
     /// `~/.jan/config.toml` with the project's `[tools]` section.
@@ -814,6 +906,56 @@ struct CompositeToolInvoker {
     /// `message_main_agent` calls ring. `None` for a top-level run, where the
     /// tool is neither advertised nor executable.
     parent_link: Option<crate::core::agent::subagent::ParentLink>,
+    /// See [`OrchestrationArgs::shell_detach`].
+    shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
+    /// See [`OrchestrationArgs::shell_cwd`].
+    shell_cwd: Option<tauri_plugin_agent_tools::tools::ShellCwd>,
+    /// The session's memory snapshot, for a mid-run `# Memory Changes`
+    /// block. `None` where the run's tail carries none (a child run, a
+    /// host-owned prompt, no snapshot).
+    memory_changes: Option<MemoryChangesTracker>,
+    /// See [`OrchestrationArgs::memory_change_budget`].
+    memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// The bucket this run's shells register under (`proc::kill_thread`): a
+    /// child's own `run_id`, so stopping it can end the shells it left running
+    /// before its worktree goes to another writer. `None` on a top-level run.
+    shell_owner: Option<String>,
+    /// What a child's workspace adds to its tools: a read-only root, the paths
+    /// its shell may also write, and its shell env. A top-level run gets the
+    /// default plus, on the CLI, read access to its subagents' worktrees.
+    workspace: RunWorkspace,
+}
+
+/// The per-run additions to [`CompositeToolInvoker`]'s tool context that come
+/// from where the run works (see [`crate::core::agent::child_workspace`]).
+#[derive(Debug, Clone, Default)]
+struct RunWorkspace {
+    read_only: bool,
+    read_roots: Vec<std::path::PathBuf>,
+    write_roots: Vec<std::path::PathBuf>,
+}
+
+impl RunWorkspace {
+    /// A child runs under its scope; a parent may read its children's
+    /// worktrees. Write roots are also read roots: the tools require it.
+    fn resolve(
+        scope: Option<&crate::core::agent::child_workspace::ChildScope>,
+        root: &std::path::Path,
+    ) -> Self {
+        match scope {
+            Some(scope) => Self {
+                read_only: scope.read_only,
+                read_roots: scope.write_roots.iter().chain(&scope.read_roots).cloned().collect(),
+                write_roots: scope.write_roots.clone(),
+            },
+            None => Self {
+                read_roots: crate::core::agent::child_workspace::parent_read_root(root)
+                    .into_iter()
+                    .collect(),
+                ..Self::default()
+            },
+        }
+    }
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1102,8 +1244,11 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         .first_phase
         .iter()
         .map(|c| match &d.blackboard_dir {
-            Some(dir) => format!("  - {} (run_id: {}) -> {dir}/{}.md", c.name, c.run_id, c.name),
-            None => format!("  - {} (run_id: {})", c.name, c.run_id),
+            Some(dir) => format!(
+                "  - {} (run_id: {}) -> {dir}/{}.md; {}",
+                c.name, c.run_id, c.name, c.workspace
+            ),
+            None => format!("  - {} (run_id: {}); {}", c.name, c.run_id, c.workspace),
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1112,10 +1257,16 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         None => " Each answer rides the note that tells you it finished.",
     };
     let head = if d.phase_count > 1 {
+        let reuses: String = d
+            .later_workspaces
+            .iter()
+            .map(|(worker, owner)| format!("\n  - {worker} will work in {owner}'s workspace"))
+            .collect();
         format!(
             "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running:\n{roster}\nLater \
              phases start automatically as each phase finishes, each receiving the previous \
-             phase's results; their run ids are reported as they start.",
+             phase's results; their run ids are reported as they start, but each can already be \
+             messaged or stopped by name.{reuses}",
             d.phase_count, d.total_subagents
         )
     } else {
@@ -1199,13 +1350,18 @@ impl CompositeToolInvoker {
                 &self.project_root,
                 &self.enabled_skills,
             ))
-            .with_skill_user_root(self.memory_home.as_deref());
-        ctx.with_network(self.allow_network)
+            .with_skill_user_root(self.memory_home.as_deref())
+            .with_memory_change_budget(self.memory_change_budget.as_deref());
+        let ctx = ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_workspace_readonly(self.workspace.read_only)
+        .with_read_roots(&self.workspace.read_roots)
+        .with_write_roots(&self.workspace.write_roots)
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
+        .with_pkg_cache(self.pkg_cache.as_ref())
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
         .with_web_search(self.web_search.as_ref())
@@ -1215,6 +1371,15 @@ impl CompositeToolInvoker {
             Some(self.hook_sink()),
         )
         .with_shell_done_sink(self.shell_done_sink())
+        .with_thread_id(self.shell_owner.as_deref());
+        let ctx = match &self.shell_cwd {
+            Some(cwd) => ctx.with_shell_cwd(cwd.clone()),
+            None => ctx,
+        };
+        match &self.shell_detach {
+            Some(signal) => ctx.with_detach_signal(signal.clone()),
+            None => ctx,
+        }
     }
 
     /// Where a backgrounded `bash` command reports when it finally ends: the
@@ -1249,6 +1414,7 @@ impl CompositeToolInvoker {
                     queued.push(BackgroundNotice {
                         headline: None,
                         text: context,
+                        message: None,
                     });
                 }
                 for notice in report.notices {
@@ -1257,11 +1423,37 @@ impl CompositeToolInvoker {
                     queued.push(BackgroundNotice {
                         headline: Some(message.clone()),
                         text: message,
+                        message: None,
                     });
                 }
                 queue.lock().unwrap().extend(queued);
             },
         )
+    }
+
+    /// The directory the next `shell` call starts in, when a `cd` has moved it
+    /// off the project root; `None` for every other tool.
+    fn held_shell_cwd(
+        &self,
+        tool: &tauri_plugin_agent_tools::tools::BuiltinTool,
+    ) -> Option<String> {
+        if tool.name != tauri_plugin_agent_tools::tools::SHELL_TOOL
+            || !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported()
+        {
+            return None;
+        }
+        let held = self.shell_cwd.as_ref()?.lock().unwrap().clone()?;
+        Some(held.display().to_string())
+    }
+
+    /// The refusal for an escalated `name` call whose held shell directory is
+    /// no longer one it may start in; see
+    /// [`tauri_plugin_agent_tools::tools::handlers::escalated_shell_cwd_refusal`].
+    fn escalated_shell_cwd_refusal(&self, name: &str) -> Option<String> {
+        let why = tauri_plugin_agent_tools::tools::handlers::escalated_shell_cwd_refusal(
+            &self.tool_context(),
+        )?;
+        Some(format!("ERROR: tool '{name}' escalation refused: {why}."))
     }
 
     /// A tool context whose output streams to the run's event channel as
@@ -1306,32 +1498,32 @@ impl CompositeToolInvoker {
             // under it: under `--safe` the command would have been asked about
             // anyway, so one prompt covers both.
             Escalation::Allow | Escalation::Prompt => {
-                let request_id = next_permission_id();
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                self.permission_requests
-                    .lock()
-                    .await
-                    .insert(request_id.clone(), tx);
-                let _ = self.events.send(StreamEvent::PermissionRequest {
-                    request_id: request_id.clone(),
-                    tool_name: name.to_string(),
-                    capability: "exec outside the sandbox".to_string(),
-                    path: None,
-                    command: args.get("command").and_then(|v| v.as_str()).map(String::from),
-                    diff: None,
-                    prompt_kind: "escalate".to_string(),
-                    offers_always: false,
-                    justification: args
-                        .get(tauri_plugin_agent_tools::tools::gate::JUSTIFICATION_ARG)
-                        .and_then(|v| v.as_str())
-                        .map(str::trim)
-                        .filter(|j| !j.is_empty())
-                        .map(String::from),
-                });
-                // No timeout, like every other prompt: cancelling the run
-                // drops the sender, which reads as Deny.
-                let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-                self.permission_requests.lock().await.remove(&request_id);
+                // Before the prompt, so the directory it names is the one the
+                // command would really start in, not a link swapped in for it.
+                if let Some(refusal) = self.escalated_shell_cwd_refusal(name) {
+                    return refusal;
+                }
+                let decision = self
+                    .ask_permission(|request_id| StreamEvent::PermissionRequest {
+                        request_id,
+                        tool_name: name.to_string(),
+                        capability: "exec outside the sandbox".to_string(),
+                        // Where it runs, once a `cd` has moved the shell, as an
+                        // ordinary exec prompt shows: the command alone does not
+                        // say which tree an `rm -rf build` would hit.
+                        path: self.held_shell_cwd(tool),
+                        command: args.get("command").and_then(|v| v.as_str()).map(String::from),
+                        diff: None,
+                        prompt_kind: "escalate".to_string(),
+                        offers_always: false,
+                        justification: args
+                            .get(tauri_plugin_agent_tools::tools::gate::JUSTIFICATION_ARG)
+                            .and_then(|v| v.as_str())
+                            .map(str::trim)
+                            .filter(|j| !j.is_empty())
+                            .map(String::from),
+                    })
+                    .await;
                 // `AllowAlways` is not offered; a client that sends it anyway
                 // gets this one call, never a lasting grant.
                 decision != PermissionDecision::Deny
@@ -1340,6 +1532,14 @@ impl CompositeToolInvoker {
         if !approved {
             return escalation_denied_msg(name);
         }
+        // The held directory comes along: the model was told every later call
+        // starts there, and the prompt named it. No host re-check here after
+        // the prompt: the wrapper checks it after its own `cd`, the last
+        // moment a link can be swapped in, and refuses and resets as it does
+        // for a gone one (see `posix_cwd_script`). Where it lands is held
+        // too, checked no differently from a confined call's: never on the
+        // host, but by the next call entering it inside its own sandbox, or
+        // refusing and resetting to the root.
         let ctx = self.streaming_tool_context(id).with_sandbox(false);
         tauri_plugin_agent_tools::tools::handlers::execute_builtin_with_diff(tool, args, &ctx)
             .await
@@ -1376,6 +1576,7 @@ impl CompositeToolInvoker {
                 // an event the user needs announced, unlike a monitor match.
                 headline: None,
                 text: context,
+                message: None,
             });
         }
         for notice in outcome.notices {
@@ -1384,6 +1585,7 @@ impl CompositeToolInvoker {
             queued.push(BackgroundNotice {
                 headline: Some(message.clone()),
                 text: message,
+                message: None,
             });
         }
         if !queued.is_empty() {
@@ -1542,7 +1744,7 @@ impl CompositeToolInvoker {
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
-    /// A dropped responder (client gone / run cancelled) resolves to Deny.
+    /// A prompt nobody can answer (client gone / run cancelled) resolves to Deny.
     ///
     /// Plugin and host tools are prompted through here too: `prompt_kind` is
     /// `"mcp"` for all three because it names the *class* a consumer renders --
@@ -1552,14 +1754,8 @@ impl CompositeToolInvoker {
     /// carries the host's bare name (`move`) instead, since the host dispatches
     /// on the name it declared.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
-        let request_id = next_permission_id();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.permission_requests
-            .lock()
-            .await
-            .insert(request_id.clone(), tx);
-        let _ = self.events.send(StreamEvent::PermissionRequest {
-            request_id: request_id.clone(),
+        self.ask_permission(|request_id| StreamEvent::PermissionRequest {
+            request_id,
             tool_name: tool_name.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -1568,8 +1764,32 @@ impl CompositeToolInvoker {
             prompt_kind: "mcp".to_string(),
             offers_always: true,
             justification: None,
-        });
-        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+        })
+        .await
+    }
+
+    /// Asks the consumer to settle a prompt and waits for its answer. Resolves
+    /// to Deny when nobody can answer: the request cannot be delivered because
+    /// the consumer is gone (otherwise the call would wait on a prompt no one
+    /// will ever see), or the responder is dropped. No timeout: the run is
+    /// cancellable via agent_cancel, which drops this future.
+    async fn ask_permission(
+        &self,
+        request: impl FnOnce(String) -> StreamEvent,
+    ) -> PermissionDecision {
+        let request_id = next_permission_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.permission_requests
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
+        let decision = if self.events.send(request(request_id.clone())).is_err() {
+            log::warn!("permission prompt {request_id} has no consumer; denying");
+            PermissionDecision::Deny
+        } else {
+            rx.await.unwrap_or(PermissionDecision::Deny)
+        };
+        // Best-effort cleanup if the respond command didn't consume it.
         self.permission_requests.lock().await.remove(&request_id);
         decision
     }
@@ -1577,14 +1797,8 @@ impl CompositeToolInvoker {
     /// Prompt the user to approve a `user`-scope subagent write (it persists
     /// outside the current project). Project-scope writes are not prompted.
     async fn prompt_subagent_create(&self, name: &str) -> PermissionDecision {
-        let request_id = next_permission_id();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.permission_requests
-            .lock()
-            .await
-            .insert(request_id.clone(), tx);
-        let _ = self.events.send(StreamEvent::PermissionRequest {
-            request_id: request_id.clone(),
+        self.ask_permission(|request_id| StreamEvent::PermissionRequest {
+            request_id,
             tool_name: "create_subagent".to_string(),
             capability: "write".to_string(),
             path: Some(name.to_string()),
@@ -1593,10 +1807,8 @@ impl CompositeToolInvoker {
             prompt_kind: "subagent_create".to_string(),
             offers_always: false,
             justification: None,
-        });
-        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-        self.permission_requests.lock().await.remove(&request_id);
-        decision
+        })
+        .await
     }
 
     /// Execute a child run's `message_main_agent` call. Synchronous by design:
@@ -1678,7 +1890,9 @@ impl CompositeToolInvoker {
                     // Unconfined means no scratch: the tools see the real
                     // `/tmp`, so there is nowhere sanctioned to spill.
                     self.subagent_scratch(),
-                ) {
+                )
+                .await
+                {
                     Ok(d) => format_dispatched_plan(&d),
                     Err(e) => {
                         ctx.bg.release_names(&reserved);
@@ -1693,7 +1907,7 @@ impl CompositeToolInvoker {
                         Err(e) => return format!("ERROR: {e}"),
                     };
                 match crate::core::agent::subagent::message_subagent(&ctx.bg, &target, &message) {
-                    Ok(s) => s,
+                    Ok(s) => s.into_text(),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -1766,12 +1980,6 @@ impl CompositeToolInvoker {
         &self,
         spec: &tauri_plugin_agent_tools::tools::monitor::MonitorSpec,
     ) -> PermissionDecision {
-        let request_id = next_permission_id();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.permission_requests
-            .lock()
-            .await
-            .insert(request_id.clone(), tx);
         // The cadence rides along as a shell comment, so the user approves a
         // script knowing how often it will run; the `$ ` preview stays honest.
         let command = format!(
@@ -1780,8 +1988,8 @@ impl CompositeToolInvoker {
             spec.interval.as_secs(),
             spec.script
         );
-        let _ = self.events.send(StreamEvent::PermissionRequest {
-            request_id: request_id.clone(),
+        self.ask_permission(|request_id| StreamEvent::PermissionRequest {
+            request_id,
             tool_name: tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -1790,10 +1998,8 @@ impl CompositeToolInvoker {
             prompt_kind: "monitor".to_string(),
             offers_always: false,
             justification: None,
-        });
-        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-        self.permission_requests.lock().await.remove(&request_id);
-        decision
+        })
+        .await
     }
 
     /// Execute one `monitor` tool call. `start` is gated (it schedules shell
@@ -2010,33 +2216,20 @@ impl CompositeToolInvoker {
 pub(crate) const DENIED_BY_USER: &str = "denied by user";
 pub(crate) const DENIED_BY_POLICY: &str = "denied by project policy";
 pub(crate) const HIDDEN_PATH_REFUSED: &str = "refused: the Jan home";
+pub(crate) const TOO_COMPLEX_REFUSED: &str =
+    "refused: the command or path is too large or deeply nested";
 pub(crate) const PLAN_MODE_UNAVAILABLE: &str = "unavailable in plan_mode_read_only";
 pub(crate) const HOOK_DENIED: &str = "denied: ";
 
-/// Message for a tool blocked by the project's own deny list, naming the
-/// exact config file so the block is actionable, not mysterious.
-fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
-    format!(
-        "ERROR: tool '{name}' {DENIED_BY_POLICY} (see [tools] deny in {})",
-        crate::core::agent::project::agent_toml_path(project_root).display()
-    )
-}
-
-/// Refusal for a path or command reaching the Jan home. Structural, not a
-/// policy the user edits, so it points at the dedicated tools instead.
-fn hidden_path_msg(name: &str) -> String {
-    format!(
-        "ERROR: tool '{name}' {HIDDEN_PATH_REFUSED} (~/.jan) holds the agent's own \
-         configuration and state and is hidden from every tool -- do not try to reach it \
-         another way. Skills and memory are available through the skill_*/memory_* tools."
-    )
-}
-
-fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path) -> String {
-    match reason {
-        DenyReason::Policy => denied_by_policy_msg(name, project_root),
-        DenyReason::Hidden => hidden_path_msg(name),
+/// Message for a tool blocked by a deny list. Names the setting rather than
+/// the file: the file sits in the hidden Jan home, which no tool can open.
+/// A tool the harness took from this run (a subagent's memory) is reported as
+/// missing instead, since no deny list the user can read mentions it.
+fn denied_by_policy_msg(name: &str, withheld: bool) -> String {
+    if withheld {
+        return format!("ERROR: tool '{name}' is not available to this run");
     }
+    format!("ERROR: tool '{name}' {DENIED_BY_POLICY} ([tools] deny in agent.toml)")
 }
 
 /// Rejection message for a mutation-capable tool call attempted in
@@ -2095,6 +2288,57 @@ fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
 }
 
+impl CompositeToolInvoker {
+    /// Whether this run can call `name`: not denied, and inside its allowlist.
+    fn offers(&self, name: &str) -> bool {
+        !self.permissions.is_denied(name)
+            && self.allowed_names.as_ref().is_none_or(|allowed| allowed.contains(name))
+    }
+
+    fn policy_deny_msg(&self, name: &str) -> String {
+        denied_by_policy_msg(name, self.permissions.withholds(name))
+    }
+
+    fn hard_deny_msg(&self, name: &str, reason: DenyReason) -> String {
+        match reason {
+            DenyReason::Policy => self.policy_deny_msg(name),
+            DenyReason::Hidden => {
+                let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
+                    .into_iter()
+                    .filter(|t| self.offers(t))
+                    .collect();
+                tauri_plugin_agent_tools::tools::hidden_home_refusal(
+                    name,
+                    HIDDEN_PATH_REFUSED,
+                    &offered,
+                )
+            }
+            // The command may name nothing hidden, so the generic refusal
+            // would leave the model retrying it from the same place. Reset
+            // as the other escalation refusals do (see
+            // `escalated_shell_cwd_refusal`): the project root is always a
+            // safe start, and the model is told to re-run from it.
+            DenyReason::HiddenShellCwd => {
+                let held = self.shell_cwd.as_ref().and_then(|cwd| cwd.lock().unwrap().take());
+                let held = held.map_or_else(|| "(unknown)".into(), |d| d.display().to_string());
+                format!(
+                    "ERROR: tool '{name}' escalation {HIDDEN_PATH_REFUSED} (~/.jan) is hidden, \
+                     and the shell cwd {held} is in it or above it, where an escalated command \
+                     would start outside the sandbox that masks it. The command was not run. The \
+                     shell is back in the project root {}: re-run it from there, or `cd` \
+                     somewhere outside the Jan home first",
+                    self.project_root.display()
+                )
+            }
+            DenyReason::TooComplex => format!(
+                "ERROR: tool '{name}' was {TOO_COMPLEX_REFUSED} to check that it stays out of \
+                 the Jan home (~/.jan). It was not run. Split it into smaller calls or \
+                 shorten the path, or write a long script to a file and run that"
+            ),
+        }
+    }
+}
+
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
     fn background_notices(&self) -> Vec<BackgroundNotice> {
@@ -2104,9 +2348,10 @@ impl ToolInvoker for CompositeToolInvoker {
             .map(|ctx| ctx.bg.take_notices())
             .unwrap_or_default()
             .into_iter()
-            .map(|text| BackgroundNotice {
+            .map(|notice| BackgroundNotice {
                 headline: None,
-                text,
+                text: notice.text,
+                message: notice.message,
             })
             .collect();
         out.extend(
@@ -2116,6 +2361,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .map(|u| BackgroundNotice {
                     headline: Some(u.headline),
                     text: u.text,
+                    message: None,
                 }),
         );
         // Hook output rides the same channel: a `context` answer has to reach
@@ -2134,6 +2380,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .map(|n| BackgroundNotice {
                     headline: Some(n.headline),
                     text: n.text,
+                    message: None,
                 }),
         );
         out
@@ -2159,6 +2406,10 @@ impl ToolInvoker for CompositeToolInvoker {
         self.monitors.snapshot()
     }
 
+    fn fresh_memory_changes(&self) -> Option<String> {
+        self.memory_changes.as_ref()?.fresh(&self.project_root)
+    }
+
     async fn pre_compact(&self, message_count: usize) {
         crate::core::agent::compaction::fire_pre_compact(
             &self.hooks,
@@ -2166,6 +2417,45 @@ impl ToolInvoker for CompositeToolInvoker {
             message_count,
         )
         .await;
+    }
+
+    fn harness_context(&self) -> crate::core::agent::continuation::HarnessContext {
+        use crate::core::agent::continuation::{HarnessContext, Role};
+        // A child is the run with a link back to the agent that dispatched it.
+        let role = if self.parent_link.is_some() { Role::Child } else { Role::Parent };
+        let mut out = HarnessContext {
+            role,
+            git_status: crate::core::agent::git::workspace_status(&self.project_root),
+            ..Default::default()
+        };
+        let mut workspace = workspace_lines(&self.project_root, self.shell_cwd.as_ref());
+        if self.workspace.read_only {
+            workspace.push_str("\nThe working directory is read-only for this run.");
+        }
+        for root in &self.workspace.write_roots {
+            workspace.push_str(&format!("\nWritable worktree: {}", root.display()));
+        }
+        out.push("Workspace", workspace);
+        if let Some(link) = &self.parent_link {
+            out.task_source = link.session().map(str::to_string);
+            let mut who = format!("You are the subagent {}.", link.identity());
+            if let Some(allowed) = &self.allowed_names {
+                let mut names: Vec<&str> = allowed.iter().map(String::as_str).collect();
+                names.sort_unstable();
+                who.push_str(&format!("\nAllowed tools: {}", names.join(", ")));
+            }
+            out.push("Subagent", who);
+        }
+        if let Some(ctx) = &self.subagents {
+            out.push("Subagents", ctx.bg.roster_lines().join("\n"));
+        }
+        // A child's own shells and monitors are its business too: it started
+        // them, and it is the one waiting on them.
+        out.push(
+            "Running in the background",
+            background_lines(Some(&self.bg_shells), Some(&self.monitors)),
+        );
+        out
     }
 
     async fn await_background(&self) {
@@ -2229,7 +2519,7 @@ impl ToolInvoker for CompositeToolInvoker {
         on_complete: &OnComplete<'_>,
     ) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
-            gate::{resolve_decision, Decision, PromptKind},
+            gate::{resolve_decision_with_cwd, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
             is_builtin, lookup, Capability, ToolContext,
         };
@@ -2388,7 +2678,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2459,7 +2749,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2543,7 +2833,18 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
+                    ));
+                    continue;
+                }
+                // A name no MCP server offered this run is not a tool. Refused
+                // before any prompt, so the user is never asked to approve a
+                // call that could only fail, and "Allow always" can never grant
+                // a name a server might claim later.
+                if !self.mcp.tool_to_server.contains_key(name) {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' is not available to this run"),
                     ));
                     continue;
                 }
@@ -2620,18 +2921,20 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             let snapshot = { self.grants.lock().unwrap().clone() };
-            let decision = resolve_decision(
+            let decision = resolve_decision_with_cwd(
                 tool,
                 &args,
                 &tauri_plugin_agent_tools::tools::gate::GateContext {
                     project_root: &self.project_root,
                     scratch: Some(self.scratch_root.as_path()),
-                    // The CLI works *in* the project, so it has no separate
-                    // read-only or writable root to attach.
-                    read_roots: &[],
-                    write_roots: &[],
+                    // The CLI works *in* the project; what is attached is
+                    // its subagents' worktrees (a parent) or the borrowed
+                    // objects and build dir (a child).
+                    read_roots: &self.workspace.read_roots,
+                    write_roots: &self.workspace.write_roots,
                     hidden_root: self.hidden_root.as_deref(),
                 },
+                self.held_shell_cwd(tool).as_deref().map(std::path::Path::new),
                 &self.permissions,
                 &snapshot,
             );
@@ -2666,13 +2969,16 @@ impl ToolInvoker for CompositeToolInvoker {
                 let sandbox = self.sandbox;
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
+                let pkg_cache = self.pkg_cache.clone();
                 let web_search = self.web_search.clone();
+                let read_roots = self.workspace.read_roots.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
                 // to be batched concurrently would be no policy at all.
                 let hooks = self.hooks.clone();
                 let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
                 let hook_sink = self.hook_sink();
+                let change_budget = self.memory_change_budget.clone();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled);
                     let ctx = match memory_home.as_deref() {
@@ -2684,11 +2990,14 @@ impl ToolInvoker for CompositeToolInvoker {
                             &root, &enabled,
                         ))
                         .with_skill_user_root(memory_home.as_deref())
+                        .with_memory_change_budget(change_budget.as_deref())
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_pkg_cache(pkg_cache.as_ref())
+                        .with_read_roots(&read_roots)
                         .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
@@ -2705,15 +3014,9 @@ impl ToolInvoker for CompositeToolInvoker {
                     execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
-                    (hard_deny_msg(name, reason, &self.project_root), None, None)
+                    (self.hard_deny_msg(name, reason), None, None)
                 }
                 Decision::Prompt(kind) => {
-                    let request_id = next_permission_id();
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    self.permission_requests
-                        .lock()
-                        .await
-                        .insert(request_id.clone(), tx);
                     let capability = match tool.capability {
                         Capability::Read => "read",
                         Capability::Write => "write",
@@ -2730,33 +3033,34 @@ impl ToolInvoker for CompositeToolInvoker {
                         // Settled by `escalate` above; labelled for completeness.
                         PromptKind::Escalate => "escalate",
                     };
+                    // An exec has no path argument; where it runs stands in,
+                    // once a `cd` has moved the shell off the project root, so
+                    // the user does not approve a command for the wrong tree.
                     let path = tool
                         .path_args
                         .first()
                         .and_then(|k| args.get(*k))
                         .and_then(|v| v.as_str())
-                        .map(String::from);
+                        .map(String::from)
+                        .or_else(|| self.held_shell_cwd(tool));
                     let command = matches!(tool.capability, Capability::Exec)
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
                         .map(String::from);
                     let diff = preview_diff(tool, &args, &self.tool_context()).await;
-                    let _ = self.events.send(StreamEvent::PermissionRequest {
-                        request_id: request_id.clone(),
-                        tool_name: name.to_string(),
-                        capability: capability.to_string(),
-                        path,
-                        command,
-                        diff,
-                        prompt_kind: prompt_kind.to_string(),
-                        offers_always: true,
-                        justification: None,
-                    });
-                    // Sender dropped (client gone / run cancelled) => Deny. No timeout:
-                    // the run is cancellable via agent_cancel, which drops this future.
-                    let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-                    // Best-effort cleanup if the respond command didn't consume it.
-                    self.permission_requests.lock().await.remove(&request_id);
+                    let decision = self
+                        .ask_permission(|request_id| StreamEvent::PermissionRequest {
+                            request_id,
+                            tool_name: name.to_string(),
+                            capability: capability.to_string(),
+                            path,
+                            command,
+                            diff,
+                            prompt_kind: prompt_kind.to_string(),
+                            offers_always: true,
+                            justification: None,
+                        })
+                        .await;
                     match decision {
                         PermissionDecision::AllowOnce => {
                             execute_builtin_with_diff(
@@ -2899,6 +3203,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         project_memory: true,
         subagents_enabled: false,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+        subagent_worktrees: false,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
@@ -2913,11 +3218,17 @@ pub(crate) async fn run_server_side_openai_orchestration(
         subagent_bg: None,
         // A server-side proxy run is top-level: nothing dispatched it.
         parent_link: None,
-        // Server-side runs take whatever window the proxy's route reports
-        // through its own path, so the loop has none to size against here.
+        // Nobody can type into a proxy run.
+        shell_detach: None,
+        shell_cwd: None,
+        // Sized inside the run once the model is picked (see
+        // `proxy_budget`): the body may name none, and the choice is the
+        // loop's.
         compaction: None,
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
+        memory_change_budget: None,
+        child_scope: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -2997,7 +3308,7 @@ fn tool_names(tools: &[serde_json::Value]) -> Vec<String> {
 
 fn apply_tool_allowlist(
     openai_tools: &mut Vec<serde_json::Value>,
-    tool_to_server: &mut HashMap<String, String>,
+    tool_to_server: &mut crate::core::mcp::identity::ToolRoutes,
     allowed: &[String],
 ) {
     let allow: std::collections::HashSet<&str> = allowed.iter().map(String::as_str).collect();
@@ -3017,7 +3328,7 @@ fn apply_tool_allowlist(
 /// advertisement; only an explicit deny (or `default = "deny"`) does.
 fn retain_advertisable_mcp_tools(
     openai_tools: &mut Vec<serde_json::Value>,
-    tool_to_server: &mut HashMap<String, String>,
+    tool_to_server: &mut crate::core::mcp::identity::ToolRoutes,
     permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
 ) {
     openai_tools.retain(|t| {
@@ -3323,10 +3634,12 @@ fn build_run_system_prompt(
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
-            // No sandbox, no scratch: unconfined, the shell already has the
-            // real `/tmp`, and advertising a scratch nothing binds would send
-            // the model to a directory only the filesystem tools can see.
+            // No sandbox, no scratch: unconfined, the shell already writes
+            // wherever the user can with the host's own temp dir, and nothing
+            // would create or clean up a scratch the prompt advertised.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
+            // A subagent (the run with an override prompt) has no memory, so
+            // its prompt carries no memory index or memory instructions.
             crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
@@ -3334,6 +3647,7 @@ fn build_run_system_prompt(
                 subagents_enabled,
                 policy,
                 session_start,
+                override_prompt.is_none(),
             )
             .map(Some)
         }
@@ -3454,29 +3768,65 @@ pub(crate) async fn context_advertised_tools(
     tools
 }
 
-/// Where this run's scratch lives. Session-keyed so it persists across turns in
-/// the interactive TUI (and across calls in a one-shot run), then is wiped at the
-/// session boundary. Pure path math -- [`ensure_scratch_dir`] is what creates it
-/// -- so the system prompt can name the scratch before the tools are built.
+/// Where this run's scratch lives: `<cache>/jan/<project slug>/scratch/<session>`
+/// (see [`crate::core::agent::project::scratch_dir`]). Session-keyed so it
+/// persists across turns in the interactive TUI (and across calls in a
+/// one-shot run), then is wiped at the session boundary. Pure path math --
+/// [`ensure_scratch_dir_path`] is what creates it -- so the system prompt can
+/// name the scratch before the tools are built.
 ///
-/// A session-less run gets a throwaway in the host temp dir, never a directory
+/// A session-less run gets a throwaway beside the sessions', never a directory
 /// inside the project: a project-level scratch is shared by every session
 /// working that checkout, accumulates spill files with no owner to remove them,
 /// and fails outright on a read-only checkout. Nothing wipes a throwaway at run
 /// end (there is no session boundary to hang it on), so it is left to the
 /// startup sweep -- which is why it must live where that sweep looks.
+///
+/// [`ensure_scratch_dir_path`]: tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path
 fn scratch_root_for(
     session_id: Option<&str>,
-    _project_root: &std::path::Path,
+    project_root: &std::path::Path,
 ) -> std::path::PathBuf {
     static ANONYMOUS_RUN: AtomicUsize = AtomicUsize::new(0);
-    match session_id {
-        Some(session) => tauri_plugin_agent_tools::workspace::scratch_dir(session),
-        None => tauri_plugin_agent_tools::workspace::scratch_dir(&format!(
+    let session = match session_id {
+        Some(session) => session.to_string(),
+        None => format!(
             "anon-{}-{}",
             std::process::id(),
             ANONYMOUS_RUN.fetch_add(1, Ordering::Relaxed)
-        )),
+        ),
+    };
+    crate::core::agent::project::scratch_dir(project_root, &session)
+}
+
+/// The run's package cache: prepared whenever its shell runs confined --
+/// sandboxed, or a read-only child, which is confined even with the sandbox
+/// off and whose read-only `$HOME` leaves the host caches unwritable. `None`
+/// unconfined, where the shell keeps the host's own caches and nothing would
+/// bind one.
+///
+/// A sandboxed run whose cache cannot be prepared (an unreadable
+/// `~/.cargo/config.toml`, a cache folder another user owns) runs without one,
+/// with a warning: the cache only spares downloads, and the run's scratch still
+/// masks the Jan cache root, so losing it must not cost the user the run. A
+/// read-only child with the sandbox off has no scratch, and the package cache
+/// is the only thing masking that root from its readable `$HOME`, so there the
+/// error stands rather than exposing every project's scratch.
+async fn pkg_cache_for(
+    sandbox: bool,
+    workspace_readonly: bool,
+    project_root: &std::path::Path,
+) -> Result<Option<tauri_plugin_agent_tools::workspace::PkgCache>, String> {
+    if !(sandbox || workspace_readonly) {
+        return Ok(None);
+    }
+    match crate::core::agent::project::prepare_pkg_cache(project_root).await {
+        Ok(pkg) => Ok(Some(pkg)),
+        Err(e) if sandbox => {
+            log::warn!("agent: running without a package cache: {e}");
+            Ok(None)
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -3581,6 +3931,8 @@ async fn orchestrate_inner(
         project_memory,
         subagents_enabled,
         max_parallel_subagents,
+        // Read through `args` by the subagent dispatch, which clones them.
+        subagent_worktrees: _,
         auto_approve,
         run_mode,
         session_id,
@@ -3591,10 +3943,15 @@ async fn orchestrate_inner(
         // Read through `args` where it is needed (tool advertisement, the
         // invoker), so this stays a plain destructure of the rest.
         parent_link: _,
+        shell_detach: _,
+        shell_cwd: _,
         sandbox,
         allow_escalation,
         compaction,
         session_start,
+        // Read through `args` where the invoker is built.
+        memory_change_budget: _,
+        child_scope,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -3646,6 +4003,14 @@ async fn orchestrate_inner(
         .as_ref()
         .map(|s| s.prompt.clone())
         .unwrap_or_default();
+    // The one snapshot this run composes with and reports memory changes
+    // against. A run with no session snapshot (the API server) takes its own
+    // here, and both halves must read that same one: the tracker below would
+    // otherwise have nothing to diff against, so the run's own writes never
+    // reached its next request. A host prompt carries neither, so none is taken.
+    let run_start = host_system_prompt
+        .is_none()
+        .then(|| run_session_start(session_start.as_ref(), project_root.as_deref()));
     // A host prompt replaces the composition outright: nothing Jan writes is
     // placed around it, above the cache line or below the history.
     let stable_system = match host_system_prompt.as_deref() {
@@ -3662,7 +4027,7 @@ async fn orchestrate_inner(
             settings.as_ref().is_some_and(|s| s.sandbox),
             &prompt_policy,
             // With no project, it still reaches the prompt, after the base.
-            Some(&run_session_start(session_start.as_ref(), project_root.as_deref())),
+            run_start.as_ref(),
         )?,
     };
     let jan_owns_prompt = host_system_prompt.is_none();
@@ -3689,6 +4054,24 @@ async fn orchestrate_inner(
                     volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
+        }
+    }
+    // The index above the cache line is the session's snapshot, so a note
+    // written since (by this run, a tidy, another session) is reported here instead.
+    // Not gated on `project_memory`: that is about recall and indexing, and an
+    // ephemeral session still has the index and the tool.
+    // The same block is recomputed after a successful `memory` call later in
+    // this run (`MemoryChangesTracker`), so the run's own writes reach its
+    // next request rather than only the next run.
+    let mut memory_changes: Option<MemoryChangesTracker> = None;
+    if jan_owns_prompt && system_prompt_override.is_none() {
+        let snapshot = run_start.as_ref().and_then(|s| s.memory());
+        if let (Some(root), Some(snapshot)) = (project_root.as_deref(), snapshot) {
+            let block = snapshot.changes_block(root);
+            if let Some(block) = &block {
+                volatile_parts.push((Composer::MemoryChanges, block.clone()));
+            }
+            memory_changes = Some(MemoryChangesTracker::new(snapshot.clone(), block));
         }
     }
     // Child (subagent) runs are excluded via `system_prompt_override`, the
@@ -3762,7 +4145,6 @@ async fn orchestrate_inner(
         transcript.record_prompt(&composed.prefix);
     }
     let volatile_projection: Option<String> = Some(volatile_system);
-    let send_reasoning = body_send_reasoning(json_body);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
     // could silently ignore.
@@ -3850,6 +4232,14 @@ async fn orchestrate_inner(
         host_tools,
         args.parent_link.is_some(),
     );
+    // Every agent run rings the shell doorbell (`shell_done_sink`), and one
+    // with a session-owned directory carries it where the shell can (see
+    // `bash`), so its shell description says exactly that. Both inputs are
+    // fixed for the run, so the array stays byte-identical across its turns.
+    tauri_plugin_agent_tools::tools::schema::offer_session_shell(
+        &mut openai_tools,
+        args.shell_cwd.is_some() && tauri_plugin_agent_tools::tools::proc::shell_cwd_supported(),
+    );
     // Resolved once per run, so the array is byte-identical across its turns.
     if settings.as_ref().is_some_and(|s| s.escalation.offered()) {
         tauri_plugin_agent_tools::tools::schema::offer_escalation(&mut openai_tools);
@@ -3865,6 +4255,29 @@ async fn orchestrate_inner(
     )
     .await?;
 
+    // A desktop run arrives without a budget: its only Rust caller is the API
+    // server, which cannot size one before the model is picked above. Sized
+    // here instead, from the catalog or the loaded engine model's context, so
+    // the run compacts before dispatch rather than after a rejection. Still
+    // `None` when the window is unknown, which keeps it reactive.
+    #[cfg(not(feature = "cli"))]
+    let compaction = &match compaction {
+        Some(budget) => Some(*budget),
+        None => {
+            static ENGINE_CLIENT: std::sync::LazyLock<reqwest::Client> =
+                std::sync::LazyLock::new(tauri_plugin_llamacpp::engine::worker::loopback_client);
+            let pc = provider_configs.lock().await.clone();
+            crate::core::agent::proxy_budget::resolve(
+                &model_id,
+                &upstream_url,
+                &pc,
+                llama_state,
+                &ENGINE_CLIENT,
+            )
+            .await
+        }
+    };
+
     let max_turns = body_turn_cap(json_body);
     let cost_ceiling = body_cost_ceiling(json_body);
 
@@ -3873,6 +4286,15 @@ async fn orchestrate_inner(
         .api_type
         .as_deref()
         .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
+    // The user's opt-out, narrowed by what this route is already known to
+    // reject. A route that rejected the field in an earlier run (or process)
+    // starts without it, so its first request is the bytes it will keep
+    // accepting rather than one more rejection followed by a history rewrite.
+    let send_reasoning = body_send_reasoning(json_body)
+        && !crate::core::agent::reasoning_routes::rejects(
+            provenance.provider.as_deref(),
+            &model_id,
+        );
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -3907,8 +4329,8 @@ async fn orchestrate_inner(
 
     if let Some(root) = project_root {
         // Background subagents are scoped to this run unless the session owns
-        // them: `_bg_guard` aborts any still-running child when
-        // `orchestrate_inner` returns or is cancelled. The cap
+        // them: `bg_guard` aborts any still-running child and sweeps their
+        // worktrees when the run ends or is cancelled. The cap
         // (`max_parallel_subagents`) is snapshotted here, at run start.
         let bg = session_subagent_bg.clone().unwrap_or_else(|| {
             std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
@@ -3920,14 +4342,22 @@ async fn orchestrate_inner(
         // TUI aborts them on cancel and on session reset). Arming it here would
         // kill on the first turn's return exactly the children this change
         // exists to keep running.
-        let _bg_guard = session_subagent_bg
+        let bg_guard = session_subagent_bg
             .is_none()
-            .then(|| crate::core::agent::subagent::AbortOnDrop(bg.clone()));
+            .then(|| crate::core::agent::subagent::AbortOnDrop::new(bg.clone(), events));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
-            parent_args: args.clone(),
+            // With the budget this run resolved, so a child re-sizes from it
+            // (`CompactionBudget::for_model`) rather than starting reactive.
+            parent_args: OrchestrationArgs {
+                compaction: *compaction,
+                ..args.clone()
+            },
             model_id: model_id.clone(),
             max_session_tokens,
             cost_ceiling,
+            // The user's opt-out only, not this route's answer: a child may run
+            // on another model, and it checks its own route's known rejection
+            // when it starts (`reasoning_routes`), as every run does.
             send_reasoning: body_send_reasoning(json_body),
             tool_ceiling: allowed_names.as_ref().map(|names| {
                 let mut names: Vec<String> = names.iter().cloned().collect();
@@ -3962,10 +4392,22 @@ async fn orchestrate_inner(
         // directory as its sanctioned scratch. Skipped entirely when the shell
         // is unconfined: nothing binds it, so creating it would only leave an
         // empty directory behind.
+        //
+        // Claimed for as long as this turn runs, and freshened each turn, so
+        // another Jan process's startup sweep (whose keep list cannot name
+        // this session) leaves it alone; see `claim_scratch_dir`.
         let scratch_root = scratch_root_for(session_id.as_deref(), root);
-        if settings.sandbox {
-            tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
-        }
+        let _scratch_claim = if settings.sandbox {
+            Some(tauri_plugin_agent_tools::workspace::claim_scratch_dir(&scratch_root).await?)
+        } else {
+            None
+        };
+        let pkg_cache = pkg_cache_for(
+            settings.sandbox,
+            child_scope.as_ref().is_some_and(|scope| scope.read_only),
+            root,
+        )
+        .await?;
         let (store_root, memory_home, cross_project) =
             crate::core::agent::project::memory_roots(root);
         let tool_notices = settings.tool_notices;
@@ -3981,8 +4423,13 @@ async fn orchestrate_inner(
             escalation: settings.escalation,
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
+            pkg_cache,
             env_passthrough: settings.env_passthrough,
-            env_set: settings.env_set,
+            // A child's workspace adds its build and cache dirs on top.
+            env_set: merge_env_set(
+                settings.env_set,
+                child_scope.as_ref().map(|c| c.env_set.clone()).unwrap_or_default(),
+            ),
             web_search: resolve_web_search(),
             project_root: root.clone(),
             allowed_names: allowed_names.clone(),
@@ -4017,6 +4464,16 @@ async fn orchestrate_inner(
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
             parent_link: args.parent_link.clone(),
+            // Only a child run has an id of its own.
+            shell_owner: run_id.clone(),
+            // Without a session registry nothing would deliver the detached
+            // command's end except a park, which holds the message just the
+            // same; so the signal only applies where the session owns shells.
+            shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
+            shell_cwd: args.shell_cwd.clone(),
+            memory_changes,
+            memory_change_budget: args.memory_change_budget.clone(),
+            workspace: RunWorkspace::resolve(child_scope.as_ref(), root),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -4033,6 +4490,7 @@ async fn orchestrate_inner(
                     BackgroundNotice {
                         headline: Some(message.clone()),
                         text: message.clone(),
+                        message: None,
                     }
                 })
                 .collect();
@@ -4122,12 +4580,20 @@ async fn orchestrate_inner(
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
         // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them. A session-owned
+        // `bg_guard`. On an error, teardown still aborts them. A session-owned
         // set is skipped: nothing is about to abort those children, and waiting
         // here would hold the run open for precisely the work the session set
         // exists to outlive it.
         if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
+        }
+        // A run-owned registry's children are done with this run, so its end
+        // is their session's end: stop any still running, then sweep their
+        // worktrees, here rather than when the function returns so the kept
+        // notice precedes `SessionEnd`. A session-owned registry has no guard;
+        // its owner sweeps it.
+        if let Some(guard) = bg_guard {
+            guard.finish().await;
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
         // path could not be used for the cleanup or audit it exists for. Its
@@ -4314,14 +4780,22 @@ impl Drop for SessionEndGuard {
 /// Manually compact `messages` for the given model, resolving the upstream from
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
-/// no `ModelInvoker`.
+/// no `ModelInvoker`. The summarizer's report rides along, `None` when there
+/// was nothing to compact.
 #[cfg(feature = "cli")]
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
-    keep_recent: usize,
-) -> Result<Vec<serde_json::Value>, String> {
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) -> Result<
+    (
+        Vec<serde_json::Value>,
+        Option<crate::core::agent::events::CompactionReport>,
+    ),
+    String,
+> {
     // `/compact` discards conversation exactly as the in-loop overflow retry
     // does, so it owes PreCompact the same warning. This path has no invoker to
     // hang the hooks off (it holds args and a model id, nothing more), so they
@@ -4339,8 +4813,72 @@ pub(crate) async fn compact_history(
     // than somewhere a client cannot read.
     let mut model = side_call_invoker(args, model_id, None).await?;
     model.summarizer = smol_summarizer(args, model_id, None).await;
-    crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
-        .await
+    let harness = between_turn_harness(args, run_mode, goal_active).await;
+    let (sizing, keep_tokens) = between_turn_sizing(args.compaction, messages);
+    Ok(crate::core::agent::compaction::compact_conversation(
+        messages,
+        model_id,
+        &model,
+        keep_tokens,
+        &harness,
+        sizing,
+    )
+    .await)
+}
+
+/// The harness context a compaction between turns writes, built like a run's
+/// ([`CompactionScope::harness`]) from what the session owns: the workspace,
+/// its subagent roster, background shells and monitors (all session-owned in
+/// the TUI, so they outlive the run that started them), the todo list, mode
+/// and goal. No budget section: between turns no run is spending one.
+#[cfg(feature = "cli")]
+async fn between_turn_harness(
+    args: &OrchestrationArgs,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) -> crate::core::agent::continuation::HarnessContext {
+    // The main conversation is the parent; nothing compacts a child's
+    // history from outside its run.
+    let mut harness = crate::core::agent::continuation::HarnessContext::default();
+    if let Some(root) = args.project_root.as_deref() {
+        harness.git_status = crate::core::agent::git::workspace_status(root);
+        harness.push("Workspace", workspace_lines(root, args.shell_cwd.as_ref()));
+    }
+    if let Some(bg) = &args.subagent_bg {
+        harness.push("Subagents", bg.roster_lines().join("\n"));
+    }
+    harness.push(
+        "Running in the background",
+        background_lines(args.bg_shells.as_deref(), args.monitors.as_deref()),
+    );
+    push_session_sections(&mut harness, args.todo_registry.as_ref(), run_mode, goal_active).await;
+    harness
+}
+
+/// The window a compaction between turns sizes against, and the tokens its
+/// kept tail may hold: the share of the trigger a run's own compaction keeps
+/// ([`crate::core::agent::compaction::tail_tokens`]). With no configured
+/// budget the conversation itself is the best measure of a window -- it fit,
+/// or the user would not be compacting it -- and the trigger is the default
+/// ratio of that.
+#[cfg(feature = "cli")]
+fn between_turn_sizing(
+    budget: Option<crate::core::agent::compaction::CompactionBudget>,
+    messages: &[serde_json::Value],
+) -> (crate::core::agent::compaction::Sizing, u64) {
+    use crate::core::agent::compaction::{
+        estimate_token_count, tail_tokens, trigger_tokens, Sizing, DEFAULT_COMPACTION_RATIO,
+    };
+    let (window, trigger) = match budget {
+        Some(budget) => (budget.context_window, budget.trigger_tokens()),
+        None => {
+            let window = estimate_token_count(messages).max(32_000);
+            (window, trigger_tokens(window, DEFAULT_COMPACTION_RATIO, None))
+        }
+    };
+    // One trigger sizes both the tail and the state's caps, so a configured
+    // ratio or reserve is honoured by `/compact` as it is by a run.
+    (Sizing { window, trigger, overhead: 0 }, tail_tokens(trigger))
 }
 
 /// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
@@ -4571,6 +5109,10 @@ fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_js
     project(transcript, None, send_reasoning)
 }
 
+/// How the system note recorded when a run hits its money ceiling starts, so
+/// a resume can tell that history apart from a prompt.
+pub(crate) const COST_CEILING_MARKER: &str = "[cost ceiling reached]";
+
 /// How many messages the request this run is about carries: the `message_count`
 /// a hook payload reports. The projection is the only thing that knows now that
 /// there is no live list to measure, so the count is projected rather than kept
@@ -4609,59 +5151,182 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
     dropped
 }
 
-/// Compact the run's record in place: summarize the span the plan names, and
-/// record the point that stands in for it. `Some(messages summarized)` when a
-/// compaction happened; `None` when there is nothing safe to drop, which is how
-/// the caller tells a no-op from a shrink instead of comparing lengths.
+/// What a compaction needs beyond the record: the window it sizes against,
+/// the request it may extend from cache, and where the harness context comes
+/// from.
+struct CompactionScope<'a> {
+    /// What to size the tail and the state against: the route's window and
+    /// trigger, or on a route with no window an estimate taken from the
+    /// request it just rejected.
+    sizing: crate::core::agent::compaction::Sizing,
+    /// The exact request the run was about to send, when the cached path may
+    /// extend it. Only the preflight has one: after a rejection that request
+    /// no longer fits, and extending it could only fail too.
+    cached: Option<&'a serde_json::Value>,
+    tools: &'a dyn ToolInvoker,
+    todo_registry: Option<&'a crate::core::agent::todo::TodoRegistry>,
+    run_mode: crate::core::agent::plan::RunMode,
+    json_body: &'a serde_json::Value,
+}
+
+impl CompactionScope<'_> {
+    /// The harness context for the continuation state, read now: the
+    /// invoker's (workspace, background work, subagent identity) plus what the
+    /// loop holds itself (todo list, mode, goal, budget).
+    async fn harness(
+        &self,
+        budget: &SessionBudget,
+    ) -> crate::core::agent::continuation::HarnessContext {
+        let mut out = self.tools.harness_context();
+        let goal_active = self
+            .json_body
+            .get("goal_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        push_session_sections(&mut out, self.todo_registry, self.run_mode, goal_active).await;
+        let mut spend = format!("Tokens spent this run: {}", budget.spent());
+        if let Some(max) = budget.max_tokens() {
+            spend.push_str(&format!(" of {max}"));
+        }
+        if let (Some(spent), Some(max)) = (budget.spent_usd(), budget.max_usd()) {
+            spend.push_str(&format!("\nSpent ${spent:.4} of a ${max:.4} ceiling"));
+        }
+        out.push("Budget", spend);
+        out
+    }
+}
+
+/// The `Workspace` section's opening lines: where the run works, on which
+/// branch, and where a `cd` left the shell. A compaction drops the call whose
+/// result announced that `cd`, so this is where the model finds it again.
+fn workspace_lines(
+    root: &std::path::Path,
+    shell_cwd: Option<&tauri_plugin_agent_tools::tools::ShellCwd>,
+) -> String {
+    let mut workspace = format!("Working directory: {}", root.display());
+    if let Some(branch) = crate::core::agent::git::current_branch(root) {
+        workspace.push_str(&format!("\nBranch: {branch}"));
+    }
+    if let Some(dir) = shell_cwd.and_then(|cwd| cwd.lock().unwrap().clone()) {
+        workspace.push_str(&format!("\nShell cwd: {} (later bash calls start there)", dir.display()));
+    }
+    workspace
+}
+
+/// The `Running in the background` section: each backgrounded shell and
+/// monitor with its id. The call that started them is in the span a
+/// compaction drops, so this is the only place the model can find them again.
+fn background_lines(
+    shells: Option<&crate::core::agent::bg_shell::BackgroundShells>,
+    monitors: Option<&tauri_plugin_agent_tools::tools::monitor::MonitorSet>,
+) -> String {
+    let mut running = Vec::new();
+    for id in shells.map(|s| s.running_ids()).unwrap_or_default() {
+        running.push(format!("- background shell {id}"));
+    }
+    for monitor in monitors.map(|m| m.snapshot()).unwrap_or_default() {
+        running.push(format!(
+            "- monitor {} ({}): {}",
+            monitor.monitor_id, monitor.name, monitor.script
+        ));
+    }
+    running.join("\n")
+}
+
+/// The sections a session holds rather than a tool invoker: the todo list,
+/// plan mode and an active goal. Parent-only, which `push` enforces.
+async fn push_session_sections(
+    out: &mut crate::core::agent::continuation::HarnessContext,
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) {
+    if let Some(registry) = todo_registry {
+        if let Some(todo) = crate::core::agent::continuation::render_todo(&*registry.lock().await) {
+            out.push("Todo list", todo);
+        }
+    }
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        out.push(
+            "Mode",
+            "Plan mode (read-only): explore and plan, do not change anything.".to_string(),
+        );
+    }
+    if goal_active {
+        out.push(
+            "Goal",
+            "A /goal is active: keep working until its condition holds.".to_string(),
+        );
+    }
+}
+
+/// Compact the run's record in place: replace the span the plan names with a
+/// continuation state, and record the point that stands in for it.
+/// `Some(messages compacted)` when a compaction happened; `None` when there is
+/// nothing safe to drop, which is how the caller tells a no-op from a shrink
+/// instead of comparing lengths.
 ///
 /// The original span stays in the record - only the projection omits it - so a
-/// later turn, a different provider, or a changed `keep_recent` can still
-/// rebuild from it.
+/// later turn, a different provider, or a changed tail can still rebuild from
+/// it. Never fails: a model that cannot write its sections leaves the state
+/// with the code-built ones, which carry the task and the user's words.
 ///
-/// The summarizer's request is billed like any other, so its usage is folded
-/// into `budget` here. A turn can compact several times (the preflight plus the
+/// The side requests are billed like any other, so their usage is folded into
+/// `budget` here. A turn can compact several times (the preflight plus the
 /// overflow retries), and spend the budget never saw would make `/usage` and
 /// the money ceiling agree with each other while both undercounted.
 ///
 /// Every in-run compaction goes through here, so this is where it is reported:
-/// `Compaction { Started }` before the summarizer call and `Finished` or
-/// `Failed` after it. A plan with nothing to drop sends nothing, since no
-/// summarizer call was made.
+/// `Compaction { Started }` before the model call and `Finished` (with its
+/// report) after it. A plan with nothing to drop sends nothing.
 async fn compact(
     transcript: &mut Transcript,
-    keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
     budget: &mut SessionBudget,
     events: &mpsc::UnboundedSender<StreamEvent>,
     reason: CompactionReason,
-) -> Result<Option<usize>, String> {
-    let Some(plan) = transcript.compaction_plan(keep_recent) else {
-        return Ok(None);
-    };
+    scope: &CompactionScope<'_>,
+) -> Option<Compacted> {
+    let harness = scope.harness(budget).await;
+    let fitted = crate::core::agent::compaction::fit(transcript, scope.sizing, &harness)?;
+    let plan = fitted.plan;
     let summarized = plan.summarize.len();
-    let report = |phase, messages| {
+    let announce = |phase, messages, report| {
         let _ = events.send(StreamEvent::Compaction {
             phase,
             reason,
             messages,
+            report,
         });
     };
-    report(CompactionPhase::Started, None);
-    let (summary, usage) =
-        match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
-            .await
-        {
-            Ok(done) => done,
-            Err(error) => {
-                report(CompactionPhase::Failed, None);
-                return Err(error);
-            }
-        };
-    budget.record_side_request(&usage);
-    transcript.record_compaction(summary, plan.covers);
-    report(CompactionPhase::Finished, Some(summarized));
-    Ok(Some(summarized))
+    announce(CompactionPhase::Started, None, None);
+    let crate::core::agent::compaction::Continuation { state, report, reasoning_rejected } =
+        crate::core::agent::compaction::continuation_state(
+            &fitted.gathered,
+            &plan.summarize,
+            // A forced tool choice can only be answered with that tool call.
+            scope.cached.filter(|r| crate::core::agent::compaction::cacheable(r)),
+            &harness,
+            scope.sizing,
+            fitted.caps,
+            model_id,
+            model,
+        )
+        .await;
+    budget.record_side_request(&report.usage);
+    transcript.record_compaction(state, plan.covers);
+    announce(CompactionPhase::Finished, Some(summarized), Some(report));
+    Some(Compacted { messages: summarized, reasoning_rejected })
+}
+
+/// What [`compact`] did.
+struct Compacted {
+    /// Messages the continuation state stands in for.
+    messages: usize,
+    /// The cached side request learned that the route rejects a resent
+    /// `reasoning_content`; the run stops sending it from its next request.
+    reasoning_rejected: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4739,7 +5404,7 @@ async fn run_turn_cycle(
                 transcript.record_message(serde_json::json!({
                     "role": "system",
                     "content": format!(
-                        "[cost ceiling reached] This run stopped after spending about \
+                        "{COST_CEILING_MARKER} This run stopped after spending about \
                          ${spent:.4} against its ${max:.4} ceiling. The task may be \
                          unfinished; raising --max-budget-usd and resuming continues it."
                     ),
@@ -4787,6 +5452,13 @@ async fn run_turn_cycle(
                         text: headline.clone(),
                     });
                 }
+                if let Some((from, text)) = &notice.message {
+                    let _ = events.send(StreamEvent::AgentMessage {
+                        from: from.clone(),
+                        to: crate::core::agent::events::MAIN_AGENT.to_string(),
+                        text: text.clone(),
+                    });
+                }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: client_history(&transcript, send_reasoning),
@@ -4805,7 +5477,6 @@ async fn run_turn_cycle(
         // the loop gives up if a pass fails to shrink the message list. Kept as
         // the fallback, and the only path for a route whose window is unknown.
         let completion = {
-            let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
                 let request_value = build_completion_request(
@@ -4826,24 +5497,51 @@ async fn run_turn_cycle(
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
                         if estimate > window.trigger_tokens() {
-                            if let Some(dropped) = compact(
+                            // The side request is invoked directly, never
+                            // through this loop, so it cannot re-enter the
+                            // preflight; `preflighted` already holds for the
+                            // retry below.
+                            let scope = CompactionScope {
+                                sizing: crate::core::agent::compaction::Sizing {
+                                    window: window.context_window,
+                                    trigger: window.trigger_tokens(),
+                                    overhead: crate::core::agent::compaction::request_overhead(
+                                        &request_value,
+                                        volatile_system.as_deref(),
+                                    ),
+                                },
+                                cached: Some(&request_value),
+                                tools,
+                                todo_registry,
+                                run_mode,
+                                json_body,
+                            };
+                            if let Some(done) = compact(
                                 &mut transcript,
-                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
                                 budget,
                                 events,
                                 CompactionReason::Preflight,
+                                &scope,
                             )
-                            .await?
+                            .await
                             {
                                 log::info!(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
-                                     token trigger on a {} token window, compacted {dropped} \
-                                     messages into a summary before dispatch",
+                                     token trigger on a {} token window, compacted {} \
+                                     messages into a continuation state before dispatch",
                                     window.trigger_tokens(),
-                                    window.context_window
+                                    window.context_window,
+                                    done.messages
                                 );
+                                // The side request already met the route's
+                                // refusal; the next request would carry the
+                                // same field. The prefix breaks here anyway,
+                                // so stripping now costs no cache.
+                                if done.reasoning_rejected {
+                                    send_reasoning = false;
+                                }
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
                                 // oversized history would send it again next turn.
@@ -4871,20 +5569,52 @@ async fn run_turn_cycle(
                                 send_reasoning,
                             ))
                             .await;
+                        // The request no longer fits, so the cached path is
+                        // out and the span is summarized instead. A route
+                        // with no known window sizes against the request it
+                        // just rejected, and each further attempt halves it:
+                        // the provider's maths and ours evidently differ.
+                        let window = compaction.map_or_else(
+                            || {
+                                crate::core::agent::compaction::estimate_request_tokens(
+                                    &request_value,
+                                )
+                            },
+                            |b| b.context_window,
+                        ) >> attempts;
+                        let ratio = compaction.map_or(
+                            crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                            |b| b.ratio,
+                        );
+                        let scope = CompactionScope {
+                            sizing: crate::core::agent::compaction::Sizing {
+                                overhead: crate::core::agent::compaction::request_overhead(
+                                    &request_value,
+                                    volatile_system.as_deref(),
+                                ),
+                                ..crate::core::agent::compaction::Sizing::new(window, ratio)
+                            },
+                            cached: None,
+                            tools,
+                            todo_registry,
+                            run_mode,
+                            json_body,
+                        };
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
-                        let dropped =
-                            compact(
-                                &mut transcript,
-                                keep_recent,
-                                model_id,
-                                model,
-                                budget,
-                                events,
-                                CompactionReason::ContextOverflow,
-                            )
-                            .await?
-                            .ok_or(e)?;
+                        // No cached request here, so no reasoning verdict.
+                        let dropped = compact(
+                            &mut transcript,
+                            model_id,
+                            model,
+                            budget,
+                            events,
+                            CompactionReason::ContextOverflow,
+                            &scope,
+                        )
+                        .await
+                        .ok_or(e)?
+                        .messages;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -4897,7 +5627,6 @@ async fn run_turn_cycle(
                         let _ = events.send(StreamEvent::MessagesUpdated {
                             messages: client_history(&transcript, send_reasoning),
                         });
-                        keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
                     // This provider rejects `reasoning_content` outright rather
@@ -4921,6 +5650,11 @@ async fn run_turn_cycle(
                         log::info!(
                             "agent: upstream rejected reasoning_content, retrying without it"
                         );
+                        // The retry rewrites every earlier assistant turn, so
+                        // the cached prefix is lost once. Remembering the route
+                        // keeps it to once: later runs, resumes and same-route
+                        // children start without the field.
+                        model.reasoning_rejected(model_id);
                         send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
                             messages: client_history(&transcript, send_reasoning),
@@ -5041,48 +5775,18 @@ async fn run_turn_cycle(
                     continue;
                 }
             }
-            // Every turn is finished and the run passed its token ceiling, so
-            // the conversation is both complete and oversized. Compact it here,
-            // while nothing is waiting on the result: the ceiling no longer
-            // stops a run, so without this the thread only grows, and the next
-            // run resumes it by sending the whole oversized history upstream.
-            // The reactive path above cannot help with that -- it only fires
-            // once an upstream has already rejected a request.
-            //
-            // Only when there is something to drop: a plan that
-            // covers nothing would spend a summarizer call to publish an
-            // unchanged history.
-            if budget.exhausted() {
-                tools
-                    .pre_compact(projected_message_count(
-                        &transcript,
-                        volatile_system.as_deref(),
-                        send_reasoning,
-                    ))
-                    .await;
-                match compact(
-                    &mut transcript,
-                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-                    model_id,
-                    model,
-                    budget,
-                    events,
-                    CompactionReason::SessionBudget,
-                )
-                .await
-                {
-                    Ok(Some(dropped)) => {
-                        log::info!(
-                            "agent: budget exhausted at end of run, compacted {dropped} messages \
-                             into a summary"
-                        );
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        log::warn!("agent: budget exhausted but compaction failed: {error}");
-                    }
-                }
-            }
+            // A spent token ceiling does not compact here. Spend is not context
+            // size: every completion is charged in full, but thinking is not
+            // resent, so a long run on a reasoning model passes a window-sized
+            // ceiling while its prompt is a fraction of the window. Compacting
+            // then throws away live context and saves no spend. With a known
+            // window, a history that really is oversized is compacted by the
+            // preflight above, on the next request that would carry it. With
+            // none (`compaction` is `None`: a desktop API-server run on a model
+            // neither the catalog nor the loaded engine can size) nothing
+            // shrinks it proactively: the overflow path compacts once a
+            // provider rejects a request. A pass here would not help that route
+            // anyway, since its HTTP client owns the history and resends it.
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: client_history(&transcript, send_reasoning),
             });
@@ -5281,6 +5985,7 @@ async fn run_turn_cycle(
         // `todo` at all means the list was just reconciled, regardless of
         // what else ran alongside it.
         let mut todo_touched_this_batch = false;
+        let mut memory_touched_this_batch = false;
         for outcome in tool_results {
             // Emitted here only when the invoker did not announce it already
             // (the default invoker never does; a failed call refused before
@@ -5298,6 +6003,9 @@ async fn run_turn_cycle(
                 ..
             } = outcome;
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            if name == tauri_plugin_agent_tools::tools::MEMORY_TOOL && !is_error {
+                memory_touched_this_batch = true;
+            }
             if name == "todo" {
                 todo_touched_this_batch = true;
             } else if !is_error
@@ -5311,6 +6019,14 @@ async fn run_turn_cycle(
             // stay plain text, preserving the standard tool protocol. A host
             // that answered with content parts chose the message itself, so
             // its parts go out verbatim.
+            // A shell result reaches the model without its exit marker when
+            // the command printed something; the event above kept the full
+            // text, so the UIs still read the code and failure from it.
+            let content = if name == tauri_plugin_agent_tools::tools::SHELL_TOOL {
+                tauri_plugin_agent_tools::tools::handlers::model_shell_result(&content)
+            } else {
+                content
+            };
             let wire_content = if let Some(parts) = parts {
                 serde_json::Value::Array(parts)
             } else if images.is_empty() {
@@ -5337,6 +6053,14 @@ async fn run_turn_cycle(
                     "tool_call_id": id,
                     "content": wire_content
                 }));
+            }
+        }
+        // A note this run wrote is reported to its next request, below the
+        // history like the run's own tail: the index above the cache line is
+        // the session-start snapshot and must not move.
+        if memory_touched_this_batch {
+            if let Some(block) = tools.fresh_memory_changes() {
+                transcript.record_reminder(&block);
             }
         }
         if todo_touched_this_batch {
@@ -6098,26 +6822,63 @@ mod tests {
     #[test]
     fn scratch_root_is_session_keyed_and_never_lands_in_the_project() {
         let root = unique_project_root();
-        assert_eq!(
-            scratch_root_for(Some("sess-1"), &root),
-            tauri_plugin_agent_tools::workspace::scratch_dir("sess-1")
-        );
+        // Under the project's own cache folder, whose slug is its store's.
+        let store = tauri_plugin_agent_tools::workspace::project_store_in(std::path::Path::new("/h"), &root);
+        let cache = crate::core::agent::project::jan_cache_root().join(store.file_name().unwrap());
+        assert_eq!(scratch_root_for(Some("sess-1"), &root), cache.join("scratch/sess-1"));
         // Two sessions never share one scratch.
         assert_ne!(
             scratch_root_for(Some("sess-1"), &root),
             scratch_root_for(Some("sess-2"), &root)
         );
-        // A session-less run still needs a scratch to bind, but it belongs in
-        // the host temp dir: a directory inside the project would be shared by
-        // every session on that checkout and never collected.
+        // A session-less run still needs a scratch to bind, but it belongs
+        // where the startup sweep looks: a directory inside the project would
+        // be shared by every session on that checkout and never collected.
         let anon = scratch_root_for(None, &root);
         assert!(!anon.starts_with(&root), "scratch leaked into the project");
-        assert!(anon.starts_with(std::env::temp_dir()));
+        assert!(anon.starts_with(cache.join("scratch")), "{anon:?}");
         assert_ne!(
             anon,
             scratch_root_for(None, &root),
             "two session-less runs must not share a scratch"
         );
+    }
+
+    /// A confined run gets its project's package cache under the project's
+    /// cache folder, beside the scratch; an unconfined one gets none, and
+    /// creates nothing. A read-only child is confined with the sandbox off
+    /// (the CLI default), so it gets one too.
+    #[tokio::test]
+    async fn pkg_cache_is_prepared_only_for_a_confined_run() {
+        let root = unique_project_root();
+        let cache = crate::core::agent::project::project_cache_dir(&root);
+        assert_eq!(pkg_cache_for(false, false, &root).await.unwrap(), None);
+        assert!(!cache.join("pkg").exists());
+        let reader = pkg_cache_for(false, true, &root).await.unwrap().expect("read-only");
+        assert_eq!(reader.root, cache.join("pkg"));
+        let pkg = pkg_cache_for(true, false, &root).await.unwrap().expect("sandboxed");
+        assert_eq!(pkg.root, cache.join("pkg"));
+        assert!(pkg.root.join("cargo").is_dir());
+        assert_ne!(
+            pkg.root,
+            pkg_cache_for(true, false, &unique_project_root()).await.unwrap().unwrap().root,
+            "two projects never share a package cache"
+        );
+    }
+
+    /// A sandboxed run whose cache cannot be prepared runs without one; a
+    /// read-only child with the sandbox off, which only the package cache
+    /// masks the Jan cache root for, still refuses. Here the package folder's
+    /// name is taken by a file.
+    #[tokio::test]
+    async fn an_unpreparable_pkg_cache_leaves_the_run_without_one() {
+        let root = unique_project_root();
+        let cache = crate::core::agent::project::project_cache_dir(&root);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("pkg"), "not a folder").unwrap();
+        assert_eq!(pkg_cache_for(true, false, &root).await, Ok(None));
+        assert_eq!(pkg_cache_for(true, true, &root).await, Ok(None));
+        assert!(pkg_cache_for(false, true, &root).await.is_err());
     }
 
     #[test]
@@ -6470,7 +7231,7 @@ mod tests {
                 // The summarizer call is tiny by construction; answer it.
                 let summarizing = request["messages"][0]["content"]
                     .as_str()
-                    .is_some_and(|c| c.starts_with("Summarize the AI agent"));
+                    .is_some_and(|c| c.starts_with("You condense part of an AI agent"));
                 if !summarizing {
                     self.requests.lock().unwrap().push(request.clone());
                     let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
@@ -6566,14 +7327,17 @@ mod tests {
 
         drop(tx);
         let mut phases = Vec::new();
+        let mut reports = Vec::new();
         while let Some(ev) = rx.recv().await {
             if let StreamEvent::Compaction {
                 phase,
                 reason: CompactionReason::Preflight,
+                report,
                 ..
             } = ev
             {
                 phases.push(phase);
+                reports.push(report);
             }
         }
         assert_eq!(
@@ -6581,6 +7345,12 @@ mod tests {
             [CompactionPhase::Started, CompactionPhase::Finished],
             "a prefix break the user did not ask for has to be announced"
         );
+        // The finish says what the summarizer did, so `/agents` can list it.
+        assert!(reports[0].is_none(), "nothing is known before the call");
+        let report = reports[1].as_ref().expect("the finish carries its report");
+        assert_eq!(report.summary, "CONDENSED");
+        assert_eq!(report.model.as_deref(), Some("m"));
+        assert!(report.input_tokens > 500, "the folded span: {}", report.input_tokens);
     }
 
     /// The other half of the contract: under the trigger nothing is compacted
@@ -7468,6 +8238,7 @@ mod tests {
                 .map(|text| BackgroundNotice {
                     headline: None,
                     text,
+                    message: None,
                 })
                 .collect()
         }
@@ -7621,6 +8392,7 @@ mod tests {
             vec![BackgroundNotice {
                 headline: Some("Monitor mon-1: condition 'ok' matched".to_string()),
                 text: "Monitor 'mon-1' condition 'ok' matched on build.log:\nBUILD OK".to_string(),
+                message: None,
             }]
         }
         fn background_pending(&self) -> bool {
@@ -7870,6 +8642,627 @@ mod tests {
         );
     }
 
+    /// A model for the compaction tests: the preflight's cached side request
+    /// (it carries the compaction instruction) is answered with model
+    /// sections and recorded apart; every other request gets the next queued
+    /// answer.
+    struct CompactingModel {
+        answers: StdMutex<VecDeque<serde_json::Value>>,
+        turns: StdMutex<Vec<serde_json::Value>>,
+        side: StdMutex<Vec<serde_json::Value>>,
+    }
+    impl CompactingModel {
+        fn new(answers: Vec<serde_json::Value>) -> Self {
+            Self {
+                answers: StdMutex::new(answers.into_iter().collect()),
+                turns: StdMutex::new(Vec::new()),
+                side: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ModelInvoker for CompactingModel {
+        async fn invoke(
+            &self,
+            request: &serde_json::Value,
+            _events: &mpsc::UnboundedSender<StreamEvent>,
+        ) -> Result<serde_json::Value, String> {
+            let last = request["messages"]
+                .as_array()
+                .and_then(|m| m.last())
+                .and_then(|m| m["content"].as_str())
+                .unwrap_or("");
+            let fallback = request["messages"][0]["content"]
+                .as_str()
+                .is_some_and(|c| c.starts_with("You condense part of an AI agent"));
+            if fallback {
+                return Ok(final_answer("## Progress\nFALLBACK\n## Current step\na\n## Next actions\nb"));
+            }
+            if last.contains("[Compaction request from the harness]") {
+                self.side.lock().unwrap().push(request.clone());
+                return Ok(final_answer(
+                    "## Progress\nread files\n## Current step\nreading\n## Next actions\nfix it",
+                ));
+            }
+            self.turns.lock().unwrap().push(request.clone());
+            self.answers
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| "mock exhausted".to_string())
+        }
+    }
+
+    /// A tool whose every result is `size` bytes, so a few calls cross a small
+    /// window's trigger.
+    struct BigResultTool(usize);
+    #[async_trait]
+    impl ToolInvoker for BigResultTool {
+        async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
+            Ok(tool_calls
+                .iter()
+                .map(|tc| {
+                    let id = tc["id"].as_str().unwrap_or("").to_string();
+                    ToolOutcome::plain(id, "r".repeat(self.0))
+                })
+                .collect())
+        }
+    }
+
+    fn read_call(id: &str) -> serde_json::Value {
+        json!({ "choices": [{ "message": { "content": serde_json::Value::Null,
+            "tool_calls": [{ "id": id, "type": "function",
+                "function": { "name": "read", "arguments": "{\"path\":\"big.txt\"}" } }] } }] })
+    }
+
+    fn small_window() -> Option<crate::core::agent::compaction::CompactionBudget> {
+        Some(crate::core::agent::compaction::CompactionBudget {
+            context_window: 40_000,
+            ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            reserve_tokens: None,
+            window_pinned: false,
+        })
+    }
+
+    fn published_histories(rx: &mut mpsc::UnboundedReceiver<StreamEvent>) -> Vec<Vec<serde_json::Value>> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// (f), (g) and the cached path end to end: a run of large tool results
+    /// crosses the trigger, the preflight asks the run model with the exact
+    /// next request plus the instruction, the state replaces the span, and
+    /// the tail -- the last complete tool call and its result -- keeps the
+    /// next request under the trigger instead of re-overflowing. The
+    /// instruction never reaches a turn request or the published history.
+    #[tokio::test]
+    async fn a_tail_of_large_results_compacts_once_and_stays_under_the_trigger() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..24).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = CompactingModel::new(answers);
+        // ~3K tokens a result on a 40K window: the trigger (32K) is crossed
+        // after ten, and a tail of that many would be ~30K. The overshoot
+        // past the trigger is at most one result, so the cached request plus
+        // its reply still fits the window.
+        let tool = BigResultTool(12_000);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "the task" })]),
+            Some("Today's date is 2026-11-04.".to_string()),
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+
+        let side = model.side.lock().unwrap();
+        let turns = model.turns.lock().unwrap();
+        assert!(!side.is_empty(), "the preflight took the cached path");
+        // The side request extends the request the turn was about to send:
+        // the same messages, the last one -- the volatile tail -- with the
+        // instruction appended to its text so roles keep alternating.
+        let messages = side[0]["messages"].as_array().unwrap();
+        let last = messages.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
+            "the instruction is a harness notice, not a user turn"
+        );
+        assert_ne!(messages[messages.len() - 2]["role"], "user", "no two user messages in a row");
+        // The held-back request is never sent: it is what got compacted.
+        let instruction = format!(
+            "\n\n{}",
+            crate::core::agent::reminder::wrap(
+                &crate::core::agent::compaction::compaction_instruction(
+                    crate::core::agent::continuation::Role::Parent
+                )
+            )
+        );
+        let mut held_back = messages.to_vec();
+        let last_text = last["content"].as_str().unwrap();
+        match last_text.strip_suffix(&instruction) {
+            // Folded into the volatile tail the turn was about to send.
+            Some(tail) => *held_back.last_mut().unwrap() = json!({ "role": "user", "content": tail }),
+            // A message of its own after a tool result, which it may not join.
+            None => {
+                held_back.pop();
+            }
+        }
+        assert!(
+            turns.iter().all(|t| t["messages"].as_array().unwrap()[..] != held_back[..]),
+            "the over-trigger request was sent anyway"
+        );
+        let trigger = small_window().unwrap().trigger_tokens();
+        for request in turns.iter() {
+            let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+            assert!(estimate <= trigger, "a request re-overflowed: {estimate} > {trigger}");
+            let body = serde_json::to_string(request).unwrap();
+            assert!(!body.contains("[Compaction request from the harness]"), "the instruction leaked");
+        }
+        assert!(
+            side.len() <= 3,
+            "a token-sized tail must not compact on every turn: {} compactions",
+            side.len()
+        );
+        let last = turns.last().unwrap()["messages"].as_array().unwrap();
+        let state = last
+            .iter()
+            .find(|m| crate::core::agent::continuation::is_state(m))
+            .expect("the request after compaction carries the state");
+        assert!(state["content"].as_str().unwrap().contains("the task"));
+        assert!(state["content"].as_str().unwrap().contains("## Next actions\nfix it"));
+        // The tail opens on the newest complete call before the last result.
+        let after: Vec<&serde_json::Value> =
+            last.iter().skip_while(|m| !crate::core::agent::continuation::is_state(m)).skip(1).collect();
+        assert_eq!(after[0]["role"], "assistant", "the tail opens on a call: {after:?}");
+        assert!(after[0].get("tool_calls").is_some());
+
+        for history in published_histories(&mut rx) {
+            let body = serde_json::to_string(&history).unwrap();
+            assert!(!body.contains("[Compaction request from the harness]"), "published the instruction");
+        }
+    }
+
+    /// `/compact` and the TUI's auto-compaction write the same harness context
+    /// a run's own compaction does: the session's roster, background shells,
+    /// todo list, mode and goal all live on `args`, not in a run.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_between_turn_compaction_carries_the_sessions_harness_context() {
+        let root = tempfile::tempdir().unwrap();
+        let mut args = crate::core::agent::subagent::tests::max_par_args(root.path());
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        bg.roster_add("explore", "sub-explore-1", "map the repo", false, Some("blackboard/explore.md".into()));
+        args.subagent_bg = Some(bg);
+        let shells = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+        shells.start(tauri_plugin_agent_tools::tools::ShellBackgrounded { id: 7, timeout_secs: 30 });
+        args.bg_shells = Some(shells);
+        let todo = crate::core::agent::todo::new_registry();
+        todo.lock()
+            .await
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: "Fix".into(),
+                tasks: vec![crate::core::agent::todo::TodoItem {
+                    content: "patch the parser".into(),
+                    status: crate::core::agent::todo::TodoStatus::Pending,
+                }],
+            }])
+            .unwrap();
+        args.todo_registry = Some(todo);
+
+        let harness =
+            between_turn_harness(&args, crate::core::agent::plan::RunMode::Plan, true).await;
+        let section = |heading: &str| {
+            harness
+                .sections
+                .iter()
+                .find(|(h, _)| h == heading)
+                .map(|(_, body)| body.clone())
+                .unwrap_or_else(|| panic!("no {heading} section: {:?}", harness.sections))
+        };
+        assert_eq!(harness.role, crate::core::agent::continuation::Role::Parent);
+        assert!(section("Workspace").contains(&root.path().display().to_string()));
+        assert!(section("Subagents").contains("explore (sub-explore-1)"));
+        assert!(section("Subagents").contains("blackboard/explore.md"));
+        assert!(section("Running in the background").contains("background shell 7"));
+        assert!(section("Todo list").contains("patch the parser"));
+        assert!(section("Mode").contains("Plan mode"));
+        assert!(section("Goal").contains("/goal"));
+
+        // Normal mode and no goal write neither section.
+        let quiet =
+            between_turn_harness(&args, crate::core::agent::plan::RunMode::Normal, false).await;
+        assert!(quiet.sections.iter().all(|(h, _)| h != "Mode" && h != "Goal"));
+    }
+
+    /// A between-turn compaction sizes its tail like a run's: by tokens, from
+    /// the trigger the configured budget gives, or the default ratio of an
+    /// estimated window when none is configured.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_between_turn_compaction_sizes_its_tail_from_the_trigger() {
+        use crate::core::agent::compaction::{
+            tail_tokens, trigger_tokens, CompactionBudget, DEFAULT_COMPACTION_RATIO,
+        };
+        let budget = CompactionBudget {
+            context_window: 200_000,
+            ratio: 0.5,
+            reserve_tokens: None,
+            window_pinned: false,
+        };
+        let messages = vec![json!({ "role": "user", "content": "hi" })];
+        let (sizing, keep) = between_turn_sizing(Some(budget), &messages);
+        assert_eq!((sizing.window, sizing.trigger), (200_000, budget.trigger_tokens()));
+        assert_eq!(keep, tail_tokens(budget.trigger_tokens()));
+        let default_trigger = trigger_tokens(32_000, DEFAULT_COMPACTION_RATIO, None);
+        let (sizing, keep) = between_turn_sizing(None, &messages);
+        assert_eq!((sizing.window, sizing.trigger), (32_000, default_trigger));
+        assert_eq!(keep, tail_tokens(default_trigger));
+    }
+
+    /// A cycle of `results` large reads, on a 40K window at `ratio`, starting
+    /// from `task`. Returns the model, so the requests it saw can be checked.
+    async fn run_large_reads(task: &str, ratio: f64, results: usize) -> CompactingModel {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..results).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = CompactingModel::new(answers);
+        let tool = BigResultTool(12_000);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": task })]),
+            Some("Today's date is 2026-11-04.".to_string()),
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                ratio,
+                ..small_window().unwrap()
+            }),
+        )
+        .await
+        .expect("run completes");
+        model
+    }
+
+    /// (#2) At ratio 0.3 with a task larger than the trigger itself, every
+    /// request after a compaction is under the trigger, and the run does not
+    /// compact on every turn: the shares come from the trigger, and the task
+    /// is clipped with its head and tail kept.
+    #[tokio::test]
+    async fn a_low_ratio_and_a_large_task_do_not_compact_every_turn() {
+        let task = format!("TASK-HEAD {} TASK-TAIL", "pasted ".repeat(8_000));
+        let model = run_large_reads(&task, 0.3, 24).await;
+        let trigger = crate::core::agent::compaction::trigger_tokens(40_000, 0.3, None);
+        let side = model.side.lock().unwrap();
+        let turns = model.turns.lock().unwrap();
+        let mut compacted = false;
+        for request in turns.iter() {
+            let messages = request["messages"].as_array().unwrap();
+            let Some(state) = messages.iter().find(|m| crate::core::agent::continuation::is_state(m))
+            else {
+                continue;
+            };
+            compacted = true;
+            let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+            assert!(estimate <= trigger, "a compacted request is over the trigger: {estimate} > {trigger}");
+            let text = state["content"].as_str().unwrap();
+            assert!(text.contains("TASK-HEAD") && text.contains("TASK-TAIL"), "the task's ends are kept");
+            assert!(text.contains("clipped to fit the context budget"));
+        }
+        assert!(compacted, "the run compacted");
+        // 24 results of ~3K tokens against a 12K trigger: each compaction
+        // keeps a tail, so the run goes several turns between them.
+        assert!(
+            side.len() * 2 <= turns.len(),
+            "{} compactions over {} turns",
+            side.len(),
+            turns.len()
+        );
+    }
+
+    /// The cached path's side request is a paid request: inside
+    /// `run_turn_cycle`, its usage reaches the run's budget.
+    #[tokio::test]
+    async fn the_cached_path_is_charged_to_the_run() {
+        struct Billed(CompactingModel);
+        #[async_trait]
+        impl ModelInvoker for Billed {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                let mut completion = self.0.invoke(request, events).await?;
+                let side = serde_json::to_string(request)
+                    .unwrap()
+                    .contains("[Compaction request from the harness]");
+                // Only the side request reports usage, so whatever the budget
+                // holds came from it.
+                if side {
+                    completion["usage"] = json!({
+                        "prompt_tokens": 30_000,
+                        "completion_tokens": 777,
+                        "total_tokens": 30_777,
+                    });
+                }
+                Ok(completion)
+            }
+        }
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..12).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = Billed(CompactingModel::new(answers));
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "the task" })]),
+            None,
+            true,
+            0,
+            &mut budget,
+            &model,
+            &BigResultTool(12_000),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+        let compactions = model.0.side.lock().unwrap().len() as u64;
+        assert!(compactions > 0, "the preflight took the cached path");
+        assert_eq!(budget.spent(), 777 * compactions, "each side request is charged");
+    }
+
+    /// (#7) On a turn whose request forces a tool (the eager todo plan), the
+    /// cached path is skipped: the model would have to call that tool, so the
+    /// side request could never return the sections.
+    #[tokio::test]
+    async fn a_forced_tool_choice_skips_the_cached_path() {
+        // A history already over the trigger compacts on the first, forced
+        // turn.
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut history = Vec::new();
+        for i in 0..12 {
+            history.push(json!({ "role": "user", "content": format!("q{i} {}", "x".repeat(12_000)) }));
+            history.push(json!({ "role": "assistant", "content": format!("a{i}") }));
+        }
+        history.push(json!({ "role": "user", "content": "now plan it" }));
+        let model = CompactingModel::new(vec![final_answer("done")]);
+        let todo = [json!({ "type": "function", "function": { "name": "todo" } })];
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &todo,
+            Transcript::from_history(history),
+            None,
+            true,
+            0,
+            &mut SessionBudget::new(None),
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            Some("todo"),
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+        let turns = model.turns.lock().unwrap();
+        let side = model.side.lock().unwrap();
+        assert!(
+            turns[0]["tool_choice"]["function"]["name"] == "todo",
+            "the first turn forced the tool: {}",
+            turns[0]["tool_choice"]
+        );
+        assert!(
+            turns[0]["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(crate::core::agent::continuation::is_state),
+            "the first turn compacted"
+        );
+        assert!(side.is_empty(), "no side request under a forced tool choice");
+    }
+
+    /// (c) A child's task -- phase handoff included -- and its parent's
+    /// steering messages survive two compactions word for word.
+    #[tokio::test]
+    async fn a_childs_task_and_steering_survive_two_compactions_verbatim() {
+        let task = "Fix the parser.\n\n## Results from the previous phase\nexplore: the bug is in src/parse.rs:42";
+        let steer_one = "Correction: keep the public API unchanged.";
+        let steer_two = "Also add a regression test.";
+        let mut transcript =
+            Transcript::from_history(vec![json!({ "role": "user", "content": task })]);
+        let push_round = |t: &mut Transcript, i: usize| {
+            t.record_message(json!({ "role": "assistant", "content": serde_json::Value::Null,
+                "tool_calls": [{ "id": format!("c{i}"), "type": "function",
+                    "function": { "name": "read", "arguments": "{\"path\":\"a\"}" } }] }));
+            t.record_message(json!({ "role": "tool", "tool_call_id": format!("c{i}"),
+                "content": "x".repeat(1_500) }));
+        };
+        let model = MockModel::new(vec![
+            final_answer("## Progress\nfirst\n## Current step\na\n## Next actions\nb"),
+            final_answer("## Progress\nsecond\n## Current step\na\n## Next actions\nb"),
+        ]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            sizing: crate::core::agent::compaction::Sizing::new(
+                20_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let mut budget = SessionBudget::new(None);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        for i in 0..6 {
+            push_round(&mut transcript, i);
+        }
+        transcript.record_message(json!({ "role": "user", "content": steer_one }));
+        for i in 6..12 {
+            push_round(&mut transcript, i);
+        }
+        compact(&mut transcript, "m", &model, &mut budget, &tx, CompactionReason::Preflight, &scope)
+            .await
+            .expect("first compaction");
+        transcript.record_message(json!({ "role": "user", "content": steer_two }));
+        for i in 12..18 {
+            push_round(&mut transcript, i);
+        }
+        compact(&mut transcript, "m", &model, &mut budget, &tx, CompactionReason::Preflight, &scope)
+            .await
+            .expect("second compaction");
+
+        let projected = project(&transcript, None, true);
+        let states: Vec<&serde_json::Value> = projected
+            .iter()
+            .filter(|m| crate::core::agent::continuation::is_state(m))
+            .collect();
+        assert_eq!(states.len(), 1, "one state stands for everything compacted");
+        let back = crate::core::agent::continuation::parse(states[0]).unwrap();
+        assert_eq!(back.task.as_deref(), Some(task));
+        assert_eq!(back.user_messages, vec![steer_one.to_string(), steer_two.to_string()]);
+        assert!(back.model_sections.unwrap().contains("second"));
+    }
+
+    /// The parent's state lists its todo items verbatim with their statuses;
+    /// the per-turn addendum never does.
+    #[tokio::test]
+    async fn the_todo_items_appear_verbatim_in_the_state() {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        let registry = std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "Ship".into(),
+                tasks: vec![
+                    TodoItem { content: "write the ledger".into(), status: TodoStatus::Completed },
+                    TodoItem { content: "wire the preflight".into(), status: TodoStatus::InProgress },
+                    TodoItem { content: "old idea".into(), status: TodoStatus::Abandoned },
+                ],
+            }],
+        }));
+        let mut transcript = Transcript::default();
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "user", "content": format!("turn {i}") }));
+            transcript.record_message(json!({ "role": "assistant", "content": "x".repeat(2_000) }));
+        }
+        let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            sizing: crate::core::agent::compaction::Sizing::new(
+                10_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: Some(&registry),
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        compact(
+            &mut transcript,
+            "m",
+            &model,
+            &mut SessionBudget::new(None),
+            &tx,
+            CompactionReason::Preflight,
+            &scope,
+        )
+        .await
+        .unwrap();
+        let projected = project(&transcript, None, true);
+        let text = projected[0]["content"].as_str().unwrap();
+        assert!(text.contains("## Todo list (4 lines)\nPhase: Ship\n- [completed] write the ledger\n\
+                               - [in_progress] wire the preflight\n- [abandoned] old idea"), "{text}");
+    }
+
+    /// (h) Resume: the published history reloads into the same projection,
+    /// with the state recognized as condensed history rather than a turn.
+    #[tokio::test]
+    async fn a_compacted_history_round_trips_through_resume() {
+        let mut transcript = Transcript::from_history(vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "the task" }),
+        ]);
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "assistant", "content": "x".repeat(2_000) }));
+            transcript.record_message(json!({ "role": "user", "content": format!("more {i}") }));
+        }
+        let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            sizing: crate::core::agent::compaction::Sizing::new(
+                10_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        compact(
+            &mut transcript,
+            "m",
+            &model,
+            &mut SessionBudget::new(None),
+            &tx,
+            CompactionReason::Preflight,
+            &scope,
+        )
+        .await
+        .unwrap();
+        let published = client_history(&transcript, true);
+        assert_eq!(published[0]["role"], "system");
+        assert!(crate::core::agent::continuation::is_state(&published[1]));
+        let resumed = Transcript::from_history(published.clone());
+        assert_eq!(project(&resumed, None, true), published);
+        assert!(crate::core::agent::reminder::is_reminder_only(&published[1]["content"]));
+    }
+
     /// A compaction is a paid request and has to reach the run's budget. It is
     /// not the metered dispatch, so nothing else charges it: a turn can make up
     /// to five of them (the preflight plus `MAX_COMPACTION_ATTEMPTS` overflow
@@ -7908,18 +9301,31 @@ mod tests {
         assert!(!budget.over_cost_ceiling(), "nothing spent yet");
 
         let (tx, _rx) = mpsc::unbounded_channel();
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            // A tail of a few short messages: the rest is compacted.
+            sizing: crate::core::agent::compaction::Sizing::new(
+                200,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
         let dropped = compact(
             &mut transcript,
-            4,
             "m",
             &model,
             &mut budget,
             &tx,
             CompactionReason::Preflight,
+            &scope,
         )
-            .await
-            .expect("the summarizer answered")
-            .expect("a long history has a span to compact");
+        .await
+        .expect("a long history has a span to compact")
+        .messages;
         assert!(dropped > 0);
 
         let spent = budget.spent_usd().expect("metered");
@@ -8080,48 +9486,57 @@ mod tests {
         );
     }
 
-    /// Passing the ceiling no longer stops a run, so a long thread only grows.
-    /// Once every turn is finished, the oversized conversation is compacted
-    /// before it is published -- otherwise the next run resumes this thread by
-    /// sending the whole thing upstream.
+    /// A long, well-cached run whose live prompt never nears the window must not
+    /// be compacted, however far its cumulative spend has gone. Spend outruns
+    /// the live context by design: every completion is charged in full, but a
+    /// reasoning model's thinking is not resent, so the next prompt grows by
+    /// far less than was charged. A subagent making ~180 tool calls crossed a
+    /// window-sized budget this way at a fraction of its window.
     #[tokio::test]
-    async fn an_exhausted_budget_compacts_the_conversation_once_turns_are_done() {
+    async fn a_long_cached_run_under_the_window_is_not_compacted_for_its_spend() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-
-        // Comfortably longer than DEFAULT_KEEP_RECENT so there is a middle to drop.
-        let convo: Vec<serde_json::Value> = (0..24)
-            .map(|i| {
-                json!({
-                    "role": if i % 2 == 0 { "user" } else { "assistant" },
-                    "content": format!("message {i}"),
-                })
+        const WINDOW: u64 = 128_000;
+        const STEPS: u64 = 100;
+        let usage = |step: u64| {
+            // A 20K prompt growing by a 200-token tool result per step: 40K at
+            // the end, well under the 102.4K trigger. 98% of it is a cache hit,
+            // and each 1.5K completion is mostly thinking that is not resent.
+            let prompt = 20_000 + 200 * step;
+            json!({
+                "prompt_tokens": prompt,
+                "completion_tokens": 1_500,
+                "total_tokens": prompt + 1_500,
+                "prompt_tokens_details": { "cached_tokens": prompt * 98 / 100 },
+            })
+        };
+        let mut responses: Vec<serde_json::Value> = (0..STEPS)
+            .map(|step| {
+                let mut c = tool_call_completion();
+                c["usage"] = usage(step);
+                c
             })
             .collect();
-        let original_len = convo.len();
-
-        let mut over_budget = json!({
+        let mut done = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
-        // The replayed prompt is the baseline; the 100-token reply is the spend.
-        over_budget["usage"] =
-            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
-        let summary = json!({
-            "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
-        });
-        // Second response is consumed by the summarizer inside compaction.
-        let model = MockModel::new(vec![over_budget, summary]);
+        done["usage"] = usage(STEPS);
+        responses.push(done);
+        // Anything past the run's own turns is a summarizer call.
+        responses.push(json!({ "choices": [{ "message": { "content": "SUMMARY" } }] }));
+        let model = MockModel::new(responses);
         let tool = MockTool::default();
-        let mut budget = SessionBudget::new(Some(50));
+        // The child's default budget: its model's window.
+        let mut budget = SessionBudget::new(Some(WINDOW));
 
         run_turn_cycle(
             &tx,
             &json!({}),
             "m",
             &[],
-            Transcript::from_history(convo),
+            Transcript::from_history(vec![json!({ "role": "user", "content": "task" })]),
             None,
             true,
-            8,
+            0,
             &mut budget,
             &model,
             &tool,
@@ -8129,59 +9544,31 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                context_window: WINDOW,
+                ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                reserve_tokens: None,
+                window_pinned: false,
+            }),
         )
         .await
         .expect("run completes");
 
-        assert!(budget.exhausted(), "precondition: the ceiling was passed");
-        assert_eq!(
-            model.requests.lock().unwrap().len(),
-            2,
-            "one turn, plus the summarizer call compaction makes"
-        );
-
-        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        // The user is told: the TUI runs with logging off, so without an event
-        // this compaction is invisible.
-        let phases: Vec<CompactionPhase> = events
-            .iter()
-            .filter_map(|ev| match ev {
-                StreamEvent::Compaction {
-                    phase,
-                    reason: CompactionReason::SessionBudget,
-                    ..
-                } => Some(*phase),
-                _ => None,
-            })
+        // 101 completions of 1.5K, the 200-token growth absorbed by the
+        // previous completion each time: the cached share charges nothing.
+        assert_eq!(budget.spent(), (STEPS + 1) * 1_500);
+        assert!(budget.exhausted(), "precondition: spend passed the window");
+        let compactions: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|ev| matches!(ev, StreamEvent::Compaction { .. }))
             .collect();
+        assert!(
+            compactions.is_empty(),
+            "a 40K prompt on a 128K window is not compacted: {compactions:?}"
+        );
         assert_eq!(
-            phases,
-            [CompactionPhase::Started, CompactionPhase::Finished],
-            "the budget compaction is announced, start and end"
-        );
-        // The published history is the compacted one: shorter, and carrying the
-        // summary in place of the dropped middle.
-        let published = events
-            .into_iter()
-            .rev()
-            .find_map(|ev| match ev {
-                StreamEvent::MessagesUpdated { messages } => Some(messages),
-                _ => None,
-            })
-            .expect("a MessagesUpdated is published");
-        assert!(
-            published.len() < original_len,
-            "history was compacted: {} -> {}",
-            original_len,
-            published.len()
-        );
-        assert!(
-            published.iter().any(|m| m["content"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("SUMMARY OF THE EARLIER WORK")),
-            "the summary replaced the dropped middle: {published:#?}"
+            model.requests.lock().unwrap().len() as u64,
+            STEPS + 1,
+            "no summarizer call"
         );
     }
 
@@ -8315,6 +9702,7 @@ mod tests {
                     phase: CompactionPhase::Finished,
                     reason: CompactionReason::ContextOverflow,
                     messages: Some(_),
+                    ..
                 }
             )),
             "the overflow compaction is announced"
@@ -8433,6 +9821,89 @@ mod tests {
         );
     }
 
+    /// A strict route that first rejects `reasoning_content` on the cached
+    /// compaction's side request has told the run what the next request would
+    /// meet too. The strip lands at the compaction boundary, where the cache
+    /// breaks anyway, so the request after it carries no reasoning and is not
+    /// rejected a second time.
+    #[tokio::test]
+    async fn a_side_request_reasoning_rejection_strips_the_next_request() {
+        struct Strict {
+            side: StdMutex<Vec<serde_json::Value>>,
+            turns: StdMutex<Vec<serde_json::Value>>,
+            rejected_turns: StdMutex<usize>,
+        }
+        #[async_trait]
+        impl ModelInvoker for Strict {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                _events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                let body = serde_json::to_string(request).unwrap();
+                let reasoning = body.contains("reasoning_content");
+                let reject = || {
+                    Err("Upstream returned HTTP 400: property 'reasoning_content' is unsupported"
+                        .to_string())
+                };
+                if body.contains("[Compaction request from the harness]") {
+                    self.side.lock().unwrap().push(request.clone());
+                    if reasoning {
+                        return reject();
+                    }
+                    return Ok(final_answer("## Progress\np\n## Current step\na\n## Next actions\nb"));
+                }
+                self.turns.lock().unwrap().push(request.clone());
+                if reasoning {
+                    *self.rejected_turns.lock().unwrap() += 1;
+                    return reject();
+                }
+                Ok(final_answer("done"))
+            }
+        }
+        let model = Strict {
+            side: StdMutex::new(Vec::new()),
+            turns: StdMutex::new(Vec::new()),
+            rejected_turns: StdMutex::new(0),
+        };
+        let mut history = vec![json!({ "role": "user", "content": "the task" })];
+        for i in 0..10 {
+            history.push(json!({ "role": "assistant", "content": "x".repeat(13_600),
+                "reasoning_content": format!("thought {i}") }));
+            history.push(json!({ "role": "user", "content": format!("go on {i}") }));
+        }
+        history.push(json!({ "role": "assistant", "content": "hey", "reasoning_content": "thinking" }));
+        history.push(json!({ "role": "user", "content": "again" }));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(history),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("the run completes");
+        assert_eq!(result["choices"][0]["message"]["content"], "done");
+        assert_eq!(model.side.lock().unwrap().len(), 2, "the side request was rejected, then retried");
+        assert_eq!(*model.rejected_turns.lock().unwrap(), 0, "the next request was rejected again");
+        let turns = model.turns.lock().unwrap();
+        assert_eq!(turns.len(), 1);
+        assert!(!serde_json::to_string(&turns[0]).unwrap().contains("reasoning_content"));
+    }
+
     /// A run that never recovers from overflow still has to hand its compacted
     /// conversation to the client: without it the session keeps the oversized
     /// history and every later turn re-overflows by construction.
@@ -8507,12 +9978,11 @@ mod tests {
         );
     }
 
-    /// When the *target-model summarizer* itself overflows, compaction must not
-    /// fabricate a fallback-note history (which could still overflow and would
-    /// silently drop the whole span). The turn exits with the summarizer error
-    /// and no `MessagesUpdated` is published for a made-up history.
+    /// (e) A summarizer that itself overflows does not fail the run: the span
+    /// is replaced by the code-built state, which still carries the task word
+    /// for word, and the retried request goes out.
     #[tokio::test]
-    async fn turn_cycle_surfaces_summarizer_overflow_without_fabricating_history() {
+    async fn a_summarizer_overflow_leaves_the_run_going_on_the_code_built_state() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let overflow = || {
             Err(format!(
@@ -8520,16 +9990,28 @@ mod tests {
                 crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
             ))
         };
-        // 1) the main request overflows, 2) the summarizer it spawned overflows too.
+        // 1) the main request overflows, 2) the summarizer it spawned overflows
+        // too, 3) the retry on the code-built state succeeds.
         let model = ResultQueueModel {
-            results: StdMutex::new(vec![overflow(), overflow()].into_iter().collect()),
+            results: StdMutex::new(
+                vec![
+                    overflow(),
+                    overflow(),
+                    Ok(json!({ "choices": [{ "message": { "content": "final" }, "finish_reason": "stop" }] })),
+                ]
+                .into_iter()
+                .collect(),
+            ),
         };
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
-        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        let mut convo = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "THE VERBATIM TASK" }),
+        ];
         for i in 0..60 {
-            let r = if i % 2 == 0 { "user" } else { "assistant" };
-            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+            let r = if i % 2 == 0 { "assistant" } else { "user" };
+            convo.push(json!({ "role": r, "content": format!("m{i} {}", "x".repeat(400)) }));
         }
 
         let result = run_turn_cycle(
@@ -8550,35 +10032,24 @@ mod tests {
             None,
             None,
         )
-        .await;
+        .await
+        .expect("a summarizer overflow must not fail the run");
+        assert_eq!(result["choices"][0]["message"]["content"], "final");
 
-        assert!(
-            result.is_err(),
-            "a summarizer context overflow must fail the turn"
-        );
-        assert!(
-            crate::core::agent::upstream::is_context_overflow_error(result.as_ref().unwrap_err()),
-            "the summarizer overflow must propagate, not be rewritten"
-        );
         drop(tx);
-        let mut published = false;
-        let mut failed = false;
+        let mut state = None;
         while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::MessagesUpdated { .. } => published = true,
-                // The throbber a `Started` put up has to come down again.
-                StreamEvent::Compaction {
-                    phase: CompactionPhase::Failed,
-                    ..
-                } => failed = true,
-                _ => {}
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                state = messages
+                    .iter()
+                    .find(|m| crate::core::agent::continuation::is_state(m))
+                    .cloned();
             }
         }
-        assert!(
-            !published,
-            "no fabricated compacted history may be published"
-        );
-        assert!(failed, "a summarizer failure ends the compaction as Failed");
+        let state = state.expect("the compacted history carries a continuation state");
+        let text = state["content"].as_str().unwrap();
+        assert!(text.contains("THE VERBATIM TASK"), "{text}");
+        assert!(text.contains("summarizer could not run"), "{text}");
     }
 
     #[tokio::test]
@@ -8771,6 +10242,13 @@ mod tests {
         assert_eq!(stop_reason_of(&json!({})), "stop");
     }
 
+    fn route(server: &str) -> crate::core::mcp::identity::ToolRoute {
+        crate::core::mcp::identity::ToolRoute {
+            server: server.to_string(),
+            generation: 1,
+        }
+    }
+
     #[test]
     fn tool_allowlist_keeps_only_named_tools() {
         let mut tools = vec![
@@ -8778,8 +10256,8 @@ mod tests {
             json!({ "type": "function", "function": { "name": "write" } }),
         ];
         let mut map = HashMap::from([
-            ("search".to_string(), "srv".to_string()),
-            ("write".to_string(), "srv".to_string()),
+            ("search".to_string(), route("srv")),
+            ("write".to_string(), route("srv")),
         ]);
 
         apply_tool_allowlist(&mut tools, &mut map, &["search".to_string()]);
@@ -8824,7 +10302,9 @@ mod tests {
             escalation: Escalation::Off,
             hidden_root: crate::core::agent::project::hidden_root(true),
             mcp: McpToolInvoker {
-                tool_to_server: HashMap::new(),
+                // The MCP tool the prompting tests call; no server is live, so
+                // an approved call still fails to execute.
+                tool_to_server: HashMap::from([("web_search_exa".to_string(), route("exa"))]),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
@@ -8834,7 +10314,8 @@ mod tests {
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
-            scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
+            scratch_root: std::env::temp_dir().join("jan-loop-test-scratch"),
+            pkg_cache: None,
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
             web_search: None,
@@ -8871,6 +10352,12 @@ mod tests {
                 crate::core::agent::bg_shell::BackgroundShells::default(),
             ),
             parent_link: None,
+            shell_detach: None,
+            shell_cwd: None,
+            memory_changes: None,
+            memory_change_budget: None,
+            shell_owner: None,
+            workspace: RunWorkspace::default(),
         }
     }
 
@@ -9164,6 +10651,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Plan mode is read-only for memory too: `view` and `search` run, every
+    /// op that changes the store is refused before it touches a note.
+    #[tokio::test]
+    async fn plan_mode_reads_memory_but_refuses_to_change_it() {
+        let root = hooks_root("planmemory");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let note = invoker.store_root.join("memory").join("fact.md");
+        std::fs::create_dir_all(note.parent().unwrap()).unwrap();
+        std::fs::write(&note, "A fact").unwrap();
+        for args in [
+            r#"{"op":"write","name":"new","content":"x"}"#,
+            r#"{"op":"edit","name":"fact","old":"A","new":"B"}"#,
+            r#"{"op":"delete","name":"fact"}"#,
+            r#"{"op":"move","name":"fact","to":"moved"}"#,
+        ] {
+            let out = invoker.invoke(&[hooked_tool_call("memory", args)]).await.unwrap();
+            assert!(out[0].content.contains(PLAN_MODE_UNAVAILABLE), "{args}: {}", out[0].content);
+        }
+        assert_eq!(std::fs::read_to_string(&note).unwrap(), "A fact", "nothing changed");
+        assert!(!invoker.store_root.join("memory").join("new.md").exists());
+        let view = invoker.invoke(&[hooked_tool_call("memory", r#"{"op":"view","name":"fact"}"#)]).await.unwrap();
+        assert_eq!(view[0].content, "A fact");
+        let search = invoker.invoke(&[hooked_tool_call("memory", r#"{"op":"search","query":"fact"}"#)]).await.unwrap();
+        assert!(search[0].content.contains("`fact`"), "{}", search[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The hooks cover plugin tools too: a third party's command is exactly
     /// where a PreToolUse policy most needs to apply.
     #[tokio::test]
@@ -9205,7 +10724,7 @@ mod tests {
     #[tokio::test]
     async fn a_hook_can_deny_an_mcp_tool() {
         let root = hooks_root("mcpdeny");
-        let invoker = invoker_with_hooks(
+        let mut invoker = invoker_with_hooks(
             root.clone(),
             hook_set(vec![hook_entry(
                 "PreToolUse",
@@ -9215,9 +10734,14 @@ mod tests {
             Default::default(),
             crate::core::agent::plan::RunMode::Normal,
         );
-        // The invoker's MCP registry is empty, so reaching the call at all
-        // would surface as a transport error rather than this deny message:
-        // the assertion distinguishes "stopped by the hook" from "failed".
+        // Offered by a server, so the call reaches the hook; the registry is
+        // empty, so reaching the call itself would surface as a transport
+        // error rather than this deny message: the assertion distinguishes
+        // "stopped by the hook" from "failed".
+        invoker
+            .mcp
+            .tool_to_server
+            .insert("mcp__srv__doit".to_string(), route("srv"));
         let out = invoker
             .invoke(&[hooked_tool_call("mcp__srv__doit", "{}")])
             .await
@@ -9242,7 +10766,7 @@ mod tests {
     async fn an_mcp_pretooluse_hook_sees_the_call_and_may_let_it_through() {
         let root = hooks_root("mcpallow");
         let seen = root.join("seen.json");
-        let invoker = invoker_with_hooks(
+        let mut invoker = invoker_with_hooks(
             root.clone(),
             hook_set(vec![hook_entry(
                 "PreToolUse",
@@ -9252,6 +10776,10 @@ mod tests {
             Default::default(),
             crate::core::agent::plan::RunMode::Normal,
         );
+        invoker
+            .mcp
+            .tool_to_server
+            .insert("mcp__srv__doit".to_string(), route("srv"));
         // The call goes on to the empty MCP registry and fails there, which is
         // the point: the hook did not stop it.
         let _ = invoker
@@ -10172,9 +11700,10 @@ mod tests {
         assert_eq!(run_session_start(None, None), SessionStart::capture(None));
     }
 
-    /// An unconfined run has no scratch, so the prompt must not name one: the
-    /// shell sees the real `/tmp` and would never find the directory the
-    /// scratch line points at.
+    /// An unconfined run has no scratch, so the prompt must not name one:
+    /// nothing would create or clean up the directory the line points at. A
+    /// confined run names the real path, the same one an escalated command
+    /// would find.
     #[test]
     fn unsandboxed_prompt_does_not_advertise_a_scratch() {
         let root = unique_project_root();
@@ -10192,6 +11721,15 @@ mod tests {
         .expect("project prompt")
         .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
+        let scratch = scratch_root_for(Some("s1"), &root);
+        assert!(
+            // The prompt names paths with forward slashes on every OS.
+            confined.contains(&format!(
+                "Scratch: `{}`",
+                scratch.to_string_lossy().replace('\\', "/")
+            )),
+            "{confined}"
+        );
         let bare = build_run_system_prompt(
             None,
             Some("do things"),
@@ -11203,6 +12741,7 @@ mod tests {
         invoker.hook_notices_queue.lock().unwrap().push(BackgroundNotice {
             headline: None,
             text: "hook said so".to_string(),
+            message: None,
         });
         assert!(invoker.background_pending(), "the hook answer is owed");
         let waited = tokio::time::timeout(
@@ -11302,6 +12841,296 @@ mod tests {
         assert!(out[0].content.contains("[exit 0]"), "{}", out[0].content);
         assert!(marker.exists(), "the approved command ran on the host");
         let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A `shell` call with `args`, as the model sends it.
+    #[cfg(all(feature = "cli", unix))]
+    fn shell_call(id: &str, args: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": "shell", "arguments": args.to_string() }
+        })
+    }
+
+    /// An invoker holding `held` as the shell's directory whose escalation
+    /// prompt is approved, and the task answering it, which reports the
+    /// prompt's `path`.
+    #[cfg(all(feature = "cli", unix))]
+    fn held_cwd_escalation(
+        root: &std::path::Path,
+        held: std::path::PathBuf,
+    ) -> (
+        CompositeToolInvoker,
+        tauri_plugin_agent_tools::tools::ShellCwd,
+        tokio::task::JoinHandle<Option<String>>,
+    ) {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.to_path_buf(), tx, registry.clone());
+        invoker.escalation = Escalation::Prompt;
+        let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+        *cwd.lock().unwrap() = Some(held);
+        invoker.shell_cwd = Some(cwd.clone());
+        let responder = tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Some(StreamEvent::PermissionRequest { request_id, path, .. }) => {
+                        if let Some(tx) = registry.lock().await.remove(&request_id) {
+                            let _ = tx.send(PermissionDecision::AllowOnce);
+                        }
+                        return path;
+                    }
+                    Some(_) => continue,
+                    None => panic!("no prompt was sent"),
+                }
+            }
+        });
+        (invoker, cwd, responder)
+    }
+
+    /// An escalated command starts where a `cd` left the shell, as the tool
+    /// description promises every later call does, and its prompt names that
+    /// directory: after `cd pkg`, an approved `rm -rf build` hits `pkg/build`,
+    /// and the user sees that it will.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_runs_in_and_names_the_held_shell_cwd() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, sub.clone());
+        let escalated = json!({ "command": "pwd -P", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        assert_eq!(responder.await.unwrap(), Some(sub.display().to_string()));
+        assert!(
+            out[0].content.starts_with(&sub.display().to_string()),
+            "ran in the held directory: {}",
+            out[0].content
+        );
+        assert_eq!(*cwd.lock().unwrap(), Some(sub), "a plain command moves nothing");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An escalated `cd` holds like any other and is announced. It needs no
+    /// host-side check: no held directory gets one, and the next confined
+    /// call enters it inside the sandbox or refuses and resets to the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn an_escalated_cd_is_held_and_announced() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let other = std::fs::canonicalize(root.join("other")).unwrap();
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, sub);
+        let command = format!("cd '{}'", other.display());
+        let escalated = json!({ "command": command, "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("shell cwd is now"), "{}", out[0].content);
+        assert_eq!(*cwd.lock().unwrap(), Some(other));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An escalated `cd` into a host directory the sandbox cannot see (the
+    /// host's `/tmp`, under bubblewrap's private tmpfs) is held, since it runs
+    /// on the host and is not checked there, and the next confined call
+    /// refuses to run anywhere else and resets the shell to the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", target_os = "linux"))]
+    async fn an_escalated_cd_the_sandbox_cannot_see_is_refused_by_the_next_call() {
+        use tauri_plugin_agent_tools::tools::jail;
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported()
+            || jail::backend() != jail::Backend::Bubblewrap
+        {
+            return;
+        }
+        let root = unique_project_root();
+        let host = std::path::PathBuf::from(format!("/tmp/jan_loop_host_{}", std::process::id()));
+        std::fs::create_dir_all(&host).unwrap();
+        let host = std::fs::canonicalize(&host).unwrap();
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let (mut invoker, cwd, responder) = held_cwd_escalation(&root, canonical_root);
+        // bubblewrap binds the scratch, so it must exist for the confined call.
+        std::fs::create_dir_all(&invoker.scratch_root).unwrap();
+        // The confined call below runs without a prompt; the escalation
+        // still asks, which the responder answers.
+        invoker.auto_approve = true;
+        let command = format!("cd '{}'", host.display());
+        let escalated = json!({ "command": command, "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("shell cwd is now"), "{}", out[0].content);
+        assert_eq!(*cwd.lock().unwrap(), Some(host.clone()));
+        let confined = json!({ "command": "touch marker" });
+        let out = invoker.invoke(&[shell_call("next", confined)]).await.unwrap();
+        assert!(out[0].content.contains("was NOT run"), "{}", out[0].content);
+        assert!(!root.join("marker").exists(), "fell back to the project root");
+        assert!(!host.join("marker").exists(), "ran on the host");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        let _ = std::fs::remove_dir_all(&host);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A held directory that is gone refuses the escalated command rather than
+    /// running it in the project root, and the shell is back in the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_refuses_a_held_shell_cwd_that_is_gone() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        let gone = std::fs::canonicalize(&root).unwrap().join("gone");
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, gone);
+        let escalated = json!({ "command": "touch marker", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("was NOT run"), "{}", out[0].content);
+        assert!(!root.join("marker").exists(), "fell back to the project root");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A held directory swapped for a link refuses the escalation before the
+    /// user is asked: the prompt would name the held path while the command
+    /// followed the link somewhere else. The shell is back in the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_refuses_a_held_shell_cwd_swapped_for_a_link() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("elsewhere")).unwrap();
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        std::fs::remove_dir(&sub).unwrap();
+        std::os::unix::fs::symlink("elsewhere", &sub).unwrap();
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, sub);
+        let escalated = json!({ "command": "touch marker", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        assert!(out[0].content.contains("was not run"), "{}", out[0].content);
+        assert!(out[0].content.contains("back in the project root"), "{}", out[0].content);
+        assert!(!root.join("elsewhere/marker").exists(), "followed the link");
+        assert!(!root.join("marker").exists(), "fell back to the project root");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        responder.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A command the gate cannot scan within its bounds gets its own refusal,
+    /// telling the model to split it, not the hidden-home one that would send
+    /// it looking for a path it never named. Telemetry counts it as a config
+    /// refusal like the others.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn a_command_too_complex_to_check_is_refused_with_its_own_reason() {
+        let root = unique_project_root();
+        let jan = root.join("jan-home");
+        std::fs::create_dir_all(&jan).unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.hidden_root = Some(jan);
+        let deep = format!("cat {}", "a/".repeat(70_000));
+        let out = invoker.invoke(&[shell_call("c", json!({ "command": deep }))]).await.unwrap();
+        let text = &out[0].content;
+        assert!(text.contains(TOO_COMPLEX_REFUSED), "{}", &text[..text.len().min(300)]);
+        assert!(!text.contains(HIDDEN_PATH_REFUSED), "not refused as naming the home");
+        assert_eq!(
+            crate::core::agent::otel::refusal_of(text),
+            Some(crate::core::agent::otel::Refusal::Config)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An escalated call from a held directory above the Jan home is refused
+    /// for where it would start, though the command names nothing hidden.
+    /// The refusal names that directory and how to get out of it, and resets
+    /// the shell, rather than the generic hidden-home message that would
+    /// leave the model retrying from the same place. No prompt is sent.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_from_a_held_shell_cwd_above_the_home_names_it_and_resets() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let home = std::fs::canonicalize(unique_project_root()).unwrap();
+        let jan = home.join("jan-home");
+        let project = home.join("proj");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let (mut invoker, cwd, responder) = held_cwd_escalation(&project, home.clone());
+        invoker.hidden_root = Some(jan);
+        let escalated = json!({ "command": "/bin/true", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        let text = &out[0].content;
+        assert!(text.contains(HIDDEN_PATH_REFUSED), "{text}");
+        assert!(text.contains(&format!("shell cwd {} is in it", home.display())), "{text}");
+        assert!(text.contains("back in the project root"), "{text}");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        assert!(!responder.is_finished(), "no prompt was sent");
+        responder.abort();
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A gated confined exec names the held directory in its prompt, so the
+    /// user does not approve a command for the wrong tree.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn a_gated_exec_names_the_held_shell_cwd() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let canonical_sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+        let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+        *cwd.lock().unwrap() = Some(canonical_sub.clone());
+        invoker.shell_cwd = Some(cwd);
+        let responder = tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Some(StreamEvent::PermissionRequest { request_id, path, command, .. }) => {
+                        if let Some(tx) = registry.lock().await.remove(&request_id) {
+                            let _ = tx.send(PermissionDecision::Deny);
+                        }
+                        return (path, command);
+                    }
+                    Some(_) => continue,
+                    None => panic!("no prompt was sent"),
+                }
+            }
+        });
+        invoker.invoke(&[shell_call("plain", json!({ "command": "rm -rf build" }))]).await.unwrap();
+        let (path, command) = responder.await.unwrap();
+        assert_eq!(command.as_deref(), Some("rm -rf build"));
+        assert_eq!(path, Some(canonical_sub.display().to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// After a compaction the call that announced a `cd` is gone, so the
+    /// workspace section names where the shell is.
+    #[test]
+    fn workspace_lines_name_a_held_shell_cwd() {
+        let root = unique_project_root();
+        let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+        assert!(!workspace_lines(&root, Some(&cwd)).contains("Shell cwd"));
+        *cwd.lock().unwrap() = Some(root.join("sub"));
+        let lines = workspace_lines(&root, Some(&cwd));
+        assert!(lines.contains(&format!("Shell cwd: {}", root.join("sub").display())), "{lines}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -11534,6 +13363,54 @@ mod tests {
         json!({ "id": id, "type": "function", "function": { "name": name, "arguments": "{}" } })
     }
 
+    /// A name the model made up, or one no server offers any more, is refused
+    /// without a prompt and leaves no grant behind, even under auto-approval.
+    #[tokio::test]
+    async fn an_unknown_tool_fails_closed_without_a_prompt() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+
+        let out = invoker.invoke(&[mcp_call("u1", "made_up_tool")]).await.unwrap();
+
+        assert_eq!(
+            out[0].content,
+            "ERROR: tool 'made_up_tool' is not available to this run"
+        );
+        assert!(!invoker.grants.lock().unwrap().covers_mcp("made_up_tool"));
+        drop(invoker);
+        while let Some(ev) = rx.recv().await {
+            assert!(!matches!(ev, StreamEvent::PermissionRequest { .. }), "prompted");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A prompt nobody can see cannot be answered: with the event consumer
+    /// gone, the call is denied at once instead of waiting forever on a
+    /// responder that is still registered.
+    #[tokio::test]
+    async fn a_prompt_with_no_consumer_is_denied() {
+        let root = unique_project_root();
+        let (tx, rx) = mpsc::unbounded_channel();
+        drop(rx);
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            invoker.invoke(&[mcp_call("m1", "web_search_exa")]),
+        )
+        .await
+        .expect("an undeliverable prompt must not wait")
+        .unwrap();
+
+        assert!(out[0].content.contains("denied"), "got: {}", out[0].content);
+        assert!(registry.lock().await.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn mcp_prompt_deny_reports_error_and_skips_execution() {
         let root = unique_project_root();
@@ -11610,7 +13487,7 @@ mod tests {
     #[test]
     fn tool_allowlist_empty_removes_all() {
         let mut tools = vec![json!({ "type": "function", "function": { "name": "search" } })];
-        let mut map = HashMap::from([("search".to_string(), "srv".to_string())]);
+        let mut map = HashMap::from([("search".to_string(), route("srv"))]);
 
         apply_tool_allowlist(&mut tools, &mut map, &[]);
 
@@ -11623,7 +13500,7 @@ mod tests {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools =
             vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
-        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let mut map = HashMap::from([("web_search_exa".to_string(), route("exa"))]);
         // The scaffolded CLI project default: read-only, no allow-list.
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
 
@@ -11645,8 +13522,8 @@ mod tests {
             json!({ "type": "function", "function": { "name": "dangerous_write" } }),
         ];
         let mut map = HashMap::from([
-            ("web_search_exa".to_string(), "exa".to_string()),
-            ("dangerous_write".to_string(), "exa".to_string()),
+            ("web_search_exa".to_string(), route("exa")),
+            ("dangerous_write".to_string(), route("exa")),
         ]);
         let perms = ToolPermissions::new(
             PermissionDefault::ReadOnly,
@@ -11670,7 +13547,7 @@ mod tests {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools =
             vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
-        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let mut map = HashMap::from([("web_search_exa".to_string(), route("exa"))]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
@@ -11769,6 +13646,412 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         assert!(out.starts_with("ERROR:"), "{out}");
         assert!(out.contains("only a subagent"), "{out}");
+    }
+
+    /// The names a dispatched child is advertised, given the allowlist it was
+    /// dispatched with and whether it is Jan's tidy subagent.
+    fn child_tools(allowed: Option<&[&str]>, memory_access: bool) -> Vec<String> {
+        let root = std::env::temp_dir().join(format!(
+            "jan-child-tools-{}-{}",
+            std::process::id(),
+            TEST_ROOT_SEQ.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let permissions = if memory_access {
+            ToolPermissions::allow_all()
+        } else {
+            ToolPermissions::allow_all().with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        };
+        let allowed: Option<std::collections::HashSet<String>> =
+            allowed.map(|names| names.iter().map(|n| n.to_string()).collect());
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            allowed.as_ref(),
+            &permissions,
+            Some(root.as_path()),
+            crate::core::agent::plan::RunMode::Normal,
+            false,
+            crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            false,
+            false,
+            #[cfg(feature = "cli")]
+            &crate::core::agent::host_tools::HostToolSet::new(),
+            true,
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        tools
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// Subagents have no memory: a dispatched child is never offered the tool,
+    /// even when its `allowed_tools` names it. Jan's tidy subagent is the one
+    /// child that keeps it.
+    #[test]
+    fn a_dispatched_child_is_never_offered_memory_but_the_tidy_child_is() {
+        let full = child_tools(None, false);
+        assert!(full.iter().any(|n| n == "read"), "{full:?}");
+        assert!(!full.iter().any(|n| n.starts_with("memory")), "{full:?}");
+        let asked = child_tools(Some(&["read", "memory"]), false);
+        assert_eq!(asked, vec!["read".to_string()], "allowed_tools cannot add it back");
+        let tidy = child_tools(None, true);
+        assert!(tidy.iter().any(|n| n == "memory"), "{tidy:?}");
+    }
+
+    /// #497 bug 1: a headless run builds its tail once, so a note the model
+    /// wrote mid-run never reached a later request of the same run. The next
+    /// request now carries `# Memory Changes` naming the note, below the
+    /// history, while the system prompt bytes stay the session's.
+    #[tokio::test]
+    async fn a_memory_write_mid_run_reaches_the_next_request_of_the_same_run() {
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("kept.md"), "Kept\n\nAlready here.").unwrap();
+        let snapshot = crate::core::agent::context::MemorySnapshot::capture(&root);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        invoker.sandbox = false;
+        invoker.hidden_root = None;
+        invoker.auto_approve = true;
+        invoker.memory_changes = Some(MemoryChangesTracker::new(snapshot, None));
+        let write = json!({"choices": [{"message": {"content": null, "tool_calls": [{
+            "id": "w1", "type": "function", "function": {"name": "memory",
+            "arguments": "{\"op\":\"write\",\"name\":\"build_cmd\",\"title\":\"Build\",\"content\":\"make foo\"}"}
+        }]}, "finish_reason": "tool_calls"}]});
+        let shell = json!({"choices": [{"message": {"content": null, "tool_calls": [{
+            "id": "v1", "type": "function", "function": {"name": "memory",
+            "arguments": "{\"op\":\"view\",\"name\":\"build_cmd\"}"}
+        }]}, "finish_reason": "tool_calls"}]});
+        let model = MockModel::new(vec![write, shell, final_answer("done")]);
+        let (events, _events_rx) = mpsc::unbounded_channel();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "remember the build command"}),
+            ]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &invoker,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+        let _ = std::fs::remove_dir_all(&root);
+        let sent = model.requests.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3);
+        let text = |i: usize| serde_json::to_string(&sent[i]["messages"]).unwrap();
+        assert!(!text(0).contains("# Memory Changes"), "nothing changed yet: {}", text(0));
+        assert!(text(1).contains("# Memory Changes"), "{}", text(1));
+        assert!(text(1).contains("+ build_cmd"), "{}", text(1));
+        // Said once: a read-only call later does not repeat an unchanged block.
+        assert_eq!(text(2).matches("# Memory Changes").count(), 1, "{}", text(2));
+        for request in &sent {
+            let messages = request["messages"].as_array().unwrap();
+            assert_eq!(messages[0], json!({"role": "system", "content": "Stable instructions."}));
+            let systems = messages.iter().filter(|m| m["role"] == "system").count();
+            assert_eq!(systems, 1, "no second system message: {messages:?}");
+        }
+        // The block follows the tool result, below the history.
+        let second = sent[1]["messages"].as_array().unwrap();
+        let last = second.last().unwrap();
+        assert_eq!(last["role"], "user", "{second:?}");
+        assert!(last["content"].as_str().unwrap().contains("+ build_cmd"));
+    }
+
+    /// A run with no session snapshot (the API server's orchestration, which
+    /// goes through `run_orchestration_streamed` with `session_start: None`)
+    /// takes one for its prompt; the same snapshot must back its
+    /// `# Memory Changes` tracker, or a note written mid-run never reaches the
+    /// run's next request. Driven end to end against a stub provider.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_run_without_a_session_snapshot_still_reports_its_memory_changes() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("kept.md"), "Kept\n\nAlready here.").unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            let call = |id: &str, args: &str| {
+                json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [{
+                        "index": 0, "id": id, "type": "function",
+                        "function": {"name": "memory", "arguments": args}}]},
+                    "finish_reason": "tool_calls"}]})
+            };
+            let chunks = [
+                call("w1", r#"{"op":"write","name":"build_cmd","title":"Build","content":"make foo"}"#),
+                call("v1", r#"{"op":"view","name":"build_cmd"}"#),
+                json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "done"},
+                    "finish_reason": "stop"}]}),
+            ];
+            for (i, connection) in listener.incoming().enumerate() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                seen.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+                let chunk = &chunks[i.min(chunks.len() - 1)];
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.session_start = None;
+        args.sandbox = Some(false);
+        args.subagents_enabled = false;
+        args.provider_configs = Arc::new(Mutex::new(
+            std::iter::once((
+                "stub".to_string(),
+                ProviderConfig {
+                    provider: "stub".into(),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    api_key: Some("k".into()),
+                    models: vec!["m".into()],
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+        ));
+        let body = json!({"model": "m", "messages": [{"role": "user", "content": "remember the build command"}]});
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let out = run_orchestration_streamed(&tx, &body, &args).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&root);
+        out.expect("run completes");
+        let sent = bodies.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3, "{sent:?}");
+        assert!(sent[0].contains("kept"), "the prompt carries the snapshot index: {}", sent[0]);
+        assert!(!sent[0].contains("# Memory Changes"), "{}", sent[0]);
+        let tail = |b: &str| b.chars().rev().take(600).collect::<Vec<_>>().into_iter().rev().collect::<String>();
+        assert!(sent[1].contains("# Memory Changes"), "{}", tail(&sent[1]));
+        assert!(sent[1].contains("+ build_cmd"), "{}", tail(&sent[1]));
+    }
+
+    /// A route that rejects `reasoning_content` pays the rejected round trip
+    /// once. The run that discovers it retries without the field; every later
+    /// run on the route (a new prompt, a resume, a subagent on the same model)
+    /// starts without it instead of being rejected again. A route that never
+    /// rejected the field keeps receiving it. Driven end to end against a stub
+    /// provider that refuses any body carrying the field.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_route_that_rejects_reasoning_is_only_rejected_once() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let root = unique_project_root();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let body = String::from_utf8_lossy(&body).into_owned();
+                let strict = body.contains("\"model\":\"rr-strict\"");
+                let rejected = strict && body.contains("reasoning_content");
+                seen.lock().unwrap().push(body);
+                if rejected {
+                    let err = r#"{"error":{"message":"property 'reasoning_content' is unsupported","type":"invalid_request_error"}}"#;
+                    let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{err}", err.len());
+                    continue;
+                }
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.session_start = None;
+        args.sandbox = Some(false);
+        args.subagents_enabled = false;
+        args.project_memory = false;
+        args.provider_configs = Arc::new(Mutex::new(
+            std::iter::once((
+                "rr-stub".to_string(),
+                ProviderConfig {
+                    provider: "rr-stub".into(),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    api_key: Some("k".into()),
+                    models: vec!["rr-strict".into(), "rr-lenient".into()],
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+        ));
+        let body = |model: &str| {
+            json!({"model": model, "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hey", "reasoning_content": "thinking"},
+                {"role": "user", "content": "again"},
+            ]})
+        };
+        let sent = |bodies: &Arc<std::sync::Mutex<Vec<String>>>| {
+            std::mem::take(&mut *bodies.lock().unwrap())
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        run_orchestration_streamed(&tx, &body("rr-strict"), &args)
+            .await
+            .expect("the discovering run recovers");
+        let first = sent(&bodies);
+        assert_eq!(first.len(), 2, "rejected once, then retried: {first:?}");
+        assert!(!first[1].contains("reasoning_content"), "{}", first[1]);
+
+        run_orchestration_streamed(&tx, &body("rr-strict"), &args)
+            .await
+            .expect("a later run on the route");
+        let second = sent(&bodies);
+        assert_eq!(second.len(), 1, "a known route is not rejected again: {second:?}");
+        assert!(!second[0].contains("reasoning_content"), "{}", second[0]);
+        assert_eq!(
+            first[1], second[0],
+            "the later run sends the bytes the retry did, so its prefix is cached"
+        );
+
+        run_orchestration_streamed(&tx, &body("rr-lenient"), &args)
+            .await
+            .expect("a route that accepts the field");
+        let lenient = sent(&bodies);
+        assert_eq!(lenient.len(), 1, "{lenient:?}");
+        assert!(
+            lenient[0].contains("\"reasoning_content\":\"thinking\""),
+            "another model on the same provider still gets reasoning: {}",
+            lenient[0]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A child that names `memory` anyway is refused at the gate.
+    #[tokio::test]
+    async fn a_child_calling_memory_is_refused() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        invoker.permissions = ToolPermissions::allow_all()
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        let call = json!({
+            "id": "m1",
+            "type": "function",
+            "function": { "name": "memory", "arguments": "{\"op\":\"view\"}" }
+        });
+        let out = invoker.invoke(&[call]).await.unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        // Withheld by the harness, not by a deny list the child could go read.
+        assert_eq!(out[0].content, "ERROR: tool 'memory' is not available to this run");
+    }
+
+    /// A refusal for the Jan home names only the memory/skill tools this run
+    /// can call: the main agent gets `memory`, a subagent does not, and a run
+    /// narrowed to `read` is pointed at nothing.
+    #[tokio::test]
+    async fn the_jan_home_refusal_names_only_tools_the_run_has() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        let jan = root.join("jan-home");
+        std::fs::create_dir_all(&jan).unwrap();
+        invoker.hidden_root = Some(jan.clone());
+        let call = json!({
+            "id": "h1",
+            "type": "function",
+            "function": { "name": "read", "arguments": json!({"path": "jan-home/x"}).to_string() }
+        });
+        let main = invoker.invoke(std::slice::from_ref(&call)).await.unwrap()[0].content.clone();
+        assert!(main.contains(HIDDEN_PATH_REFUSED), "{main}");
+        assert!(main.ends_with("use: memory, skill_list, skill_read, skill_write."), "{main}");
+        invoker.permissions = ToolPermissions::allow_all()
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        let child = invoker.invoke(std::slice::from_ref(&call)).await.unwrap()[0].content.clone();
+        assert!(child.ends_with("use: skill_list, skill_read, skill_write."), "{child}");
+        invoker.allowed_names = Some(["read".to_string()].into_iter().collect());
+        let narrow = invoker.invoke(&[call]).await.unwrap()[0].content.clone();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!narrow.contains("memory") && !narrow.contains("skill"), "{narrow}");
+        assert!(narrow.ends_with("do not try to reach it another way."), "{narrow}");
+    }
+
+    /// A subagent's prompt carries no memory section: no index, no memory
+    /// instructions. The main agent's has both, and tells it subagents have
+    /// no memory.
+    #[test]
+    fn a_child_prompt_has_no_memory_section() {
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fact.md"), "A remembered fact.").unwrap();
+        let build = |override_prompt: Option<&str>, subagents: bool| {
+            build_run_system_prompt(
+                None,
+                override_prompt,
+                Some(&root),
+                Some("s1"),
+                subagents,
+                false,
+                &PromptPolicy::default(),
+                None,
+            )
+            .unwrap()
+            .unwrap()
+            .as_prompt()
+        };
+        let child = build(Some("You are a reviewer."), false);
+        for absent in ["# Available Memories", "A remembered fact", "`memory` tool", "## Memory"] {
+            assert!(!child.contains(absent), "{absent} leaked into a child prompt:\n{child}");
+        }
+        assert!(child.contains("# Skills"), "skills stay: {child}");
+        assert!(child.contains("Memory belongs to the agent that\ndispatched you"), "{child}");
+        let main = build(None, true);
+        assert!(main.contains("# Available Memories") && main.contains("A remembered fact"));
+        assert!(main.contains("Subagents have no memory"), "{main}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A dispatching run is offered the steering tool beside dispatch, and
@@ -11912,14 +14195,17 @@ mod tests {
                 DispatchedChild {
                     name: "explorer-a".to_string(),
                     run_id: "sub-explorer-a-1".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
                 DispatchedChild {
                     name: "explorer-b".to_string(),
                     run_id: "sub-explorer-b-2".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
             names: vec!["explorer-a".to_string(), "explorer-b".to_string()],
+            later_workspaces: Vec::new(),
         });
         assert!(out.contains("sub-explorer-a-1"), "{out}");
         assert!(out.contains("sub-explorer-b-2"), "{out}");
@@ -11938,11 +14224,16 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "researcher".to_string(),
                 run_id: "sub-researcher-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["researcher".to_string(), "writer".to_string()],
+            later_workspaces: vec![("writer".to_string(), "researcher".to_string())],
         });
         assert!(out.contains("sub-researcher-1"), "{out}");
+        // The parent named neither worker, so it is told whose workspace the
+        // later one will get.
+        assert!(out.contains("writer will work in researcher's workspace"), "{out}");
         // Every worker is named, the later phase's included, in listed order.
         assert!(
             out.contains(&crate::core::agent::subagent::worker_names_line(&[
@@ -11977,6 +14268,126 @@ mod tests {
             bg,
         });
         invoker
+    }
+
+    /// The real invoker's background side, with a tool call standing in for a
+    /// long `bash` command: a subagent finishes while the call is still running.
+    #[cfg(feature = "cli")]
+    struct ChildEndsMidCall {
+        inner: CompositeToolInvoker,
+        bg: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+        /// Whether the ping was already queued when the call returned.
+        queued_during_call: StdMutex<Option<bool>>,
+    }
+    #[cfg(feature = "cli")]
+    #[async_trait]
+    impl ToolInvoker for ChildEndsMidCall {
+        async fn invoke(
+            &self,
+            tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            crate::core::agent::subagent::tests::finish_held_child(
+                &self.bg,
+                "sub-explore-1",
+                "explore",
+            );
+            // Let a woken waiter run, as wall time passing in a real call would.
+            tokio::task::yield_now().await;
+            *self.queued_during_call.lock().unwrap() = Some(self.bg.has_queued_notices());
+            Ok(tool_calls
+                .iter()
+                .map(|c| {
+                    ToolOutcome::plain(
+                        c["id"].as_str().unwrap_or_default().to_string(),
+                        "sleep done\n[exit 0]".to_string(),
+                    )
+                })
+                .collect())
+        }
+        fn background_notices(&self) -> Vec<BackgroundNotice> {
+            self.inner.background_notices()
+        }
+        fn background_pending(&self) -> bool {
+            self.inner.background_pending()
+        }
+        async fn await_background(&self) {
+            self.inner.await_background().await
+        }
+    }
+
+    /// A subagent finishing while a tool call is still running is neither lost
+    /// nor delivered early: its ping waits in the queue until the call returns,
+    /// then the next request carries it after the tool result as a `<SYSTEM>`
+    /// reminder, costing no extra turn. Checked for a session-owned registry
+    /// (the TUI) and a run-owned one (headless).
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_subagent_finishing_during_a_tool_call_is_drained_after_the_result() {
+        for outlive in [true, false] {
+            let root = unique_project_root();
+            let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+            crate::core::agent::subagent::tests::hold_running(&bg);
+            let mut inner = invoker_with_registry(root.clone(), bg.clone());
+            inner.subagent_bg_outlive_run = outlive;
+            let tool = ChildEndsMidCall {
+                inner,
+                bg: bg.clone(),
+                queued_during_call: StdMutex::new(None),
+            };
+            let (tx, _rx) = mpsc::unbounded_channel();
+            let model =
+                MockModel::new(vec![tool_call_completion(), final_answer("saw both")]);
+            let mut budget = SessionBudget::new(None);
+
+            let result = run_turn_cycle(
+                &tx,
+                &json!({}),
+                "m",
+                &[],
+                Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+                None,
+                true,
+                8,
+                &mut budget,
+                &model,
+                &tool,
+                crate::core::agent::plan::RunMode::Normal,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                *tool.queued_during_call.lock().unwrap(),
+                Some(true),
+                "{outlive}: the ping was queued while the call ran"
+            );
+            assert_eq!(result["choices"][0]["message"]["content"], "saw both");
+            let requests = model.requests.lock().unwrap();
+            assert_eq!(requests.len(), 2, "{outlive}: no extra turn for the ping");
+            let first = requests[0]["messages"].to_string();
+            assert!(!first.contains("Subagent 'explore'"), "{outlive}: not delivered early");
+            let sent = requests[1]["messages"].as_array().unwrap();
+            let n = sent.len();
+            assert_eq!(sent[n - 2]["role"], "tool", "{outlive}: result first: {sent:?}");
+            assert_eq!(sent[n - 2]["tool_call_id"], "call_1");
+            let last = &sent[n - 1];
+            assert_eq!(last["role"], "user");
+            assert!(
+                crate::core::agent::reminder::is_reminder_only(&last["content"]),
+                "{outlive}: {last}"
+            );
+            assert!(
+                last["content"].as_str().unwrap().contains("Subagent 'explore' (sub-explore-1)"),
+                "{outlive}: {last}"
+            );
+            assert!(!bg.has_queued_notices(), "{outlive}: drained exactly once");
+            assert!(!tool.background_pending(), "{outlive}: nothing left owed");
+            let _ = std::fs::remove_dir_all(&root);
+        }
     }
 
     /// A shell abandoned at its park budget wakes its own wait with nothing to
@@ -12028,7 +14439,7 @@ mod tests {
             )
             .await;
         assert!(steered.contains("Queued"), "{steered}");
-        assert_eq!(inbox.drain().len(), 1);
+        assert_eq!(inbox.drain().0.len(), 1);
 
         let stopped = invoker
             .handle_subagent_tool("stop_subagent", &json!({ "name": "w" }))
@@ -12109,9 +14520,11 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "w".to_string(),
                 run_id: "sub-w-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["w".to_string()],
+            later_workspaces: Vec::new(),
         });
         assert!(out.contains("stop_subagent"), "{out}");
         assert!(out.contains("by name"), "{out}");
@@ -12165,7 +14578,7 @@ mod tests {
         let postman_inbox = inbox.clone();
         let postman = tokio::spawn(async move {
             while let Some(request) = requests.recv().await {
-                let _ = request.reply.send(postman_inbox.drain());
+                let _ = request.reply.send(postman_inbox.drain().0);
             }
         });
 
@@ -12204,7 +14617,7 @@ mod tests {
             assert_eq!(steered, "actually, check loop.rs", "a plain user turn");
         }
         assert!(
-            inbox.drain().is_empty(),
+            inbox.drain().0.is_empty(),
             "the boundary drain consumed the message exactly once"
         );
         drop(steering);
@@ -12374,6 +14787,106 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A message the user typed during a long foreground command reaches the
+    /// model at the next step, not when the command ends: the waiting message
+    /// moves the command into the session's background set, its call is still
+    /// answered (by the hand-off) before the message, and its end is owed to
+    /// the session as an ordinary background ping.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_waiting_message_moves_a_running_command_to_the_background() {
+        let root = hooks_root("detach_on_message");
+        let marker = format!("detach-{}", std::process::id());
+        let command = format!("sleep 60; echo {marker}");
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let (detach, signal) = tokio::sync::watch::channel(false);
+        let mut invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        invoker.bg_shells_outlive_run = true;
+        invoker.shell_detach = Some(signal);
+        let model = MockModel::new(vec![
+            json!({"choices": [{"message": {
+                "content": serde_json::Value::Null,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "shell",
+                        "arguments": json!({"command": command, "timeout": 1800}).to_string()
+                    }
+                }]
+            }, "finish_reason": "tool_calls"}]}),
+            json!({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}),
+        ]);
+        let consumer = tokio::spawn(async move {
+            let first = requests.recv().await.unwrap();
+            first.reply.send(vec![]).unwrap();
+            // The user types while the model is about to run the command.
+            detach.send_replace(true);
+            let boundary = requests.recv().await.unwrap();
+            boundary
+                .reply
+                .send(vec![json!({"role": "user", "content": "stop and look at this"})])
+                .unwrap();
+            detach.send_replace(false);
+            while let Some(request) = requests.recv().await {
+                request.reply.send(vec![]).unwrap();
+            }
+        });
+        let mut budget = SessionBudget::new(None);
+        let body = json!({});
+        let run = run_turn_cycle(
+            &events,
+            &body,
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({"role": "user", "content": "build it"})]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &invoker,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+            None,
+        );
+        let finished = tokio::time::timeout(std::time::Duration::from_secs(20), run).await;
+        // Reaped before asserting, so a failure does not leave it running.
+        for shell in tauri_plugin_agent_tools::tools::proc::snapshot() {
+            if shell.command == command {
+                tauri_plugin_agent_tools::tools::proc::kill(shell.pid);
+            }
+        }
+        finished.expect("the message must not wait out the command").unwrap();
+        {
+            let sent = model.requests.lock().unwrap();
+            assert_eq!(sent.len(), 2);
+            let messages = sent[1]["messages"].as_array().unwrap();
+            let tool = &messages[messages.len() - 2];
+            assert_eq!(tool["role"], "tool");
+            assert_eq!(tool["tool_call_id"], "call_1", "the call keeps its result");
+            let handoff = tool["content"].as_str().unwrap();
+            assert!(
+                tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(handoff),
+                "{handoff}"
+            );
+            assert!(handoff.contains("notified automatically"), "{handoff}");
+            assert_eq!(messages[messages.len() - 1]["content"], "stop and look at this");
+        }
+        assert!(invoker.bg_shells.has_pending_work(), "the command's end is owed");
+        drop(steering);
+        consumer.await.unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A model can name a tool it was never offered (a hallucinated name, or one
     /// steered by text it read), so `allowed_tools` has to hold where a call is
     /// dispatched and not only where tools are advertised.
@@ -12429,4 +14942,315 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// How the stub provider answers the parent's second request.
+    #[cfg(feature = "cli")]
+    #[derive(Clone, Copy)]
+    enum SecondTurn {
+        /// A 400, which fails the run.
+        Fails,
+        /// Never, so the test can cancel the run while it waits.
+        Hangs,
+    }
+
+    /// A git project whose run dispatches one `writer` child into a fresh
+    /// worktree, against a stub provider on which the child's request never
+    /// returns: the writer is still in its worktree, holding its lease, when
+    /// the parent's run ends. Returns the project, the run's args, and a
+    /// receiver signalled once the parent's second request has arrived (the
+    /// dispatch is done by then). `None` without git.
+    #[cfg(feature = "cli")]
+    fn run_with_a_stuck_writer(
+        second: SecondTurn,
+    ) -> Option<(
+        std::path::PathBuf,
+        OrchestrationArgs,
+        std::sync::mpsc::Receiver<()>,
+    )> {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let root = unique_project_root();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return None;
+        }
+        let defs = crate::core::agent::subagent::project_subagents_dir(&root);
+        std::fs::create_dir_all(&defs).unwrap();
+        std::fs::write(
+            defs.join("writer.toml"),
+            "name = \"writer\"\ndescription = \"edits\"\nsystem_prompt = \"You are writer.\"\n",
+        )
+        .unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (second_tx, second_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let parent_turns = AtomicUsize::new(0);
+            // Held, never answered, so neither side's request returns.
+            let mut parked = Vec::new();
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; length];
+                let _ = reader.read_exact(&mut body);
+                if String::from_utf8_lossy(&body).contains("You are writer.") {
+                    parked.push(stream);
+                    continue;
+                }
+                if parent_turns.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let dispatch = json!({ "subagents": [{ "agent": "writer", "task": "edit a.txt" }] })
+                        .to_string();
+                    let chunk = json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                        "choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[
+                            {"index":0,"id":"c1","type":"function","function":{"name":"dispatch_subagent","arguments":dispatch}}]},
+                            "finish_reason":null}]});
+                    let done = json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                        "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]});
+                    let answer = format!("data: {chunk}\n\ndata: {done}\n\ndata: [DONE]\n\n");
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+                    continue;
+                }
+                let _ = second_tx.send(());
+                match second {
+                    SecondTurn::Fails => {
+                        let body = "{\"error\":{\"message\":\"bad request\"}}";
+                        let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                    }
+                    SecondTurn::Hangs => parked.push(stream),
+                }
+            }
+        });
+
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.subagent_worktrees = true;
+        args.sandbox = Some(false);
+        args.project_memory = false;
+        args.provider_configs = Arc::new(Mutex::new(HashMap::from([(
+            "stub".to_string(),
+            ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        )])));
+        Some((root, args, second_rx))
+    }
+
+    /// The subagent checkouts still on disk for `root`'s project and the
+    /// `jan/agent/*` branches still in its repository.
+    #[cfg(feature = "cli")]
+    fn leftover_worktrees(root: &std::path::Path) -> (Vec<String>, String) {
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        let dir = crate::core::agent::child_workspace::project_worktrees_dir(root).unwrap();
+        let checkouts = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            // Jan's records and trash are not checkouts.
+            .filter(|e| {
+                let name = e.file_name();
+                name != "cargo-target" && !name.to_string_lossy().starts_with('.')
+            })
+            .map(|e| e.path().display().to_string())
+            .collect();
+        (checkouts, String::from_utf8_lossy(&branches.stdout).trim().to_string())
+    }
+
+    /// A run that fails while a writer it dispatched is still working ends that
+    /// writer before sweeping: the worktree holds nothing, so it and its branch
+    /// go, and nothing claims it was kept for holding work.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_failed_run_sweeps_the_worktree_of_a_writer_it_was_still_running() {
+        let Some((root, args, _second)) = run_with_a_stuck_writer(SecondTurn::Fails) else {
+            return;
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "go" }] });
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            run_orchestration_streamed(&tx, &body, &args),
+        )
+        .await
+        .expect("the run ends");
+        assert!(result.is_err(), "{result:?}");
+        drop(tx);
+
+        let mut dispatched = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::ToolResult { content, .. } if content.contains("worktree") => {
+                    dispatched = true;
+                }
+                StreamEvent::Notice { text } => {
+                    assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
+                }
+                _ => {}
+            }
+        }
+        assert!(dispatched, "the writer was dispatched into a worktree");
+        let (worktrees, branches) = leftover_worktrees(&root);
+        assert!(worktrees.is_empty(), "{worktrees:?}");
+        assert!(branches.is_empty(), "{branches}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A cancelled run never reaches its own end, so the sweep has to happen on
+    /// the way down too: the writer is stopped and its empty worktree removed.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_cancelled_run_sweeps_the_worktree_of_a_writer_it_was_still_running() {
+        let Some((root, args, second)) = run_with_a_stuck_writer(SecondTurn::Hangs) else {
+            return;
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let run = tokio::spawn(async move {
+            let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "go" }] });
+            run_orchestration_streamed(&tx, &body, &args).await
+        });
+        let arrived = tokio::task::spawn_blocking(move || {
+            second.recv_timeout(std::time::Duration::from_secs(30))
+        })
+        .await
+        .unwrap();
+        assert!(arrived.is_ok(), "the parent reached its second turn");
+        let (worktrees, _) = leftover_worktrees(&root);
+        assert_eq!(worktrees.len(), 1, "the writer is in its worktree: {worktrees:?}");
+
+        run.abort();
+        assert!(run.await.unwrap_err().is_cancelled());
+        // The drop hands the sweep to the blocking pool, so it lands shortly
+        // after the abort returns rather than inside it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !leftover_worktrees(&root).0.is_empty() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        while let Ok(event) = rx.try_recv() {
+            if let StreamEvent::Notice { text } = event {
+                assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
+            }
+        }
+        let (worktrees, branches) = leftover_worktrees(&root);
+        assert!(worktrees.is_empty(), "{worktrees:?}");
+        assert!(branches.is_empty(), "{branches}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The desktop API server's orchestration run compacts ahead of dispatch
+    /// when its route's window is knowable: a catalog model (200K) under a
+    /// provider ratio of 0.10 trips the preflight on a ~30K-token history, so
+    /// the first request upstream is the summary, not the oversized prompt a
+    /// provider would reject. Driven end to end against a stub provider.
+    #[cfg(not(feature = "cli"))]
+    #[tokio::test]
+    async fn the_proxy_orchestration_compacts_before_dispatch_on_a_known_window() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                seen.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "claude-haiku-4-5", "choices": [{"index": 0,
+                    "delta": {"role": "assistant", "content": "brief"}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let providers: HashMap<String, ProviderConfig> = std::iter::once((
+            "stub".to_string(),
+            ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["claude-haiku-4-5".into()],
+                compaction_ratio: Some(0.10),
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let filler = "x".repeat(10_000);
+        let mut messages = Vec::new();
+        for i in 0..12 {
+            let role = if i % 2 == 0 { "user" } else { "assistant" };
+            messages.push(json!({"role": role, "content": format!("{i} {filler}")}));
+        }
+        messages.push(json!({"role": "user", "content": "and now?"}));
+        let body = json!({"model": "claude-haiku-4-5", "messages": messages});
+        let out = run_server_side_openai_orchestration(
+            &body,
+            &crate::core::agent::upstream::agent_http_client(),
+            Arc::new(Mutex::new(providers)),
+            Arc::new(LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            &std::env::temp_dir().to_string_lossy(),
+        )
+        .await;
+        out.expect("run completes");
+        let sent = bodies.lock().unwrap().clone();
+        assert_eq!(sent.len(), 2, "a summary, then the compacted request: {}", sent.len());
+        assert!(
+            sent[0].contains("[Compaction request from the harness]"),
+            "the first request is the cached preflight compaction"
+        );
+        // The tail is sized by tokens (a tenth of the window), not by message
+        // count, so the compacted request is measured against the original.
+        let original = body.to_string().len();
+        assert!(
+            sent[1].len() < original,
+            "the dispatched request is the compacted one: {} of {original}",
+            sent[1].len()
+        );
+        assert!(sent[1].contains("[Continuation state - compacted at turn "));
+    }
 }

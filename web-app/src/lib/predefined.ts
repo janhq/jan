@@ -1,3 +1,7 @@
+/// The fixed context MLX models are seeded with. MLX has no auto-fit, so the
+/// empty llamacpp default below would leave the window to the mlx server.
+export const MLX_DEFAULT_CTX_LEN = 8192
+
 export const modelSettings = {
   ctx_len: {
     key: 'ctx_len',
@@ -6,8 +10,12 @@ export const modelSettings = {
       'Size of the prompt context. Leave empty to auto-fit when --fit is on.',
     controller_type: 'input',
     controller_props: {
-      value: 8192,
-      placeholder: '8192',
+      // Empty, not 8192: an explicit value pins n_ctx and upstream's fit then
+      // leaves the context alone. With fit off, preset.ts's [*] ctx-size =
+      // 8192 still applies, so the effective default is unchanged there.
+      // MLX overrides this with MLX_DEFAULT_CTX_LEN.
+      value: '',
+      placeholder: 'auto',
       type: 'number',
     },
   },
@@ -228,6 +236,28 @@ export const modelSettings = {
       placeholder: '2048',
       type: 'number',
       textAlign: 'right',
+    },
+  },
+  load_mode: {
+    key: 'load_mode',
+    title: 'Load Mode',
+    description:
+      'How this model\'s weights are read into memory. Inherit global uses the engine-wide Load Mode; any other choice, including Auto, overrides it for this model.',
+    controller_type: 'dropdown',
+    controller_props: {
+      // Empty means inherit: the extension drops the yaml key, so no
+      // load-mode line is written for the model. Auto is not that: it is an
+      // explicit override of a non-auto global.
+      value: '',
+      options: [
+        { value: '', name: 'Inherit global' },
+        { value: 'auto', name: 'Auto (mmap if supported)' },
+        { value: 'none', name: 'None (no mmap)' },
+        { value: 'mmap', name: 'mmap' },
+        { value: 'mlock', name: 'mlock (no mmap)' },
+        { value: 'mmap+mlock', name: 'mmap + mlock' },
+        { value: 'dio', name: 'Direct I/O' },
+      ],
     },
   },
   reasoning: {

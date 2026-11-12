@@ -65,12 +65,39 @@ pub fn base_dir_in(data_root: &Path) -> PathBuf {
     base
 }
 
-pub fn collection_path(base: &Path, name: &str) -> PathBuf {
-    let mut p = base.to_path_buf();
+/// The database file for collection `name`, always a single file directly in
+/// `base`. Separators are folded to `_` as before. An empty name, a NUL and a
+/// Windows device name are refused on every OS, and on Windows a `:` too
+/// (`C:x` is drive-relative, which `join` would let replace `base`).
+pub fn collection_path(base: &Path, name: &str) -> Result<PathBuf, VectorDBError> {
+    collection_path_on(base, name, cfg!(windows))
+}
+
+/// [`collection_path`] with the Windows-only `:` rule as a flag, so both
+/// platforms' behaviour can be tested on any host.
+fn collection_path_on(base: &Path, name: &str, reject_colon: bool) -> Result<PathBuf, VectorDBError> {
     let clean = name.replace(['/', '\\'], "_");
-    let filename = format!("{}.db", clean);
-    p.push(&filename);
-    p
+    if clean.is_empty()
+        || clean.contains('\0')
+        || (reject_colon && clean.contains(':'))
+        || is_windows_device_name(&clean)
+    {
+        return Err(VectorDBError::InvalidInput(format!(
+            "invalid collection name '{name}'"
+        )));
+    }
+    Ok(base.join(format!("{}.db", clean)))
+}
+
+/// Names Windows maps to a device in every directory, in any case and also
+/// with an extension (`nul.txt`).
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    match stem.as_bytes() {
+        [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
+        [a, b, c, d] => matches!(&[*a, *b, *c], b"COM" | b"LPT") && d.is_ascii_digit(),
+        _ => false,
+    }
 }
 
 pub fn open_or_init_conn(path: &PathBuf) -> Result<Connection, VectorDBError> {
@@ -768,6 +795,30 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collection_path_stays_a_single_file_in_base() {
+        let base = Path::new("/data/vdb");
+        assert_eq!(
+            collection_path(base, "attachments_01H8X").unwrap(),
+            base.join("attachments_01H8X.db")
+        );
+        assert_eq!(collection_path(base, "a/b\\c").unwrap(), base.join("a_b_c.db"));
+        for bad in ["", "a\0b", "nul", "CON.x", "com1"] {
+            for reject_colon in [true, false] {
+                assert!(collection_path_on(base, bad, reject_colon).is_err(), "{bad:?}");
+            }
+        }
+        // `:` is refused on Windows only.
+        for colon in ["C:x", "c:", "a:b"] {
+            assert!(collection_path_on(base, colon, true).is_err(), "{colon:?} on Windows");
+            assert_eq!(
+                collection_path_on(base, colon, false).unwrap(),
+                base.join(format!("{colon}.db"))
+            );
+            assert_eq!(collection_path(base, colon).is_err(), cfg!(windows), "{colon:?}");
+        }
+    }
 
     #[test]
     fn override_takes_priority_over_every_other_candidate() {

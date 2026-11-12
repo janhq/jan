@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
-import { cn } from '@/lib/utils'
+import {
+  createFileRoute,
+  redirect,
+  useParams,
+  useRouter,
+  useSearch,
+} from '@tanstack/react-router'
 
 import HeaderPage from '@/containers/HeaderPage'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
+import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
@@ -11,10 +18,18 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import { buildLoadDiagnosticsReport } from '@/lib/loadDiagnosticsReport'
+import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import GlobalError from '@/containers/GlobalError'
+import { shouldRedirectThreadToCowork } from '@/lib/threadRouteGuard'
+import {
+  ThreadClassificationUnavailableError,
+  resolveThreadForRoute,
+} from '@/lib/threadRouteClassification'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
+import { SESSION_STORAGE_PREFIX, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
@@ -97,14 +112,29 @@ import {
 } from '@/lib/chatFinish'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
-import { useToolApproval } from '@/hooks/useToolApproval'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { consentConsume } from '@janhq/tauri-plugin-agent-tools-api'
+import {
+  useToolApprovalRequests,
+  type ApprovalOptions,
+} from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
-import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
+import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
+import {
+  CHAT_FOLDER_TOOL_NAMES,
+  chatFolderOf,
+  chatToolNeedsApproval,
+} from '@/lib/chatFolder'
+import { useChatFolder } from '@/hooks/useChatFolder'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { ContinueAsTaskDialog } from '@/containers/dialogs/ContinueAsTaskDialog'
+import { continueChatAsTask } from '@/lib/coworkSync'
+import { route } from '@/constants/routes'
+import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { extensionAuthorOf } from '@/lib/extensions/authorship'
+import { ServiceKeys } from '@janhq/core'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
@@ -113,6 +143,7 @@ import {
   getLocalPropsExtension,
   readCtxLen,
 } from '@/lib/llamacppRouterProps'
+import { normalizeAppError } from '@/utils/appError'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -160,13 +191,30 @@ const continueReplaceIds = new Map<string, string>()
 // "Increase Context Size" button to resume from.
 const pendingContinuations = new Map<
   string,
-  { message: UIMessage; text: string }
+  { message: UIMessage; content: { text: string; reasoning: string } }
 >()
 // The n_ctx the thread's local model launched with, read by isContextLimitStop.
 const launchedCtxLens = new Map<string, number | undefined>()
 // The thread's in-flight title summarization. Only that thread's own activity
 // cancels it.
 const titleAborts = new Map<string, AbortController>()
+
+// The text and reasoning a reply generated so far: what a resume replays as
+// the assistant prefill, so a thinking model keeps its reasoning. Its author
+// rides along: the resumed reply replaces this one and keeps rendering
+// without remote images if an extension wrote it.
+const partialOf = (message: UIMessage) => {
+  const collect = (type: 'text' | 'reasoning') =>
+    message.parts
+      .filter((p) => p.type === type)
+      .map((p) => (p as { text: string }).text)
+      .join('')
+  return {
+    text: collect('text'),
+    reasoning: collect('reasoning'),
+    extensionAuthor: extensionAuthorOf(message.metadata),
+  }
+}
 
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
   const value = map.get(threadId)
@@ -208,8 +256,10 @@ useChatSessions.subscribe((state) => {
 // message and the AI SDK's auto-resubmit (sendAutomaticallyWhen) fires. A
 // component ref would be shared by every thread (the route is reused across
 // thread switches), so one thread finishing or being left would drop another
-// thread's pending approvals and prompt the user again.
-const toolApprovalPromises = new Map<string, Map<string, Promise<boolean>>>()
+// thread's pending approvals and prompt the user again. The origin the call was
+// asked under travels with it, so execution runs what was approved.
+type PendingApproval = { approved: Promise<boolean>; origin: ToolOrigin }
+const toolApprovalPromises = new Map<string, Map<string, PendingApproval>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -233,6 +283,18 @@ const CHAT_CLOSED_TOOL_ERROR =
 const SHELL_DISABLED_TOOL_ERROR =
   'Shell is turned off: the user disabled it, so this command was not run. ' +
   'Do not call the shell again in this chat; use another approach or tell the user it is needed.'
+
+// Recorded for a call to a file tool (read, write, ...) in a chat with no folder
+// attached, e.g. one issued before the user detached it.
+const NO_FOLDER_TOOL_ERROR =
+  'No folder is attached to this chat, so this call was not run. ' +
+  'Do not call the file tools again unless the user attaches a folder.'
+
+// Recorded for a call to a built-in web tool while the user has web search off
+// and no MCP server provides a tool of that name.
+const WEB_DISABLED_TOOL_ERROR =
+  'Web search is turned off: the user disabled it, so this call was not run. ' +
+  'Do not call web_search or web_fetch again in this chat; answer from what you know or tell the user it is needed.'
 
 // Rewrites a turn that is already stored with what its live copy holds now. A
 // turn is stored before its tools run, so a call's outcome (result, error,
@@ -259,11 +321,47 @@ function rewriteStoredTurn(
   })
 }
 
-// The MCP server a tool belongs to, so an approval prompt can offer to trust
-// the whole server rather than this one tool.
-function serverForTool(toolName: string): string | undefined {
-  return useAppState.getState().tools.find((tool) => tool.name === toolName)
-    ?.server
+// Recorded for an approved call whose tool came to be served by someone else
+// (an extension loaded or unloaded) while it waited: the grant was for the other.
+const ORIGIN_CHANGED_TOOL_ERROR =
+  'Tool call refused: the tool changed while it was waiting for approval.'
+
+// Who serves a call and under which server, so an approval prompt can offer
+// to trust the whole server. Resolved once when the call arrives and carried
+// to the approval, the running timer and execution, so a grant keyed as MCP
+// never runs a contributed tool of the same name. A name both claim is the
+// extension's.
+type ToolOrigin = ReturnType<typeof toolOriginOf>
+function toolOriginOf(toolName: string) {
+  const extensionTool = extensionToolOf(toolName)
+  if (extensionTool) {
+    return {
+      origin: 'extension' as const,
+      server: extensionTool.server,
+      extensionTool,
+      mcpGeneration: undefined,
+    }
+  }
+  const mcpTool = useAppState
+    .getState()
+    .tools.find((tool) => tool.name === toolName)
+  return {
+    origin: 'mcp' as const,
+    server: mcpTool?.server,
+    extensionTool: undefined,
+    // The connection that listed the tool. The call carries it, so a server
+    // restarted between the call arriving and it running refuses it rather
+    // than the new process running a call it never offered.
+    mcpGeneration: mcpTool?.generation,
+  }
+}
+
+// The contributed tool a call names, by its wire name. Read per call, so a
+// tool whose extension stopped since the model was offered it is not found.
+function extensionToolOf(toolName: string) {
+  return useAppState
+    .getState()
+    .extensionTools.find((tool) => tool.wireName === toolName)
 }
 
 // The model a thread's turn runs on. A turn can finish in the background while
@@ -277,31 +375,91 @@ function turnModelOf(threadId: string) {
   )
 }
 
-// How a call to a chat agent tool name is served. The switch is enforced where
-// the command would run, not only where the tool is offered: a call can still
-// arrive from replayed history or from a turn in flight when it flips. Such a
-// call is refused outright, before any approval prompt, because a prompt for a
-// tool the user turned off could save a permission for it. With the switch off
-// the built-in is not offered, so an MCP tool of the same name is the user's
-// own: it is served as an MCP tool and prompts like any other.
-function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
-  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
-  if (useChatShell.getState().shellEnabled) return 'builtin'
+// How a call to a built-in chat agent tool name is served. The shell switch and
+// the attached folder are enforced where the command would run, not only where
+// the tool is offered: a call can still arrive from replayed history or from a
+// turn in flight when they change. Such a call is refused outright, before any
+// approval prompt, because a prompt for a tool the user turned off could save a
+// permission for it. When the built-in is not offered, an MCP tool of the same
+// name is the user's own: it is served as an MCP tool and prompts like any
+// other.
+function chatAgentRoute(
+  toolName: string,
+  threadId: string
+): 'builtin' | 'disabled' | 'other' {
+  let offered: boolean
+  if (CHAT_FOLDER_TOOL_NAMES.has(toolName)) {
+    offered = chatFolderOf(threadId) !== null
+  } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+    offered = useChatShell.getState().shellEnabled
+  } else {
+    return 'other'
+  }
+  if (offered) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
 
-function isDisabledChatAgentTool(toolName: string): boolean {
-  return chatShellRoute(toolName) === 'disabled'
+function disabledChatAgentToolError(
+  toolName: string,
+  threadId: string
+): string | null {
+  if (chatAgentRoute(toolName, threadId) !== 'disabled') return null
+  return CHAT_FOLDER_TOOL_NAMES.has(toolName)
+    ? NO_FOLDER_TOOL_ERROR
+    : SHELL_DISABLED_TOOL_ERROR
+}
+
+// How a call to a built-in web tool name is served. Same contract as the shell:
+// while web search is on the built-in is what was offered, so it serves the
+// call; while it is off nothing is offered, so an MCP tool of the same name is
+// the user's own and is served as an MCP tool (it prompts like any other); with
+// no such MCP tool the call is refused instead of reaching the search provider
+// the user switched off.
+function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
+  return webToolRoute(
+    toolName,
+    useWebSearchConfig.getState().webSearchEnabled,
+    useAppState.getState().mcpToolNames
+  )
 }
 
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
-// the built-in shell is gated in Rust (execute_tool refuses anything needing
-// approval), so only workspace-confined calls ever reach here.
-function isAutoAllowedTool(toolName: string): boolean {
+// the built-in tools are gated in Rust (execute_tool refuses anything needing
+// approval), so only workspace-confined calls ever reach here. Two exceptions
+// ask. The web tools on a turn an extension's provider serves: there the model
+// is the extension's, and a free `web_fetch` would reach any host its network
+// grants leave out. And with a folder attached, every call that can change it
+// (write, edit, shell): the folder is the user's own files, not a scratch space.
+function isAutoAllowedTool(toolName: string, threadId: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
-    WEB_TOOL_NAMES.has(toolName) ||
-    chatShellRoute(toolName) === 'builtin'
+    (webRoute(toolName) === 'builtin' && !turnOnExtensionProvider(threadId)) ||
+    (chatAgentRoute(toolName, threadId) === 'builtin' &&
+      !chatToolNeedsApproval(toolName, threadId))
+  )
+}
+
+// Asked for on its own, with neither "allow all MCP" nor a saved grant covering
+// it: every call the model an extension serves makes, and a built-in call that
+// changes the attached folder (no "allow always" for writing the user's files).
+// Rust refuses such a built-in call unless this one call was approved.
+function approvalOptions(
+  threadId: string,
+  toolName: string,
+  origin: ToolOrigin['origin']
+): ApprovalOptions {
+  if (chatAgentRoute(toolName, threadId) === 'builtin') {
+    return { strict: true, origin: 'builtin' }
+  }
+  return turnOnExtensionProvider(threadId)
+    ? { strict: true, origin }
+    : { origin }
+}
+
+function turnOnExtensionProvider(threadId: string): boolean {
+  const providerName = turnModelOf(threadId).selectedProvider
+  return Boolean(
+    useModelProvider.getState().getProviderByName(providerName)?.source
   )
 }
 
@@ -334,9 +492,80 @@ type SearchParams = {
   threadModel?: ThreadModel
 }
 
+/**
+ * Route-local error screen. A classification failure (the conversation backend
+ * never answered within the startup retry window) is recoverable: Retry re-runs
+ * `beforeLoad` via router.invalidate(), so the deep link is not stranded on the
+ * root GlobalError, which only offers a full reload. Any other error keeps the
+ * root boundary's presentation.
+ */
+function ThreadRouteError({ error }: { error: Error }) {
+  const router = useRouter()
+  const { t } = useTranslation()
+  if (error instanceof ThreadClassificationUnavailableError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-5">
+        <div className="max-w-md text-center">
+          <IconAlertCircle className="mx-auto size-8 text-destructive" />
+          <h2 className="mt-3 text-base font-semibold text-main-view-fg">
+            {t('common:threadRoute.notReadyTitle')}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('common:threadRoute.notReadyDescription')}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => void router.invalidate()}
+          >
+            <IconRefresh className="size-4 mr-2" />
+            {t('common:threadRoute.retry')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return <GlobalError error={error} />
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
+  // A Cowork conversation runs on the Cowork runner and its transcript has a
+  // sidecar authority: mounting the writable chat view over it would fork the
+  // transcript into messages.jsonl. Decide before the chat view mounts.
+  beforeLoad: async ({ params }) => {
+    const { threadId } = params as { threadId: string }
+    let thread: Thread | undefined = useThreads.getState().threads[threadId]
+    // A deep link can load before the threads store hydrates, so a Cowork
+    // thread would look like a chat. Look it up from the backend (bounded
+    // retries, store re-read around every await; nothing fetched is written
+    // back). An undecidable thread throws a typed error, rendered as Retry,
+    // instead of mounting a writable chat. The temporary chat is never stored.
+    if (!thread && threadId !== TEMPORARY_CHAT_ID) {
+      thread = await resolveThreadForRoute<Thread>({
+        threadId,
+        readThread: () => useThreads.getState().threads[threadId],
+        fetchThreads: () => getServiceHub().threads().fetchThreads(),
+        isHydrated: () => useThreads.getState().threadsHydrated,
+      })
+    }
+    if (
+      shouldRedirectThreadToCowork(
+        threadId,
+        useCoworkSessions.getState().sessions,
+        thread
+      )
+    ) {
+      throw redirect({
+        to: '/cowork/$sessionId',
+        params: { sessionId: threadId },
+        replace: true,
+      })
+    }
+  },
   component: ThreadDetail,
+  errorComponent: ThreadRouteError,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     return {
       threadModel: search.threadModel as ThreadModel | undefined,
@@ -359,6 +588,16 @@ function ThreadDetail() {
   const currentThread = useRef<string | undefined>(undefined)
 
   useTools()
+  const chatFolder = useChatFolder(threadId)
+  const taskRouter = useRouter()
+  const [continueAsTaskOpen, setContinueAsTaskOpen] = useState(false)
+  const continueAsTask = useCallback(async () => {
+    await continueChatAsTask(threadId)
+    void taskRouter.navigate({
+      to: route.coworkSession,
+      params: { sessionId: threadId },
+    } as never)
+  }, [threadId, taskRouter])
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -535,13 +774,10 @@ function ThreadDetail() {
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
-          // button — auto-increase was removed; the user explicitly opts in.
-          const partialText = message.parts
-            .filter((p) => p.type === 'text')
-            .map((p) => (p as { type: 'text'; text: string }).text)
-            .join('')
-          if (partialText) {
-            pendingContinuations.set(threadId, { message, text: partialText })
+          // button - auto-increase was removed; the user explicitly opts in.
+          const content = partialOf(message)
+          if (content.text || content.reasoning) {
+            pendingContinuations.set(threadId, { message, content })
           }
           // Stamped on the thread's own messages, so a thread that finished in
           // the background shows the banner when the user returns to it.
@@ -549,10 +785,11 @@ function ThreadDetail() {
           if (openThreadIdRef.current === threadId) {
             setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
           }
-          return
+          // Falls through to store the partial as a stopped reply: returning
+          // here dropped everything the model had generated.
         }
-        // Non-context-limit length truncation: fall through and persist the
-        // partial marked as stopped so the "Continue" button can resume it.
+        // Any other length stop is the output-token cap: the partial is stored
+        // as stopped so the "Continue" button can resume it.
       }
 
       if (!isAbort && message.parts.length) clearPendingContinue(threadId)
@@ -795,26 +1032,40 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            if (isDisabledChatAgentTool(toolName)) {
+            if (webRoute(toolName) === 'disabled') {
               record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: SHELL_DISABLED_TOOL_ERROR,
+                errorText: WEB_DISABLED_TOOL_ERROR,
               })
               continue
             }
 
-            const approved = isAutoAllowedTool(toolName)
+            const disabledError = disabledChatAgentToolError(toolName, threadId)
+            if (disabledError) {
+              record({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: disabledError,
+              })
+              continue
+            }
+
+            const pending = approvalsOf(threadId).get(toolCall.toolCallId)
+            const origin = pending?.origin ?? toolOriginOf(toolName)
+            const approved = isAutoAllowedTool(toolName, threadId)
               ? true
-              : await (approvalsOf(threadId).get(toolCall.toolCallId) ??
+              : await (pending?.approved ??
                   useToolApprovalRequests
                     .getState()
                     .requestApproval(
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      serverForTool(toolName)
+                      origin.server,
+                      approvalOptions(threadId, toolName, origin.origin)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -836,11 +1087,23 @@ function ThreadDetail() {
               continue
             }
 
+            // Re-resolved only to compare: running either tool now would act
+            // on a grant given for the other.
+            if (toolOriginOf(toolName).origin !== origin.origin) {
+              record({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: ORIGIN_CHANGED_TOOL_ERROR,
+              })
+              continue
+            }
+
             // Timed from here, not from approval, so a long approval wait is
             // not reported as the tool being slow.
             useToolCallRuntime
               .getState()
-              .markRunning(toolCall.toolCallId, serverForTool(toolName))
+              .markRunning(toolCall.toolCallId, origin.server)
 
             // A tool result is injected into conversation history verbatim, so a
             // page-sized one can exhaust the context on its own. This is the
@@ -856,18 +1119,25 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
-                if (WEB_TOOL_NAMES.has(toolName)) {
+                const { extensionTool } = origin
+                if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
-                } else if (chatShellRoute(toolName) === 'builtin') {
+                } else if (chatAgentRoute(toolName, threadId) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.
                   const agentResult = await executeAgentTool(
                     toolName,
                     toolCall.input,
-                    threadId
+                    threadId,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    toolCall.toolCallId
                   )
                   // The diff is display-only, so it goes to the runtime store
                   // rather than into `result`: anything in `result` reaches the
@@ -888,14 +1158,41 @@ function ThreadDetail() {
                     projectId: projectId,
                     scope: projectId ? 'project' : 'thread',
                   })
+                } else if (extensionTool) {
+                  // Contributed tools always prompt (they are never in
+                  // isAutoAllowedTool); Stop cancels the call in the
+                  // extension's worker, not only here. The extension host
+                  // runs it, so the approval is used up here, as Rust uses
+                  // up the ones for the calls it runs.
+                  await consentConsume(
+                    threadId,
+                    toolCall.toolCallId,
+                    toolName,
+                    origin.server,
+                    'extension'
+                  )
+                  return await getExtensionHost().callTool(
+                    extensionTool.extensionId,
+                    extensionTool.name,
+                    toolCall.input,
+                    {
+                      signal: stopSignal,
+                      maxOutputChars,
+                      generation: extensionTool.generation,
+                    }
+                  )
                 } else if (mcpToolNames.has(toolName)) {
                   // Give the backend the budget scaled to the window; it narrows
                   // that against the user's configured ceiling. Cancellable, so
                   // Stop ends the call on the backend as well as in this loop.
                   const call = serviceHub.mcp().callToolWithCancellation({
                     toolName,
+                    serverName: origin.server,
+                    serverGeneration: origin.mcpGeneration,
                     arguments: toolCall.input,
                     maxOutputChars,
+                    threadId,
+                    callId: toolCall.toolCallId,
                   })
                   const cancel = () => void call.cancel().catch(() => {})
                   stopSignal.addEventListener('abort', cancel, { once: true })
@@ -934,7 +1231,7 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${JSON.stringify(error)}`,
+                errorText: `Error: ${normalizeAppError(error)}`,
               })
             }
           } finally {
@@ -1056,21 +1353,24 @@ function ThreadDetail() {
       // never prompt (see isAutoAllowedTool).
       sessionData.tools.push(toolCall)
       if (
-        !isAutoAllowedTool(toolCall.toolName) &&
-        !isDisabledChatAgentTool(toolCall.toolName) &&
+        !isAutoAllowedTool(toolCall.toolName, threadId) &&
+        !disabledChatAgentToolError(toolCall.toolName, threadId) &&
+        webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
-        approvalsOf(threadId).set(
-          toolCall.toolCallId,
-          useToolApprovalRequests
+        const origin = toolOriginOf(toolCall.toolName)
+        approvalsOf(threadId).set(toolCall.toolCallId, {
+          approved: useToolApprovalRequests
             .getState()
             .requestApproval(
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              serverForTool(toolCall.toolName)
-            )
-        )
+              origin.server,
+              approvalOptions(threadId, toolCall.toolName, origin.origin)
+            ),
+          origin,
+        })
       }
     },
     sendAutomaticallyWhen: followUpMessage,
@@ -1151,11 +1451,12 @@ function ThreadDetail() {
       const projectId = thread?.metadata?.project?.id
       if (projectId) {
         try {
-          const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-            ExtensionTypeEnum.VectorDB
+          const vectorDB = getExtensionHost().services.get(
+            ServiceKeys.VectorDB
           )
-          if (ext?.listAttachmentsForProject) {
-            const projectFiles = await ext.listAttachmentsForProject(projectId)
+          if (vectorDB) {
+            const projectFiles =
+              await vectorDB.listAttachmentsForProject(projectId)
             hasProjectDocuments = projectFiles.length > 0
           }
         } catch (error) {
@@ -1538,11 +1839,6 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
-            const toolApproval = useToolApproval.getState()
-            const ragTools = useAppState.getState().ragToolNames
-            for (const toolName of ragTools) {
-              toolApproval.approveToolForThread(threadId, toolName)
-            }
             // Merge into the thread's metadata as it is now, not as it was at
             // send: replacing it drops `metadata.project` and detaches the
             // thread from its project, and a stale copy reverts a project move
@@ -1908,15 +2204,9 @@ function ThreadDetail() {
     (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
-      const collect = (type: 'text' | 'reasoning') =>
-        msg.parts
-          .filter((p) => p.type === type)
-          .map((p) => (p as { text: string }).text)
-          .join('')
-      const text = collect('text')
-      const reasoning = collect('reasoning')
-      if (!text && !reasoning) return
-      setContinueFromContent({ text, reasoning })
+      const partial = partialOf(msg)
+      if (!partial.text && !partial.reasoning) return
+      setContinueFromContent(partial)
       continueReplaceIds.set(threadId, messageId)
       handleRegenerate(messageId)
     },
@@ -1982,6 +2272,21 @@ function ThreadDetail() {
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
 
+    // The reply this click resumes if the turn that stopped is not in
+    // pendingContinuations (a restart empties it): the stored partial, marked
+    // `stopped`, that hydration restored. Read before the awaits below, while
+    // the open thread is still this one.
+    const lastMessage = chatMessagesRef.current.at(-1)
+    const stoppedPartial =
+      lastMessage?.role === 'assistant' &&
+      (lastMessage.metadata as { stopped?: boolean } | undefined)?.stopped
+        ? { message: lastMessage, content: partialOf(lastMessage) }
+        : undefined
+    const storedPartial =
+      stoppedPartial?.content.text || stoppedPartial?.content.reasoning
+        ? stoppedPartial
+        : undefined
+
     const updateProvider = useModelProvider.getState().updateProvider
     const provider = getProviderByName(selectedProvider)
     if (!provider) return
@@ -1994,8 +2299,12 @@ function ThreadDetail() {
     const model = provider.models[modelIndex]
 
     // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
+    // An empty ctx_len is left to fit, so the window to grow from is the one
+    // the model launched with, not a guess that could be below it.
     const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+      readCtxLen(model.settings?.ctx_len?.controller_props?.value) ??
+      launchedCtxLens.get(threadId) ??
+      8192
     const maxCtxLen =
       (model.settings?.ctx_len?.controller_props?.max as number) || 131072
 
@@ -2058,21 +2367,27 @@ function ThreadDetail() {
       await serviceHub.models().stopModel(selectedModel.id)
     }
 
-    // Consume any pending partial captured at the `finishReason === 'length'`
-    // event so the regenerate resumes from where the stream stopped, and the
-    // "Growing the Mind…" shimmer renders while the model reloads.
+    // Resume from the partial the reply stopped at: the one captured at the
+    // `finishReason === 'length'` event, or, when none was (the Map is empty
+    // after an application restart), the stored reply read above. The
+    // regenerate then continues it, and the "Growing the Mind…" shimmer renders
+    // while the model reloads.
     // The prefill goes on this thread's own transport: the user may have
     // opened another thread while the model reloaded.
-    const pending = takeFrom(pendingContinuations, threadId)
+    const pending =
+      takeFrom(pendingContinuations, threadId) ?? storedPartial
     if (pending) {
       useChatSessions
         .getState()
-        .sessions[threadId]?.transport.setContinueFromContent(pending.text)
+        .sessions[threadId]?.transport.setContinueFromContent(pending.content)
       setPendingContinue({ threadId, message: pending.message })
+      // The partial is stored (see onFinish), so the resumed reply replaces it
+      // in place rather than forking a second version of the same answer.
+      continueReplaceIds.set(threadId, pending.message.id)
     }
 
     setTimeout(() => {
-      handleRegenerate()
+      handleRegenerate(pending?.message.id)
     }, 1000)
   }, [
     selectedModel,
@@ -2173,6 +2488,29 @@ function ThreadDetail() {
       return
     }
     useMessageErrors.getState().setError(targetId, errMessage)
+    const reportTarget = targetId
+    // The turn's own model, not the one selected by the time anyone reads
+    // this: the check offered from the message has to be about the model
+    // that actually failed.
+    const failedTurn = turnModelOf(threadId)
+    const failedModel =
+      failedTurn.selectedProvider === 'llamacpp'
+        ? failedTurn.selectedModel?.id
+        : undefined
+    void buildLoadDiagnosticsReport(error)
+      .then((report) => {
+        // Only if this is still the error on screen: a second failure on the
+        // same message must not be handed the previous one's report, and one
+        // that resolves after `clearError` must not put it back.
+        if (!report) return
+        if (useMessageErrors.getState().errors[reportTarget] !== errMessage) {
+          return
+        }
+        useMessageErrors.getState().setReport(reportTarget, report, failedModel)
+      })
+      .catch((e) =>
+        console.warn('could not build the load diagnostics report:', e)
+      )
     const tm = useMessages.getState().getMessages(threadId).find(
       (m) => m.id === targetId
     )
@@ -2234,7 +2572,10 @@ function ThreadDetail() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
+          <ConversationHeaderTitle
+            title={thread?.title}
+            project={thread?.metadata?.project}
+          />
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -2248,18 +2589,19 @@ function ThreadDetail() {
           }
         >
           <Conversation className="absolute inset-0 text-start">
-            <ConversationContent
-              className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
-            >
+            <ConversationContent column className="pb-4">
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
-                // A banner error stands in for the failed assistant turn:
-                // regenerate/reload restarts it from scratch, so hide the
-                // partial (tool calls, "Worked for Ns") and show only the banner.
+                // An out-of-memory or backend error stands in for the failed
+                // assistant turn: regenerate/reload restarts it from scratch, so
+                // hide the partial (tool calls, "Worked for Ns") and show only
+                // the banner. A context-limit stop keeps its partial: that text
+                // was generated and stored, and the banner only offers a bigger
+                // context to resume it.
                 if (
                   isLastMessage &&
-                  hasBannerError &&
+                  (oomError || backendError) &&
                   message.role === 'assistant'
                 )
                   return null
@@ -2282,6 +2624,7 @@ function ThreadDetail() {
                     onSwitchVersion={handleSwitchVersion}
                     isAnimating={!pendingContinueMessage}
                     hideActions={!!pendingContinueMessage}
+                    threadId={threadId}
                   />
                 )
               })}
@@ -2395,16 +2738,48 @@ function ThreadDetail() {
           </Conversation>
         </div>
 
-        {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+        {/* Chat Input - Fixed at bottom. No top padding: the scroll area (and
+            its fade) runs right up to the composer, with the resting gap kept
+            inside the scroll content as pb-4. */}
+        <ConversationColumn reserveScrollGutter className="pb-4">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
             onStop={handleStop}
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
+            menuWorkspace={
+              chatFolder.available ? (
+                <CoworkComposerMenu
+                  onAttachFolder={chatFolder.folder ? undefined : chatFolder.attach}
+                  onContinueAsTask={
+                    chatMessages.length > 0 &&
+                    effectiveStatus === 'ready' &&
+                    !toolsRunning
+                      ? () => setContinueAsTaskOpen(true)
+                      : undefined
+                  }
+                />
+              ) : undefined
+            }
+            surfaceControls={
+              chatFolder.folder ? (
+                <CoworkWorkspacePill
+                  folder={chatFolder.folder}
+                  onAttach={chatFolder.attach}
+                  onDetach={chatFolder.detach}
+                  footnote={t('common:workspace.chatFootnote')}
+                />
+              ) : undefined
+            }
           />
-        </div>
+          <ContinueAsTaskDialog
+            open={continueAsTaskOpen}
+            onOpenChange={setContinueAsTaskOpen}
+            folder={chatFolder.folder}
+            onConfirm={continueAsTask}
+          />
+        </ConversationColumn>
       </div>
     </div>
   )

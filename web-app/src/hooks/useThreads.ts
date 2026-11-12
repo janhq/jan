@@ -1,19 +1,33 @@
 import { create } from 'zustand'
+import { toast } from 'sonner'
+import { i18n } from '@/i18n/react-i18next-compat'
 import { ulid } from 'ulidx'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { ServiceKeys } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 import { cleanupThreadWorkspace } from '@/lib/agentTools'
+import { isCoworkThread } from '@/lib/threadMode'
+import { forgetMessageWrites } from '@/hooks/useMessages'
+import {
+  deleteCoworkConversation,
+  hasCoworkSession,
+} from '@/lib/coworkDelete'
+import { consentCancelThread } from '@janhq/tauri-plugin-agent-tools-api'
 
 type ThreadState = {
   threads: Record<string, Thread>
   isLoadingThreads: boolean
   setThreadsLoading: (loading: boolean) => void
+  /** Set once a thread listing succeeded (an empty one counts). Unlike
+   * `isLoadingThreads` it is never set by the retry-exhaustion path, so it
+   * means "the list is real", not "we stopped waiting". */
+  threadsHydrated: boolean
+  markThreadsHydrated: () => void
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
@@ -31,13 +45,31 @@ type ThreadState = {
     title?: string,
     assistant?: Assistant,
     projectMetadata?: { id: string; name: string; updated_at: number },
-    isTemporary?: boolean
+    isTemporary?: boolean,
+    /** A folder the conversation starts with; saved with the thread itself. */
+    folder?: string
   ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
-  updateCurrentThreadAssistant: (assistant: Assistant) => void
+  updateCurrentThreadAssistant: (assistant: Assistant | undefined) => void
+  /**
+   * Persist new sampling parameters on one thread's assistant. Resolves to the
+   * saved assistant, or undefined when the thread's assistant changed (identity)
+   * before or during the write, so a stale save never overwrites a newer choice.
+   */
+  updateThreadAssistantIfUnchanged: (
+    threadId: string,
+    expected: Assistant,
+    parameters: Record<string, unknown>
+  ) => Promise<Assistant | undefined>
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
+  /**
+   * Attach a folder to a chat thread, or detach it with `null`. Resolves once
+   * the record is on disk, because that record is what the tools read when
+   * they run: a send right after attaching must find the folder there.
+   */
+  setThreadFolder: (threadId: string, folder: string | null) => Promise<void>
   deleteAllThreadsByProject: (projectId: string) => void
   searchIndex: Fzf<Thread[]> | null
 }
@@ -45,12 +77,9 @@ type ThreadState = {
 // Helper function to clean up vector DB collection for a thread
 const cleanupVectorDB = async (threadId: string) => {
   try {
-    const vec = ExtensionManager.getInstance().get<VectorDBExtension>(
-      ExtensionTypeEnum.VectorDB
+    await getExtensionHost().services.get(ServiceKeys.VectorDB)?.deleteCollection(
+      `attachments_${threadId}`
     )
-    if (vec?.deleteCollection) {
-      await vec.deleteCollection(`attachments_${threadId}`)
-    }
   } catch (e) {
     console.warn(
       `[Threads] Failed to delete vector DB collection for thread ${threadId}:`,
@@ -91,10 +120,54 @@ const cleanupThreadArtifacts = (threadId: string) => {
   cleanupThreadWorkspace(threadId)
 }
 
+/**
+ * What the sidebar's Delete All removes: plain chats only. Favorites, anything
+ * with project metadata (even a project that no longer exists, so no data is
+ * lost to a dangling reference) and Cowork threads are kept.
+ */
+export const isDeletedByDeleteAll = (thread: Thread): boolean =>
+  !thread.isFavorite && !thread.metadata?.project && !isCoworkThread(thread)
+
+/**
+ * The deletion of one thread plus its out-of-store artifacts. A Cowork thread
+ * that is live in the session store is deleted through that store (see
+ * `deleteCoworkConversation`), which journals it, removes the thread and
+ * reclaims the sandbox itself; everything else goes straight to the thread
+ * service.
+ */
+const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) => {
+  forgetMessageWrites(threadId)
+  // Grants given for this conversation end with it.
+  void consentCancelThread(threadId, true).catch(() => {})
+  if (isCoworkThread(thread) && hasCoworkSession(threadId)) {
+    deleteCoworkConversation(threadId)
+    return
+  }
+  // The row is already gone from the list; when the files stay behind the
+  // conversation comes back on restart, so the user is told now and its
+  // artifacts are kept for it.
+  void getServiceHub()
+    .threads()
+    .deleteThread(threadId)
+    .then(
+      () => cleanupThreadArtifacts(threadId),
+      (error) => {
+        console.error(`Could not delete thread ${threadId}:`, error)
+        // Same id as the dialog's "deleted" toast, so this replaces it.
+        toast.error(i18n.t('common:deleteThreadFailed'), {
+          id: 'delete-thread',
+          description: String(error),
+        })
+      }
+    )
+}
+
 export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   isLoadingThreads: true,
   setThreadsLoading: (loading) => set({ isLoadingThreads: loading }),
+  threadsHydrated: false,
+  markThreadsHydrated: () => set({ threadsHydrated: true }),
   searchIndex: null,
   setThreads: (threads) => {
     const threadMap = threads.reduce(
@@ -197,8 +270,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
-      cleanupThreadArtifacts(threadId)
-      getServiceHub().threads().deleteThread(threadId)
+      deleteThreadEverywhere(threadId, state.threads[threadId])
 
       return {
         threads: remainingThreads,
@@ -217,18 +289,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
-      // Identify threads to keep (favorites OR have project metadata)
+      // Threads to keep: everything Delete All does not delete (favorites,
+      // project threads and Cowork conversations).
       const threadsToKeepIds = allThreadIds.filter(
-        (threadId) =>
-          state.threads[threadId].isFavorite ||
-          state.threads[threadId].metadata?.project
+        (threadId) => !isDeletedByDeleteAll(state.threads[threadId])
       )
-
-      // Identify threads to delete (non-favorites AND no project metadata)
-      const threadsToDeleteIds = allThreadIds.filter(
-        (threadId) =>
-          !state.threads[threadId].isFavorite &&
-          !state.threads[threadId].metadata?.project
+      const threadsToDeleteIds = allThreadIds.filter((threadId) =>
+        isDeletedByDeleteAll(state.threads[threadId])
       )
 
       // Delete threads and clean up their out-of-store artifacts. As in
@@ -238,8 +305,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadEverywhere(threadId, state.threads[threadId])
       })
 
       // Keep favorite threads and threads with project metadata
@@ -272,8 +338,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadEverywhere(threadId, state.threads[threadId])
       })
 
       return {
@@ -298,8 +363,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       threadsToDeleteIds.forEach((threadId) => {
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadEverywhere(threadId, state.threads[threadId])
       })
 
       // Keep threads that don't belong to this project
@@ -355,7 +419,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     title,
     assistant,
     projectMetadata,
-    isTemporary
+    isTemporary,
+    folder
   ) => {
     const newThread: Thread = {
       id: isTemporary ? TEMPORARY_CHAT_ID : ulid(),
@@ -363,10 +428,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       model,
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
-      ...(projectMetadata &&
+      ...((projectMetadata || folder) &&
         !isTemporary && {
           metadata: {
-            project: projectMetadata,
+            ...(projectMetadata && { project: projectMetadata }),
+            // Same shape setThreadFolder writes, in the record that creates
+            // the thread, so it never exists without the folder it began with.
+            ...(folder && { folder, folderAccess: 'write' }),
           },
         }),
       ...(isTemporary && {
@@ -396,6 +464,27 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         })
         return createdThread
       })
+  },
+  // Sampling saves must never resolve "current thread" after an await. The
+  // object identity also guards a newer selection of the same assistant ID.
+  updateThreadAssistantIfUnchanged: async (threadId, expected, parameters) => {
+    const thread = get().threads[threadId]
+    if (thread?.assistants?.[0] !== expected) return undefined
+    const assistant = { ...expected, parameters, model: thread.model }
+    const updatedThread = {
+      ...thread,
+      assistants: [assistant],
+      updated: Date.now() / 1000,
+    }
+    await getServiceHub().threads().updateThread(updatedThread)
+    if (get().threads[threadId]?.assistants?.[0] !== expected) return undefined
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [threadId]: { ...state.threads[threadId], assistants: [assistant] },
+      },
+    }))
+    return assistant
   },
   updateCurrentThreadAssistant: (assistant) => {
     set((state) => {
@@ -521,6 +610,34 @@ export const useThreads = create<ThreadState>()((set, get) => ({
             selector: (item: Thread) => item.title ?? '',
           }
         ),
+      }
+    })
+  },
+  setThreadFolder: async (threadId, folder) => {
+    const thread = get().threads[threadId]
+    if (!thread) return
+    const metadata = { ...thread.metadata }
+    if (folder) {
+      metadata.folder = folder
+      metadata.folderAccess = 'write'
+    } else {
+      delete metadata.folder
+      delete metadata.folderAccess
+    }
+    await getServiceHub()
+      .threads()
+      .updateThread({ ...thread, metadata, updated: Date.now() / 1000 })
+    // Applied onto the thread as it is now: other metadata may have changed
+    // while the write was in flight.
+    set((state) => {
+      const current = state.threads[threadId]
+      if (!current) return state
+      const next = { ...current.metadata }
+      delete next.folder
+      delete next.folderAccess
+      if (folder) Object.assign(next, { folder, folderAccess: 'write' })
+      return {
+        threads: { ...state.threads, [threadId]: { ...current, metadata: next } },
       }
     })
   },

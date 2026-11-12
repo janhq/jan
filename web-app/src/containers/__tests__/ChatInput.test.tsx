@@ -64,7 +64,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: (selector: any) =>
     selector({
       spellCheckChatInput: false,
-      tokenCounterCompact: false,
     }),
 }))
 
@@ -225,20 +224,8 @@ vi.mock('@/stores/message-queue-store', () => ({
   useMessageQueue: useMessageQueueImpl,
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => undefined,
-      getByName: () => undefined,
-      listExtensions: () => [],
-    }),
-  },
-}))
-
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { MCP: 'mcp', VectorDB: 'vectordb' },
-  MCPExtension: class {},
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
   fs: {
     existsSync: vi.fn().mockResolvedValue(false),
     readFile: vi.fn().mockResolvedValue(''),
@@ -274,9 +261,6 @@ vi.mock('@/containers/DropdownToolsAvailable', () => ({
 vi.mock('@/containers/AvatarEmoji', () => ({
   AvatarEmoji: () => <span data-testid="stub-avatar" />,
 }))
-vi.mock('@/containers/McpExtensionToolLoader', () => ({
-  McpExtensionToolLoader: () => null,
-}))
 vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
   __esModule: true,
   default: () => null,
@@ -287,8 +271,18 @@ vi.mock('@/containers/MovingBorder', () => ({
 vi.mock('@/components/TokenCounter', () => ({
   TokenCounter: () => <div data-testid="stub-token-counter" />,
 }))
+// Model selection/effort is covered by ComposerModelPicker's own suite.
+vi.mock('@/containers/ComposerModelPicker', () => ({
+  default: ({ className }: { className?: string }) => (
+    <button aria-label="Select model" className={className}>
+      Model
+    </button>
+  ),
+}))
 vi.mock('@/components/AssistantsMenu', () => ({
-  AssistantsMenu: () => <div data-testid="stub-assistants-menu" />,
+  AssistantsMenu: ({ selectedAssistant }: any) => (
+    <div data-testid="stub-assistants-menu">{selectedAssistant}</div>
+  ),
 }))
 
 // Minimal dropdown/tooltip stubs (pass-throughs to keep DOM shallow)
@@ -304,6 +298,11 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     ),
     DropdownMenuTrigger: Pass,
     DropdownMenuSeparator: () => null,
+    DropdownMenuCheckboxItem: ({ children, onCheckedChange, checked, disabled }: any) => (
+      <button role="menuitemcheckbox" aria-checked={checked} disabled={disabled} onClick={() => onCheckedChange?.(!checked)}>
+        {children}
+      </button>
+    ),
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
@@ -326,6 +325,8 @@ vi.mock('@/lib/platform/utils', () => ({
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
 
 // Helpers -------------------------------------------------------------------
 
@@ -349,7 +350,9 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  updateCurrentThreadAssistantMock.mockClear()
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
+  useWebSearchConfig.setState({ webSearchEnabled: false })
 }
 
 const getTextarea = () =>
@@ -376,9 +379,62 @@ describe('ChatInput', () => {
   it('shows the project assistant for a new conversation', () => {
     renderInput({ projectId: 'project-1', projectAssistantId: 'a2' })
 
-    expect(
-      screen.getByRole('button', { name: 'Switch assistant' })
-    ).toHaveTextContent('Project assistant')
+    // The assistant list now lives in the composer's options menu.
+    expect(screen.getByTestId('stub-assistants-menu')).toHaveTextContent('a2')
+  })
+
+  describe('Cmd/Ctrl+J assistant cycle', () => {
+    const cycle = () =>
+      act(() => {
+        useAssistantSwitcher.getState().cycleHandler?.()
+      })
+
+    it('cycles a1 -> a2 -> None -> a1 on a home composer', () => {
+      renderInput()
+      const shown = () => screen.getByTestId('stub-assistants-menu').textContent
+      expect(shown()).toBe('a1')
+      cycle()
+      expect(shown()).toBe('a2')
+      cycle()
+      expect(shown()).toBe('')
+      cycle()
+      expect(shown()).toBe('a1')
+    })
+
+    it('cycles a1 -> a2 -> None -> a1 on an open thread', () => {
+      const withAssistant = (id?: string) => ({
+        id: 'thread-1',
+        assistants: id ? [{ id }] : [],
+      })
+      getCurrentThreadMock.mockReturnValue(withAssistant('a1') as never)
+      // ChatInput is memoized and takes no thread prop, so a changed store
+      // value only shows after a fresh mount.
+      const remount = (v: ReturnType<typeof renderInput>) => {
+        v.unmount()
+        return renderInput()
+      }
+      let view = renderInput()
+
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'a2' })
+      )
+
+      getCurrentThreadMock.mockReturnValue(withAssistant('a2') as never)
+      view = remount(view)
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        undefined
+      )
+
+      getCurrentThreadMock.mockReturnValue(withAssistant() as never)
+      view = remount(view)
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'a1' })
+      )
+      expect(updateCurrentThreadAssistantMock).toHaveBeenCalledTimes(3)
+    })
   })
 
   it('disables the send button when prompt is empty', () => {
@@ -419,6 +475,15 @@ describe('ChatInput', () => {
     )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  it('keeps the draft when the surface refuses the send', async () => {
+    promptState = 'keep me'
+    const onSubmit = vi.fn(() => 'refused' as const)
+    renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(setPromptMock).not.toHaveBeenCalledWith('')
   })
 
   it('does NOT submit on Shift+Enter (newline behavior)', () => {
@@ -709,8 +774,10 @@ describe('ChatInput', () => {
     // Web access is a global capability both surfaces honour -- Cowork reads
     // the same store when it builds its tool set -- so the toggle travels.
     it('offers the web-search toggle on every surface', () => {
+      useWebSearchConfig.setState({ webSearchEnabled: true })
       renderInput()
-      expect(icons('world-search')).toBe(1)
+      // One menu entry plus the inline shortcut shown while it is on.
+      expect(icons('world-search')).toBe(2)
       renderInput({ ownsToolSet: false })
       expect(icons('world-search')).toBeGreaterThan(0)
     })
@@ -745,6 +812,49 @@ describe('ChatInput', () => {
       const dimmed = document.querySelector('.pointer-events-none')
       expect(dimmed).toBeTruthy()
       expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
+    })
+  })
+
+  describe('menuWorkspace', () => {
+    it('adds the surface-owned workspace entries to the + menu', () => {
+      renderInput({ menuWorkspace: <button>add-folder</button> })
+      expect(screen.getByText('add-folder')).toBeInTheDocument()
+    })
+
+    it('adds nothing when the surface supplies none', () => {
+      renderInput()
+      expect(screen.queryByText('add-folder')).toBeNull()
+    })
+  })
+
+  describe('draftFolder (home composer with a folder)', () => {
+    const submit = () =>
+      fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+
+    it('creates the chat thread with the folder attached, then lets the surface forget it', async () => {
+      promptState = 'work on this'
+      createThreadMock.mockResolvedValue({ id: 'new-thread' })
+      const onDraftFolderUsed = vi.fn()
+      renderInput({
+        onSubmit: undefined,
+        draftFolder: '/home/u/app',
+        onDraftFolderUsed,
+      })
+      submit()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(createThreadMock.mock.calls[0][5]).toBe('/home/u/app')
+      expect(onDraftFolderUsed).toHaveBeenCalledTimes(1)
+    })
+
+    it('creates an ordinary chat thread when there is no folder', async () => {
+      promptState = 'just chat'
+      createThreadMock.mockResolvedValue({ id: 'new-thread' })
+      const onDraftFolderUsed = vi.fn()
+      renderInput({ onSubmit: undefined, draftFolder: null, onDraftFolderUsed })
+      submit()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(createThreadMock.mock.calls[0][5]).toBeUndefined()
+      expect(onDraftFolderUsed).not.toHaveBeenCalled()
     })
   })
 

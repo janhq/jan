@@ -40,9 +40,10 @@ describe('dispatchCoworkTool', () => {
     executeAgentTool.mockResolvedValue({ content: 'ok' })
   })
 
-  // The trailing 'session' is load-bearing: under the default 'thread' scope a
-  // session's files land where the thread sweep's keep-list can never mention
-  // them, and the sweep deletes the only copy of the agent's work.
+  // The scope is load-bearing: a Cowork conversation is a thread, and the
+  // migration copied its sandbox to threads/<id>. Running it under 'session'
+  // would read the stale pre-migration copy and keep the thread sweep from
+  // ever seeing the files the agent writes.
   it('routes built-ins to the Rust plugin with the session as workspace key', async () => {
     const c = ctx()
     await dispatchCoworkTool(call('read', { path: 'a' }), c)
@@ -51,7 +52,7 @@ describe('dispatchCoworkTool', () => {
       { path: 'a' },
       's1',
       null,
-      'session',
+      'thread',
       true,
       true,
       null
@@ -67,7 +68,7 @@ describe('dispatchCoworkTool', () => {
       { command: 'curl x' },
       's1',
       null,
-      'session',
+      'thread',
       true,
       true,
       null
@@ -80,7 +81,7 @@ describe('dispatchCoworkTool', () => {
         { command: 'curl x' },
         's1',
         null,
-        'session',
+        'thread',
         false,
         true,
         null
@@ -114,6 +115,36 @@ describe('dispatchCoworkTool', () => {
     expect(executeAgentTool).toHaveBeenCalled()
   })
 
+  // Plan mode is read-only for memory too: the tool stays advertised for its
+  // reads, so the refusal is per op.
+  it('refuses memory ops that change the store in plan mode', async () => {
+    for (const op of ['write', 'edit', 'delete', 'move']) {
+      const out = await dispatchCoworkTool(
+        call('memory', { op, name: 'n' }),
+        ctx({ planMode: true })
+      )
+      expect(out.isError).toBe(true)
+      expect(out.output).toMatch(/plan mode/)
+      expect(out.output).toMatch(/view/)
+    }
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('still runs memory view and search in plan mode', async () => {
+    for (const op of ['view', 'search']) {
+      await dispatchCoworkTool(
+        call('memory', { op, query: 'q' }),
+        ctx({ planMode: true })
+      )
+    }
+    expect(executeAgentTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('runs memory writes outside plan mode', async () => {
+    await dispatchCoworkTool(call('memory', { op: 'write' }), ctx())
+    expect(executeAgentTool).toHaveBeenCalled()
+  })
+
   // The attached folder is passed twice: as the read-only filesystem root and
   // as the skill-overlay project (last arg), so the folder's skills reach the
   // agent on top of the permanent store (#8879).
@@ -124,7 +155,7 @@ describe('dispatchCoworkTool', () => {
       {},
       's1',
       '/repo',
-      'session',
+      'thread',
       true,
       true,
       '/repo'

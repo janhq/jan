@@ -32,9 +32,14 @@ Every tool maps to one capability, and approval applies at that level rather tha
 
 | Capability | Tools | Default |
 | --- | --- | --- |
-| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `memory_list`, `skill_read`, `skill_list` | Allowed |
-| Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
+| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `skill_read`, `skill_list` | Allowed |
+| Write | `write`, `edit` | Prompts |
 | Exec | `shell` | Prompts |
+
+The agent's own stores never prompt: every `memory` op (view, search, write, edit, move, delete) and
+`skill_write` act only on the agent's notes and skills by name, never on a project file, so they are
+allowed without asking. A `deny` entry in `agent.toml` still removes them, and in plan mode only
+`view` and `search` run. See [Memory](/docs/agent/memory).
 
 So approving `a` on a shell command allows further shell commands, not just that one. That's the
 trade for not being asked twenty times during a test loop - and the reason to prefer `y` when you
@@ -89,6 +94,12 @@ each such `[tools]` entry when a run starts (the desktop app does not read `[too
 surface refuses a subagent whose `allowed_tools` still says `bash`. `jan mcp serve --tool bash`
 says so too.
 
+The memory tools `memory_write`, `memory_read` and `memory_list` are now one tool, `memory`. An old
+name in `allow`, `deny` or a hook matcher keeps applying, to the whole `memory` tool: a
+`deny = ["memory_write"]` now denies every memory op, reads included. The same holds for a broader
+glob that used to catch an old name: `deny = ["*write*"]` still denies `memory`. The `jan` CLI
+reports each such entry when a run starts; rename an old name to `memory`.
+
 ## The shell sandbox
 
 Jan can run shell commands under OS confinement - bubblewrap on Linux, Seatbelt on macOS,
@@ -96,6 +107,21 @@ AppContainer on Windows. Confined, a command can **write** only the project and 
 directory, and reaches the network only if allowed. Reads are looser: the CLI keeps `$HOME` readable
 so `git` and `ssh` credential helpers work (`[tools].allow_home_read`, set it to `false` to close
 that), while the desktop masks it entirely.
+
+The scratch directory is per session, in your OS cache dir: `<cache>/jan/<project>/scratch/<session>`
+(`<cache>` is `~/.cache` on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows; desktop
+chats use `<cache>/jan/chat`). The shell, the file tools and an approved escalated command all see it
+at that same path. It is removed when the session ends; one a crash left behind is removed at a later
+start once it has gone a week without a turn and no running Jan session holds it.
+
+Confined commands in a project also get a package cache, `<cache>/jan/<project>/pkg`, shared by that
+project's sessions and never by another project. `CARGO_HOME`, `npm_config_cache`, `YARN_CACHE_FOLDER`,
+`PIP_CACHE_DIR`, `UV_CACHE_DIR`, `GOCACHE`/`GOMODCACHE`/`GOPATH`, `GRADLE_USER_HOME` and the other
+package-manager caches point inside it, so builds can download dependencies without touching your own
+`~/.cargo`, `~/.npm` and so on. Your `~/.cargo/config.toml` is available read-only there;
+`credentials.toml` and `~/.cargo/bin` are not copied in. Unconfined and escalated commands keep your
+normal environment (an escalated command of a read-only subagent still runs confined, with the
+package cache). Jan does not clean this folder; delete it to reclaim the space.
 
 While the sandbox is on, Jan's own home, `~/.jan`, is hidden from every tool and from the shell,
 even when you run `jan` from your home directory. It holds `config.toml` (provider keys and hooks)

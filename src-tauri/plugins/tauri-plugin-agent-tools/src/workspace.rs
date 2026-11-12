@@ -109,14 +109,43 @@ pub fn path_slug(path: &Path) -> String {
     format!("{name}-{}", path_hash(path))
 }
 
+/// The main checkout a Jan subagent checkout at `top` (a `git clone --shared`
+/// at `<jan home>/worktrees/<slug>/<id>`) borrows its objects from: the
+/// `<main>/.git/objects` its alternates name, canonicalized. `None` for any
+/// other repository.
+///
+/// A writer can rewrite its own alternates, so they are trusted only when they
+/// name the project whose slug the clone was created under; otherwise a kept
+/// checkout could steer later sessions into another project's store.
+fn shared_clone_origin(top: &Path) -> Option<PathBuf> {
+    let worktrees = jan_home()?.join("worktrees");
+    let worktrees = worktrees.canonicalize().unwrap_or(worktrees);
+    let slug_dir = top.parent()?;
+    if slug_dir.parent()? != worktrees {
+        return None;
+    }
+    let raw = std::fs::read_to_string(top.join(".git/objects/info/alternates")).ok()?;
+    let objects = Path::new(raw.lines().next()?.trim());
+    let git = objects.parent()?;
+    if objects.file_name()? != "objects" || git.file_name()? != ".git" {
+        return None;
+    }
+    // The alternates spell `main` however git was handed it (forward slashes
+    // on Windows, an unresolved symlink), and the slug hashes that text.
+    let main = git.parent()?;
+    let main = main.canonicalize().unwrap_or_else(|_| main.to_path_buf());
+    (slug_dir.file_name()? == path_slug(&main).as_str()).then_some(main)
+}
+
 /// The path a project's store is keyed on: the project root, canonicalized,
-/// with a linked git worktree mapped back onto its main checkout.
+/// with a Jan subagent checkout or a linked git worktree mapped back onto its
+/// main checkout.
 ///
 /// Without the mapping, a session running in `~/.jan/worktrees/<slug>/<id>`
 /// would get a fresh, empty store and lose the project's memory, skills and
 /// config. A subdirectory of a worktree maps to the same subdirectory of the
-/// main checkout. Read straight from the `.git` file rather than by running
-/// `git`, because this runs on every store lookup.
+/// main checkout. Read straight from the `.git` file or the alternates rather
+/// than by running `git`, because this runs on every store lookup.
 pub fn project_key(project_root: &Path) -> PathBuf {
     let root = project_root
         .canonicalize()
@@ -124,7 +153,11 @@ pub fn project_key(project_root: &Path) -> PathBuf {
     for top in root.ancestors() {
         let dot_git = top.join(".git");
         if dot_git.is_dir() {
-            return root;
+            return match (shared_clone_origin(top), root.strip_prefix(top)) {
+                (Some(main), Ok(rel)) if rel.as_os_str().is_empty() => main,
+                (Some(main), Ok(rel)) => main.join(rel),
+                _ => root,
+            };
         }
         if !dot_git.is_file() {
             continue;
@@ -201,6 +234,94 @@ pub fn project_meta(store: &Path) -> Option<String> {
     value.get("path")?.as_str().map(str::to_string)
 }
 
+/// The folder under the Jan cache root for sessions with no filesystem
+/// project: desktop chat threads and Cowork sessions.
+const CHAT_CACHE: &str = "chat";
+
+/// `<project cache>/scratch`, the parent of every session scratch.
+const SCRATCH: &str = "scratch";
+
+/// The Jan cache root, `<OS cache dir>/jan` (`$XDG_CACHE_HOME` or `~/.cache`
+/// on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows).
+///
+/// Not the system temp dir: a scratch there is invisible at its own path to
+/// anything outside a sandbox that mounts it elsewhere, and per-project
+/// siblings here keep one project's files out of another's. With no cache dir
+/// at all it falls back to the temp dir so the scratch still works (see
+/// [`temp_cache_root_in`]).
+///
+/// Test builds of this crate resolve a per-process temp directory instead, so
+/// no test writes into the developer's real cache.
+pub fn jan_cache_root() -> PathBuf {
+    #[cfg(test)]
+    {
+        std::env::temp_dir().join(format!("jan-test-cache-{}", std::process::id()))
+    }
+    #[cfg(not(test))]
+    {
+        match dirs::cache_dir() {
+            Some(cache) => cache.join("jan"),
+            None => temp_cache_root_in(&std::env::temp_dir()),
+        }
+    }
+}
+
+/// The cache root under the temp dir `temp`, for a machine with no OS cache
+/// dir (no `HOME`). A shared `/tmp` is writable by every local user, so a
+/// fixed `jan` there could have been made by another user, who would then
+/// see every slug and could swap folders under it. Named per user instead
+/// (`jan-<uid>`), and a name already taken by anything but a directory this
+/// user owns is passed over for the next one. A name planted between this
+/// check and its creation is caught there: [`ensure_scratch_dir_path`]
+/// refuses a directory this user does not own, the root and every other
+/// folder it creates on the way included. Windows keeps a plain `jan`:
+/// its temp dir is already per user.
+pub fn temp_cache_root_in(temp: &Path) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let base = format!("jan-{}", nix::unistd::getuid());
+        let names = std::iter::once(base.clone()).chain((1..16).map(|n| format!("{base}-{n}")));
+        let mut last = temp.join(&base);
+        for name in names {
+            last = temp.join(name);
+            match std::fs::symlink_metadata(&last) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return last,
+                Ok(meta) if meta.is_dir() && owned_by_me(&meta) => return last,
+                _ => {}
+            }
+        }
+        // Every candidate taken: the last one, which the ownership check at
+        // creation refuses, so the scratch fails closed.
+        last
+    }
+    #[cfg(not(unix))]
+    {
+        temp.join("jan")
+    }
+}
+
+/// Whether `meta` (from `symlink_metadata`) belongs to this process's user.
+#[cfg(unix)]
+fn owned_by_me(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.uid() == nix::unistd::getuid().as_raw()
+}
+
+/// A project's folder under `cache_root`: `<cache_root>/<slug>`, with the
+/// same slug as its store (`~/.jan/projects/<slug>`), so the two always name
+/// one project the same way. `<cache_root>/chat` with no project.
+pub fn project_cache_dir_in(cache_root: &Path, project_root: Option<&Path>) -> PathBuf {
+    match project_root {
+        Some(root) => cache_root.join(path_slug(&project_key(root))),
+        None => cache_root.join(CHAT_CACHE),
+    }
+}
+
+/// [`project_cache_dir_in`] under the real [`jan_cache_root`].
+pub fn project_cache_dir(project_root: Option<&Path>) -> PathBuf {
+    project_cache_dir_in(&jan_cache_root(), project_root)
+}
+
 /// Where a project kept its store before the move: `<project_root>/.jan/agent`.
 pub fn legacy_project_store(project_root: &Path) -> PathBuf {
     project_root.join(LEGACY_DIR).join("agent")
@@ -242,18 +363,34 @@ pub fn thread_workspace(jan_data_folder: &Path, thread_id: &str) -> Result<PathB
     Ok(threads_dir(jan_data_folder).join(thread_segment(thread_id)?))
 }
 
-/// Case-folded on Windows, where two spellings of one path are the same path
-/// and a raw `starts_with` would let a rename past the check.
+/// Case-folded on Windows and macOS, whose default filesystems treat two
+/// spellings of one path as the same path, so a raw `starts_with` would let a
+/// different spelling past the check (`canonicalize` keeps the caller's case
+/// on macOS). On macOS the `/System/Volumes/Data` firmlink prefix is dropped
+/// too: `/System/Volumes/Data/Users/u` is `/Users/u`, and `canonicalize`
+/// leaves it as spelled.
 fn containment_key(path: &Path) -> String {
     let raw = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
+    if cfg!(target_os = "macos") {
+        strip_data_volume_prefix(&raw.to_lowercase()).to_string()
+    } else if cfg!(windows) {
         raw.to_lowercase()
     } else {
         raw
     }
 }
 
-fn is_within(inner: &Path, outer: &Path) -> bool {
+/// `key` (already lower-cased) without a leading `/system/volumes/data`.
+fn strip_data_volume_prefix(key: &str) -> &str {
+    const DATA_VOLUME: &str = "/system/volumes/data";
+    match key.strip_prefix(DATA_VOLUME) {
+        Some("") => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => key,
+    }
+}
+
+pub(crate) fn is_within(inner: &Path, outer: &Path) -> bool {
     let (inner, outer) = (containment_key(inner), containment_key(outer));
     inner == outer || inner.starts_with(&format!("{}/", outer.trim_end_matches('/')))
 }
@@ -310,27 +447,180 @@ pub fn validate_read_root(
     Ok(canonical)
 }
 
-/// The session-scoped scratch directory: a subdirectory of the host temp dir
-/// (e.g. `/tmp/jan-agent-<session>` on Linux), where `bash` scratch files
-/// persist across calls for one session and the filesystem tools may write.
-///
-/// Every backend exposes it, but not the same way. Bubblewrap binds it over the
-/// sandbox's `/tmp` -- only this session subdir, not the whole host `/tmp`, so
-/// the shell sees its own scratch and none of the machine's other temp files --
-/// and the tools remap `/tmp/...` back onto it. Seatbelt and AppContainer have
-/// no mount, so it is reached by this real path and made writable by a policy
-/// rule and an ACE respectively. Either way `TMPDIR`/`TMP`/`TEMP` point at it
-/// (see `tools::jail::scratch_env_path`) and it is cleaned up with the session.
-pub fn scratch_dir(session: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("jan-agent-{session}"))
+/// Supplies the Jan data folder the host app is configured with.
+pub type DataFolderResolver = std::sync::Arc<dyn Fn() -> PathBuf + Send + Sync>;
+
+static DATA_FOLDER_RESOLVER: std::sync::OnceLock<DataFolderResolver> = std::sync::OnceLock::new();
+
+/// Install the process-wide data folder source. First call wins, like
+/// `hooks::set_resolver`, so nothing can swap it out later.
+pub fn set_data_folder_resolver(resolver: DataFolderResolver) {
+    let _ = DATA_FOLDER_RESOLVER.set(resolver);
 }
 
-/// Create the session-scoped scratch directory (idempotent) and return it.
-/// Must exist before the Linux sandbox binds it over `/tmp`. The caller owns
-/// its teardown: thread deletion on the desktop, run end on the CLI, and
-/// session end in the TUI.
-pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
-    ensure_scratch_dir_path(&scratch_dir(session)).await
+/// The Jan data folder an IPC command works in.
+///
+/// The commands take a `data_folder` argument, but it only stands in for what
+/// the host already knows: everything containment rests on (the sandbox
+/// location, the mask over settings and keys, the store) is derived from it,
+/// so the host's value wins whenever one is installed. The argument is used
+/// as-is only without a host, as in this crate's tests.
+pub fn host_data_folder(requested: &str) -> PathBuf {
+    pick_data_folder(
+        DATA_FOLDER_RESOLVER.get().map(|resolve| resolve()),
+        requested,
+    )
+}
+
+fn pick_data_folder(host: Option<PathBuf>, requested: &str) -> PathBuf {
+    host.unwrap_or_else(|| PathBuf::from(requested))
+}
+
+/// Home-relative folders an agent must never be handed write access to:
+/// credentials, folders on `PATH`, shell and tool configuration, and the
+/// places that run code at login. The shell rc files themselves sit directly in
+/// the home folder, which is refused as a whole.
+const PROTECTED_HOME_DIRS: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".kube",
+    ".docker",
+    // fish, git, autostart and systemd user units all live here.
+    ".config",
+    // .local/bin is on PATH; .local/share/applications holds launchers.
+    ".local",
+    "bin",
+    ".cargo",
+    ".oh-my-zsh",
+    // Tool shims and global installs on PATH, and editor configuration.
+    ".npm",
+    ".nvm",
+    ".bun",
+    ".deno",
+    ".vscode",
+    "Applications",
+    "Library/LaunchAgents",
+    "Library/Keychains",
+    "Library/Services",
+    "Library/Application Scripts",
+    // Every app's own data and configuration, Jan's included.
+    "Library/Application Support",
+    "AppData/Local/Microsoft/WindowsApps",
+    // Per-user installs, Jan's own on Windows.
+    "AppData/Local/Programs",
+    "AppData/Roaming/Microsoft/Windows/Start Menu",
+];
+
+/// The user's home directory, or `None` when unset or degenerate.
+pub fn user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let raw = std::env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let raw = std::env::var_os("HOME");
+    let home = PathBuf::from(raw?);
+    if home.parent().is_none() || home.as_os_str().is_empty() {
+        return None;
+    }
+    Some(home.canonicalize().unwrap_or(home))
+}
+
+/// Check that an attached folder (already through [`validate_read_root`]) may
+/// also be written.
+///
+/// Refused: the home directory itself or any folder above it, whose top level
+/// holds the shell rc files and profile scripts; any folder inside, or
+/// containing, a [`PROTECTED_HOME_DIRS`] entry (also where that entry is a
+/// symlink); and the Jan data folder or any folder inside it. A writable attach
+/// is the workspace root, writable by the file tools and the sandboxed shell
+/// alike, so these would hand the agent persistence or credentials. Without a
+/// home folder none of this can be checked, so the attach is refused.
+pub fn validate_write_root(
+    root: &Path,
+    home: Option<&Path>,
+    data_folder: &Path,
+) -> Result<(), String> {
+    let Some(home) = home else {
+        return Err(
+            "your home folder could not be determined, so no folder can be attached writable"
+                .to_string(),
+        );
+    };
+    let data = data_folder
+        .canonicalize()
+        .unwrap_or_else(|_| data_folder.to_path_buf());
+    if is_within(root, &data) || is_within(root, data_folder) {
+        return Err(format!(
+            "{} is inside the Jan data folder and cannot be attached writable",
+            root.display()
+        ));
+    }
+    if is_within(home, root) {
+        return Err(format!(
+            "{} contains your home folder and cannot be attached writable; attach a project \
+             folder inside it instead",
+            root.display()
+        ));
+    }
+    for rel in PROTECTED_HOME_DIRS {
+        let protected = home.join(rel);
+        // `root` is canonical, so also compare against where a symlinked
+        // entry really points.
+        let resolved = protected.canonicalize().ok();
+        let overlaps = |p: &Path| is_within(root, p) || is_within(p, root);
+        if overlaps(&protected) || resolved.as_deref().is_some_and(overlaps) {
+            return Err(format!(
+                "{} overlaps {} and cannot be attached writable",
+                root.display(),
+                protected.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The session-scoped scratch directory: `<project cache>/scratch/<session>`,
+/// where `<project cache>` is [`project_cache_dir_in`] (`<cache>/jan/<slug>`,
+/// or `<cache>/jan/chat` for a desktop thread). `bash` scratch files persist
+/// there across calls for one session and the filesystem tools may write it.
+///
+/// Every backend exposes it at this same real path (bubblewrap binds it onto
+/// itself, Seatbelt grants it by rule, AppContainer by ACE), and
+/// `TMPDIR`/`TMP`/`TEMP` name it too. One spelling works inside the sandbox,
+/// in the filesystem tools and in an escalated command that runs unconfined;
+/// a scratch mounted somewhere else inside the sandbox would not exist at that
+/// name outside it.
+///
+/// Pure path arithmetic: `session` is not checked here. Anything that reaches
+/// the filesystem with an id from outside goes through [`ensure_scratch_dir`],
+/// [`remove_scratch_dir`] or [`trash_scratch_dir`], which accept only a valid
+/// [`thread_segment`].
+pub fn scratch_dir_in(project_cache: &Path, session: &str) -> PathBuf {
+    project_cache.join(SCRATCH).join(session)
+}
+
+/// [`scratch_dir_in`] for an id that must first pass [`thread_segment`], so a
+/// separator or a parent-dir component in it can never move the scratch out
+/// of `scratch/`.
+fn checked_scratch_dir(project_cache: &Path, session: &str) -> Result<PathBuf, String> {
+    Ok(scratch_dir_in(project_cache, &thread_segment(session)?))
+}
+
+/// A desktop thread's scratch, `<cache>/jan/chat/scratch/<thread>`, checked.
+fn thread_scratch_dir(thread_id: &str) -> Result<PathBuf, String> {
+    checked_scratch_dir(&project_cache_dir(None), thread_id)
+}
+
+/// Create a desktop thread's scratch (idempotent) and return it.
+///
+/// Always under `<cache>/jan/chat`: a desktop thread has no filesystem
+/// project (desktop projects are UI folders), and every command that reaches
+/// a thread's scratch (subagent results, the blackboard, monitors, tool
+/// calls, thread delete) knows only the thread id, so this is the one place
+/// they all agree on. Must exist before a sandbox binds it. Thread deletion
+/// owns its teardown.
+pub async fn ensure_scratch_dir(thread_id: &str) -> Result<PathBuf, String> {
+    ensure_scratch_dir_path(&thread_scratch_dir(thread_id)?).await
 }
 
 /// Create a scratch directory at an explicit path, hardening it against a
@@ -338,13 +628,21 @@ pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
 /// attacker-selected directory as its sanctioned scratch. Refuses (fail
 /// closed) when the target already exists as a symlink or is not a real
 /// directory, and applies restrictive 0700 permissions on Unix so no other
-/// local user can read the session's scratch files. `create_dir` (not
-/// `create_dir_all`) is used so the final component is created directly and a
-/// parent symlink cannot redirect it.
+/// local user can read the session's scratch files. Missing parents are
+/// created one at a time, owner-only too: the cache root may be the temp-dir
+/// fallback, where a world-readable `jan/` would list every project's slug.
+/// The final component is made with a plain create (never "all") and
+/// re-checked, so a parent symlink cannot redirect it unnoticed. On Unix it
+/// must also belong to this user: one another user made (a shared temp dir)
+/// is theirs to read and swap, whatever its mode.
 pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
+    #[cfg(unix)]
+    let mine = owned_by_me;
+    #[cfg(not(unix))]
+    let mine = |_: &std::fs::Metadata| true;
     match tokio::fs::symlink_metadata(dir).await {
         Ok(meta) => {
-            if !meta.file_type().is_symlink() && meta.is_dir() {
+            if !meta.file_type().is_symlink() && meta.is_dir() && mine(&meta) {
                 // Already a real directory; keep it.
             } else {
                 return Err(format!(
@@ -355,14 +653,11 @@ pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if let Some(parent) = dir.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("ERROR: {e}"))?;
+                create_private_dirs(parent).await?;
             }
-            // `create_dir` (not `create_dir_all`) so the final component is made
-            // directly and a parent symlink cannot redirect it. A concurrent
-            // creator is fine: re-verify the existing node is a real directory.
-            if let Err(e) = tokio::fs::create_dir(dir).await {
+            // A concurrent creator is fine: re-verify the existing node is a
+            // real directory.
+            if let Err(e) = private_dir_builder().create(dir).await {
                 if e.kind() != std::io::ErrorKind::AlreadyExists {
                     return Err(format!("ERROR: {e}"));
                 }
@@ -370,7 +665,7 @@ pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
             // Re-verify after creation: a concurrent swap could have replaced
             // the freshly made directory with a symlink.
             match tokio::fs::symlink_metadata(dir).await {
-                Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+                Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(&meta) => {}
                 _ => {
                     return Err(format!(
                         "ERROR: scratch path {:?} is not a real directory",
@@ -389,29 +684,508 @@ pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
     Ok(dir.to_path_buf())
 }
 
-/// How long a scratch directory may sit untouched before the startup sweep
-/// treats it as abandoned. Age-based rather than "remove every scratch at
-/// startup" so a second Jan instance cannot wipe the first one's live scratch.
-const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+/// Prefix of a scratch's lease file, `scratch/.lease-<session>`, beside the
+/// scratch rather than in it: the sandbox can write the scratch but not its
+/// parent, so a command cannot remove or lock its own lease. The leading dot
+/// keeps it from ever reading as a session id.
+const SCRATCH_LEASE_PREFIX: &str = ".lease-";
 
-/// Delete abandoned scratch directories in the host temp dir, returning how many
-/// were removed.
-///
-/// Every scratch has an owner that removes it (run end, thread deletion, session
-/// end), but a kill -9 or a power loss leaves one behind with nobody left to
-/// claim it: the id it is keyed to lives in the caller's state, not on disk, so
-/// no `keep` list can be reconstructed the way [`sweep_thread_workspaces`] does
-/// it. Age is the only signal available, so anything untouched for
-/// [`SCRATCH_STALE_AFTER`] is collected. Called once at startup.
-///
-/// Failures are silent per entry: another user's `jan-agent-*` in a shared
-/// `/tmp` is not ours to delete and simply fails the unlink.
-pub async fn sweep_stale_scratch_dirs() -> usize {
-    sweep_scratch_older_than(&std::env::temp_dir(), SCRATCH_STALE_AFTER).await
+/// A run's hold on its scratch, which the startup sweep of every Jan process
+/// respects: dropping it releases the lock.
+#[derive(Debug)]
+pub struct ScratchClaim {
+    _lease: Option<std::fs::File>,
 }
 
-/// Sweep an explicit directory so tests never collect another session's scratch.
-async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> usize {
+/// The lease file for the scratch at `dir`.
+fn lease_path(dir: &Path) -> Option<PathBuf> {
+    let name = dir.file_name()?.to_str()?;
+    Some(dir.with_file_name(format!("{SCRATCH_LEASE_PREFIX}{name}")))
+}
+
+/// Open (creating it owner-only) the lease file at `path`, never through a
+/// symlink planted there.
+fn open_lease(path: &Path) -> Option<std::fs::File> {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) {
+        return None;
+    }
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600).custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    }
+    open.open(path).ok()
+}
+
+/// Create the scratch at `dir` ([`ensure_scratch_dir_path`]) and claim it for
+/// a run, so no Jan process's startup sweep deletes it while the run is live.
+///
+/// The keep list a sweep is given names only its own process's sessions, and
+/// a scratch's own mtime does not change when files are written in its
+/// subfolders, so another CLI/TUI session working for a week would otherwise
+/// look abandoned. Two signals, because each covers what the other cannot:
+/// - a shared advisory lock on the scratch's lease file (flock/LockFileEx via
+///   `fs4`, already used for the memory store), held until the claim drops;
+///   the OS releases it when the process dies, so a crashed session leaves
+///   nothing that looks live. Shared, so a run's subagents can hold it too.
+/// - the scratch's mtime, set to now, so an interactive session idle between
+///   turns (no claim held) still reads as recently used for a week.
+///
+/// The lock is taken before the scratch is made or touched, and the sweep
+/// re-reads the mtime after taking it exclusively, so a sweep can never
+/// delete a scratch claimed while it was deciding. Both are best effort: a
+/// filesystem without locks or times still gets its scratch.
+pub async fn claim_scratch_dir(dir: &Path) -> Result<ScratchClaim, String> {
+    if let Some(parent) = dir.parent() {
+        create_private_dirs(parent).await?;
+    }
+    // Blocking: waits out a sweep deleting a stale scratch of the same name.
+    let lease = match lease_path(dir) {
+        Some(path) => tokio::task::spawn_blocking(move || lock_lease_shared(&path))
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+    ensure_scratch_dir_path(dir).await?;
+    touch_dir(dir);
+    Ok(ScratchClaim { _lease: lease })
+}
+
+/// The lease at `path`, share-locked. A sweep unlinks a lease once it has
+/// deleted the scratch, so a claim that waited behind it may hold a lock on a
+/// file no longer there; it then retries on the one at the path now.
+fn lock_lease_shared(path: &Path) -> Option<std::fs::File> {
+    for _ in 0..3 {
+        let file = open_lease(path)?;
+        fs4::FileExt::lock_shared(&file).ok()?;
+        if std::fs::symlink_metadata(path).is_ok() {
+            return Some(file);
+        }
+    }
+    None
+}
+
+/// The lease at `path`, exclusively locked without waiting, for a sweep about
+/// to delete its scratch. `Err` while a live run holds it; `Ok(None)` when it
+/// cannot be locked at all (no file, a filesystem without locks), which
+/// leaves the mtime as the only signal, as before leases existed.
+fn try_lock_lease(path: &Path) -> Result<Option<std::fs::File>, ()> {
+    if std::fs::symlink_metadata(path).is_err() {
+        return Ok(None);
+    }
+    let Some(file) = open_lease(path) else {
+        return Ok(None);
+    };
+    match fs4::FileExt::try_lock(&file) {
+        Ok(()) => Ok(Some(file)),
+        Err(fs4::TryLockError::WouldBlock) => Err(()),
+        Err(fs4::TryLockError::Error(_)) => Ok(None),
+    }
+}
+
+/// Set `dir`'s mtime to now, ignoring failure (see [`claim_scratch_dir`]).
+fn touch_dir(dir: &Path) {
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    // Windows opens a directory only with backup semantics
+    // (FILE_FLAG_BACKUP_SEMANTICS), and setting its times needs write access.
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        open.write(true).custom_flags(0x0200_0000);
+    }
+    if let Ok(file) = open.open(dir) {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
+}
+
+/// A builder for directories only their owner may enter (Unix; elsewhere the
+/// profile directory's inherited ACL already is).
+#[cfg(unix)]
+fn private_dir_builder() -> tokio::fs::DirBuilder {
+    let mut builder = tokio::fs::DirBuilder::new();
+    builder.mode(0o700);
+    builder
+}
+
+#[cfg(not(unix))]
+fn private_dir_builder() -> tokio::fs::DirBuilder {
+    tokio::fs::DirBuilder::new()
+}
+
+/// Create `dir` and any missing ancestors owner-only, leaving ancestors that
+/// already exist (`~/.cache` itself) exactly as they are.
+async fn create_private_dirs(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    let trusted = |_: &Path, meta: &std::fs::Metadata| {
+        use std::os::unix::fs::MetadataExt;
+        owned_by_me(meta) || meta.uid() == 0
+    };
+    #[cfg(not(unix))]
+    let trusted = |_: &Path, _: &std::fs::Metadata| true;
+    #[cfg(unix)]
+    let mine = |_: &Path, meta: &std::fs::Metadata| owned_by_me(meta);
+    #[cfg(not(unix))]
+    let mine = |_: &Path, _: &std::fs::Metadata| true;
+    create_private_dirs_owned(dir, trusted, mine).await
+}
+
+/// [`create_private_dirs`] with its ownership tests. In a shared temp dir
+/// another user can plant `/tmp/jan-<uid>` (before the walk, or between it
+/// and the create) and would then own, and could swap, everything under it.
+/// So the nearest ancestor that already exists must belong to a `trusted`
+/// owner (this user, or root for `/tmp` and `/home` themselves), and each
+/// ancestor this call had to create must be a real directory that is `mine`,
+/// including one that turned out to exist already.
+async fn create_private_dirs_owned(
+    dir: &Path,
+    trusted: impl Fn(&Path, &std::fs::Metadata) -> bool,
+    mine: impl Fn(&Path, &std::fs::Metadata) -> bool,
+) -> Result<(), String> {
+    let mut missing = Vec::new();
+    for ancestor in dir.ancestors() {
+        match tokio::fs::symlink_metadata(ancestor).await {
+            Ok(meta) if trusted(ancestor, &meta) => break,
+            Ok(_) => {
+                return Err(format!(
+                    "ERROR: scratch path {:?} belongs to another user",
+                    ancestor
+                ))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing.push(ancestor),
+            Err(e) => return Err(format!("ERROR: {e}")),
+        }
+    }
+    for ancestor in missing.into_iter().rev() {
+        if let Err(e) = private_dir_builder().create(ancestor).await {
+            if e.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(format!("ERROR: {e}"));
+            }
+        }
+        match tokio::fs::symlink_metadata(ancestor).await {
+            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(ancestor, &meta) => {}
+            _ => {
+                return Err(format!(
+                    "ERROR: scratch path {:?} is not a real directory",
+                    ancestor
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `<project cache>/pkg`, the project's package cache.
+const PKG: &str = "pkg";
+
+/// `CARGO_HOME` inside the package cache.
+pub const PKG_CARGO_HOME: &str = "cargo";
+
+/// A project's package cache, `<cache>/jan/<slug>/pkg`. Only for a project:
+/// desktop chat has no network to fill one.
+pub fn pkg_dir_in(project_cache: &Path) -> PathBuf {
+    project_cache.join(PKG)
+}
+
+/// A prepared package cache: the folder a sandboxed command may write and
+/// whose subfolders its package-manager env names (`proc::PKG_CACHE_ENV`),
+/// plus the cargo config offered in it. `cargo_config` is `None` only for a
+/// hand-built cache (tests); [`prepare_pkg_cache_in`] always offers one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PkgCache {
+    pub root: PathBuf,
+    pub cargo_config: Option<CargoConfig>,
+}
+
+/// The cargo config offered read-only at `<CARGO_HOME>/config.toml`: the
+/// user's, or an empty one when they have none, so the name is always taken
+/// by a read-only file rather than left free for a sandbox to plant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CargoConfig {
+    /// The source: `config.toml`, or legacy `config`, in the host's
+    /// `CARGO_HOME`, or an empty file in the project's cache folder (outside
+    /// the package cache, so no sandbox can write it). Bubblewrap binds it
+    /// read-only over [`Self::copy`] and over [`Self::legacy`].
+    pub host: PathBuf,
+    /// `<pkg>/cargo/config.toml`. A read-only copy made at session start,
+    /// which is what Seatbelt and AppContainer expose (they cannot mount), and
+    /// bubblewrap's mount point.
+    pub copy: PathBuf,
+}
+
+impl CargoConfig {
+    /// `<pkg>/cargo/config`, the legacy name cargo prefers over
+    /// `config.toml` when both exist, so it must not be writable either.
+    pub fn legacy(&self) -> PathBuf {
+        self.copy.with_file_name("config")
+    }
+}
+
+/// The empty stand-in config's name in the project's cache folder.
+const EMPTY_CARGO_CONFIG: &str = "cargo-config-empty.toml";
+
+/// The host's cargo config: `config.toml` (or the legacy `config`) in
+/// `cargo_home`, the host's `CARGO_HOME` or `~/.cargo`.
+fn host_cargo_config(cargo_home: &Path) -> Option<PathBuf> {
+    ["config.toml", "config"]
+        .iter()
+        .map(|name| cargo_home.join(name))
+        .find(|path| path.is_file())
+}
+
+/// The host's `CARGO_HOME`, honoring an explicit one. `None` without a home.
+fn host_cargo_home() -> Option<PathBuf> {
+    match std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => user_home().map(|home| home.join(".cargo")),
+    }
+}
+
+/// [`prepare_pkg_cache_in`] with the host's own cargo home.
+pub async fn prepare_pkg_cache(project_cache: &Path) -> Result<PkgCache, String> {
+    prepare_pkg_cache_in(project_cache, host_cargo_home().as_deref()).await
+}
+
+/// Create a project's package cache owner-only and symlink-hardened (as
+/// [`ensure_scratch_dir_path`] does a scratch), and refresh its cargo config.
+///
+/// The sandbox's `CARGO_HOME` is `<pkg>/cargo`, never the user's: a sandbox
+/// that could write `~/.cargo/registry/src` could tamper with sources a later
+/// unsandboxed build compiles. So nothing else of the host's comes in: not
+/// `credentials.toml` (a sandboxed command must not publish with the user's
+/// token) and not `bin/` (installed tools stay on the host `PATH`). The user's
+/// config does (mirrors, registries, `net.offline`), read-only, because cargo
+/// config can name programs to run (`build.rustc-wrapper`,
+/// `target.<triple>.runner`). It is copied afresh every session so host edits
+/// apply; with no host config an empty one takes its place, so a copy left by
+/// an earlier session (or written by its sandbox) never outlives the user's.
+/// Toolchains are untouched: rustup keeps them in `RUSTUP_HOME`.
+pub async fn prepare_pkg_cache_in(
+    project_cache: &Path,
+    host_cargo_home: Option<&Path>,
+) -> Result<PkgCache, String> {
+    let root = ensure_scratch_dir_path(&pkg_dir_in(project_cache)).await?;
+    let cargo = ensure_scratch_dir_path(&root.join(PKG_CARGO_HOME)).await?;
+    let copy = cargo.join("config.toml");
+    let refresh_error = |path: &Path, e: std::io::Error| {
+        format!("ERROR: cannot refresh {}: {e}", path.display())
+    };
+    // Cargo reads the legacy name too, so one a sandbox planted would apply.
+    // An empty one is what bubblewrap leaves as the mount point it binds the
+    // config over; it is kept, since deleting a file another live sandbox
+    // has mounted over detaches that mount (Linux 3.18+) and would free the
+    // name inside it. Empty, it holds nothing a planter could want.
+    let legacy = cargo.join("config");
+    let empty_file = |m: &std::fs::Metadata| m.is_file() && m.len() == 0;
+    if !tokio::fs::symlink_metadata(&legacy).await.is_ok_and(|m| empty_file(&m)) {
+        remove_read_only_file(&legacy).await.map_err(|e| refresh_error(&legacy, e))?;
+    }
+    let host = match host_cargo_home.and_then(host_cargo_config) {
+        Some(host) => host,
+        None => {
+            let empty = project_cache.join(EMPTY_CARGO_CONFIG);
+            write_read_only(&[], &empty).await.map_err(|e| refresh_error(&empty, e))?;
+            empty
+        }
+    };
+    let bytes = tokio::fs::read(&host).await.map_err(|e| refresh_error(&host, e))?;
+    write_read_only(&bytes, &copy).await.map_err(|e| refresh_error(&copy, e))?;
+    Ok(PkgCache { root, cargo_config: Some(CargoConfig { host, copy }) })
+}
+
+/// Remove `path` if it is there, whatever it is: the copy is read-only, and a
+/// sandbox may have left a directory or symlink in its place. A read-only file
+/// goes too: on Unix only the folder's mode matters, and std deletes one on
+/// Windows since Rust 1.86.
+async fn remove_read_only_file(path: &Path) -> std::io::Result<()> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(path).await,
+        Ok(_) => tokio::fs::remove_file(path).await,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Write `bytes` to a new read-only file at `path`. The folder is writable by
+/// every sandboxed command of the project, so the name may hold a symlink
+/// planted after it was cleared: created exclusively and never through a
+/// symlink, the open fails instead of truncating whatever file the link
+/// names, and the mode is set through the handle, not the name.
+fn create_read_only_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600).custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    }
+    let mut file = open.open(path)?;
+    file.write_all(bytes)?;
+    let mut perms = file.metadata()?.permissions();
+    perms.set_readonly(true);
+    file.set_permissions(perms)
+}
+
+/// Write `bytes` to `dst` and mark it read-only. Through a fresh file and a
+/// rename, so a concurrent session never reads a half-written config, and so
+/// a symlink planted at `dst` is replaced rather than followed. Skipped when
+/// `dst` already is a read-only regular file holding exactly `bytes` (every
+/// session but the first after an edit): replacing a file a live sibling
+/// sandbox has mounted over detaches that mount inside it (Linux 3.18+).
+/// That still happens when the host config changes mid-session; the sibling
+/// then sees the new, read-only-moded copy until its next session.
+///
+/// The read-only mark is the whole protection on AppContainer, which grants
+/// by ACE and has no deny: the container holds full access on the package
+/// cache, so it could clear the mark or replace the file. Accepted: the copy
+/// configures only sandboxed cargo and is rewritten every session. Seatbelt
+/// also denies writes to it by rule, and bubblewrap mounts the host file over
+/// it read-only.
+async fn write_read_only(bytes: &[u8], dst: &Path) -> std::io::Result<()> {
+    if let Ok(meta) = tokio::fs::symlink_metadata(dst).await {
+        if meta.is_file()
+            && meta.permissions().readonly()
+            && tokio::fs::read(dst).await.is_ok_and(|have| have == bytes)
+        {
+            return Ok(());
+        }
+    }
+    // Unique per call: a parent run and its subagents share a process and may
+    // prepare the same project's cache at once.
+    static COPIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COPIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dst.with_extension(format!("tmp-{}-{n}", std::process::id()));
+    remove_read_only_file(&tmp).await?;
+    let (path, owned) = (tmp.clone(), bytes.to_vec());
+    tokio::task::spawn_blocking(move || create_read_only_new(&path, &owned))
+        .await
+        .map_err(std::io::Error::other)??;
+    // Replaced in one step where the OS allows it, so a sibling session's
+    // bubblewrap never finds its mount point missing. Windows refuses to
+    // rename over a read-only file; there the old copy goes first.
+    if tokio::fs::rename(&tmp, dst).await.is_err() {
+        remove_read_only_file(dst).await?;
+        tokio::fs::rename(&tmp, dst).await?;
+    }
+    Ok(())
+}
+
+/// How long a scratch directory may sit untouched, with no live session
+/// claiming it, before the startup sweep treats it as abandoned. A week
+/// rather than a day: the live check is only as good as the caller's `keep`
+/// list, and another Jan instance's live session is never in it.
+const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// Delete abandoned scratch directories, returning how many were removed.
+///
+/// Every scratch has an owner that removes it (run end, thread deletion,
+/// session end), but a kill -9 or a power loss leaves one behind with nobody
+/// left to claim it, and unlike a temp dir the OS cache dir is never cleaned
+/// for us. Scans every `<cache>/jan/*/scratch/`: an entry goes when its id is
+/// not in `keep` (the caller's live sessions: the desktop's surviving thread
+/// ids, a CLI run's own session) and it was last modified
+/// [`SCRATCH_STALE_AFTER`] ago. Trash goes once it is [`TRASH_KEPT_FOR`] old.
+///
+/// Also collects the `jan-agent-*` scratches and `jan-trash-*` trash older
+/// versions left in the system temp dir: nothing else would ever remove them
+/// from a temp dir the OS does not clean (Windows, a persistent `/tmp`).
+/// Failures are silent per entry: another user's `jan-agent-*` in a shared
+/// `/tmp` is not ours to delete and simply fails the unlink.
+pub async fn sweep_stale_scratch_dirs(keep: &[String]) -> usize {
+    sweep_stale_scratch_dirs_in(&jan_cache_root(), keep).await
+}
+
+/// [`sweep_stale_scratch_dirs`] under an explicit Jan cache root, for callers
+/// that resolve the root themselves (the app substitutes a temp root in its
+/// tests).
+pub async fn sweep_stale_scratch_dirs_in(cache_root: &Path, keep: &[String]) -> usize {
+    sweep_scratch_in(cache_root, keep, SCRATCH_STALE_AFTER).await
+        + sweep_legacy_scratch_in(&std::env::temp_dir(), SCRATCH_STALE_AFTER).await
+}
+
+/// [`sweep_stale_scratch_dirs`] over an explicit cache root, so tests never
+/// collect another session's scratch.
+async fn sweep_scratch_in(cache_root: &Path, keep: &[String], max_age: std::time::Duration) -> usize {
+    let keep: std::collections::HashSet<&str> = keep.iter().map(String::as_str).collect();
+    let Ok(mut projects) = tokio::fs::read_dir(cache_root).await else {
+        return 0;
+    };
+    let mut removed = 0;
+    while let Ok(Some(project)) = projects.next_entry().await {
+        // `symlink_metadata` throughout: a symlink planted where a folder is
+        // expected must not lead the sweep into deleting what it points at.
+        let scratch = project.path().join(SCRATCH);
+        match tokio::fs::symlink_metadata(&scratch).await {
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+            _ => continue,
+        }
+        let Ok(mut entries) = tokio::fs::read_dir(&scratch).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if let Some(session) = name.strip_prefix(SCRATCH_LEASE_PREFIX) {
+                remove_orphan_lease(&entry.path(), &scratch.join(session));
+                continue;
+            }
+            let trash = name.starts_with(SCRATCH_TRASH_PREFIX);
+            // Only names this module makes: anything else was not made here.
+            if !trash && (keep.contains(name) || thread_segment(name).is_err()) {
+                continue;
+            }
+            if trash {
+                if remove_if_stale(&entry.path(), name, true, max_age).await {
+                    removed += 1;
+                }
+                continue;
+            }
+            // Held exclusively across the age check and the delete, so a run
+            // claiming this scratch meanwhile waits rather than losing it.
+            let Some(lease) = lease_path(&entry.path()) else { continue };
+            let Ok(lock) = try_lock_lease(&lease) else {
+                continue; // a live run, in some Jan process, holds it
+            };
+            if remove_if_stale(&entry.path(), name, false, max_age).await {
+                removed += 1;
+                if lock.is_some() {
+                    let _ = std::fs::remove_file(&lease);
+                }
+            }
+        }
+    }
+    removed
+}
+
+/// Remove the lease at `lease` once its scratch is gone (trashed at session
+/// end, or deleted by hand) and no run holds it.
+fn remove_orphan_lease(lease: &Path, scratch: &Path) {
+    if std::fs::symlink_metadata(scratch).is_ok() {
+        return;
+    }
+    match std::fs::symlink_metadata(lease) {
+        // Not something `open_lease` would make: unlink it, never follow it.
+        Ok(meta) if !meta.is_file() => {
+            if meta.file_type().is_symlink() {
+                let _ = std::fs::remove_file(lease);
+            }
+        }
+        Ok(_) => {
+            if let Ok(Some(_lock)) = try_lock_lease(lease) {
+                let _ = std::fs::remove_file(lease);
+            }
+        }
+        Err(_) => {}
+    }
+}
+
+/// The legacy layout: `jan-agent-<session>` and `jan-trash-*` directly in the
+/// system temp dir. Age is the only signal there, as it always was.
+async fn sweep_legacy_scratch_in(root: &Path, max_age: std::time::Duration) -> usize {
     let Ok(mut entries) = tokio::fs::read_dir(root).await else {
         return 0;
     };
@@ -419,33 +1193,125 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !name.starts_with("jan-agent-") {
+        let trash = name.starts_with(LEGACY_TRASH_PREFIX);
+        if !name.starts_with(LEGACY_SCRATCH_PREFIX) && !trash {
             continue;
         }
-        // `symlink_metadata`: a symlink named like a scratch is not one, and
-        // following it would delete whatever it points at.
-        let Ok(meta) = tokio::fs::symlink_metadata(entry.path()).await else {
-            continue;
-        };
-        if meta.file_type().is_symlink() || !meta.is_dir() {
-            continue;
-        }
-        let stale = meta
-            .modified()
-            .ok()
-            .and_then(|m| m.elapsed().ok())
-            .is_some_and(|age| age >= max_age);
-        if stale && tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
+        if remove_if_stale(&entry.path(), name, trash, max_age).await {
             removed += 1;
         }
     }
     removed
 }
 
-/// Delete a session's scratch directory. Idempotent: a missing scratch is Ok.
-pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
-    let dir = scratch_dir(session);
+/// Delete the scratch or trash entry at `path` when it is stale, returning
+/// whether it went. A symlink named like trash is unlinked (never followed);
+/// one named like a scratch is not ours and is left alone.
+async fn remove_if_stale(path: &Path, name: &str, trash: bool, max_age: std::time::Duration) -> bool {
+    let Ok(meta) = tokio::fs::symlink_metadata(path).await else {
+        return false;
+    };
+    if trash && meta.file_type().is_symlink() {
+        let _ = tokio::fs::remove_file(path).await;
+        return false;
+    }
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return false;
+    }
+    // A trashed scratch is never in use (the rename that made it is atomic),
+    // but it holds the session's subagent results, kept a while in case the
+    // user wants one back.
+    let stale = if trash {
+        trash_expired(name, &meta)
+    } else {
+        meta.modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age >= max_age)
+    };
+    stale && tokio::fs::remove_dir_all(path).await.is_ok()
+}
+
+/// Prefix of a scratch moved aside for deletion, next to the live ones in
+/// `scratch/`. It starts with a dot, which [`thread_segment`] never accepts,
+/// so no session id can ever be mistaken for trash and swept at any age.
+const SCRATCH_TRASH_PREFIX: &str = ".trash-";
+
+/// What older versions named a scratch and its trash in the system temp dir.
+const LEGACY_SCRATCH_PREFIX: &str = "jan-agent-";
+const LEGACY_TRASH_PREFIX: &str = "jan-trash-";
+
+/// How long Jan's trash (a removed scratch, a subagent worktree that read as
+/// empty) is kept before a startup sweep deletes it: long enough for a user
+/// to notice something they wanted went with it.
+pub const TRASH_KEPT_FOR: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// The name under which `stem` goes to trash: `<stem>-<nanoseconds since the
+/// epoch>`. The time is in the name because a rename keeps the mtime of what
+/// it moves, which says when it was last written, not trashed.
+pub fn trash_name(stem: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{stem}-{nanos}")
+}
+
+/// Whether the trash entry `name` (made by [`trash_name`]) is at least
+/// [`TRASH_KEPT_FOR`] old. One whose name carries no time goes by `meta`'s
+/// mtime instead. A shorter number is not a time [`trash_name`] wrote (it
+/// may be a hex suffix that happens to be all digits), and must not read as
+/// one from 1970.
+pub fn trash_expired(name: &str, meta: &std::fs::Metadata) -> bool {
+    let stamp = name
+        .rsplit_once('-')
+        .filter(|(_, n)| n.len() >= 19)
+        .and_then(|(_, n)| n.parse::<u64>().ok())
+        .map(|n| std::time::UNIX_EPOCH + std::time::Duration::from_nanos(n));
+    stamp
+        .or_else(|| meta.modified().ok())
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age >= TRASH_KEPT_FOR)
+}
+
+/// Delete a desktop thread's scratch now. Idempotent: a missing scratch is
+/// Ok. For an explicit delete (a thread or session the user removed): its
+/// results and caches must not outlive it in the trash.
+pub async fn remove_scratch_dir(thread_id: &str) -> Result<(), String> {
+    let dir = thread_scratch_dir(thread_id)?;
     match tokio::fs::remove_dir_all(&dir).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("ERROR: {e}")),
+    }
+}
+
+/// Move a finished CLI/TUI session's scratch, under the project cache folder
+/// `project_cache` ([`project_cache_dir_in`]), into trash. For the exit path
+/// only. Idempotent: a missing scratch is Ok.
+///
+/// Read-only subagents keep package caches there, so deleting it can walk
+/// tens of thousands of files while the user waits to exit. A rename is
+/// instant, and a startup sweep empties the trash once it is old.
+pub async fn trash_scratch_dir_in(project_cache: &Path, session: &str) -> Result<(), String> {
+    trash_dir(&checked_scratch_dir(project_cache, session)?, session).await
+}
+
+/// Move `dir` into trash beside it, in its own `scratch/` folder: the same
+/// filesystem, so the rename is atomic and instant, and the folder the sweep
+/// already scans. Deleted in place when the rename fails (a handle still open
+/// on Windows). A missing `dir` is Ok.
+async fn trash_dir(dir: &Path, stem: &str) -> Result<(), String> {
+    let Some(parent) = dir.parent() else {
+        return Err(format!("ERROR: scratch path {dir:?} has no parent"));
+    };
+    let trash = parent.join(trash_name(&format!(
+        "{SCRATCH_TRASH_PREFIX}{stem}-{}",
+        std::process::id()
+    )));
+    if tokio::fs::rename(dir, &trash).await.is_ok() {
+        return Ok(());
+    }
+    match tokio::fs::remove_dir_all(dir).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(format!("ERROR: {e}")),
@@ -496,7 +1362,20 @@ pub async fn remove_thread_workspace(
     jan_data_folder: &Path,
     thread_id: &str,
 ) -> Result<(), String> {
-    remove_workspace_at(thread_workspace(jan_data_folder, thread_id)?, thread_id).await
+    let dir = thread_workspace(jan_data_folder, thread_id)?;
+    // Never race a Cowork copy of the same id: wait for it, then remove.
+    let gate = copy_gate(jan_data_folder, thread_id);
+    let _held = gate.state.lock().await;
+    // The scratch is keyed by id and a migrated thread shares its id with the
+    // legacy session, which is kept as the rollback source: leave the scratch
+    // while that session sandbox exists. (An ordinary thread has no such
+    // sandbox, so its scratch goes as before.)
+    let wipe_scratch = !session_workspace(jan_data_folder, thread_id)?.exists();
+    remove_workspace_at(dir, thread_id, wipe_scratch).await?;
+    // What a Cowork copy left beside the sandbox goes with the thread.
+    let _ = tokio::fs::remove_file(copy_marker(jan_data_folder, thread_id)?).await;
+    clear_copy_staging(jan_data_folder, thread_id)?;
+    Ok(())
 }
 
 /// Delete a Cowork session's sandbox. Idempotent: a missing sandbox is Ok.
@@ -504,18 +1383,25 @@ pub async fn remove_session_workspace(
     jan_data_folder: &Path,
     session_id: &str,
 ) -> Result<(), String> {
-    remove_workspace_at(session_workspace(jan_data_folder, session_id)?, session_id).await
+    remove_workspace_at(
+        session_workspace(jan_data_folder, session_id)?,
+        session_id,
+        true,
+    )
+    .await
 }
 
-async fn remove_workspace_at(dir: PathBuf, id: &str) -> Result<(), String> {
+async fn remove_workspace_at(dir: PathBuf, id: &str, wipe_scratch: bool) -> Result<(), String> {
     crate::tools::appcontainer::release(&dir);
     match tokio::fs::remove_dir_all(&dir).await {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(format!("ERROR: {e}")),
     }
-    // Wipe the host-temp scratch keyed to the same id.
-    let _ = remove_scratch_dir(id).await;
+    // Wipe the cache scratch keyed to the same id.
+    if wipe_scratch {
+        let _ = remove_scratch_dir(id).await;
+    }
     Ok(())
 }
 
@@ -530,7 +1416,18 @@ pub async fn sweep_thread_workspaces(
     jan_data_folder: &Path,
     keep: &[String],
 ) -> Result<usize, String> {
-    sweep_workspaces_in(threads_dir(jan_data_folder), keep).await
+    // Same fail-safe as `sweep_workspaces_in`: an empty list does nothing, so
+    // the recently copied ids must not turn it into a non-empty one.
+    if keep.is_empty() {
+        return Ok(0);
+    }
+    // A copy that has not committed its thread yet is protected per entry,
+    // under the copy's own lock (see `sweep_workspaces_in`), so one that lands
+    // while the sweep is running is never deleted from a stale snapshot.
+    let removed =
+        sweep_workspaces_in(threads_dir(jan_data_folder), keep, Some(jan_data_folder)).await?;
+    sweep_copy_leftovers(jan_data_folder).await;
+    Ok(removed)
 }
 
 /// Delete every Cowork session sandbox whose id is not in `keep`.
@@ -541,10 +1438,450 @@ pub async fn sweep_session_workspaces(
     jan_data_folder: &Path,
     keep: &[String],
 ) -> Result<usize, String> {
-    sweep_workspaces_in(sessions_dir(jan_data_folder), keep).await
+    sweep_workspaces_in(sessions_dir(jan_data_folder), keep, None).await
 }
 
-async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, String> {
+/// What a Cowork sandbox copy did.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceCopy {
+    /// False when the session never had a sandbox, so there was nothing to copy.
+    pub copied: bool,
+    /// Regular files copied.
+    pub files: usize,
+    /// Symlinks and special files that were not copied.
+    pub skipped: usize,
+    /// Entries the copy was not allowed to read (permission denied). They are
+    /// left out and counted instead of failing the whole copy.
+    #[serde(default)]
+    pub unreadable: usize,
+}
+
+/// Prefix of a copy error that retrying cannot fix (an invalid id, a symlinked
+/// root, a workspace that is not ours). The migration matches on it instead of
+/// on message text.
+pub const PERMANENT_PREFIX: &str = "PERMANENT: ";
+
+fn permanent(msg: impl std::fmt::Display) -> String {
+    format!("{PERMANENT_PREFIX}{msg}")
+}
+
+/// Per-id exclusion for the copy, the sweep and the delete of one thread
+/// workspace. Two overlapping copies would otherwise share staging and commit
+/// a partial tree; a sweep reading a stale snapshot could delete a fresh copy.
+struct CopyGate {
+    /// Bumped (under `state`) by every copy that completed.
+    generation: std::sync::atomic::AtomicU64,
+    /// The result of the last completed copy.
+    state: tokio::sync::Mutex<Option<WorkspaceCopy>>,
+}
+
+fn copy_gate(jan_data_folder: &Path, id: &str) -> std::sync::Arc<CopyGate> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+    static GATES: OnceLock<Mutex<HashMap<String, Arc<CopyGate>>>> = OnceLock::new();
+    let key = threads_dir(jan_data_folder).join(id).to_string_lossy().into_owned();
+    let mut gates = GATES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Gates nobody holds are dropped so the map does not grow with every id.
+    if gates.len() > 256 {
+        gates.retain(|_, g| Arc::strong_count(g) > 1);
+    }
+    gates
+        .entry(key)
+        .or_insert_with(|| {
+            Arc::new(CopyGate {
+                generation: std::sync::atomic::AtomicU64::new(0),
+                state: tokio::sync::Mutex::new(None),
+            })
+        })
+        .clone()
+}
+
+/// Whether `threads/<id>` belongs to a migration that has not finished: its
+/// copy marker is fresh, or its thread is already committed (thread.json).
+fn copy_is_protected(jan_data_folder: &Path, id: &str) -> bool {
+    if committed_thread_json(jan_data_folder, id).exists() {
+        return true;
+    }
+    let Ok(marker) = copy_marker(jan_data_folder, id) else {
+        return false;
+    };
+    std::fs::symlink_metadata(marker)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|m| m.elapsed().ok())
+        .is_some_and(|age| age < COPY_GRACE)
+}
+
+/// `<data>/threads/<id>/thread.json`: the thread store's commit marker.
+pub(crate) fn committed_thread_json(jan_data_folder: &Path, id: &str) -> PathBuf {
+    jan_data_folder.join("threads").join(id).join("thread.json")
+}
+
+/// Hidden siblings of the thread sandboxes in `threads/`. A dot-led name is
+/// never a valid thread id ([`thread_segment`]), so they cannot collide with a
+/// thread and the sweep never mistakes them for one.
+const COPY_STAGING_PREFIX: &str = ".copy-";
+const COPY_MARKER_PREFIX: &str = ".copied-";
+
+/// How long a copied workspace is protected from the thread sweep while no
+/// thread lists it. The Cowork migration copies before it commits thread.json,
+/// and may still be running when the startup sweep reads the thread list.
+const COPY_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+fn copy_staging_dir(jan_data_folder: &Path, id: &str) -> Result<PathBuf, String> {
+    Ok(threads_dir(jan_data_folder).join(format!("{COPY_STAGING_PREFIX}{}", thread_segment(id)?)))
+}
+
+/// A staging name no other call shares: `.copy-<id>.<pid>-<n>`. A `.` never
+/// occurs in an id, so the `.copy-<id>.` prefix cannot match another id's.
+fn copy_staging_unique(jan_data_folder: &Path, id: &str) -> Result<PathBuf, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    Ok(threads_dir(jan_data_folder).join(format!(
+        "{COPY_STAGING_PREFIX}{}.{}-{n}",
+        thread_segment(id)?,
+        std::process::id()
+    )))
+}
+
+/// Remove every staging directory of `id` (a crashed run's, under the id's
+/// gate, so none is in use).
+fn clear_copy_staging(jan_data_folder: &Path, id: &str) -> Result<(), String> {
+    // The pre-unique name (`.copy-<id>`) is cleared too: an older run may have
+    // left one.
+    let exact = copy_staging_dir(jan_data_folder, id)?
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dotted = format!("{exact}.");
+    let Ok(entries) = std::fs::read_dir(threads_dir(jan_data_folder)) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == exact || name.starts_with(&dotted) {
+            match std::fs::remove_dir_all(entry.path()) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn copy_marker(jan_data_folder: &Path, id: &str) -> Result<PathBuf, String> {
+    Ok(threads_dir(jan_data_folder).join(format!("{COPY_MARKER_PREFIX}{}", thread_segment(id)?)))
+}
+
+/// Copy a Cowork session's sandbox (`sessions/<id>`) into the thread workspace
+/// of the same id (`threads/<id>`), the one main chat's `Thread` scope uses, so
+/// a migrated Cowork thread opens its files without sharing a directory with
+/// the legacy session scope.
+///
+/// - A copy, never a move: `sessions/<id>` is intentionally left behind as the
+///   rollback source, like the `code-sessions` blob.
+/// - Idempotent. The tree is built in a hidden staging sibling and renamed into
+///   place, so an interrupted run leaves either nothing or the whole copy, and a
+///   retry rebuilds it from the source. A `.copied-<id>` marker, written before
+///   the rename, records that `threads/<id>` is this copy's: a retry replaces
+///   it, while a non-empty directory with no marker (the thread's own files) is
+///   refused, never merged into.
+/// - Symlinks (and other non-regular files) are neither followed nor copied, so
+///   nothing outside the session tree can land in the thread's sandbox. A
+///   session or thread root that is itself a symlink is refused.
+/// - A session with no sandbox is `copied: false` and nothing is created.
+pub async fn copy_session_workspace_to_thread(
+    jan_data_folder: &Path,
+    id: &str,
+) -> Result<WorkspaceCopy, String> {
+    // An id the backend would refuse never gets better: permanent.
+    let bad_id = |e: String| permanent(e.trim_start_matches("ERROR:").trim());
+    let source = session_workspace(jan_data_folder, id).map_err(bad_id)?;
+    let dest = thread_workspace(jan_data_folder, id).map_err(bad_id)?;
+    let marker = copy_marker(jan_data_folder, id).map_err(bad_id)?;
+
+    let gate = copy_gate(jan_data_folder, id);
+    let seen = gate.generation.load(std::sync::atomic::Ordering::SeqCst);
+    let mut last = gate.state.lock().await;
+    // Another call finished this copy while this one waited for the gate:
+    // its tree is complete and in place, so return its result instead of
+    // tearing it down and redoing it.
+    if gate.generation.load(std::sync::atomic::Ordering::SeqCst) != seen {
+        if let Some(done) = last.as_ref() {
+            if dest.is_dir() && marker.exists() {
+                return Ok(done.clone());
+            }
+        }
+    }
+
+    // A thread that is already committed owns its workspace: refuse, and drop
+    // the marker a finished migration no longer needs.
+    if committed_thread_json(jan_data_folder, id).exists() {
+        let _ = std::fs::remove_file(&marker);
+        return Err(permanent(format!(
+            "thread '{id}' is already committed; refusing to replace its workspace"
+        )));
+    }
+
+    let threads = threads_dir(jan_data_folder);
+    // Staging left by a crashed run is cleared under the gate (nobody else
+    // holds this id), and this call builds in a name of its own.
+    clear_copy_staging(jan_data_folder, id).map_err(|e| format!("ERROR: {e}"))?;
+    let staging = copy_staging_unique(jan_data_folder, id)?;
+    let result = tokio::task::spawn_blocking(move || {
+        copy_tree_into_place(&source, &dest, &threads, &staging, &marker)
+    })
+    .await
+    .map_err(|e| format!("ERROR: {e}"))?
+    .map_err(|e| {
+        if e.starts_with(PERMANENT_PREFIX) {
+            e
+        } else {
+            format!("ERROR: {e}")
+        }
+    })?;
+    if result.copied {
+        gate.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *last = Some(result.clone());
+    }
+    if result.skipped > 0 || result.unreadable > 0 {
+        eprintln!(
+            "[cowork-copy] {id}: {} files copied, {} symlinks/special files skipped (not recreated), {} unreadable entries left out",
+            result.files, result.skipped, result.unreadable
+        );
+    }
+    Ok(result)
+}
+
+/// Best-effort directory fsync: some filesystems refuse it, and the copy is
+/// already in place by then.
+fn sync_dir_best_effort(dir: &Path) {
+    let _ = std::fs::File::open(dir).and_then(|d| d.sync_all());
+}
+
+fn copy_tree_into_place(
+    source: &Path,
+    dest: &Path,
+    threads: &Path,
+    staging: &Path,
+    marker: &Path,
+) -> Result<WorkspaceCopy, String> {
+    use std::fs;
+    let e = |err: std::io::Error| err.to_string();
+    match fs::symlink_metadata(source) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(permanent(format!(
+                "{} is a symlink; refusing to follow it",
+                source.display()
+            )))
+        }
+        Ok(_) => return Err(permanent(format!("{} is not a directory", source.display()))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(WorkspaceCopy::default())
+        }
+        Err(err) => return Err(e(err)),
+    }
+
+    // Ownership of threads/<id>, decided before anything is touched.
+    let owned = marker.exists();
+    match fs::symlink_metadata(dest) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(permanent(format!(
+                "{} is a symlink; refusing to write through it",
+                dest.display()
+            )))
+        }
+        Ok(meta) if meta.is_dir() => {
+            let empty = fs::read_dir(dest).map_err(e)?.next().is_none();
+            if !empty && !owned {
+                return Err(permanent(format!(
+                    "{} already holds files of its own; refusing to merge into it",
+                    dest.display()
+                )));
+            }
+        }
+        Ok(_) => return Err(permanent(format!("{} is not a directory", dest.display()))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(e(err)),
+    }
+
+    check_free_space(source, threads, tree_size(source), |p| fs4::available_space(p))?;
+    fs::create_dir_all(threads).map_err(e)?;
+    fs::create_dir(staging).map_err(e)?;
+    let mut stats = WorkspaceCopy { copied: true, ..WorkspaceCopy::default() };
+    if let Err(err) = copy_dir_contents(source, staging, &mut stats) {
+        let _ = fs::remove_dir_all(staging);
+        return Err(err);
+    }
+
+    // The marker lands before the rename: a crash between the two leaves an
+    // owned (empty or old-copy) directory a retry may replace, never a copy
+    // that reads as the thread's own files.
+    fs::write(marker, b"").map_err(e)?;
+    crate::tools::appcontainer::release(dest);
+    match fs::remove_dir_all(dest) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            let _ = fs::remove_dir_all(staging);
+            return Err(e(err));
+        }
+    }
+    fs::rename(staging, dest).map_err(e)?;
+    // Make the copy durable like the thread.json commit that follows it.
+    sync_dir_best_effort(dest);
+    sync_dir_best_effort(threads);
+    Ok(stats)
+}
+
+/// Room left over after a copy, so a migration never fills the disk the app
+/// and the model downloads still need.
+const COPY_FREE_SPACE_RESERVE: u64 = 256 * 1024 * 1024;
+
+/// Refuse a copy that would not fit. Not permanent: the user can free space and
+/// the next launch retries. When the free space cannot be read the copy goes
+/// ahead, as before this check existed.
+fn check_free_space(
+    source: &Path,
+    threads: &Path,
+    needed: u64,
+    available: impl Fn(&Path) -> std::io::Result<u64>,
+) -> Result<(), String> {
+    // `threads` may not exist yet: ask about the nearest directory that does.
+    let Some(existing) = threads.ancestors().find(|p| p.is_dir()) else {
+        return Ok(());
+    };
+    let Ok(free) = available(existing) else {
+        return Ok(());
+    };
+    if needed.saturating_add(COPY_FREE_SPACE_RESERVE) > free {
+        const MB: u64 = 1024 * 1024;
+        return Err(format!(
+            "not enough free disk space to copy {} ({} MB needed plus {} MB kept free, {} MB available)",
+            source.display(),
+            needed.div_ceil(MB),
+            COPY_FREE_SPACE_RESERVE / MB,
+            free / MB
+        ));
+    }
+    Ok(())
+}
+
+/// Bytes of the regular files `copy_dir_contents` would copy. Symlinks are not
+/// followed and unreadable entries count as nothing, as in the copy.
+fn tree_size(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| match std::fs::symlink_metadata(entry.path()) {
+            Ok(meta) if meta.is_dir() => tree_size(&entry.path()),
+            Ok(meta) if meta.is_file() => meta.len(),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Copy `from`'s entries into the existing directory `to`: directories and
+/// regular files only. Entries are classified with `symlink_metadata`, so a
+/// link is counted as skipped and never opened. An entry the process may not
+/// read is counted in `unreadable` and left out; any other error aborts.
+fn copy_dir_contents(from: &Path, to: &Path, stats: &mut WorkspaceCopy) -> Result<(), String> {
+    use std::fs;
+    use std::io::ErrorKind::PermissionDenied;
+    let entries = match fs::read_dir(from) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == PermissionDenied => {
+            stats.unreadable += 1;
+            return Ok(());
+        }
+        Err(err) => return Err(err.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+        let target = to.join(entry.file_name());
+        if meta.is_dir() {
+            fs::create_dir(&target).map_err(|e| e.to_string())?;
+            copy_dir_contents(&entry.path(), &target, stats)?;
+        } else if meta.is_file() {
+            match fs::copy(entry.path(), &target) {
+                Ok(_) => stats.files += 1,
+                Err(err) if err.kind() == PermissionDenied => {
+                    let _ = fs::remove_file(&target);
+                    stats.unreadable += 1;
+                }
+                Err(err) => return Err(err.to_string()),
+            }
+        } else {
+            stats.skipped += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Sweep what the copy leaves in `threads/` besides sandboxes: a staging
+/// directory or a marker nobody completed or cleaned up, once it is older than
+/// [`COPY_GRACE`]. A marker whose sandbox still exists is kept: its thread
+/// owns it.
+async fn sweep_copy_leftovers(jan_data_folder: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(threads_dir(jan_data_folder)).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        let path = entry.path();
+        let Ok(meta) = tokio::fs::symlink_metadata(&path).await else {
+            continue;
+        };
+        // A marker whose thread has committed is spent, whatever its age.
+        if let Some(id) = name.strip_prefix(COPY_MARKER_PREFIX) {
+            if meta.is_file() && thread_segment(id).is_ok() {
+                let gate = copy_gate(jan_data_folder, id);
+                let _held = gate.state.lock().await;
+                if committed_thread_json(jan_data_folder, id).exists() {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    continue;
+                }
+            }
+        }
+        let old = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age >= COPY_GRACE);
+        if !old {
+            continue;
+        }
+        if name.starts_with(COPY_STAGING_PREFIX) && meta.is_dir() {
+            let _ = tokio::fs::remove_dir_all(&path).await;
+        } else if let Some(id) = name.strip_prefix(COPY_MARKER_PREFIX) {
+            let workspace = threads_dir(jan_data_folder).join(id);
+            if !workspace.exists() && meta.is_file() {
+                let _ = tokio::fs::remove_file(&path).await;
+            }
+        }
+    }
+}
+
+/// With `guard` (the thread sweep), each entry is deleted only while holding
+/// that id's copy gate and after re-checking that no unfinished migration owns
+/// it, so a copy landing mid-sweep is never removed.
+async fn sweep_workspaces_in(
+    dir: PathBuf,
+    keep: &[String],
+    guard: Option<&Path>,
+) -> Result<usize, String> {
     // An empty keep list means "delete everything here", which is never what a
     // caller wants and is exactly what a failed load or a first-run race
     // produces. The sandbox may hold the only copy of the agent's work, so this
@@ -566,33 +1903,56 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
         };
-        if keep.contains(&name) {
+        // Only names a valid id could have produced: anything else was not made
+        // here, so it is left alone rather than swept.
+        if keep.contains(&name) || thread_segment(&name).is_err() {
+            continue;
+        }
+        let gate = guard.map(|data| copy_gate(data, &name));
+        let _held = match &gate {
+            Some(g) => Some(g.state.lock().await),
+            None => None,
+        };
+        if guard.is_some_and(|data| copy_is_protected(data, &name)) {
             continue;
         }
         crate::tools::appcontainer::release(&entry.path());
         if tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
             removed += 1;
-            // Wipe the host-temp scratch keyed to this id.
+            // Wipe the cache scratch keyed to this id.
             let _ = remove_scratch_dir(&name).await;
         }
     }
     Ok(removed)
 }
 
+/// Names Windows maps to a device in every directory, in any case and also
+/// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
+/// works on all of them.
+pub(crate) fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    match stem.as_bytes() {
+        [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
+        [a, b, c, d] => matches!(&[*a, *b, *c], b"COM" | b"LPT") && d.is_ascii_digit(),
+        _ => false,
+    }
+}
+
 /// Sanitize a caller-supplied thread id into one safe path segment.
 ///
 /// Stricter than [`workspace_filename`] on purpose: a thread id is generated,
-/// never typed, so anything outside `[A-Za-z0-9._-]` is a bug or an attack. Dots
-/// are allowed inside the id but a dot-only segment is not, which is what would
-/// resolve to the threads directory itself or its parent.
+/// never typed, so anything outside `[A-Za-z0-9_-]` is a bug. No dots and no
+/// trimming, so `.`/`..` can never be produced. Kept identical to the desktop's
+/// `validate_thread_id` (`src-tauri/src/core/threads/utils.rs`): an id one side
+/// accepts the other must too.
 pub fn thread_segment(thread_id: &str) -> Result<String, String> {
-    let id = thread_id.trim();
+    let id = thread_id;
     let ok = !id.is_empty()
         && id.len() <= 128
         && id
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        && !id.chars().all(|c| c == '.');
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        && !is_windows_device_name(id);
     if !ok {
         return Err(format!("ERROR: invalid thread id '{thread_id}'"));
     }
@@ -601,8 +1961,16 @@ pub fn thread_segment(thread_id: &str) -> Result<String, String> {
 
 /// Sanitize a caller-supplied entry name into a safe `<stem>.md` filename.
 /// Rejects path separators and `..` so the result can never escape the
-/// store directory. `.md` is appended if absent.
+/// store directory, NUL and Windows device names on every OS, and on Windows a
+/// `:` (`C:x` is drive-relative and replaces the base it is joined to, `a:b`
+/// names a data stream). `.md` is appended if absent.
 pub fn workspace_filename(name: &str) -> Result<String, String> {
+    workspace_filename_on(name, cfg!(windows))
+}
+
+/// [`workspace_filename`] with the Windows-only `:` rule as a flag, so both
+/// platforms' behaviour can be tested on any host.
+fn workspace_filename_on(name: &str, reject_colon: bool) -> Result<String, String> {
     let trimmed = name.trim();
     let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
     // Checked on the stem, not the input: otherwise a bare "." passes and the
@@ -611,7 +1979,10 @@ pub fn workspace_filename(name: &str) -> Result<String, String> {
         || stem.contains('/')
         || stem.contains('\\')
         || stem.contains("..")
+        || stem.contains('\0')
+        || (reject_colon && stem.contains(':'))
         || stem.chars().all(|c| c == '.')
+        || is_windows_device_name(stem)
     {
         return Err(format!("ERROR: invalid name '{name}'"));
     }
@@ -680,6 +2051,49 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// A Jan subagent checkout (`git clone --shared` under the Jan home's
+    /// `worktrees/`) shares its main checkout's store too; the same clone made
+    /// anywhere else is a project of its own.
+    #[test]
+    fn a_shared_clone_under_the_jan_worktrees_keys_on_its_main_checkout() {
+        let main = unique_data_folder().join("main");
+        std::fs::create_dir_all(main.join(".git/objects")).unwrap();
+        let worktrees = jan_home().unwrap().join("worktrees");
+        // Unique ids: the Jan home is shared by every test in this process.
+        let id = unique_data_folder().file_name().unwrap().to_owned();
+        let slug_dir = worktrees.join(path_slug(&main.canonicalize().unwrap()));
+        let clone = slug_dir.join(&id);
+        // A writer that rewrote its alternates to name a project other than
+        // the one its slug directory belongs to.
+        let forged = worktrees.join("other-0").join(&id);
+        let elsewhere = unique_data_folder().join("clone");
+        for dir in [&clone, &forged, &elsewhere] {
+            std::fs::create_dir_all(dir.join(".git/objects/info")).unwrap();
+            std::fs::write(
+                dir.join(".git/objects/info/alternates"),
+                format!("{}\n", main.join(".git/objects").display()),
+            )
+            .unwrap();
+            std::fs::create_dir_all(dir.join("sub")).unwrap();
+        }
+        let main = main.canonicalize().unwrap();
+        // The store slug hashes the path's text, which `Path` equality does not
+        // compare: a trailing slash or another spelling of `main` would pass
+        // `==` and still land in a different, empty store.
+        assert_eq!(project_key(&clone).as_os_str(), main.as_os_str());
+        assert_eq!(path_slug(&project_key(&clone)), path_slug(&main));
+        assert_eq!(
+            project_key(&clone.join("sub")).as_os_str(),
+            main.join("sub").as_os_str()
+        );
+        assert_eq!(project_key(&elsewhere), elsewhere.canonicalize().unwrap());
+        assert_eq!(project_key(&forged), forged.canonicalize().unwrap());
+        let _ = std::fs::remove_dir_all(&slug_dir);
+        let _ = std::fs::remove_dir_all(forged.parent().unwrap());
+        let _ = std::fs::remove_dir_all(elsewhere.parent().unwrap());
+        let _ = std::fs::remove_dir_all(main.parent().unwrap());
+    }
+
     /// The whole point of the split: a thread sandbox is a sibling of the store,
     /// so no relative path from inside it stays within the sandbox and reaches
     /// memory. `escapes_project` refuses the climb.
@@ -691,59 +2105,412 @@ mod tests {
         assert!(!store_dir(&permanent_store(data), "memory").starts_with(&thread));
     }
 
-    #[tokio::test]
-    async fn scratch_dir_lifecycle_is_session_keyed_and_removable() {
-        let session = "t1";
-        let scratch = scratch_dir(session);
-        assert!(!scratch.exists());
-
-        let created = ensure_scratch_dir(session).await.unwrap();
-        assert_eq!(created, scratch);
-        assert!(scratch.is_dir());
-
-        std::fs::write(scratch.join("f"), b"x").unwrap();
-        remove_scratch_dir(session).await.unwrap();
-        assert!(!scratch.exists());
-        // Idempotent.
-        remove_scratch_dir(session).await.unwrap();
+    /// The cache layout: one folder per project under the Jan cache root,
+    /// named with the very slug the project's store uses, so `~/.jan/projects/<slug>`
+    /// and `<cache>/jan/<slug>` always name one project the same way.
+    #[test]
+    fn a_project_cache_uses_the_store_slug() {
+        let home = Path::new("/home/u/.jan");
+        let cache = Path::new("/home/u/.cache/jan");
+        let project = unique_data_folder();
+        std::fs::create_dir_all(&project).unwrap();
+        let dir = project_cache_dir_in(cache, Some(&project));
+        let store = project_store_in(home, &project);
+        assert_eq!(dir.parent(), Some(cache));
+        assert_eq!(dir.file_name(), store.file_name());
+        assert_eq!(
+            scratch_dir_in(&dir, "s1"),
+            cache.join(store.file_name().unwrap()).join("scratch/s1")
+        );
+        let _ = std::fs::remove_dir_all(&project);
     }
 
-    /// A scratch whose owner died (kill -9, power loss) has nobody left to
-    /// remove it and no `keep` list to rebuild, so the startup sweep collects it
-    /// by age. Nothing else in the temp dir is touched, and a fresh scratch
-    /// survives the real 24h threshold.
+    /// A linked worktree of a project shares its cache folder, as it shares
+    /// its store.
+    #[test]
+    fn a_linked_worktree_shares_its_main_checkouts_cache() {
+        let base = unique_data_folder();
+        let main = base.join("main");
+        std::fs::create_dir_all(main.join(".git/worktrees/w1")).unwrap();
+        let wt = base.join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        let gitdir = main.canonicalize().unwrap().join(".git/worktrees/w1");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+        let cache = Path::new("/c/jan");
+        assert_eq!(
+            project_cache_dir_in(cache, Some(&wt)),
+            project_cache_dir_in(cache, Some(&main))
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// No filesystem project (a desktop thread): the fixed `chat` sibling.
+    #[test]
+    fn a_session_with_no_project_uses_the_chat_folder() {
+        let cache = Path::new("/c/jan");
+        assert_eq!(project_cache_dir_in(cache, None), Path::new("/c/jan/chat"));
+        assert_eq!(
+            scratch_dir_in(&project_cache_dir_in(cache, None), "t1"),
+            Path::new("/c/jan/chat/scratch/t1")
+        );
+        // The real helpers agree with the explicit-root ones.
+        assert_eq!(project_cache_dir(None), jan_cache_root().join("chat"));
+        assert_eq!(
+            thread_scratch_dir("t1").unwrap(),
+            jan_cache_root().join("chat/scratch/t1")
+        );
+    }
+
+    /// A desktop thread's scratch is created, keyed by its id under `chat/`,
+    /// and removed with it.
     #[tokio::test]
-    async fn stale_scratch_dirs_are_swept_and_fresh_ones_are_not() {
-        let root = tmp_root("scratch_sweep");
+    async fn scratch_dir_lifecycle_is_session_keyed_and_removable() {
+        let session = format!("t1-{}", std::process::id());
+        let scratch = thread_scratch_dir(&session).unwrap();
+        assert!(!scratch.exists());
+
+        let created = ensure_scratch_dir(&session).await.unwrap();
+        assert_eq!(created, scratch);
+        assert!(scratch.is_dir());
+        assert!(scratch.starts_with(jan_cache_root().join("chat").join("scratch")));
+
+        std::fs::write(scratch.join("f"), b"x").unwrap();
+        remove_scratch_dir(&session).await.unwrap();
+        assert!(!scratch.exists());
+        // Idempotent.
+        remove_scratch_dir(&session).await.unwrap();
+    }
+
+    /// Backdate `path`'s mtime by `age`, so the real 7-day threshold can be
+    /// exercised without waiting a week.
+    fn age_by(path: &Path, age: std::time::Duration) {
+        let when = std::time::SystemTime::now() - age;
+        let mut open = std::fs::OpenOptions::new();
+        open.read(true);
+        // Windows opens a directory only with backup semantics, and setting
+        // its times needs write access.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            open.write(true).custom_flags(0x0200_0000);
+        }
+        open.open(path).unwrap().set_modified(when).unwrap();
+    }
+
+    const EIGHT_DAYS: std::time::Duration = std::time::Duration::from_secs(8 * 24 * 60 * 60);
+
+    /// A scratch whose owner died (kill -9, power loss) is collected at the
+    /// next start once it is a week old and no live session claims it, in
+    /// every project's folder. A live one (in `keep`) and a fresh one stay,
+    /// whatever their age; anything not named like a scratch is left alone.
+    #[tokio::test]
+    async fn the_startup_sweep_removes_only_stale_scratch_no_session_claims() {
+        let cache = tmp_root("scratch_sweep");
+        let a = project_cache_dir_in(&cache, None);
+        let b = cache.join("proj-1234abcd");
+        let crashed = scratch_dir_in(&a, "crashed");
+        let live = scratch_dir_in(&a, "live");
+        let fresh = scratch_dir_in(&b, "fresh");
+        let other_crashed = scratch_dir_in(&b, "gone");
+        for dir in [&crashed, &live, &fresh, &other_crashed] {
+            ensure_scratch_dir_path(dir).await.unwrap();
+            std::fs::write(dir.join("spill.txt"), b"x").unwrap();
+        }
+        let bystander = a.join("scratch").join("not.a.scratch");
+        std::fs::create_dir_all(&bystander).unwrap();
+        for dir in [&crashed, &live, &other_crashed, &bystander] {
+            age_by(dir, EIGHT_DAYS);
+        }
+
+        let keep = vec!["live".to_string()];
+        assert_eq!(sweep_scratch_in(&cache, &keep, SCRATCH_STALE_AFTER).await, 2);
+        assert!(!crashed.exists() && !other_crashed.exists(), "stale scratch goes");
+        assert!(live.join("spill.txt").is_file(), "a live session's scratch stays");
+        assert!(fresh.join("spill.txt").is_file(), "a fresh scratch stays");
+        assert!(bystander.is_dir(), "swept a directory that is not a scratch");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// With no OS cache dir the cache root falls back to the shared temp dir,
+    /// so it is named per user, and a name already taken by something that is
+    /// not this user's own directory (planted by another local user, or a
+    /// symlink) is passed over rather than trusted.
+    #[cfg(unix)]
+    #[test]
+    fn the_temp_fallback_is_per_user_and_skips_what_is_not_ours() {
+        let temp = tmp_root("temp_fallback");
+        std::fs::create_dir_all(&temp).unwrap();
+        let uid = nix::unistd::getuid();
+        let first = temp_cache_root_in(&temp);
+        assert_eq!(first, temp.join(format!("jan-{uid}")));
+        // Ours already: reused.
+        std::fs::create_dir(&first).unwrap();
+        assert_eq!(temp_cache_root_in(&temp), first);
+        // Not a directory of ours: skipped.
+        std::fs::remove_dir(&first).unwrap();
+        std::os::unix::fs::symlink(&temp, &first).unwrap();
+        let next = temp_cache_root_in(&temp);
+        assert_ne!(next, first);
+        assert!(next.file_name().unwrap().to_string_lossy().starts_with(&format!("jan-{uid}-")));
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Another live session's scratch (another CLI/TUI process, so not in this
+    /// one's `keep`) survives the sweep while its run holds a claim, however
+    /// old its mtime; once released it goes, lease file and all.
+    #[tokio::test]
+    async fn a_claimed_scratch_survives_the_sweep() {
+        let cache = tmp_root("scratch_sweep_claim");
+        let scratch = scratch_dir_in(&project_cache_dir_in(&cache, None), "other-live");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        let claim = claim_scratch_dir(&scratch).await.unwrap();
+        // A run that has gone on for over a week, writing only in subfolders.
+        age_by(&scratch, EIGHT_DAYS);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 0);
+        assert!(scratch.is_dir(), "a claimed scratch must survive");
+        drop(claim);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 1);
+        assert!(!scratch.exists());
+        let leftovers: Vec<_> = std::fs::read_dir(scratch.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(leftovers.is_empty(), "the lease goes with its scratch: {leftovers:?}");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// Claiming a scratch at the start of each turn marks it fresh, so an
+    /// interactive session idle between turns is not swept for a week after
+    /// its last one; a lease left by a scratch that is gone is collected.
+    #[tokio::test]
+    async fn claiming_a_scratch_marks_it_fresh() {
+        let cache = tmp_root("scratch_sweep_touch");
+        let project = project_cache_dir_in(&cache, None);
+        let scratch = scratch_dir_in(&project, "idle");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        age_by(&scratch, EIGHT_DAYS);
+        drop(claim_scratch_dir(&scratch).await.unwrap());
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 0);
+        assert!(scratch.is_dir(), "a scratch claimed just now is fresh");
+
+        let gone = scratch_dir_in(&project, "gone");
+        ensure_scratch_dir_path(&gone).await.unwrap();
+        drop(claim_scratch_dir(&gone).await.unwrap());
+        std::fs::remove_dir_all(&gone).unwrap();
+        sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await;
+        let names: Vec<String> = std::fs::read_dir(project.join(SCRATCH))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.iter().all(|n| !n.contains("gone")), "{names:?}");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// The sweep must not follow a symlink planted where a project's
+    /// `scratch/` folder or a scratch would be.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_startup_sweep_never_follows_a_symlink() {
+        let cache = tmp_root("scratch_sweep_link");
+        let victim = tmp_root("scratch_sweep_victim");
+        std::fs::create_dir_all(victim.join("old")).unwrap();
+        age_by(&victim.join("old"), EIGHT_DAYS);
+        std::fs::create_dir_all(cache.join("p-1")).unwrap();
+        std::os::unix::fs::symlink(&victim, cache.join("p-1").join("scratch")).unwrap();
+        let scratch = cache.join("p-2").join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::os::unix::fs::symlink(victim.join("old"), scratch.join("linked")).unwrap();
+        assert_eq!(sweep_scratch_in(&cache, &[], std::time::Duration::ZERO).await, 0);
+        assert!(victim.join("old").is_dir());
+        let _ = std::fs::remove_dir_all(&cache);
+        let _ = std::fs::remove_dir_all(&victim);
+    }
+
+    /// Older versions kept the scratch in the system temp dir; those are still
+    /// collected by age so an upgrade does not leak them.
+    #[tokio::test]
+    async fn legacy_temp_scratch_is_still_swept() {
+        let root = tmp_root("legacy_sweep");
         let orphan = root.join("jan-agent-orphan");
-        ensure_scratch_dir_path(&orphan).await.unwrap();
-        std::fs::write(orphan.join("spill.txt"), b"leaked").unwrap();
+        let recent = root.join("jan-agent-recent");
+        for dir in [&orphan, &recent] {
+            ensure_scratch_dir_path(dir).await.unwrap();
+        }
+        age_by(&orphan, EIGHT_DAYS);
+        let old_trash = root.join("jan-trash-old-1-1000000000000000000");
+        std::fs::create_dir_all(&old_trash).unwrap();
         let bystander = root.join("not-a-scratch");
         std::fs::create_dir_all(&bystander).unwrap();
-
-        assert_eq!(
-            sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await,
-            0,
-            "a fresh scratch is live"
-        );
-        assert!(orphan.is_dir());
-
-        assert_eq!(
-            sweep_scratch_older_than(&root, std::time::Duration::ZERO).await,
-            1
-        );
-        assert!(!orphan.exists(), "an abandoned scratch must be collected");
-        assert!(
-            bystander.is_dir(),
-            "swept a directory that is not a scratch"
-        );
-
+        age_by(&bystander, EIGHT_DAYS);
+        assert_eq!(sweep_legacy_scratch_in(&root, SCRATCH_STALE_AFTER).await, 2);
+        assert!(!orphan.exists() && !old_trash.exists());
+        assert!(recent.is_dir() && bystander.is_dir());
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Exit must not wait for a scratch full of package caches to be deleted:
+    /// it is moved aside, whole, beside where it was (same `scratch/` folder,
+    /// so the same filesystem).
+    #[tokio::test]
+    async fn trashing_a_scratch_moves_it_beside_itself() {
+        let cache = tmp_root("scratch_trash");
+        let scratch = scratch_dir_in(&cache.join("p-1"), "s1");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        std::fs::write(scratch.join("cache.bin"), b"x").unwrap();
+        trash_dir(&scratch, "s1").await.unwrap();
+        assert!(!scratch.exists());
+        let trashed: Vec<PathBuf> = std::fs::read_dir(scratch.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(trashed.len(), 1, "{trashed:?}");
+        let name = trashed[0].file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(SCRATCH_TRASH_PREFIX), "{name}");
+        assert!(thread_segment(&name).is_err(), "trash can never pass for a session id");
+        assert!(trashed[0].join("cache.bin").is_file());
+        // Idempotent: a scratch already gone is Ok.
+        trash_dir(&scratch, "s1").await.unwrap();
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// The real exit path: a CLI session's scratch under its project's folder
+    /// goes to trash there.
+    #[tokio::test]
+    async fn a_cli_session_scratch_is_trashed_in_its_project_folder() {
+        let project = unique_data_folder();
+        std::fs::create_dir_all(&project).unwrap();
+        let session = format!("cli-exit-{}", std::process::id());
+        let cache = project_cache_dir(Some(&project));
+        let scratch = ensure_scratch_dir_path(&scratch_dir_in(&cache, &session))
+            .await
+            .unwrap();
+        trash_scratch_dir_in(&cache, &session).await.unwrap();
+        assert!(!scratch.exists());
+        let parent = scratch.parent().unwrap();
+        assert_eq!(std::fs::read_dir(parent).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&cache);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// A trashed scratch is kept a week (it holds the session's subagent
+    /// results), then the startup sweep empties it; a fresh live scratch and
+    /// a bystander stay, and a symlink named like trash is unlinked without
+    /// following it.
+    #[tokio::test]
+    async fn trash_is_kept_a_week_then_emptied_by_the_startup_sweep() {
+        let cache = tmp_root("scratch_trash_sweep");
+        let project = cache.join("p-1");
+        let live = scratch_dir_in(&project, "live");
+        ensure_scratch_dir_path(&live).await.unwrap();
+        let ended = scratch_dir_in(&project, "ended");
+        ensure_scratch_dir_path(&ended).await.unwrap();
+        trash_dir(&ended, "ended").await.unwrap();
+        let root = project.join("scratch");
+        let trash = root.join(format!("{SCRATCH_TRASH_PREFIX}old-1-1000000000000000000"));
+        std::fs::create_dir_all(trash.join("deep")).unwrap();
+        std::fs::write(trash.join("deep/f"), b"x").unwrap();
+        let bystander = cache.join("not-a-scratch");
+        std::fs::create_dir_all(&bystander).unwrap();
+        std::fs::write(bystander.join("keep"), b"x").unwrap();
+        let link = root.join(format!("{SCRATCH_TRASH_PREFIX}link"));
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&bystander, &link).unwrap();
+
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 1);
+        assert!(!trash.exists(), "week-old trash goes");
+        let fresh = std::fs::read_dir(&root)
+            .unwrap()
+            .filter(|e| {
+                let name = e.as_ref().unwrap().file_name();
+                name.to_string_lossy().starts_with(&format!("{SCRATCH_TRASH_PREFIX}ended-"))
+            })
+            .count();
+        assert_eq!(fresh, 1, "fresh trash is kept");
+        assert!(live.is_dir(), "a fresh scratch is live");
+        assert!(bystander.join("keep").is_file(), "nothing outside trash is touched");
+        #[cfg(unix)]
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// A session scratch as subagents leave it: session files under
+    /// `subagents/` and results on `blackboard/`.
+    fn seed_subagent_files(scratch: &Path) -> [PathBuf; 2] {
+        let session = scratch.join("subagents").join("explore-session.jsonl");
+        let result = scratch.join("blackboard").join("explore.md");
+        for file in [&session, &result] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"x").unwrap();
+        }
+        [session, result]
+    }
+
+    /// Session exit: a subagent's session file and its blackboard entry go
+    /// with the scratch.
+    #[tokio::test]
+    async fn subagent_files_go_with_the_scratch_on_session_exit() {
+        let session = format!("sub-exit-{}", std::process::id());
+        let scratch = ensure_scratch_dir(&session).await.unwrap();
+        let files = seed_subagent_files(&scratch);
+        trash_scratch_dir_in(&project_cache_dir(None), &session).await.unwrap();
+        assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
+    }
+
+    /// Thread delete: removing the thread's sandbox wipes the scratch keyed
+    /// to the same id, subagent files included.
+    #[tokio::test]
+    async fn subagent_files_go_with_the_scratch_on_thread_delete() {
+        let data = unique_data_folder();
+        let thread = format!("sub-delete-{}", std::process::id());
+        ensure_thread_workspace(&data, &thread).await.unwrap();
+        let scratch = ensure_scratch_dir(&thread).await.unwrap();
+        let files = seed_subagent_files(&scratch);
+        remove_thread_workspace(&data, &thread).await.unwrap();
+        assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// An explicit delete is a delete: the thread's scratch is not parked in
+    /// the trash for a week, where its results and caches would outlive it.
+    #[tokio::test]
+    async fn thread_delete_leaves_no_scratch_in_the_trash() {
+        let data = unique_data_folder();
+        let thread = format!("no-trash-delete-{}", std::process::id());
+        ensure_thread_workspace(&data, &thread).await.unwrap();
+        let scratch = ensure_scratch_dir(&thread).await.unwrap();
+        std::fs::write(scratch.join("f"), b"x").unwrap();
+        remove_thread_workspace(&data, &thread).await.unwrap();
+        let trashed = format!("{SCRATCH_TRASH_PREFIX}{thread}-");
+        let left: Vec<_> = std::fs::read_dir(scratch.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with(&trashed))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Crash: a scratch nobody removed is collected by the stale sweep with its
+    /// subagent files, and a fresh one keeps them.
+    #[tokio::test]
+    async fn subagent_files_in_an_abandoned_scratch_are_swept() {
+        let cache = tmp_root("subagent_sweep");
+        let orphan = scratch_dir_in(&cache.join("chat"), "crashed");
+        ensure_scratch_dir_path(&orphan).await.unwrap();
+        let files = seed_subagent_files(&orphan);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 0);
+        assert!(files.iter().all(|f| f.exists()), "a fresh scratch keeps its files");
+        age_by(&orphan, EIGHT_DAYS);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 1);
+        assert!(files.iter().all(|f| !f.exists()) && !orphan.exists());
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
     /// The scratch root must never be a pre-planted symlink to another
-    /// directory: the sandbox binds it as `/tmp`, so trusting a redirect would
-    /// sanction an attacker-selected directory as the session's scratch.
+    /// directory: the sandbox binds it writable at its own path, so trusting a
+    /// redirect would sanction an attacker-selected directory as the scratch.
     #[cfg(unix)]
     #[tokio::test]
     async fn scratch_root_refuses_a_pre_planted_symlink() {
@@ -756,26 +2523,196 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
-    /// A freshly created scratch root is a real, restrictive directory.
+    /// A freshly created scratch root is a real, restrictive directory, and
+    /// the parents Jan had to create for it (`jan/<slug>/scratch`) are
+    /// owner-only too; a parent that already existed keeps its mode.
     #[cfg(unix)]
     #[tokio::test]
     async fn scratch_root_creation_is_a_real_private_dir() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = unique_data_folder();
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let dir = scratch_dir_in(&base.join("jan").join("p-1"), "s1");
         let r = ensure_scratch_dir_path(&dir).await;
         assert_eq!(r.unwrap(), dir);
         let meta = std::fs::symlink_metadata(&dir).unwrap();
         assert!(!meta.file_type().is_symlink());
         assert!(meta.is_dir());
-        assert_eq!(meta.permissions().mode() & 0o777, 0o700);
-        let _ = std::fs::remove_dir_all(&dir);
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        for created in [dir.as_path(), dir.parent().unwrap(), &base.join("jan/p-1"), &base.join("jan")] {
+            assert_eq!(mode(created), 0o700, "{created:?}");
+        }
+        assert_eq!(mode(&base), 0o755, "an existing parent is left alone");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A folder on the way to the scratch that is not this user's is refused,
+    /// even when it is one Jan meant to create: a `/tmp/jan-<uid>` another
+    /// user planted just before the create reads as "already exists", and
+    /// adopting it would let them swap everything under it. Another user's
+    /// node cannot be made without root, so `mine` stands in for ownership.
+    #[tokio::test]
+    async fn a_created_parent_that_is_not_mine_is_refused() {
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        let root = base.join("jan-1000");
+        let parent = root.join("p-1").join("scratch");
+
+        let yes = |_: &Path, _: &std::fs::Metadata| true;
+        let not_root = |p: &Path, _: &std::fs::Metadata| p != root;
+
+        // Planted between the walk and the create: refused once created.
+        let r = create_private_dirs_owned(&parent, yes, not_root).await;
+        assert!(r.is_err(), "another user's root was adopted");
+        assert!(!root.join("p-1").exists(), "nothing created under a refused root");
+
+        // Planted before the walk: the existing root is refused as found.
+        let r = create_private_dirs_owned(&parent, not_root, yes).await;
+        assert!(r.is_err(), "an existing root of another user's was adopted");
+        assert!(!root.join("p-1").exists(), "nothing created under a refused root");
+
+        // Mine, the same tree is accepted, the root now existing included.
+        let r = create_private_dirs_owned(&parent, yes, yes).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert!(parent.is_dir());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A symlink planted at the temp copy's name is refused, never followed:
+    /// the file it names keeps its contents and stays writable.
+    #[cfg(unix)]
+    #[test]
+    fn the_read_only_copy_never_writes_through_a_planted_symlink() {
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        let victim = base.join("victim");
+        std::fs::write(&victim, "mine").unwrap();
+        let planted = base.join("config.tmp-1-0");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+        assert!(create_read_only_new(&planted, b"[net]").is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
+        assert!(!std::fs::metadata(&victim).unwrap().permissions().readonly());
+
+        let fresh = base.join("config.tmp-1-1");
+        create_read_only_new(&fresh, b"[net]").unwrap();
+        assert_eq!(std::fs::read(&fresh).unwrap(), b"[net]");
+        assert!(std::fs::metadata(&fresh).unwrap().permissions().readonly());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The package cache is `<project cache>/pkg`, private, with a cargo home
+    /// that holds a read-only copy of the user's config and nothing else of
+    /// theirs: no credentials, no installed binaries.
+    #[tokio::test]
+    async fn pkg_cache_holds_only_a_read_only_cargo_config() {
+        let base = unique_data_folder();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(host.join("bin")).unwrap();
+        std::fs::write(host.join("config.toml"), "[net]\noffline = true\n").unwrap();
+        std::fs::write(host.join("credentials.toml"), "token = \"secret\"\n").unwrap();
+        std::fs::write(host.join("bin/tool"), "").unwrap();
+        let project = base.join("cache/jan/p-1");
+
+        let pkg = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        assert_eq!(pkg.root, project.join("pkg"));
+        let cargo = pkg.root.join("cargo");
+        let config = pkg.cargo_config.clone().expect("config offered");
+        assert_eq!(config.host, host.join("config.toml"));
+        assert_eq!(config.copy, cargo.join("config.toml"));
+        assert_eq!(std::fs::read_to_string(&config.copy).unwrap(), "[net]\noffline = true\n");
+        assert!(std::fs::metadata(&config.copy).unwrap().permissions().readonly());
+        let names: Vec<_> = std::fs::read_dir(&cargo)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["config.toml".to_string()], "{names:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for dir in [&pkg.root, &cargo] {
+                let mode = std::fs::metadata(dir).unwrap().permissions().mode() & 0o777;
+                assert_eq!(mode, 0o700, "{dir:?}");
+            }
+        }
+
+        // Re-copied each session, so a host edit applies; a host with no config
+        // gets an empty one (so the sandbox finds both names read-only rather
+        // than free to plant), outside the package cache, where no sandbox
+        // can write it; and a planted legacy `config` is cleared.
+        std::fs::write(host.join("config.toml"), "[net]\noffline = false\n").unwrap();
+        let again = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        let copy = again.cargo_config.unwrap().copy;
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "[net]\noffline = false\n");
+        std::fs::write(cargo.join("config"), "planted").unwrap();
+        std::fs::remove_file(host.join("config.toml")).unwrap();
+        for host_home in [Some(host.as_path()), None] {
+            let none = prepare_pkg_cache_in(&project, host_home).await.unwrap();
+            let empty = none.cargo_config.expect("an empty config stands in");
+            assert!(!empty.host.starts_with(&none.root), "{:?}", empty.host);
+            assert!(empty.host.starts_with(&project), "{:?}", empty.host);
+            assert_eq!(std::fs::read(&empty.host).unwrap(), b"");
+            assert_eq!(std::fs::read(&copy).unwrap(), b"");
+            assert!(!cargo.join("config").exists());
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A host with only the legacy `config` name still gets it offered, under
+    /// the name cargo prefers.
+    #[tokio::test]
+    async fn pkg_cache_offers_a_legacy_cargo_config() {
+        let base = unique_data_folder();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(&host).unwrap();
+        std::fs::write(host.join("config"), "legacy").unwrap();
+        let pkg = prepare_pkg_cache_in(&base.join("p"), Some(&host)).await.unwrap();
+        let config = pkg.cargo_config.unwrap();
+        assert_eq!(config.host, host.join("config"));
+        assert_eq!(config.copy.file_name().unwrap(), "config.toml");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Two projects never share a package cache.
+    #[test]
+    fn projects_get_distinct_pkg_dirs() {
+        let cache = Path::new("/c/jan");
+        let a = unique_data_folder();
+        let b = unique_data_folder();
+        let pa = pkg_dir_in(&project_cache_dir_in(cache, Some(&a)));
+        let pb = pkg_dir_in(&project_cache_dir_in(cache, Some(&b)));
+        assert_ne!(pa, pb);
+        assert!(pa.starts_with(cache) && pa.ends_with("pkg"));
+    }
+
+    /// A symlink planted where the package cache goes is refused, as for the
+    /// scratch: the sandbox must never bind an attacker-chosen folder.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pkg_cache_refuses_a_pre_planted_symlink() {
+        let base = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join("pkg")).unwrap();
+        assert!(prepare_pkg_cache_in(&base, None).await.is_err());
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]
     fn thread_segment_rejects_traversal_and_separators() {
         for bad in [
             "", "  ", ".", "..", "...", "../x", "a/b", "a\\b", "a b", "a;b", "a$b", "évil",
+            "v1.2", "a.", " padded", "padded ", "C:x", "a\0b",
         ] {
+            assert!(
+                thread_segment(bad).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+        }
+        // Windows device names, in any case and with an extension.
+        for bad in ["CON", "nul", "Aux", "com1", "LPT9", "nul.txt", "CON.tar.gz"] {
             assert!(
                 thread_segment(bad).is_err(),
                 "expected {bad:?} to be rejected"
@@ -790,11 +2727,22 @@ mod tests {
             "01H8XGJWBWBAQ",
             "3f2a9c1e-1234-4c9a-9b7e-000000000000",
             "thread_42",
-            "v1.2",
+            "temporary-chat",
+            "CONSOLE",
+            "COM10",
+            "con_1",
         ] {
             assert_eq!(thread_segment(ok).unwrap(), ok);
         }
-        assert_eq!(thread_segment("  padded  ").unwrap(), "padded");
+    }
+
+    #[tokio::test]
+    async fn scratch_dir_refuses_an_id_that_is_not_one_segment() {
+        for bad in ["../x", "..", "a/b", "a\\b", "", "nul"] {
+            assert!(ensure_scratch_dir(bad).await.is_err(), "{bad:?}");
+            assert!(remove_scratch_dir(bad).await.is_err(), "{bad:?}");
+            assert!(trash_scratch_dir_in(Path::new("/c"), bad).await.is_err(), "{bad:?}");
+        }
     }
 
     #[tokio::test]
@@ -870,6 +2818,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn filename_rejects_nul_device_names_and_windows_drive_prefixes() {
+        for bad in ["a\0b", "nul", "CON.md", "com1", "aux.txt"] {
+            for reject_colon in [true, false] {
+                assert!(workspace_filename_on(bad, reject_colon).is_err(), "{bad:?}");
+            }
+            assert!(crate::skills::safe_stem(bad).is_err(), "{bad:?}");
+        }
+        // `:` is refused on Windows only: elsewhere it is an ordinary character
+        // that existing names may already use.
+        for colon in ["C:x", "c:", "a:b", "C:x.md"] {
+            assert!(workspace_filename_on(colon, true).is_err(), "{colon:?} on Windows");
+            assert!(workspace_filename_on(colon, false).is_ok(), "{colon:?} elsewhere");
+            assert_eq!(workspace_filename(colon).is_err(), cfg!(windows), "{colon:?}");
+        }
+        assert_eq!(workspace_filename("console").unwrap(), "console.md");
+    }
+
     /// Dot-only and empty-stem names are rejected rather than turned into a
     /// hidden file. A bare "." used to yield "..md" -- contained, but a name the
     /// guard would reject as input.
@@ -882,6 +2848,175 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn host_data_folder_wins_over_the_requested_one() {
+        let host = PathBuf::from("/host/Jan/data");
+        assert_eq!(
+            pick_data_folder(Some(host.clone()), "/Users/x/Library/LaunchAgents"),
+            host
+        );
+        assert_eq!(pick_data_folder(Some(host.clone()), ""), host);
+        // No host installed (this crate's tests): the argument is all there is.
+        assert_eq!(
+            pick_data_folder(None, "/tmp/data"),
+            PathBuf::from("/tmp/data")
+        );
+    }
+
+    const DATA: &str = "/srv/jan-data";
+
+    fn write_root(root: &str, home: &str) -> Result<(), String> {
+        validate_write_root(Path::new(root), Some(Path::new(home)), Path::new(DATA))
+    }
+
+    #[test]
+    fn validate_write_root_refuses_home_and_its_ancestors() {
+        assert!(write_root("/home/u", "/home/u").is_err());
+        assert!(write_root("/home", "/home/u").is_err());
+    }
+
+    #[test]
+    fn validate_write_root_refuses_protected_folders() {
+        for bad in [
+            "/home/u/.ssh",
+            "/home/u/.config",
+            "/home/u/.config/autostart",
+            "/home/u/.config/systemd/user",
+            "/home/u/.config/fish",
+            "/home/u/.local",
+            "/home/u/.local/bin",
+            "/home/u/.local/share/applications",
+            "/home/u/bin",
+            "/home/u/.cargo/bin",
+            "/home/u/.oh-my-zsh/custom",
+            "/home/u/Library",
+            "/home/u/Library/LaunchAgents",
+            "/home/u/Library/LaunchAgents/sub",
+            "/home/u/Library/Services",
+            "/home/u/Library/Application Scripts/com.example",
+            "/home/u/AppData/Local/Microsoft/WindowsApps",
+            "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu",
+            "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+            "/home/u/Applications",
+            "/home/u/Applications/Tool.app",
+            "/home/u/Library/Application Support",
+            "/home/u/Library/Application Support/Jan/data",
+            "/home/u/Library/Application Support/Code/User",
+            "/home/u/AppData/Local/Programs",
+            "/home/u/AppData/Local/Programs/Jan",
+            "/home/u/.vscode/extensions",
+            "/home/u/.npm",
+            "/home/u/.nvm/versions",
+            "/home/u/.bun/bin",
+            "/home/u/.deno",
+        ] {
+            assert!(
+                write_root(bad, "/home/u").is_err(),
+                "{bad} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_write_root_accepts_a_project_folder() {
+        for ok in [
+            "/home/u/projects/site",
+            "/home/u/Documents/deck",
+            "/home/u/.configs-backup",
+            "/home/u/Library-notes",
+            "/home/u/binaries",
+            "/srv/work",
+            "/srv/jan-data-export",
+        ] {
+            assert!(write_root(ok, "/home/u").is_ok(), "{ok} should be accepted");
+        }
+    }
+
+    #[test]
+    fn validate_write_root_refuses_when_home_is_unknown() {
+        let data = Path::new(DATA);
+        assert!(validate_write_root(Path::new("/srv/work"), None, data).is_err());
+    }
+
+    #[test]
+    fn validate_write_root_refuses_the_data_folder_and_inside_it() {
+        assert!(write_root(DATA, "/home/u").is_err());
+        assert!(write_root("/srv/jan-data/threads", "/home/u").is_err());
+    }
+
+    // APFS and NTFS are case-insensitive by default, and `canonicalize` keeps
+    // the spelling the caller used.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn validate_write_root_ignores_case_where_the_filesystem_does() {
+        for bad in [
+            "/home/u/.SSH",
+            "/home/u/library/launchagents",
+            "/HOME/U",
+            "/SRV/JAN-DATA/x",
+        ] {
+            assert!(
+                write_root(bad, "/home/u").is_err(),
+                "{bad} should be refused"
+            );
+        }
+    }
+
+    /// `/System/Volumes/Data/...` is the same folder as `/...` on macOS.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn validate_write_root_sees_through_the_data_volume_firmlink() {
+        for bad in [
+            "/System/Volumes/Data/Users/u",
+            "/System/Volumes/Data/Users",
+            "/System/Volumes/Data",
+            "/system/volumes/data/Users/u/.ssh",
+            "/System/Volumes/Data/Users/u/Library/LaunchAgents",
+            "/System/Volumes/Data/srv/jan-data/threads",
+        ] {
+            assert!(write_root(bad, "/Users/u").is_err(), "{bad} should be refused");
+        }
+        // And the other way round: a home spelled through the firmlink.
+        assert!(write_root("/Users/u/.ssh", "/System/Volumes/Data/Users/u").is_err());
+        assert!(write_root("/System/Volumes/Data/Users/u/projects/site", "/Users/u").is_ok());
+        assert!(write_root("/System/Volumes/DataX/u", "/Users/u").is_ok());
+    }
+
+    #[test]
+    fn data_volume_prefix_is_dropped_only_as_a_whole_component() {
+        assert_eq!(strip_data_volume_prefix("/system/volumes/data/users/u"), "/users/u");
+        assert_eq!(strip_data_volume_prefix("/system/volumes/data"), "/");
+        assert_eq!(strip_data_volume_prefix("/system/volumes/datax"), "/system/volumes/datax");
+        assert_eq!(strip_data_volume_prefix("/users/u"), "/users/u");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_write_root_follows_a_symlinked_protected_folder() {
+        let base = tmp_root("write_root_symlink");
+        let home = base.join("home");
+        let real = base.join("dotfiles").join("config");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(real.join("fish")).unwrap();
+        std::os::unix::fs::symlink(&real, home.join(".config")).unwrap();
+        let (home, real) = (home.canonicalize().unwrap(), real.canonicalize().unwrap());
+        let data = base.join("data");
+        for bad in [
+            real.clone(),
+            real.join("fish"),
+            real.parent().unwrap().to_path_buf(),
+        ] {
+            assert!(
+                validate_write_root(&bad, Some(&home), &data).is_err(),
+                "{} should be refused",
+                bad.display()
+            );
+        }
+        let project = base.join("project");
+        assert!(validate_write_root(&project, Some(&home), &data).is_ok());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     // Every rejection here is a case where the mount would not mean what the UI
     // says it means, so each is refused rather than silently degraded.
     #[test]
@@ -1041,6 +3176,541 @@ mod tests {
         remove_session_workspace(&data, "s1").await.unwrap();
         assert!(!dir.exists());
         remove_session_workspace(&data, "s1").await.unwrap();
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    // ---- Cowork sandbox -> thread workspace copy ---------------------------
+
+    fn seed_session(data: &Path, id: &str) -> PathBuf {
+        let dir = session_workspace(data, id).unwrap();
+        std::fs::create_dir_all(dir.join("src/deep")).unwrap();
+        std::fs::create_dir_all(dir.join("empty-dir")).unwrap();
+        std::fs::write(dir.join("notes.md"), b"the agent's notes").unwrap();
+        std::fs::write(dir.join("src/deep/a.rs"), b"fn a() {}").unwrap();
+        dir
+    }
+
+    /// Every entry under `root` with its content, links marked `@`.
+    fn tree(root: &Path) -> Vec<String> {
+        fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) {
+            let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().collect();
+            entries.sort_by_key(|e| e.file_name());
+            for e in entries {
+                let rel = e.path().strip_prefix(base).unwrap().to_string_lossy().into_owned();
+                let ft = e.file_type().unwrap();
+                if ft.is_dir() {
+                    out.push(format!("{rel}/"));
+                    walk(&e.path(), base, out);
+                } else if ft.is_symlink() {
+                    out.push(format!("{rel}@"));
+                } else {
+                    out.push(format!("{rel}={}", std::fs::read_to_string(e.path()).unwrap()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, root, &mut out);
+        out
+    }
+
+    fn age_file(path: &Path, age: std::time::Duration) {
+        let when = std::time::SystemTime::now() - age;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_session_sandbox_is_copied_into_the_thread_workspace_and_left_in_place() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-1");
+        let before = tree(&src);
+
+        let r = copy_session_workspace_to_thread(&data, "cw-1").await.unwrap();
+        assert_eq!(r, WorkspaceCopy { copied: true, files: 2, skipped: 0, unreadable: 0 });
+
+        let dst = thread_workspace(&data, "cw-1").unwrap();
+        assert_eq!(tree(&dst), before);
+        // Rollback source: the legacy folder is intentionally left behind.
+        assert_eq!(tree(&src), before);
+        // The staging directory is gone; only the thread sandbox and its marker remain.
+        assert!(!copy_staging_dir(&data, "cw-1").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn a_session_with_no_sandbox_copies_nothing_and_creates_nothing() {
+        let data = unique_data_folder();
+        let r = copy_session_workspace_to_thread(&data, "never-ran").await.unwrap();
+        assert!(!r.copied);
+        assert!(!thread_workspace(&data, "never-ran").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn the_copy_refuses_ids_that_are_not_one_path_segment() {
+        let data = unique_data_folder();
+        for bad in ["../escape", "a/b", "..", "", "nul"] {
+            assert!(copy_session_workspace_to_thread(&data, bad).await.is_err(), "{bad:?}");
+        }
+        assert!(!data.exists() || std::fs::read_dir(&data).unwrap().count() == 0);
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A retry after a crash (or a second run) leaves the same tree, and
+    /// replaces the earlier copy rather than merging into it: a file the first
+    /// run copied and the source no longer has does not linger.
+    #[tokio::test]
+    async fn a_retry_replaces_its_own_earlier_copy_deterministically() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-2");
+        copy_session_workspace_to_thread(&data, "cw-2").await.unwrap();
+        let dst = thread_workspace(&data, "cw-2").unwrap();
+        let first = tree(&dst);
+        copy_session_workspace_to_thread(&data, "cw-2").await.unwrap();
+        assert_eq!(tree(&dst), first);
+
+        std::fs::write(dst.join("partial.tmp"), b"left by a crashed run").unwrap();
+        std::fs::remove_file(src.join("notes.md")).unwrap();
+        copy_session_workspace_to_thread(&data, "cw-2").await.unwrap();
+        let after = tree(&dst);
+        assert!(!after.iter().any(|e| e.starts_with("partial.tmp") || e.starts_with("notes.md")));
+        assert_eq!(after, tree(&src));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Never merge into a workspace the migration did not produce: a thread
+    /// that already has files of its own keeps them untouched.
+    #[tokio::test]
+    async fn a_foreign_non_empty_thread_workspace_is_never_merged_into() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-3");
+        let dst = ensure_thread_workspace(&data, "cw-3").await.unwrap();
+        std::fs::write(dst.join("mine.txt"), b"not the migration's").unwrap();
+
+        let err = copy_session_workspace_to_thread(&data, "cw-3").await.unwrap_err();
+        assert!(err.contains("refusing to merge"), "{err}");
+        assert_eq!(tree(&dst), vec!["mine.txt=not the migration's".to_string()]);
+        assert!(!copy_staging_dir(&data, "cw-3").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn an_empty_thread_workspace_is_filled() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-4");
+        let dst = ensure_thread_workspace(&data, "cw-4").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-4").await.unwrap();
+        assert!(dst.join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A symlink in the session sandbox is never followed and never copied, so
+    /// nothing outside the tree is read into the thread's sandbox: file links,
+    /// directory links, links within the tree and dangling ones alike.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinks_are_neither_followed_nor_copied() {
+        let data = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(outside.join("secrets")).unwrap();
+        std::fs::write(outside.join("secrets/key"), b"TOP SECRET").unwrap();
+        std::fs::write(outside.join("file.txt"), b"outside file").unwrap();
+        let src = seed_session(&data, "cw-5");
+        std::os::unix::fs::symlink(outside.join("file.txt"), src.join("link-file")).unwrap();
+        std::os::unix::fs::symlink(outside.join("secrets"), src.join("src/link-dir")).unwrap();
+        std::os::unix::fs::symlink("notes.md", src.join("inside-link")).unwrap();
+        std::os::unix::fs::symlink(outside.join("missing"), src.join("dangling")).unwrap();
+
+        let r = copy_session_workspace_to_thread(&data, "cw-5").await.unwrap();
+        assert_eq!(r.skipped, 4);
+        assert_eq!(r.files, 2);
+        let dst = thread_workspace(&data, "cw-5").unwrap();
+        let got = tree(&dst);
+        assert!(got.iter().all(|e| !e.contains("TOP SECRET") && !e.contains("outside file")), "{got:?}");
+        assert!(got.iter().all(|e| !e.ends_with('@')), "no link was recreated: {got:?}");
+        assert_eq!(std::fs::read(outside.join("secrets/key")).unwrap(), b"TOP SECRET");
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A session sandbox that is itself a symlink is refused, not followed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlinked_session_root_is_refused() {
+        let data = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("x"), b"x").unwrap();
+        std::fs::create_dir_all(sessions_dir(&data)).unwrap();
+        std::os::unix::fs::symlink(&outside, session_workspace(&data, "cw-6").unwrap()).unwrap();
+        assert!(copy_session_workspace_to_thread(&data, "cw-6").await.is_err());
+        assert!(!thread_workspace(&data, "cw-6").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A thread workspace that is a symlink is refused: the copy would
+    /// otherwise be written through it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlinked_thread_workspace_is_refused() {
+        let data = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&outside).unwrap();
+        seed_session(&data, "cw-7");
+        std::fs::create_dir_all(threads_dir(&data)).unwrap();
+        std::os::unix::fs::symlink(&outside, thread_workspace(&data, "cw-7").unwrap()).unwrap();
+        assert!(copy_session_workspace_to_thread(&data, "cw-7").await.is_err());
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    fn count_files(root: &Path) -> usize {
+        std::fs::read_dir(root)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| {
+                        if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                            count_files(&e.path())
+                        } else {
+                            1
+                        }
+                    })
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Two overlapping copies of one id used to share one staging directory:
+    /// the second deleted it while the first was still filling it, and the
+    /// first returned Ok over a partial tree. Now they are serialized per id:
+    /// every caller returns Ok, only after the whole tree is in place, and a
+    /// caller that waited behind a finished copy gets its result instead of
+    /// redoing it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_copies_of_one_id_never_expose_a_partial_tree() {
+        let data = unique_data_folder();
+        let src = session_workspace(&data, "cw-par").unwrap();
+        let (dirs, per_dir) = (10, 120);
+        for d in 0..dirs {
+            std::fs::create_dir_all(src.join(format!("d{d}"))).unwrap();
+            for f in 0..per_dir {
+                std::fs::write(src.join(format!("d{d}/f{f}.txt")), format!("{d}-{f}")).unwrap();
+            }
+        }
+        let want = dirs * per_dir;
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let data = data.clone();
+            tasks.push(tokio::spawn(async move {
+                let r = copy_session_workspace_to_thread(&data, "cw-par").await;
+                // The instant a call returns, the whole tree must be there.
+                let seen = count_files(&thread_workspace(&data, "cw-par").unwrap());
+                (r, seen)
+            }));
+        }
+        let mut results = Vec::new();
+        for t in tasks {
+            let (r, seen) = t.await.unwrap();
+            let r = r.expect("a concurrent copy must not fail");
+            assert_eq!(seen, want, "a call returned before the tree was complete");
+            assert_eq!(r.files, want);
+            results.push(r);
+        }
+        assert!(results.windows(2).all(|w| w[0] == w[1]), "{results:?}");
+        assert_eq!(count_files(&thread_workspace(&data, "cw-par").unwrap()), want);
+        let leftovers: Vec<_> = std::fs::read_dir(threads_dir(&data))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(COPY_STAGING_PREFIX))
+            .collect();
+        assert!(leftovers.is_empty(), "no staging directory is left behind");
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A sweep that runs while a copy of the id is in flight waits for it and
+    /// then leaves the finished (uncommitted, marked) workspace alone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_sweep_racing_a_copy_never_deletes_the_fresh_copy() {
+        let data = unique_data_folder();
+        let src = session_workspace(&data, "cw-race").unwrap();
+        std::fs::create_dir_all(&src).unwrap();
+        for f in 0..1500 {
+            std::fs::write(src.join(format!("f{f}")), b"x").unwrap();
+        }
+        ensure_thread_workspace(&data, "other").await.unwrap();
+        for _ in 0..5 {
+            let d = data.clone();
+            let copy = tokio::spawn(async move {
+                copy_session_workspace_to_thread(&d, "cw-race").await.unwrap()
+            });
+            let d = data.clone();
+            let sweep = tokio::spawn(async move {
+                sweep_thread_workspaces(&d, &["other".to_string()]).await.unwrap()
+            });
+            copy.await.unwrap();
+            sweep.await.unwrap();
+            assert_eq!(count_files(&thread_workspace(&data, "cw-race").unwrap()), 1500);
+        }
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Staging names are unique per call, and a committed thread's workspace
+    /// is refused (and its spent marker dropped) rather than replaced.
+    #[tokio::test]
+    async fn a_committed_thread_refuses_a_copy_and_drops_the_marker() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-done");
+        assert_ne!(
+            copy_staging_unique(&data, "cw-done").unwrap(),
+            copy_staging_unique(&data, "cw-done").unwrap()
+        );
+        copy_session_workspace_to_thread(&data, "cw-done").await.unwrap();
+        let marker = copy_marker(&data, "cw-done").unwrap();
+        assert!(marker.exists());
+        let dir = data.join("threads/cw-done");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("thread.json"), b"{}").unwrap();
+        std::fs::write(thread_workspace(&data, "cw-done").unwrap().join("mine"), b"user work")
+            .unwrap();
+
+        let err = copy_session_workspace_to_thread(&data, "cw-done").await.unwrap_err();
+        assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+        assert!(!marker.exists(), "the marker of a committed thread is spent");
+        assert!(thread_workspace(&data, "cw-done").unwrap().join("mine").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The sweep drops the spent marker of a committed thread at once, not
+    /// after the grace.
+    #[tokio::test]
+    async fn the_sweep_drops_a_spent_marker_immediately() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-spent");
+        ensure_thread_workspace(&data, "other").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-spent").await.unwrap();
+        let dir = data.join("threads/cw-spent");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("thread.json"), b"{}").unwrap();
+        sweep_thread_workspaces(&data, &["cw-spent".to_string(), "other".to_string()])
+            .await
+            .unwrap();
+        assert!(!copy_marker(&data, "cw-spent").unwrap().exists());
+        assert!(thread_workspace(&data, "cw-spent").unwrap().join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Errors retrying cannot fix carry the stable PERMANENT: prefix; others
+    /// (I/O) do not.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn permanent_refusals_carry_the_stable_prefix() {
+        let data = unique_data_folder();
+        let err = copy_session_workspace_to_thread(&data, "../x").await.unwrap_err();
+        assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(sessions_dir(&data)).unwrap();
+        std::os::unix::fs::symlink(&outside, session_workspace(&data, "cw-l").unwrap()).unwrap();
+        let err = copy_session_workspace_to_thread(&data, "cw-l").await.unwrap_err();
+        assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+        std::fs::write(session_workspace(&data, "cw-f").unwrap(), b"a file").unwrap();
+        let err = copy_session_workspace_to_thread(&data, "cw-f").await.unwrap_err();
+        assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+        seed_session(&data, "cw-m");
+        let dst = ensure_thread_workspace(&data, "cw-m").await.unwrap();
+        std::fs::write(dst.join("mine"), b"x").unwrap();
+        let err = copy_session_workspace_to_thread(&data, "cw-m").await.unwrap_err();
+        assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// One unreadable entry no longer aborts the copy: it is left out and
+    /// counted, and everything else arrives.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_unreadable_entry_is_skipped_and_counted_not_fatal() {
+        use std::os::unix::fs::PermissionsExt;
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-perm");
+        std::fs::write(src.join("secret"), b"no").unwrap();
+        std::fs::set_permissions(src.join("secret"), std::fs::Permissions::from_mode(0o000))
+            .unwrap();
+        std::fs::create_dir_all(src.join("locked/inner")).unwrap();
+        std::fs::write(src.join("locked/inner/x"), b"x").unwrap();
+        std::fs::set_permissions(src.join("locked"), std::fs::Permissions::from_mode(0o000))
+            .unwrap();
+        // Root reads anything; the case cannot be produced there.
+        let readable = std::fs::read(src.join("secret")).is_ok();
+
+        let r = copy_session_workspace_to_thread(&data, "cw-perm").await;
+        std::fs::set_permissions(src.join("locked"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let r = r.unwrap();
+        if !readable {
+            assert_eq!(r.unreadable, 2, "{r:?}");
+            assert_eq!(r.files, 2);
+        }
+        let dst = thread_workspace(&data, "cw-perm").unwrap();
+        assert!(dst.join("notes.md").is_file());
+        assert!(dst.join("src/deep/a.rs").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A copy that would leave less than the reserve free is refused before
+    /// anything is written, and the error is retryable (no PERMANENT prefix).
+    #[test]
+    fn a_copy_that_does_not_fit_is_refused_and_retryable() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-full");
+        let needed = tree_size(&src);
+        assert!(needed > 0);
+        let threads = threads_dir(&data);
+        let fits = |_: &Path| Ok(needed + COPY_FREE_SPACE_RESERVE);
+        assert!(check_free_space(&src, &threads, needed, fits).is_ok());
+        let short = |_: &Path| Ok(needed + COPY_FREE_SPACE_RESERVE - 1);
+        let err = check_free_space(&src, &threads, needed, short).unwrap_err();
+        assert!(err.contains("not enough free disk space"), "{err}");
+        assert!(!err.starts_with(PERMANENT_PREFIX), "{err}");
+        // Unknown free space never blocks the copy.
+        let unknown = |_: &Path| Err(std::io::Error::other("statvfs"));
+        assert!(check_free_space(&src, &threads, u64::MAX, unknown).is_ok());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The size counts regular files only; a symlink is never followed.
+    #[cfg(unix)]
+    #[test]
+    fn tree_size_does_not_follow_symlinks() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-size");
+        let before = tree_size(&src);
+        let big = data.join("big");
+        std::fs::write(&big, vec![0u8; 4096]).unwrap();
+        std::os::unix::fs::symlink(&big, src.join("link")).unwrap();
+        assert_eq!(tree_size(&src), before);
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A staging directory left by a crash is cleared by the retry; another
+    /// id's is not this retry's to remove.
+    #[tokio::test]
+    async fn a_stale_staging_directory_is_cleared_by_the_retry() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-8");
+        let stale = copy_staging_dir(&data, "cw-8").unwrap();
+        std::fs::create_dir_all(stale.join("half")).unwrap();
+        let other = copy_staging_dir(&data, "cw-8-b").unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        copy_session_workspace_to_thread(&data, "cw-8").await.unwrap();
+        assert!(!stale.exists());
+        assert!(other.is_dir());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Deleting the migrated thread removes its workspace like any thread's,
+    /// and the session sandbox it was copied from stays (rollback source).
+    #[tokio::test]
+    async fn deleting_the_thread_removes_the_migrated_workspace_not_the_source() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-9");
+        copy_session_workspace_to_thread(&data, "cw-9").await.unwrap();
+        let dst = thread_workspace(&data, "cw-9").unwrap();
+        assert!(dst.is_dir());
+
+        remove_thread_workspace(&data, "cw-9").await.unwrap();
+        assert!(!dst.exists());
+        assert!(!copy_marker(&data, "cw-9").unwrap().exists());
+        assert!(src.join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The migrated thread shares its id with the legacy session, whose
+    /// sandbox is kept as the rollback source: deleting the thread must not
+    /// wipe the scratch keyed to that id while the session sandbox exists.
+    #[tokio::test]
+    async fn deleting_the_migrated_thread_keeps_the_legacy_sessions_scratch() {
+        let data = unique_data_folder();
+        let id = format!("cw-scr-{}", std::process::id());
+        seed_session(&data, &id);
+        let scratch = ensure_scratch_dir(&id).await.unwrap();
+        std::fs::write(scratch.join("cache"), b"x").unwrap();
+        copy_session_workspace_to_thread(&data, &id).await.unwrap();
+        remove_thread_workspace(&data, &id).await.unwrap();
+        assert!(scratch.join("cache").is_file(), "the session's scratch survives");
+
+        // With no legacy session sandbox the scratch goes, as for any thread.
+        remove_session_workspace(&data, &id).await.unwrap();
+        assert!(!scratch.exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The startup sweep keeps the migrated workspace of a live thread, and
+    /// collects it (with its marker) once the thread is gone and the copy is
+    /// older than the grace.
+    #[tokio::test]
+    async fn the_thread_sweep_collects_a_migrated_workspace_only_when_its_thread_is_gone() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-10");
+        ensure_thread_workspace(&data, "other").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-10").await.unwrap();
+        let dst = thread_workspace(&data, "cw-10").unwrap();
+        let marker = copy_marker(&data, "cw-10").unwrap();
+        age_file(&marker, COPY_GRACE + std::time::Duration::from_secs(60));
+
+        sweep_thread_workspaces(&data, &["cw-10".to_string(), "other".to_string()])
+            .await
+            .unwrap();
+        assert!(dst.join("notes.md").is_file(), "a live thread's workspace stays");
+
+        sweep_thread_workspaces(&data, &["other".to_string()]).await.unwrap();
+        assert!(!dst.exists());
+        assert!(!marker.exists(), "the marker goes with its workspace");
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The migration copies before it commits thread.json, so for a while the
+    /// copied workspace has no thread in the list the sweep is given. A sweep
+    /// in that window (the app's startup one, while the migration finishes in
+    /// the background) must not delete it.
+    #[tokio::test]
+    async fn a_fresh_copy_survives_a_sweep_that_runs_before_its_thread_commits() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-11");
+        ensure_thread_workspace(&data, "other").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-11").await.unwrap();
+        sweep_thread_workspaces(&data, &["other".to_string()]).await.unwrap();
+        assert!(thread_workspace(&data, "cw-11").unwrap().join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Staging and marker leftovers of ids that never retry do not accumulate,
+    /// and a fresh one (a copy in progress) is left alone.
+    #[tokio::test]
+    async fn the_sweep_collects_old_staging_and_marker_leftovers_only() {
+        let data = unique_data_folder();
+        ensure_thread_workspace(&data, "keep-me").await.unwrap();
+        let old = copy_staging_dir(&data, "gone").unwrap();
+        let fresh = copy_staging_dir(&data, "busy").unwrap();
+        let old_marker = copy_marker(&data, "gone").unwrap();
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&fresh).unwrap();
+        std::fs::write(&old_marker, b"").unwrap();
+        age_file(&old_marker, COPY_GRACE + std::time::Duration::from_secs(60));
+        age_by(&old, COPY_GRACE + std::time::Duration::from_secs(60));
+        sweep_thread_workspaces(&data, &["keep-me".to_string()]).await.unwrap();
+        assert!(!old.exists());
+        assert!(!old_marker.exists());
+        assert!(fresh.is_dir());
         let _ = std::fs::remove_dir_all(&data);
     }
 

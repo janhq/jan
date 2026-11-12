@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useId, useState, useRef } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -30,6 +30,7 @@ export function AddProviderDialog({
   children,
 }: AddProviderDialogProps) {
   const { t } = useTranslation()
+  const nameInputId = useId()
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -90,14 +91,23 @@ export function AddProviderDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3 mt-2">
-          <Input
-            data-testid="provider-name-input"
-            ref={nameInputRef}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('provider:enterNameForProvider')}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor={nameInputId}
+              className="text-xs text-muted-foreground"
+            >
+              {t('provider:nameLabel')}
+            </label>
+            <Input
+              id={nameInputId}
+              data-testid="provider-name-input"
+              ref={nameInputRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('provider:enterNameForProvider')}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-muted-foreground">
               {t('provider:apiTypeLabel')}

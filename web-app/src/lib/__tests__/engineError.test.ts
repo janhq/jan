@@ -14,6 +14,8 @@ import {
   parseEngineError,
   describeEngineError,
   engineFailure,
+  formatLoadDiagnostics,
+  stripLocalPaths,
   ENGINE_ERROR_CODES,
 } from '../engineError'
 
@@ -123,6 +125,17 @@ describe('describeEngineError', () => {
         'could not start the llama.cpp engine: failed to load model; cudaMalloc failed: out of memory',
     })
     expect(text).toContain('cudaMalloc failed: out of memory')
+  })
+
+  // jan-internal#487: fit finding no plan is its own advice, not the generic
+  // OOM one that suggests lowering a context fit already lowered.
+  it('describes a model fit could not place as not fitting this device', () => {
+    describeEngineError({
+      code: 'MODEL_DOES_NOT_FIT',
+      details: 'common_fit_params: failed to allocate a plan',
+    })
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.MODEL_DOES_NOT_FIT')
   })
 
   it('collapses whitespace and clips a log-sized detail', () => {
@@ -239,5 +252,135 @@ describe('engineFailure', () => {
     )
 
     expect(wrapped.message).toContain('GPU fail')
+  })
+})
+
+describe('formatLoadDiagnostics', () => {
+  const failure = {
+    code: 'MODEL_LOAD_FAILED',
+    details: 'failed to load model; open /home/bob/models/qwen.gguf failed',
+    diagnostics: {
+      model_file: 'qwen.gguf',
+      architecture: 'qwen3',
+      quantization: 'Q4_K_M',
+      request: { ctx_size: '8192', n_gpu_layers: '20', flash_attn: null },
+      gpus: [
+        {
+          name: 'NVIDIA RTX 4090',
+          driver_version: '560.35',
+          total_mib: 24564,
+          free_mib: 20000,
+        },
+      ],
+      backends: ['CUDA (libggml-cuda.so)'],
+      engine: { version: '0.9.0', tag: 'b12110', commit: 'a'.repeat(40) },
+      log: 'load_tensors: loading /home/bob/models/qwen.gguf\nC:\\Users\\bob\\x.dll failed',
+      log_truncated: true,
+    },
+  }
+
+  it('reports the request, devices, engine and log as markdown', () => {
+    const text = formatLoadDiagnostics(failure, {
+      appVersion: '0.9.0',
+      os: 'linux',
+    })!
+
+    expect(text).toContain('- Model file: qwen.gguf')
+    expect(text).toContain('- Architecture: qwen3')
+    expect(text).toContain('- ctx_size: 8192')
+    expect(text).not.toContain('flash_attn')
+    expect(text).toContain(
+      'NVIDIA RTX 4090 (driver 560.35, 24564 MiB, 20000 MiB free)'
+    )
+    expect(text).toContain('- CUDA (libggml-cuda.so)')
+    expect(text).toContain('- llama.cpp: 0.9.0 (b12110, aaaaaaaaaaaa)')
+    expect(text).toContain('Engine log (older lines dropped)')
+  })
+
+  it('leaves no home directory or user name in the copied text', () => {
+    const text = formatLoadDiagnostics(failure)!
+
+    expect(text).not.toContain('bob')
+    expect(text).toContain('~/models/qwen.gguf')
+  })
+
+  it('has nothing to report for an error without diagnostics', () => {
+    expect(formatLoadDiagnostics({ code: 'MODEL_LOAD_FAILED' })).toBeUndefined()
+    expect(formatLoadDiagnostics(new Error('plain'))).toBeUndefined()
+  })
+
+  it('reads diagnostics from an error that was stringified or wrapped', () => {
+    const wrapped = new Error('outer') as Error & { cause?: unknown }
+    wrapped.cause = failure
+    expect(formatLoadDiagnostics(wrapped)).toContain('Model load failure')
+    expect(formatLoadDiagnostics(new Error(JSON.stringify(failure)))).toContain(
+      'qwen.gguf'
+    )
+  })
+})
+
+describe('stripLocalPaths', () => {
+  it('replaces home directories on every platform', () => {
+    expect(
+      stripLocalPaths('/home/alice/a /Users/bob/b C:\\Users\\carol\\c')
+    ).toBe('~/a ~/b ~\\c')
+  })
+
+  it('still strips a home directory with nothing after it', () => {
+    expect(stripLocalPaths('cannot open /home/alice')).toBe('cannot open ~')
+  })
+
+  // The shape-guessing fallback stops at whitespace, so it can neither eat
+  // the prose between two paths nor turn an unrelated path into one under
+  // the home directory.
+  it('never reaches across prose into another path', () => {
+    expect(
+      stripLocalPaths('cannot open /home/bob and /usr/lib/libggml.so')
+    ).toBe('cannot open ~ and /usr/lib/libggml.so')
+    expect(stripLocalPaths('cannot open /home/bob and models/x.gguf')).toBe(
+      'cannot open ~ and models/x.gguf'
+    )
+    expect(
+      stripLocalPaths('C:\\Users\\bob and C:\\Windows\\System32\\x.dll')
+    ).toBe('~ and C:\\Windows\\System32\\x.dll')
+  })
+
+  // Knowing the directory is what makes a name with a space safe: there is no
+  // rule over the text alone that tells `/home/Jo Smith/lib` apart from
+  // `/home/bob and models/x.gguf`.
+  it('takes a spaced or non-ASCII profile name when the home is known', () => {
+    expect(
+      stripLocalPaths(
+        'C:\\Users\\Jo Smith\\AppData\\jan',
+        'C:\\Users\\Jo Smith'
+      )
+    ).toBe('~\\AppData\\jan')
+    expect(
+      stripLocalPaths('/Users/Jos\u00e9 Garc\u00eda/Library/jan', '/Users/Jos\u00e9 Garc\u00eda')
+    ).toBe('~/Library/jan')
+    expect(
+      stripLocalPaths("/home/Se\u00e1n O'Brien/models", "/home/Se\u00e1n O'Brien/")
+    ).toBe('~/models')
+  })
+
+  // A bare substring replace turned `/home/bobby` into `~by`, and having
+  // eaten the `/home/` the fallback could no longer recognise what was left.
+  it('does not match a longer name that merely starts with the home', () => {
+    expect(stripLocalPaths('/home/bobby/x.gguf', '/home/bob')).toBe('~/x.gguf')
+    expect(
+      stripLocalPaths('C:\\Users\\bobby\\x.gguf', 'C:\\Users\\bob')
+    ).toBe('~\\x.gguf')
+  })
+
+  it('matches the home directory written with either separator', () => {
+    expect(
+      stripLocalPaths('C:/Users/Jo Smith/jan', 'C:\\Users\\Jo Smith')
+    ).toBe('~/jan')
+  })
+
+  it('leaves the prose alone even when a home is known', () => {
+    expect(
+      stripLocalPaths('cannot open /home/Jo Smith and models/x.gguf', '/home/Jo Smith')
+    ).toBe('cannot open ~ and models/x.gguf')
   })
 })

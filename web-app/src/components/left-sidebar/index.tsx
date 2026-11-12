@@ -1,11 +1,12 @@
-import { useState } from 'react'
 import { DownloadManagement } from '@/containers/DownloadManegement'
-import { NavChats } from './NavChats'
-import { NavCowork } from './NavCowork'
+import { StatusItems } from '@/containers/extensions/StatusItems'
+import { NavCoworkTools } from './NavCoworkTools'
+import { NavHistory } from './NavHistory'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
-import { NavTabs } from './NavTabs'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useEffect, useRef } from 'react'
+import { useLocation } from '@tanstack/react-router'
 
 import {
   Sidebar,
@@ -13,26 +14,28 @@ import {
   SidebarTrigger,
   SidebarHeader,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
-import { useLocation } from '@tanstack/react-router'
-import { isCoworkRoute, route } from '@/constants/routes'
-import { isCoworkEnabled } from '@/lib/version'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
-  const { pathname } = useLocation()
-  const inSettings =
-    pathname === route.settings.index || pathname.startsWith('/settings/')
-  const [lastSurfacePath, setLastSurfacePath] = useState(pathname)
-  if (!inSettings && lastSurfacePath !== pathname) setLastSurfacePath(pathname)
-  const surfacePath = inSettings ? lastSurfacePath : pathname
-  const isCowork = isCoworkRoute(surfacePath) && isCoworkEnabled()
   // Right-align the header and hide "Jan" when native controls own the top-left
   // (macOS, or a Linux DE placing buttons left).
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
   const reserveLeft = IS_MACOS || leftButtons > 0
+  const { isMobile, closeMobileForNavigation } = useSidebar()
+  // The mobile overlay is modal: leave it when a navigation lands on a new page
+  // (dialogs opened from its rows keep it open underneath).
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const lastPathname = useRef(pathname)
+  useEffect(() => {
+    if (lastPathname.current !== pathname) {
+      lastPathname.current = pathname
+      closeMobileForNavigation()
+    }
+  }, [pathname, closeMobileForNavigation])
   return (
     <div className='relative z-50'>
       <Sidebar variant="floating" collapsible="offcanvas">
@@ -40,22 +43,22 @@ export function LeftSidebar() {
           <div className={cn("flex items-center w-full justify-between", reserveLeft && "justify-end")}>
             {!reserveLeft && <span className="ml-2 font-medium font-studio">Jan</span>}
             <div className="flex items-center">
-              {isLeftPanelOpen && <DownloadManagement />}
+              {/* On mobile the page header already hosts the download indicator. */}
+              {isLeftPanelOpen && !isMobile && <DownloadManagement />}
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
           </div>
-          <NavTabs surfacePath={surfacePath} />
-          {isCowork ? <NavCowork /> : <NavMain />}
+          <NavMain
+            afterSearch={<NavCoworkTools section="artifacts" />}
+            beforeSettings={<NavCoworkTools />}
+          />
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
-          {!isCowork && (
-            <>
-              <NavProjects />
-              <NavChats />
-            </>
-          )}
+          <NavProjects />
+          <NavHistory />
         </SidebarContent>
-        <SidebarRail />
+        <StatusItems />
+        {!isMobile && <SidebarRail />}
       </Sidebar>
     </div>
   )

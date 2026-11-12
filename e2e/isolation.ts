@@ -1,7 +1,9 @@
 import { join } from 'node:path'
 
 /**
- * Environment that confines the app's on-disk state to `home`.
+ * Environment redirects for the desktop e2e profile, NOT a sandbox.
+ * The launch guard must validate inherited overrides before this is merged with
+ * process.env. In particular Unix JAN_DATA_ROOT must be unset or empty.
  *
  * Its own module, with no side effects, so specs can assert on it without
  * re-evaluating wdio.conf.ts (which creates the temp profile at import time).
@@ -20,14 +22,17 @@ import { join } from 'node:path'
  * inherited, a run DELETES the developer's real ~/.config/Jan/settings.json.
  * Confirmed against a decoy: the file did not survive one run.
  *
- * The scratch directory is pinned on every platform, not just Linux.
- * `std::env::temp_dir()` reads TMPDIR on Unix and TMP/TEMP on Windows, and
- * tauri-plugin-agent-tools puts agent scratch at `temp_dir()/jan-agent-<session>`
- * -- then sweep_stale_scratch_dirs() (workspace.rs) DELETES every `jan-agent-*`
- * older than 24h it finds there. The current smoke suite never reaches that
- * sweep (it is gated on an existing thread, and a fresh profile has none), so
- * this is pre-emptive rather than a live bug. It stops being pre-emptive the
- * moment a spec creates a thread.
+ * The temp directory is pinned on every platform, not just Linux.
+ * `std::env::temp_dir()` reads TMPDIR on Unix and TMP/TEMP on Windows. Agent
+ * scratch now lives under the OS cache dir (`<cache>/jan/<project>/scratch/`,
+ * which XDG_CACHE_HOME and the Windows profile redirect below move too), but
+ * sweep_stale_scratch_dirs() (workspace.rs) still DELETES the legacy
+ * `jan-agent-*` and `jan-trash-*` entries older than 7 days it finds in
+ * `temp_dir()`, and with no cache dir at all the cache root itself falls back
+ * to `temp_dir()/jan-<uid>`. The current smoke suite never reaches that sweep
+ * (it is gated on an existing thread, and a fresh profile has none), so this
+ * is pre-emptive rather than a live bug. It stops being pre-emptive the moment
+ * a spec creates a thread.
  *
  * On Windows the lever is `JAN_DATA_ROOT`, which is Jan's own rather than
  * something `dirs` provides: `dirs` asks the known-folder API for
@@ -77,6 +82,15 @@ import { join } from 'node:path'
  * (`jan.ai.app`) and not on the executable name, so an unconfined test run and
  * an installed Jan share one browser profile.
  *
+ * macOS gap: HOME does not redirect WKWebView localStorage. Native validation
+ * by thinhlpg on PRs #9457/#9464 observed writes in the real account's
+ * ~/Library/WebKit/<bundle id>/WebsiteData/Default/.../LocalStorage, shared
+ * with installed Jan (jan.ai.app), not in the temporary profile. Both normal
+ * and migration launches can touch that state. Follow-up: isolate WebKit
+ * storage (jan-internal#496; evaluate a distinct e2e bundle ID) and verify
+ * that launches leave real-profile storage untouched. This is not fixed here.
+ * Use a disposable macOS account/VM for stronger separation.
+ *
  * Deliberately absent:
  * - XDG_DATA_DIRS / XDG_CONFIG_DIRS: read-only system paths; overriding them
  *   breaks GTK schema and theme lookup.
@@ -93,6 +107,7 @@ import { join } from 'node:path'
  *   reads: the write at global_config.rs:469 is an explicit save no spec
  *   triggers, and user_subagents_dir's is gated behind prompt_subagent_create,
  *   which no spec reaches. So this is a read leak, not a destructive one.
+ *   CLI callers/writes are not covered by this desktop smoke-suite guarantee.
  *   Strictly weaker than the other two platforms, and an accepted gap rather
  *   than an oversight.
  *

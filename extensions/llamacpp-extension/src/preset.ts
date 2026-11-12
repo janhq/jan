@@ -14,7 +14,8 @@
  */
 
 import { fs, joinPath } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
+import { findModelEntries } from './model-tree'
+import { parseLoadMode } from './load-mode'
 import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 
 // ModelConfig is intentionally widened — model.yml may carry extra fields like
@@ -27,6 +28,7 @@ type ModelYaml = ModelConfig & {
   flash_attn?: string
   cache_type_k?: string
   cache_type_v?: string
+  load_mode?: string
   parallel?: number
   cont_batching?: boolean
   pooling?: 'none' | 'mean' | 'cls' | 'last' | 'rank'
@@ -186,37 +188,10 @@ export async function generatePreset(
     await fs.mkdir(modelsDir)
   }
 
-  // DFS for any directory containing model.yml — mirrors the logic in
-  // index.ts:list() so nested model IDs (e.g. "huggingface/foo") work.
-  const modelEntries: { modelId: string; configPath: string }[] = []
-  const stack: string[] = [modelsDir]
-  while (stack.length > 0) {
-    const currentDir = stack.pop() as string
-    const modelConfigPath = await joinPath([currentDir, 'model.yml'])
-    if (await fs.existsSync(modelConfigPath)) {
-      // +1 to drop leading separator. NOTE: matches index.ts behavior; not
-      // Windows-`\\`-aware, same trade-off as the existing list() impl.
-      const modelId = currentDir.slice(modelsDir.length + 1)
-      if (modelId.length > 0) {
-        modelEntries.push({ modelId, configPath: modelConfigPath })
-      }
-      continue
-    }
-    let children: string[] = []
-    try {
-      children = await fs.readdirSync(currentDir)
-    } catch {
-      continue
-    }
-    for (const child of children) {
-      try {
-        const stat = await fs.fileStat(child)
-        if (stat?.isDirectory) stack.push(child)
-      } catch {
-        /* ignore unreadable entries */
-      }
-    }
-  }
+  // A model.yml at the models root itself has no ID to key a section on.
+  const modelEntries = (await findModelEntries(modelsDir)).filter(
+    (e) => e.modelId.length > 0
+  )
 
   modelEntries.sort((a, b) => a.modelId.localeCompare(b.modelId))
 
@@ -362,7 +337,7 @@ export async function generatePreset(
     lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
   }
   // no-kv-offload default = false (the cache is offloaded). Spelled negatively
-  // to match llama.cpp's own flag and the existing no_mmap setting.
+  // to match llama.cpp's own flag.
   // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
   // half of the kv-offload pair (arg.cpp:2417-2424) and inverts it, so `true`
   // here does disable offloading.
@@ -419,16 +394,11 @@ export async function generatePreset(
   }
   // `--mlock`, `--mmap`/`--no-mmap` and `--direct-io` were deprecated aliases of
   // the single params.load_mode field and were deleted outright in 0.4.1, so
-  // `load-mode` is now the only spelling llama.cpp understands. Jan keeps the two
-  // familiar toggles in its settings and derives that one key from them.
-  const wantsMlock = config.mlock === true
-  const wantsNoMmap = config.no_mmap === true
-  if (wantsMlock || wantsNoMmap) {
-    const loadMode = wantsMlock
-      ? wantsNoMmap
-        ? 'mlock'
-        : 'mmap+mlock'
-      : 'none'
+  // `load-mode` is the only spelling llama.cpp understands. default = auto, so
+  // only a non-auto value is named here; a model section can still name `auto`
+  // to opt out of a non-auto global.
+  const loadMode = parseLoadMode(config.load_mode)
+  if (loadMode !== null && loadMode !== 'auto') {
     lines.push(`load-mode = ${loadMode}`)
   }
   // rope-scaling default is UNSPECIFIED (let the model decide), not 'none'.
@@ -472,8 +442,8 @@ export async function generatePreset(
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
   }
   // lazy-mode default = auto (on for arch-marked tensors above 4 GiB). Needs
-  // mmap, so it is silently inert with `no_mmap` on; `off` is the pre-0.4.0
-  // behaviour of always keeping those tensors resident.
+  // mmap, so it is silently inert under a load-mode that does not map the file;
+  // `off` is the pre-0.4.0 behaviour of always keeping those tensors resident.
   if (config.lazy_mode === 'on' || config.lazy_mode === 'off') {
     lines.push(`lazy-mode = ${config.lazy_mode}`)
   }
@@ -540,7 +510,7 @@ export async function generatePreset(
   for (const { modelId, configPath } of modelEntries) {
     let mc: ModelYaml
     try {
-      mc = await invoke<ModelYaml>('read_yaml', { path: configPath })
+      mc = await fs.readYaml<ModelYaml>(configPath)
     } catch {
       // Skip unreadable model entries rather than aborting the whole preset.
       continue
@@ -671,6 +641,12 @@ export async function generatePreset(
       // emitted in [*] above (see explicitParallel).
       lines.push('parallel = 1')
       if (kvUnifiedIsAuto) lines.push('kv-unified = true')
+    }
+    // Unlike [*], `auto` is emitted: it is a real override of a non-auto
+    // global. Unset (empty in the UI) means inherit, so nothing is written.
+    const modelLoadMode = parseLoadMode(mc.load_mode)
+    if (modelLoadMode !== null) {
+      lines.push(`load-mode = ${modelLoadMode}`)
     }
     if (mc.cont_batching === false) {
       lines.push('cont-batching = false')

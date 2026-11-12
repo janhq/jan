@@ -1,0 +1,15 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• memory tidied: archived pr-1; archived old; merged a into b
+-- collapsed
+
+• memory tidied: archived pr-1; archived old; merged a into b
+-- narrow (28)
+
+• memory tidied: archived
+  pr-1; archived old;
+  merged a into b

@@ -19,7 +19,11 @@ Default permissions for the llamacpp plugin
 - `allow-engine-devices`
 - `allow-force-stop-engine`
 - `allow-engine-slots-idle`
+- `allow-begin-engine-restart`
+- `allow-end-engine-restart`
 - `allow-erase-thread-slot-state`
+- `allow-start-diagnostics`
+- `allow-cancel-diagnostics`
 - `allow-read-gguf-metadata`
 - `allow-find-gguf-tensors`
 - `allow-is-model-supported`
@@ -32,6 +36,58 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp:allow-begin-engine-restart`
+
+</td>
+<td>
+
+Enables the begin_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-begin-engine-restart`
+
+</td>
+<td>
+
+Denies the begin_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-cancel-diagnostics`
+
+</td>
+<td>
+
+Enables the cancel_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-cancel-diagnostics`
+
+</td>
+<td>
+
+Denies the cancel_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -55,6 +111,32 @@ Enables the cleanup_llama_processes command without any pre-configured scope.
 <td>
 
 Denies the cleanup_llama_processes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-end-engine-restart`
+
+</td>
+<td>
+
+Enables the end_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-end-engine-restart`
+
+</td>
+<td>
+
+Denies the end_engine_restart command without any pre-configured scope.
 
 </td>
 </tr>
@@ -445,6 +527,32 @@ Enables the reload_engine_models command without any pre-configured scope.
 <td>
 
 Denies the reload_engine_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-start-diagnostics`
+
+</td>
+<td>
+
+Enables the start_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-start-diagnostics`
+
+</td>
+<td>
+
+Denies the start_diagnostics command without any pre-configured scope.
 
 </td>
 </tr>

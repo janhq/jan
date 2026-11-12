@@ -1,5 +1,6 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 165
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]      |
@@ -17,7 +18,7 @@ expression: render_snapshot(buf)
 |│ ▶ Allow once                                                         │|
 |│   Deny                                                               │|
 |╰──────────────────────────────────────────────────────────────────────╯|
-|>   working…       (Esc to cancel, type to steer the agent)             |
+|›   working…       (Esc to cancel, type to steer the agent)             |
 |                                                                        |
 | ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel                  |
 

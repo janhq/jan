@@ -32,7 +32,8 @@ async function routerAt(pathname: string) {
   const router = createRouter({
     routeTree: rootRoute.addChildren([
       page(route.home),
-      page(route.cowork, () => ensureCoworkEnabled()),
+      page(route.coworkSession, () => ensureCoworkEnabled()),
+      page(route.artifacts, () => ensureCoworkEnabled()),
       page(route.settings.general),
       page(route.settings.cowork, () =>
         ensureCoworkEnabled(route.settings.general)
@@ -49,8 +50,9 @@ beforeEach(() => {
 })
 
 describe('ensureCoworkEnabled', () => {
-  it('lands a bookmarked Cowork URL on Home', async () => {
-    expect(await routerAt(route.cowork)).toBe(route.home)
+  it('lands a bookmarked Cowork conversation or Artifacts URL on Home', async () => {
+    expect(await routerAt('/cowork/abc')).toBe(route.home)
+    expect(await routerAt(route.artifacts)).toBe(route.home)
   })
 
   it('lands the Cowork settings URL on General settings', async () => {
@@ -59,7 +61,8 @@ describe('ensureCoworkEnabled', () => {
 
   it('keeps Cowork URLs routable where Cowork ships', async () => {
     channel.cowork = true
-    expect(await routerAt(route.cowork)).toBe(route.cowork)
+    expect(await routerAt('/cowork/abc')).toBe('/cowork/abc')
+    expect(await routerAt(route.artifacts)).toBe(route.artifacts)
     expect(await routerAt(route.settings.cowork)).toBe(route.settings.cowork)
   })
 })

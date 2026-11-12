@@ -3,6 +3,8 @@ import {
   appendLiveMessages,
   coworkTurnsToUIMessages,
   liveTailStart,
+  closeUnfinishedToolCalls,
+  uiMessagesToCoworkTurns,
   userTurn,
 } from '@/lib/coworkTurns'
 import type { CoworkTurn } from '@/hooks/useCoworkSessions'
@@ -373,5 +375,84 @@ describe('liveTailStart', () => {
     // Everything from `start` on is live; everything before is committed.
     expect(out.slice(0, start)).toEqual(base.slice(0, start))
     expect(start).toBeLessThan(out.length)
+  })
+})
+
+describe('uiMessagesToCoworkTurns', () => {
+  const chat: any[] = [
+    {
+      id: 'u1',
+      role: 'user',
+      parts: [
+        { type: 'text', text: 'list the repo' },
+        { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AA' },
+      ],
+    },
+    {
+      id: 'a1',
+      role: 'assistant',
+      metadata: { usage: { outputTokens: 3 } },
+      parts: [
+        { type: 'reasoning', text: 'look first' },
+        { type: 'text', text: 'Listing.' },
+        {
+          type: 'tool-ls',
+          toolCallId: 'c1',
+          input: { path: '.' },
+          state: 'output-available',
+          output: { content: [{ type: 'text', text: 'a.ts' }] },
+        },
+        {
+          type: 'tool-write',
+          toolCallId: 'c2',
+          input: { path: 'b.ts' },
+          state: 'output-error',
+          errorText: 'denied',
+        },
+        { type: 'tool-shell', toolCallId: 'c3', input: {}, state: 'input-available' },
+        { type: 'text', text: 'Done.' },
+      ],
+    },
+  ]
+
+  it('keeps every part, in order, and renders back to the same conversation', () => {
+    const turns = uiMessagesToCoworkTurns(chat)
+    expect(turns.map((t) => [t.role, t.name ?? t.content])).toEqual([
+      ['user', 'list the repo'],
+      ['assistant', 'Listing.'],
+      ['tool', 'ls'],
+      ['tool', 'write'],
+      ['tool', 'shell'],
+      ['assistant', 'Done.'],
+    ])
+    expect(turns[0].media).toEqual([chat[0].parts[1]])
+    expect(turns[1]).toMatchObject({
+      reasoning: 'look first',
+      metadata: { usage: { outputTokens: 3 } },
+    })
+    expect(turns[2]).toMatchObject({ result: 'a.ts', status: 'done' })
+    expect(turns[3]).toMatchObject({ result: 'denied', isError: true })
+
+    const back = coworkTurnsToUIMessages(turns)
+    expect(back.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(back[1].parts.map((p: any) => p.type)).toEqual([
+      'reasoning',
+      'text',
+      'tool-ls',
+      'tool-write',
+      'tool-shell',
+      'text',
+    ])
+  })
+
+  it('closes a call the chat never finished, in the history and the transcript', () => {
+    const closed = closeUnfinishedToolCalls(chat)
+    const part = (closed[1].parts as any[]).find((p) => p.type === 'tool-shell')
+    expect(part).toMatchObject({ state: 'output-error' })
+    expect(part.errorText).toBeTruthy()
+    // Finished calls are untouched.
+    expect(closed[1].parts[2]).toBe(chat[1].parts[2])
+    const shell = uiMessagesToCoworkTurns(closed).find((t) => t.name === 'shell')
+    expect(shell).toMatchObject({ status: 'done', isError: true, result: part.errorText })
   })
 })

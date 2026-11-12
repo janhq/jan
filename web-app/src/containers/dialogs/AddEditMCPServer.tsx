@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,10 @@ import {
   IconGripVertical,
   IconCodeDots,
 } from '@tabler/icons-react'
-import { MCPServerConfig } from '@/hooks/useMCPServers'
+import {
+  MCPServerConfig,
+  isReservedServerName,
+} from '@/hooks/useMCPServers'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   DndContext,
@@ -32,6 +35,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { normalizeAppError } from '@/utils/appError'
 import { cn } from '@/lib/utils'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
@@ -106,7 +110,7 @@ interface AddEditMCPServerProps {
   onOpenChange: (open: boolean) => void
   editingKey: string | null
   initialData?: MCPServerConfig
-  onSave: (name: string, config: MCPServerConfig) => void
+  onSave: (name: string, config: MCPServerConfig) => void | Promise<void>
 }
 
 export default function AddEditMCPServer({
@@ -132,6 +136,9 @@ export default function AddEditMCPServer({
   const [isToggled, setIsToggled] = useState(false)
   const [jsonContent, setJsonContent] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const savePending = useRef(false)
+  const [saving, setSaving] = useState(false)
 
   // Reset form when modal opens/closes or editing key changes
   useEffect(() => {
@@ -275,7 +282,7 @@ export default function AddEditMCPServer({
     setHeaderValues(newValues)
   }
 
-  const handleSave = () => {
+  const save = async () => {
     // Handle JSON mode
     if (isToggled) {
       try {
@@ -298,6 +305,10 @@ export default function AddEditMCPServer({
             setError(t('mcp-servers:editJson.errorServerName'))
             return
           }
+          if (isReservedServerName(trimmedServerName)) {
+            setError(t('mcp-servers:editJson.errorReservedServerName'))
+            return
+          }
 
           // Validate the config object
           const serverConfig = config as MCPServerConfig
@@ -316,19 +327,23 @@ export default function AddEditMCPServer({
             return
           }
 
-          onSave(trimmedServerName, serverConfig as MCPServerConfig)
+          await onSave(trimmedServerName, serverConfig as MCPServerConfig)
         }
         onOpenChange(false)
         resetForm()
         setError(null)
         return
-      } catch {
-        setError(t('mcp-servers:editJson.errorFormat'))
+      } catch (error) {
+        setError(error instanceof SyntaxError ? t('mcp-servers:editJson.errorFormat') : normalizeAppError(error))
         return
       }
     }
 
     // Handle form mode
+    if (isReservedServerName(serverName)) {
+      setError(t('mcp-servers:editJson.errorReservedServerName'))
+      return
+    }
     // Convert env arrays to object
     const envObj: Record<string, string> = {}
     envKeys.forEach((key, index) => {
@@ -364,21 +379,37 @@ export default function AddEditMCPServer({
     }
 
     if (serverName.trim() !== '') {
-      onSave(serverName.trim(), config)
+      await onSave(serverName.trim(), config)
       onOpenChange(false)
       resetForm()
     }
   }
 
+  const handleSave = async () => {
+    if (savePending.current) return
+    savePending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await save()
+    } catch (error) {
+      setError(normalizeAppError(error))
+    } finally {
+      savePending.current = false
+      setSaving(false)
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!savePending.current) onOpenChange(value) }}>
       <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden"
         showCloseButton={false}
         onInteractOutside={(e) => {
           e.preventDefault()
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-between">
             <span>
               {editingKey
@@ -397,6 +428,7 @@ export default function AddEditMCPServer({
             </div>
           </DialogTitle>
         </DialogHeader>
+        <div data-testid="mcp-dialog-scroll-content" className="min-h-0 overflow-y-auto">
         {isToggled ? (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -430,7 +462,7 @@ export default function AddEditMCPServer({
                   className="w-full text-sm! min-h-[300px] font-mono!"
                 />
               </div>
-              {error && <div className="text-destructive text-sm">{error}</div>}
+
             </div>
           </div>
         ) : (
@@ -441,7 +473,10 @@ export default function AddEditMCPServer({
               </label>
               <Input
                 value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
+                onChange={(e) => {
+                  setServerName(e.target.value)
+                  setError(null)
+                }}
                 placeholder={t('mcp-servers:enterServerName')}
                 autoFocus
               />
@@ -663,14 +698,16 @@ export default function AddEditMCPServer({
           </div>
         )}
 
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+        {error && <div role="alert" className="text-destructive text-sm max-h-32 overflow-y-auto [overflow-wrap:anywhere]">{error}</div>}
+        </div>
+        <DialogFooter className="shrink-0">
+          <Button disabled={saving} variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
           <Button
             onClick={handleSave}
             size="sm"
-            disabled={!isToggled && serverName.trim() === ''}
+            disabled={saving || (!isToggled && serverName.trim() === '')}
           >
             {t('mcp-servers:save')}
           </Button>

@@ -4,8 +4,13 @@ import '@testing-library/jest-dom'
 import ThreadList from '../ThreadList'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, className, title }: any) => (
-    <a className={className} title={title}>
+  Link: ({ children, className, title, to, params }: any) => (
+    <a
+      className={className}
+      title={title}
+      data-to={to}
+      data-param={params ? Object.values(params)[0] : undefined}
+    >
       {children}
     </a>
   ),
@@ -29,6 +34,7 @@ vi.mock('@/hooks/useThreads', () => ({
 vi.mock('@/hooks/useMessages', () => ({
   useMessages: (selector: any) =>
     selector({
+      messages: {},
       getMessages: () => [],
       setMessages: vi.fn(),
     }),
@@ -93,6 +99,25 @@ describe('ThreadList — long-URL overflow guard (#7959)', () => {
     const titleEl = titleSpans[0]
     expect(titleEl).toHaveClass('block', 'truncate')
     expect(titleEl).toHaveAttribute('title', longUrl)
+  })
+
+  it('opens a chat thread on /threads and a Cowork thread on /cowork', async () => {
+    render(
+      <ThreadList
+        threads={[
+          makeThread({ id: 'chat-1', title: 'A chat' }),
+          makeThread({ id: 'cw-1', title: 'A task', metadata: { mode: 'cowork' } }),
+        ]}
+      />
+    )
+    await flushEffects()
+
+    const chat = screen.getByText('A chat').closest('a')
+    const task = screen.getByText('A task').closest('a')
+    expect(chat).toHaveAttribute('data-to', '/threads/$threadId')
+    expect(chat).toHaveAttribute('data-param', 'chat-1')
+    expect(task).toHaveAttribute('data-to', '/cowork/$sessionId')
+    expect(task).toHaveAttribute('data-param', 'cw-1')
   })
 
   it('applies overflow guard on the project-view thread link wrapper', async () => {

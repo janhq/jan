@@ -13,11 +13,8 @@ vi.mock('@/lib/backendStorage', () => ({
     },
   },
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => undefined }) },
-}))
-vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { RAG: 'rag' },
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({ list: () => [] }),
 }))
 
 import {

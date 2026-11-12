@@ -21,6 +21,8 @@ default = ["tauri"]
 tauri = [
   "dep:tauri",
   "dep:tauri-plugin",
+  # `open_artifact` hands the checked file to the OS default app.
+  "dep:tauri-plugin-opener",
   # `wry` gives `WebviewWindow::with_webview`, which the screenshot renderer needs
   # to reach the platform webview. The desktop enables it anyway; the CLI never
   # turns on `tauri`, so this stays out of the CLI graph.
@@ -43,6 +45,12 @@ tauri = [
 
 [dependencies]
 base64 = "0.22"
+# The OS cache dir (XDG / ~/Library/Caches / %LOCALAPPDATA%) the session
+# scratch lives under; same version the app crate already resolves.
+dirs = "6.0.0"
+# Advisory file locks (flock / LockFileEx) that serialize memory store changes
+# across processes: the desktop app and the jan CLI share one store.
+fs4 = "1"
 # Pure Rust, no GUI linkage; used by the webview screenshot path and harmless in
 # the CLI graph.
 png = "0.17"
@@ -60,6 +68,7 @@ serde_yaml = "0.9.34"
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tauri = { version = "2.8.5", default-features = false, optional = true }
+tauri-plugin-opener = { version = "2.2.7", optional = true }
 # `provider` only; `default-features = false` keeps `tauri` out of the graph so
 # the headless CLI can use the web tools.
 tauri-plugin-websearch = { path = "../tauri-plugin-websearch", default-features = false }
@@ -68,7 +77,7 @@ tauri-plugin-websearch = { path = "../tauri-plugin-websearch", default-features 
 tauri-plugin = { version = "2.3.1", features = ["build"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "=0.30.1", features = ["signal", "process", "fs"] }
+nix = { version = "=0.30.1", features = ["signal", "process", "fs", "user"] }
 
 # Webview `screenshot` backend (see `webview_shot.rs`). All optional and enabled
 # by the `tauri` feature, so the headless CLI never pulls a GUI stack in.
@@ -104,13 +113,13 @@ objc2-foundation = { version = "0.3", features = [
 ], optional = true }
 block2 = { version = "0.6", optional = true }
 
-# Windows webview `screenshot` backend. `windows` (0.61) matches the version
+# Windows webview `screenshot` backend. `windows` (0.62) matches the version
 # `webview2-com` / `tauri-runtime-wry` resolve to, so the `IStream` handed to
 # `CapturePreview` is the same type. Separate from the `windows-sys` crate used
 # by the bash sandbox below.
 [target.'cfg(target_os = "windows")'.dependencies]
-webview2-com = { version = "0.38", optional = true }
-windows = { version = "0.61", features = [
+webview2-com = { version = "0.39", optional = true }
+windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_System_Com",
   "Win32_UI_Shell",

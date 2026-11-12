@@ -183,6 +183,7 @@ Ensure that the following section information show up for hardware
 - [ ] [0.6.10] Make sure you are still able to see API key when server local status is running
 - [ ] [0.7.0] Users can see the Jan API Server Swagger UI by opening the following path in their browser `http://<ip>:<port>`
 - [ ] [0.8.5] Jan CLI commands work: `jan serve`, `jan models list`, `jan acp` (experimental, gated by JAN_EXPERIMENTAL_ACP=1)
+- [ ] [0.8.8] `jan --version` on the CLI built for this release prints the release tag's version (e.g. `jan 0.8.8` for `v0.8.8`), not an older one
 - [ ] [0.7.0] Users can set the trusted host to * in the server configuration to accept requests from all host or without host
 #### In `HTTPS Proxy`:
 - [ ] Model download request goes through proxy endpoint

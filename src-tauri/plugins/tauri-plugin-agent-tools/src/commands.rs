@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::artifact;
 use crate::memory;
 use crate::permissions::ToolPermissions;
 use crate::preview::{self, PreviewRoots};
@@ -77,19 +78,21 @@ pub struct ToolResult {
     pub images: Vec<ImageContentPart>,
 }
 
-/// `content` plus, on a shell call, a line per hook matcher that still names
-/// the shell's old name. The CLI reports hook load notices once at run start;
-/// this surface has no run around a call, so they ride on the shell call
-/// itself -- exactly the call the stale hook no longer guards.
-fn with_renamed_shell_notices(
+/// `content` plus a line per hook matcher that still names `tool` by an old
+/// name (`bash`, `memory_write`, ...). The CLI reports hook load notices once
+/// at run start; this surface has no run around a call, so they ride on the
+/// call of the tool the stale matcher meant. A shell result keeps its exit
+/// marker as the final line, so the notices go above it.
+fn with_renamed_tool_notices(
     tool: &str,
     mut content: String,
     hooks: &crate::tools::hooks::HookSet,
 ) -> String {
-    if tool == crate::tools::SHELL_TOOL {
-        for notice in hooks.renamed_shell_notices() {
-            content.push_str(&format!("\n[hook config: {notice}]"));
-        }
+    for notice in hooks.renamed_notices(tool) {
+        crate::tools::handlers::insert_before_exit_marker(
+            &mut content,
+            &format!("\n{} {notice}]", crate::tools::hooks::NOTICE_TAG),
+        );
     }
     content
 }
@@ -99,10 +102,10 @@ fn with_renamed_shell_notices(
 /// `project` is an explicit override and is currently always `None`: the desktop
 /// has no project picker yet. Once one lands, a project's own store
 /// (`~/.jan/projects/<slug>`) layers on top of this one; see the memory-scope TODO.
-fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
+fn resolve_store(data_folder: &Path, project: Option<&str>) -> PathBuf {
     match project.map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => workspace::project_store(Path::new(p)),
-        None => workspace::permanent_store(Path::new(data_folder)),
+        None => workspace::permanent_store(data_folder),
     }
 }
 
@@ -110,6 +113,7 @@ fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
 /// where memories and skills live.
 #[tauri::command]
 pub async fn workspace_path(data_folder: String) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let root = workspace::ensure_permanent_store(Path::new(&data_folder)).await?;
     Ok(root.to_string_lossy().to_string())
 }
@@ -121,6 +125,7 @@ pub async fn thread_workspace_path(
     data_folder: String,
     thread_id: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let dir = workspace::ensure_thread_workspace(Path::new(&data_folder), &thread_id).await?;
     Ok(dir.to_string_lossy().to_string())
 }
@@ -132,6 +137,7 @@ pub async fn thread_workspace_delete(
     data_folder: String,
     thread_id: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::remove_thread_workspace(Path::new(&data_folder), &thread_id)
         .await
         .map_err(Into::into)
@@ -141,17 +147,19 @@ pub async fn thread_workspace_delete(
 /// were removed. Called once at startup: sandboxes are ephemeral, but a crash or
 /// a thread deleted while the app was closed would otherwise leave one behind.
 ///
-/// Abandoned host-temp scratch directories are collected in the same pass. They
-/// need their own sweep because they are keyed to ids the caller holds (a run,
-/// a thread, a CLI session), so unlike a thread sandbox there is no `keep` list
-/// to compare against -- see [`workspace::sweep_stale_scratch_dirs`]. Their
-/// count is not added to the return value, which names thread sandboxes.
+/// Abandoned scratch directories in the cache are collected in the same pass,
+/// with `keep` as the live set so no surviving thread's scratch goes. The
+/// sweep covers every project's folder, so a CLI session's scratch is only
+/// ever collected once it is a week stale -- see
+/// [`workspace::sweep_stale_scratch_dirs`]. Their count is not added to the
+/// return value, which names thread sandboxes.
 #[tauri::command]
 pub async fn thread_workspace_sweep(
     data_folder: String,
     keep: Vec<String>,
 ) -> Result<usize, AgentToolsError> {
-    workspace::sweep_stale_scratch_dirs().await;
+    let data_folder = workspace::host_data_folder(&data_folder);
+    workspace::sweep_stale_scratch_dirs(&keep).await;
     workspace::sweep_thread_workspaces(Path::new(&data_folder), &keep)
         .await
         .map_err(Into::into)
@@ -163,8 +171,24 @@ pub async fn session_workspace_path(
     data_folder: String,
     session_id: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let dir = workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
     Ok(dir.to_string_lossy().to_string())
+}
+
+/// Copy a Cowork session's sandbox into the thread workspace of the same id,
+/// for the Cowork-to-threads migration. A copy: the session sandbox is left in
+/// place as the rollback source. See [`workspace::copy_session_workspace_to_thread`]
+/// for the idempotence and symlink rules.
+#[cfg_attr(feature = "tauri", tauri::command)]
+pub async fn session_workspace_copy_to_thread(
+    data_folder: String,
+    session_id: String,
+) -> Result<workspace::WorkspaceCopy, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
+    workspace::copy_session_workspace_to_thread(Path::new(&data_folder), &session_id)
+        .await
+        .map_err(Into::into)
 }
 
 /// Delete a Cowork session's sandbox, with its scratch.
@@ -173,6 +197,7 @@ pub async fn session_workspace_delete(
     data_folder: String,
     session_id: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::remove_session_workspace(Path::new(&data_folder), &session_id)
         .await
         .map_err(Into::into)
@@ -188,6 +213,7 @@ pub async fn session_workspace_sweep(
     data_folder: String,
     keep: Vec<String>,
 ) -> Result<usize, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::sweep_session_workspaces(Path::new(&data_folder), &keep)
         .await
         .map_err(Into::into)
@@ -200,6 +226,7 @@ pub async fn skill_list(
     data_folder: String,
     project: Option<String>,
 ) -> Result<Vec<SkillMeta>, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     Ok(skills::list_meta(&resolve_store(
         &data_folder,
         project.as_deref(),
@@ -213,6 +240,7 @@ pub async fn skill_read(
     project: Option<String>,
     name: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::read_raw(&resolve_store(&data_folder, project.as_deref()), &name).map_err(Into::into)
 }
 
@@ -224,6 +252,7 @@ pub async fn skill_write(
     name: String,
     content: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::write(
         &resolve_store(&data_folder, project.as_deref()),
         &name,
@@ -239,6 +268,7 @@ pub async fn skill_delete(
     project: Option<String>,
     name: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::delete(&resolve_store(&data_folder, project.as_deref()), &name).map_err(Into::into)
 }
 /// Build a user prompt for an installed skill, including its body and arguments.
@@ -249,6 +279,7 @@ pub async fn skill_invoke(
     name: String,
     args: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::build_invocation_message(
         &resolve_store(&data_folder, project.as_deref()),
         &name,
@@ -264,6 +295,7 @@ pub async fn memory_list(
     data_folder: String,
     project: Option<String>,
 ) -> Result<Vec<String>, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     Ok(memory::list(&resolve_store(&data_folder, project.as_deref())).await)
 }
 
@@ -273,6 +305,7 @@ pub async fn memory_read(
     project: Option<String>,
     name: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     memory::read(&resolve_store(&data_folder, project.as_deref()), &name)
         .await
         .map_err(Into::into)
@@ -285,14 +318,13 @@ pub async fn memory_write(
     name: String,
     content: String,
 ) -> Result<(), AgentToolsError> {
-    memory::write(
-        &resolve_store(&data_folder, project.as_deref()),
-        &name,
-        &content,
-    )
-    .await
-    .map(|_| ())
-    .map_err(Into::into)
+    let data_folder = workspace::host_data_folder(&data_folder);
+    let store = resolve_store(&data_folder, project.as_deref());
+    let _lock = memory::lock_changes(&store).await;
+    memory::write(&store, &name, &content)
+        .await
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 /// Name + summary + mtime for every memory note, name-sorted. This is the
@@ -303,6 +335,7 @@ pub async fn memory_catalog(
     data_folder: String,
     project: Option<String>,
 ) -> Result<Vec<memory::CatalogEntry>, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let store = resolve_store(&data_folder, project.as_deref());
     // `catalog` is sync std::fs by design (the CLI calls it from sync context);
     // keep its directory walk off the async runtime's thread here.
@@ -318,9 +351,10 @@ pub async fn memory_delete(
     project: Option<String>,
     name: String,
 ) -> Result<(), AgentToolsError> {
-    memory::delete(&resolve_store(&data_folder, project.as_deref()), &name)
-        .await
-        .map_err(Into::into)
+    let data_folder = workspace::host_data_folder(&data_folder);
+    let store = resolve_store(&data_folder, project.as_deref());
+    let _lock = memory::lock_changes(&store).await;
+    memory::delete(&store, &name).await.map_err(Into::into)
 }
 
 /// OpenAI-shaped function schemas for every built-in tool. The frontend picks
@@ -429,7 +463,7 @@ pub async fn subagent_result_reserve(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned(),
-            path: crate::tools::sandbox::scratch_display_path(Some(&scratch), &p),
+            path: p.to_string_lossy().into_owned(),
         })
     })
     .await
@@ -484,7 +518,7 @@ pub async fn blackboard_write(
                 AgentToolsError::from("could not claim a blackboard file".to_string())
             })?;
         if crate::tools::spill::fill_subagent_result(&path, &content) {
-            Ok(crate::tools::sandbox::scratch_display_path(Some(&scratch), &path))
+            Ok(path.to_string_lossy().into_owned())
         } else {
             Err(AgentToolsError::from(
                 "could not write the blackboard file".to_string(),
@@ -495,8 +529,8 @@ pub async fn blackboard_write(
     .map_err(|e| AgentToolsError::from(format!("blackboard write failed: {e}")))?
 }
 
-/// An attachment imported into a session workspace: host paths, which are also
-/// the model-visible spelling since the workspace is the tools' root.
+/// An attachment imported into a conversation's workspace: host paths, which
+/// are also the model-visible spelling since the workspace is the tools' root.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedAttachment {
@@ -504,19 +538,27 @@ pub struct ImportedAttachment {
     pub text_path: Option<String>,
 }
 
-/// Copy a user attachment into the Cowork session workspace, with its extracted
+/// Copy a user attachment into the conversation's workspace, with its extracted
 /// text beside it, so the agent's file tools can reach a file the picker found
 /// outside every root they may read. Host-side rather than a model tool: the
 /// source path is the user's, never the model's to name.
+///
+/// `scope` defaults to the thread sandbox: Cowork conversations are threads and
+/// run there, so that is where their tools look. `Session` remains only for a
+/// caller that still holds a legacy `sessions/<id>` sandbox.
 #[tauri::command]
 pub async fn attachment_import(
     data_folder: String,
     session_id: String,
     source: String,
     text: Option<String>,
+    scope: Option<WorkspaceScope>,
 ) -> Result<ImportedAttachment, AgentToolsError> {
-    let workspace =
-        workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
+    let data_folder = workspace::host_data_folder(&data_folder);
+    let workspace = scope
+        .unwrap_or_default()
+        .ensure(Path::new(&data_folder), &session_id)
+        .await?;
     let imported = tokio::task::spawn_blocking(move || {
         crate::tools::attachments::import_attachment(
             &workspace,
@@ -572,6 +614,7 @@ pub async fn start_monitor(
     scope: Option<WorkspaceScope>,
     on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
         return Err(AgentToolsError::from(
@@ -585,19 +628,19 @@ pub async fn start_monitor(
         .ensure(Path::new(&data_folder), &thread_id)
         .await?;
     let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
-    let attached: Vec<PathBuf> = match read_only_project.as_deref() {
-        Some(path) => vec![workspace::validate_read_root(
-            Path::new(path),
-            &sandbox,
-            Some(Path::new(&data_folder)),
-        )?],
-        None => Vec::new(),
-    };
-    let (root, read_roots, write_roots) =
-        resolve_workspace_root(sandbox, attached, project_writable.unwrap_or(false));
+    let writable = project_writable.unwrap_or(false);
+    let attached = attach_folder(
+        read_only_project.as_deref(),
+        &sandbox,
+        &data_folder,
+        writable,
+    )?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let ctx = monitor::MonitorCtx {
         project_root: root,
         scratch_root: Some(scratch),
+        // Desktop chat and Cowork have no filesystem project to key one on.
+        pkg_cache: None,
         mask_root: Some(PathBuf::from(&data_folder)),
         hidden_root: workspace::hidden_root(true),
         read_roots,
@@ -605,6 +648,7 @@ pub async fn start_monitor(
         allow_network: allow_network.unwrap_or(false),
         home_readonly: false,
         sandbox: true,
+        workspace_readonly: false,
     };
     let set = {
         let mut sets = session_monitors().lock().unwrap();
@@ -697,6 +741,59 @@ pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError
     Ok(())
 }
 
+/// Validate the folder a surface asked to attach (Cowork's shared folder, chat's
+/// read-only attachment): plural from the outset so attaching a second folder
+/// later is not another signature change. A writable attach must also pass
+/// [`workspace::validate_write_root`].
+fn attach_folder(
+    folder: Option<&str>,
+    sandbox: &Path,
+    data_folder: &Path,
+    writable: bool,
+) -> Result<Vec<PathBuf>, AgentToolsError> {
+    let Some(folder) = folder else {
+        return Ok(Vec::new());
+    };
+    let root = workspace::validate_read_root(Path::new(folder), sandbox, Some(data_folder))?;
+    if writable {
+        workspace::validate_write_root(&root, workspace::user_home().as_deref(), data_folder)?;
+    }
+    Ok(vec![root])
+}
+
+/// The folder a chat conversation has attached, read from its own record
+/// (`<data>/threads/<id>/thread.json`, `metadata.folder` and
+/// `metadata.folderAccess`) rather than taken from the caller, so a webview
+/// request cannot widen what the user attached.
+///
+/// `None` when the id has no chat record: a Cowork thread (`metadata.mode` is
+/// `"cowork"`), whose runner still passes its folder per call, and an id with no
+/// thread.json yet (a Cowork session or subagent before its first write). A
+/// chat thread always has its record before its first message is sent.
+fn chat_folder_record(
+    data_folder: &Path,
+    thread_id: &str,
+) -> Result<Option<(Option<String>, bool)>, AgentToolsError> {
+    let path = workspace::committed_thread_json(data_folder, thread_id);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("could not read the conversation record: {e}").into()),
+    };
+    let record: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("could not read the conversation record: {e}"))?;
+    let metadata = record.get("metadata");
+    let field = |key: &str| metadata.and_then(|m| m.get(key)).and_then(|v| v.as_str());
+    if field("mode") == Some("cowork") {
+        return Ok(None);
+    }
+    let folder = field("folder")
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_string);
+    Ok(Some((folder, field("folderAccess") != Some("read"))))
+}
+
 /// Pick the workspace root a tool call resolves relative paths against, plus the
 /// side roots it may read and write.
 ///
@@ -724,6 +821,10 @@ fn resolve_workspace_root(
         _ => (sandbox, attached, Vec::new()),
     }
 }
+
+/// Built-in tools that can change a folder attached to a chat: asked for on
+/// every call, never saved.
+const CHAT_FOLDER_ASKED: [&str; 3] = ["write", "edit", crate::tools::SHELL_TOOL];
 
 /// Execute one built-in tool.
 ///
@@ -769,7 +870,7 @@ pub async fn execute_tool<R: tauri::Runtime>(
 }
 
 /// The webview-backed `screenshot` renderer on the desktop (Linux, macOS,
-/// Windows); `None` everywhere else, keeping the Chrome fallback.
+/// Windows); `None` everywhere else, which renders through headless Chrome.
 #[cfg(all(
     feature = "tauri",
     any(target_os = "linux", target_os = "macos", target_os = "windows")
@@ -847,6 +948,7 @@ async fn execute_tool_inner(
     call_id: Option<String>,
     sink: Option<crate::tools::OutputSink>,
 ) -> Result<ToolResult, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     // Created here rather than trusted to exist: `escapes_project` canonicalizes
     // the sandbox root and treats a missing one as an escape, so every tool call
     // would be refused if the thread's first tool call arrived before any UI
@@ -870,21 +972,45 @@ async fn execute_tool_inner(
         .map(PathBuf::from);
     let skill_project: Option<PathBuf> =
         project_dir.as_deref().map(workspace::project_store);
-    // Plural from the outset so attaching a second folder later is not another
-    // signature change.
-    let attached: Vec<PathBuf> = match read_only_project.as_deref() {
-        Some(path) => vec![workspace::validate_read_root(
-            Path::new(path),
-            &sandbox,
-            Some(Path::new(&data_folder)),
-        )?],
-        None => Vec::new(),
+    // A chat thread's folder comes from its record; one passed by the caller
+    // is refused rather than ignored, so a caller that believes it attached a
+    // folder learns it did not.
+    let chat_record = match scope.unwrap_or_default() {
+        WorkspaceScope::Thread => chat_folder_record(Path::new(&data_folder), &thread_id)?,
+        WorkspaceScope::Session => None,
     };
-    let (root, read_roots, write_roots) = resolve_workspace_root(
-        sandbox,
-        attached,
-        project_writable.unwrap_or(false),
-    );
+    let is_chat = chat_record.is_some();
+    let (read_only_project, writable) = match chat_record {
+        Some(_) if read_only_project.is_some() || project_writable == Some(true) => {
+            return Err(
+                "a chat's folder is the one attached to the conversation; it cannot be \
+                 passed per call"
+                    .to_string()
+                    .into(),
+            );
+        }
+        Some((folder, writable)) => (folder, writable),
+        None => (read_only_project, project_writable.unwrap_or(false)),
+    };
+    // With a folder attached to a chat, a call that can change it runs only on
+    // the user's answer for that one call (see `consent`).
+    if is_chat && read_only_project.is_some() && CHAT_FOLDER_ASKED.contains(&name.as_str())
+    {
+        crate::consent::store().consume(
+            &thread_id,
+            call_id.as_deref().unwrap_or_default(),
+            &name,
+            None,
+            crate::consent::ToolOrigin::Builtin,
+        )?;
+    }
+    let attached = attach_folder(
+        read_only_project.as_deref(),
+        &sandbox,
+        &data_folder,
+        writable,
+    )?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
     // The desktop always sandboxes, and an attached project folder can be the
@@ -908,8 +1034,17 @@ async fn execute_tool_inner(
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
         }
-        Decision::HardDeny(gate::DenyReason::Hidden) => {
+        // No held shell cwd here, so `HiddenShellCwd` never comes up.
+        Decision::HardDeny(gate::DenyReason::Hidden | gate::DenyReason::HiddenShellCwd) => {
             return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
+        }
+        Decision::HardDeny(gate::DenyReason::TooComplex) => {
+            return Err(format!(
+                "tool '{name}' is denied: the command or path is too large or deeply nested to \
+                 check; split it or shorten the path, or \
+                 write a long script to a file and run that"
+            )
+            .into());
         }
         // An exec prompt asks the user to vouch for a command that could reach
         // anything. Under an enforcing sandbox it cannot: writes stay in the
@@ -1015,7 +1150,7 @@ async fn execute_tool_inner(
         ctx = ctx.with_output_sink(sink);
     }
     let (content, diff, images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
-    let content = with_renamed_shell_notices(tool.name, content, &hooks);
+    let content = with_renamed_tool_notices(tool.name, content, &hooks);
     let is_error = handlers::tool_result_failed(tool, &content);
     Ok(ToolResult {
         content,
@@ -1026,20 +1161,44 @@ async fn execute_tool_inner(
 }
 
 /// Let the `preview://` scheme serve files under `root`, with `allow_network`
-/// as the page policy. Re-registering the same root replaces the flag.
+/// as the page policy. Re-registering the same root replaces the flag. Refused
+/// on Windows; see [`PreviewRoots::register_unsandboxed`].
 #[tauri::command]
 pub fn preview_register_root(
     roots: tauri::State<'_, PreviewRoots>,
     root: String,
     allow_network: bool,
 ) -> Result<(), AgentToolsError> {
-    roots.register(Path::new(&root), allow_network)?;
+    roots.register_unsandboxed(Path::new(&root), allow_network)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn preview_unregister_root(roots: tauri::State<'_, PreviewRoots>, root: String) {
     roots.unregister(Path::new(&root));
+}
+
+/// Cowork's "Open": hand an agent-written file to its OS default app, once
+/// [`artifact::checked_artifact`] has checked the file itself, not just its
+/// name, against the session's folders in `roots`. A refusal is an error the
+/// frontend answers by revealing the file instead.
+#[tauri::command]
+pub async fn open_artifact<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    data_folder: String,
+    roots: Vec<String>,
+    path: String,
+) -> Result<(), AgentToolsError> {
+    use tauri_plugin_opener::OpenerExt;
+    let data_folder = workspace::host_data_folder(&data_folder);
+    let roots = artifact::open_roots(&data_folder, &roots);
+    let file = artifact::checked_artifact(Path::new(&path), &roots)?;
+    // The canonical path, so what opens is what was checked; without the
+    // `\\?\` prefix `canonicalize` adds on Windows, which not every handler accepts.
+    let file = crate::tools::proc::without_verbatim_prefix(&file);
+    app.opener()
+        .open_path(file.to_string_lossy(), None::<&str>)
+        .map_err(|e| AgentToolsError::from(e.to_string()))
 }
 
 /// One `preview://` request. Anything not resolvable to a file under a
@@ -1116,6 +1275,69 @@ fn output_sink(
     })
 }
 
+/// Whether a tool call needs the user's answer before it runs. `allowed`
+/// authorizes that one call; `ask` waits for [`consent_answer`]. A call id
+/// already pending under other parameters is refused.
+#[tauri::command]
+pub async fn consent_request(
+    request: crate::consent::ConsentRequest,
+) -> Result<crate::consent::Verdict, AgentToolsError> {
+    Ok(crate::consent::store().request(request)?)
+}
+
+/// Record the user's answer to an asked call; returns whether it may run.
+#[tauri::command]
+pub async fn consent_answer(
+    call_id: String,
+    answer: crate::consent::ConsentAnswer,
+) -> Result<bool, AgentToolsError> {
+    Ok(crate::consent::store().answer(&call_id, answer))
+}
+
+/// Use up the authorization of a call the webview executes itself (an
+/// extension's tool), so it is single-use like the calls Rust executes.
+#[tauri::command]
+pub async fn consent_consume(
+    thread_id: String,
+    call_id: String,
+    tool: String,
+    server: Option<String>,
+    origin: crate::consent::ToolOrigin,
+) -> Result<(), AgentToolsError> {
+    Ok(crate::consent::store().consume(&thread_id, &call_id, &tool, server.as_deref(), origin)?)
+}
+
+/// Deny a thread's pending asks and drop its unused authorizations (Stop);
+/// with `forget_grants` its thread-scoped grants too (the thread deleted).
+#[tauri::command]
+pub async fn consent_cancel_thread(
+    thread_id: String,
+    forget_grants: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    crate::consent::store().cancel_thread(&thread_id, forget_grants.unwrap_or(false));
+    Ok(())
+}
+
+/// The configuration-level grants, for the settings page.
+#[tauri::command]
+pub async fn consent_saved() -> Result<crate::consent::SavedGrants, AgentToolsError> {
+    Ok(crate::consent::store().saved())
+}
+
+#[tauri::command]
+pub async fn consent_revoke(
+    kind: crate::consent::GrantKind,
+    name: String,
+) -> Result<bool, AgentToolsError> {
+    Ok(crate::consent::store().revoke(kind, &name))
+}
+
+#[tauri::command]
+pub async fn consent_set_allow_all_mcp(allow: bool) -> Result<(), AgentToolsError> {
+    crate::consent::store().set_allow_all_mcp(allow);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1135,9 +1357,9 @@ mod tests {
         std::env::temp_dir().join(format!("jan_cmd_test_{}_{}", std::process::id(), n))
     }
 
-    /// A folder that is *not* under the host temp dir. On Linux an absolute
-    /// `/tmp/...` path is remapped into the session scratch, which would route
-    /// an attached-folder test through the wrong branch entirely.
+    /// A folder that is *not* under the host temp dir, where these tests'
+    /// data folders (and so their thread sandboxes) and scratch live, so an
+    /// attached folder is never mistaken for either.
     fn repo_outside_tmp(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1198,7 +1420,7 @@ mod tests {
 
     #[test]
     fn default_store_is_permanent_and_outside_any_sandbox() {
-        let store = resolve_store("/data", None);
+        let store = resolve_store(Path::new("/data"), None);
         assert_eq!(store, Path::new("/data/agent-workspace"));
         // The sandbox lives under threads/, so no relative path from inside one
         // reaches the store without escaping it.
@@ -1209,12 +1431,12 @@ mod tests {
     #[test]
     fn explicit_project_uses_its_project_store() {
         assert_eq!(
-            resolve_store("/data", Some("/repo")),
+            resolve_store(Path::new("/data"), Some("/repo")),
             workspace::project_store(Path::new("/repo"))
         );
         // Blank is treated as absent, not as the filesystem root.
         assert_eq!(
-            resolve_store("/data", Some("   ")),
+            resolve_store(Path::new("/data"), Some("   ")),
             Path::new("/data/agent-workspace")
         );
     }
@@ -1331,8 +1553,7 @@ mod tests {
     /// A write that escapes the sandbox (absolute or `..`) must be refused on
     /// the desktop surface, just like an escaping read -- it could reach host
     /// files. The session scratch is the exception: it is the agent's own area,
-    /// spelled `/tmp/...` where it is bound over the sandbox's `/tmp` and by its
-    /// real path where nothing is mounted there.
+    /// reached by its real path on every platform.
     #[tokio::test]
     async fn escaping_writes_are_refused() {
         let data = unique_data_folder();
@@ -1361,21 +1582,16 @@ mod tests {
             );
         }
 
-        // A scratch write is not a host escape and succeeds, under whichever
-        // spelling reaches the scratch on this platform. The scratch outlives the
-        // test process, so the name is per-run: a leftover file would answer
-        // "No change" instead of "Created".
+        // A scratch write is not a host escape and succeeds, at the scratch's
+        // real path. The scratch outlives the test process, so the name is
+        // per-run: a leftover file would answer "No change" instead of
+        // "Created".
         let scratch = crate::workspace::ensure_scratch_dir(T_SCRATCH)
             .await
             .unwrap();
         let name = format!("jan_cmd_scratch_{}.txt", std::process::id());
-        let (requested, expected) = if cfg!(target_os = "linux") {
-            let p = format!("/tmp/{name}");
-            (p.clone(), p)
-        } else {
-            let p = scratch.join(&name).to_string_lossy().into_owned();
-            (p.clone(), p)
-        };
+        let requested = scratch.join(&name).to_string_lossy().into_owned();
+        let expected = requested.clone();
         let res = execute_tool(
             df.clone(),
             T_SCRATCH.into(),
@@ -1486,12 +1702,34 @@ mod tests {
             }],
             Path::new("config.toml"),
         );
-        let out = with_renamed_shell_notices("shell", "ok\n[exit 0]".into(), &hooks);
-        assert!(out.starts_with("ok\n[exit 0]\n[hook config: "), "{out}");
+        let out = with_renamed_tool_notices("shell", "ok\n[exit 0]".into(), &hooks);
+        // Above the exit marker, which stays the final line.
+        assert!(out.starts_with("ok\n[hook config: "), "{out}");
+        assert!(out.ends_with("\n[exit 0]"), "{out}");
         assert!(out.contains("now `shell`"), "{out}");
-        assert_eq!(with_renamed_shell_notices("read", "x".into(), &hooks), "x");
+        assert_eq!(with_renamed_tool_notices("read", "x".into(), &hooks), "x");
+        assert_eq!(with_renamed_tool_notices("memory", "x".into(), &hooks), "x");
         let none = crate::tools::hooks::HookSet::new();
-        assert_eq!(with_renamed_shell_notices("shell", "x".into(), &none), "x");
+        assert_eq!(with_renamed_tool_notices("shell", "x".into(), &none), "x");
+    }
+
+    /// The same for a matcher on an old memory tool name, under memory calls.
+    #[test]
+    fn an_old_memory_hook_matcher_is_reported_under_memory_calls() {
+        let mut hooks = crate::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: "PreToolUse".into(),
+                matcher: Some("memory_read".into()),
+                command: "guard".into(),
+                timeout_secs: None,
+            }],
+            Path::new("config.toml"),
+        );
+        let out = with_renamed_tool_notices("memory", "Drift".into(), &hooks);
+        assert!(out.starts_with("Drift\n[hook config: "), "{out}");
+        assert!(out.contains("`memory_read`"), "{out}");
+        assert_eq!(with_renamed_tool_notices("shell", "x".into(), &hooks), "x");
     }
 
     /// The network flag has to survive the whole IPC -> ToolContext -> jail path.
@@ -1625,15 +1863,12 @@ mod tests {
             err.message
         );
 
-        // The tool-visible scratch path follows the shell: `/tmp` on Linux,
-        // the real per-thread directory on macOS and Windows.
+        // Each thread's scratch is its own directory: t2 naming the file at
+        // its own scratch finds nothing of t1's.
         let one_scratch = crate::workspace::ensure_scratch_dir(t1).await.unwrap();
         std::fs::write(one_scratch.join("secret.txt"), b"classified").unwrap();
         let two_scratch = crate::workspace::ensure_scratch_dir(t2).await.unwrap();
-        let requested = crate::tools::sandbox::scratch_display_path(
-            Some(&two_scratch),
-            &two_scratch.join("secret.txt"),
-        );
+        let requested = two_scratch.join("secret.txt").to_string_lossy().into_owned();
         let out = execute_tool(
             df.clone(),
             t2.into(),
@@ -1670,8 +1905,8 @@ mod tests {
             df.clone(),
             T1.into(),
             None,
-            "memory_write".into(),
-            json!({"name": "prefs", "content": "user likes tabs"}),
+            "memory".into(),
+            json!({"op": "write", "name": "prefs", "content": "user likes tabs"}),
             None,
             None,
             None,
@@ -1692,8 +1927,8 @@ mod tests {
             df.clone(),
             T2.into(),
             None,
-            "memory_read".into(),
-            json!({"name": "prefs"}),
+            "memory".into(),
+            json!({"op": "view", "name": "prefs"}),
             None,
             None,
             None,
@@ -1986,6 +2221,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
     }
+    // ---- attachment import scope ---------------------------------------------
+
+    /// Cowork threads run in the thread sandbox the migration populated, so an
+    /// attachment imported without a scope must land where the agent's file
+    /// tools look, not in the legacy `sessions/` tree.
+    #[tokio::test]
+    async fn attachment_import_defaults_to_the_thread_sandbox() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let src = data.join("outside");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("notes.txt");
+        std::fs::write(&file, b"hello").unwrap();
+
+        let imported = attachment_import(
+            df.clone(),
+            "t-import".into(),
+            file.to_string_lossy().into_owned(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let thread_dir = workspace::thread_workspace(&data, "t-import").unwrap();
+        assert!(
+            Path::new(&imported.path).starts_with(&thread_dir),
+            "{} is not under {}",
+            imported.path,
+            thread_dir.display()
+        );
+        assert!(!workspace::session_workspace(&data, "t-import")
+            .unwrap()
+            .exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn attachment_import_honours_an_explicit_session_scope() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let src = data.join("outside");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("notes.txt");
+        std::fs::write(&file, b"hello").unwrap();
+
+        let imported = attachment_import(
+            df,
+            "s-import".into(),
+            file.to_string_lossy().into_owned(),
+            None,
+            Some(WorkspaceScope::Session),
+        )
+        .await
+        .unwrap();
+
+        let session_dir = workspace::session_workspace(&data, "s-import").unwrap();
+        assert!(Path::new(&imported.path).starts_with(&session_dir));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
     // ---- read-only attached folder, end to end ------------------------------
 
     /// The contract the workspace UI promises: the agent reads your folder and
@@ -2305,6 +2601,187 @@ mod tests {
         assert!(format!("{err:?}").contains("overlaps"), "{err:?}");
 
         let _ = std::fs::remove_dir_all(&data);
+    }
+
+    // ---- a chat's folder comes from its own record -------------------------
+
+    fn write_thread_record(data: &Path, id: &str, metadata: serde_json::Value) {
+        let path = workspace::committed_thread_json(data, id);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, json!({ "id": id, "metadata": metadata }).to_string()).unwrap();
+    }
+
+    /// One call as the chat makes it, the user having approved it when the
+    /// tool is one a chat asks for (`approve`).
+    async fn call_as(
+        df: &str,
+        id: &str,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+        writable: Option<bool>,
+        approve: bool,
+    ) -> Result<ToolResult, AgentToolsError> {
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        let call_id = format!("call-{id}-{}", CALLS.fetch_add(1, Ordering::Relaxed));
+        if approve {
+            let store = crate::consent::store();
+            store
+                .request(crate::consent::ConsentRequest {
+                    thread_id: id.to_string(),
+                    call_id: call_id.clone(),
+                    tool: name.to_string(),
+                    server: None,
+                    origin: crate::consent::ToolOrigin::Builtin,
+                    strict: true,
+                })
+                .unwrap();
+            assert!(store.answer(&call_id, crate::consent::ConsentAnswer::AllowOnce));
+        }
+        execute_tool(
+            df.to_string(),
+            id.to_string(),
+            None,
+            name.to_string(),
+            args,
+            None,
+            None,
+            folder.map(|f| f.to_string_lossy().to_string()),
+            writable,
+            None,
+            Some(call_id),
+        )
+        .await
+    }
+
+    async fn call(
+        df: &str,
+        id: &str,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+        writable: Option<bool>,
+    ) -> Result<ToolResult, AgentToolsError> {
+        call_as(df, id, name, args, folder, writable, true).await
+    }
+
+    /// A call that can change a chat's folder runs only with the user's answer
+    /// for that call: none, or one given for another call, is refused.
+    #[tokio::test]
+    async fn a_chat_folder_write_needs_its_own_approval() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_consent");
+        let id = "thread-chat-consent";
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "write" }));
+
+        for name in ["write", "edit", "shell"] {
+            let args = match name {
+                "shell" => json!({"command": "touch made.txt"}),
+                "edit" => json!({"path": "a.md", "old_string": "a", "new_string": "b"}),
+                _ => json!({"path": "a.md", "content": "a"}),
+            };
+            let err = call_as(&df, id, name, args, None, None, false)
+                .await
+                .expect_err("an unapproved call is refused");
+            assert!(format!("{err:?}").contains("not been approved"), "{name}: {err:?}");
+        }
+        assert!(!repo.join("a.md").exists());
+        assert!(!repo.join("made.txt").exists());
+        // Reads still run unasked.
+        std::fs::write(repo.join("r.md"), b"r").unwrap();
+        let read = call_as(&df, id, "read", json!({"path": "r.md"}), None, None, false).await;
+        assert!(read.is_ok_and(|r| !r.is_error));
+        // With no folder attached nothing is asked.
+        write_thread_record(&data, id, json!({}));
+        let write =
+            call_as(&df, id, "write", json!({"path": "s.md", "content": "s"}), None, None, false).await;
+        assert!(write.is_ok_and(|r| !r.is_error));
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The folder the user attached to a chat is used with no caller argument,
+    /// writable unless recorded read-only, and is the root for relative paths.
+    #[tokio::test]
+    async fn a_chat_uses_the_folder_its_record_names() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_record");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-chat-record";
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "write" }));
+
+        let read = call(&df, id, "read", json!({"path": "main.rs"}), None, None)
+            .await
+            .unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+        let write = call(&df, id, "write", json!({"path": "notes.md", "content": "hi"}), None, None)
+            .await
+            .unwrap();
+        assert!(!write.is_error, "{}", write.content);
+        assert_eq!(std::fs::read_to_string(repo.join("notes.md")).unwrap(), "hi");
+
+        // Recorded read-only: readable, never written.
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "read" }));
+        let abs = repo.join("main.rs").to_string_lossy().to_string();
+        let read = call(&df, id, "read", json!({"path": abs}), None, None).await.unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+        let err = call(&df, id, "write", json!({"path": repo.join("x.md"), "content": "x"}), None, None)
+            .await
+            .expect_err("a read-only record refuses writes");
+        assert!(format!("{err:?}").contains("read-only"), "{err:?}");
+        assert!(!repo.join("x.md").exists());
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The caller cannot widen a chat: a folder it passes is refused, and a chat
+    /// with no folder recorded cannot reach one.
+    #[tokio::test]
+    async fn a_chat_refuses_a_folder_the_caller_passes() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_caller");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-chat-caller";
+        write_thread_record(&data, id, json!({}));
+        let abs = json!({"path": repo.join("main.rs")});
+
+        let err = call(&df, id, "read", abs.clone(), Some(&repo), None)
+            .await
+            .expect_err("a caller-supplied folder is refused for a chat");
+        assert!(format!("{err:?}").contains("attached to the conversation"), "{err:?}");
+        assert!(call(&df, id, "read", json!({"path": "x"}), None, Some(true)).await.is_err());
+        let read = call(&df, id, "read", abs, None, None).await;
+        assert!(
+            read.is_err() || read.as_ref().unwrap().is_error,
+            "no folder is attached: {read:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A Cowork thread keeps passing its folder per call.
+    #[tokio::test]
+    async fn a_cowork_thread_keeps_the_callers_folder() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("cowork_caller");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-cowork-caller";
+        write_thread_record(&data, id, json!({ "mode": "cowork", "folder": "/elsewhere" }));
+
+        let read = call(&df, id, "read", json!({"path": "main.rs"}), Some(&repo), Some(true))
+            .await
+            .unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
     }
     // ---- live output streaming ---------------------------------------------
 

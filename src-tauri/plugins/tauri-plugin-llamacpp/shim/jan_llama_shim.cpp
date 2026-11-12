@@ -357,7 +357,8 @@ struct jan_llama_engine {
     }
 };
 
-// server-context.cpp:4897 does `res->set_req(&req)`, and server_res_spipe keeps
+// server_routes::handle_completions_impl (server-context.cpp) does
+// `res->set_req(&req)`, and server_res_spipe keeps
 // that pointer for the life of the stream -- so the request, and the
 // std::function its `should_stop` member references, must outlive the response.
 // Declaration order here is the destruction order that guarantees it.
@@ -462,8 +463,18 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         global.apply_to_params(engine->params);
         it->second.apply_to_params(engine->params);
 
-        // common_params_parse does this at arg.cpp:886-890; apply_to_params does
-        // not. Without it n_threads stays 0 and ggml_threadpool_new_impl
+        // The router starts every child with `--alias <section name>`
+        // (server-models.cpp, update_args), and server_context answers with the
+        // first alias as the model name. Nothing here is a router, so without
+        // this it falls back to the model *file path* -- which is what API
+        // clients read back as `model` (`\\?\C:\...\model.gguf` on Windows).
+        // Replaced rather than added to: the router does the same, and the
+        // first member of a set of aliases is the one that gets used.
+        engine->params.model_alias.clear();
+        engine->params.model_alias.insert(preset_name);
+
+        // common_params_parse does this in common_params_parse_ex (arg.cpp);
+        // apply_to_params does not. Without it n_threads stays 0 and ggml_threadpool_new_impl
         // memsets a zero-length array -> SIGSEGV. The router never hits this
         // because it forwards keys to a child that re-parses them.
         postprocess_cpu_params(engine->params.cpuparams, nullptr);
@@ -473,8 +484,8 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         postprocess_cpu_params(engine->params.speculative.draft.cpuparams_batch,
                                &engine->params.cpuparams_batch);
 
-        // arg.cpp:892-896, added in 0.4.1: an unset `-mmdev` follows `--device`
-        // rather than falling back to auto-placement. Without it a preset that
+        // common_params_parse_ex, added in 0.4.1: an unset `-mmdev` follows
+        // `--device` rather than falling back to auto-placement. Without it a preset that
         // pins the model to one GPU would still let the projector land wherever
         // ggml chose, which is the split the setting exists to prevent.
         if (engine->params.mmproj_use_gpu && engine->params.mmproj_device == nullptr &&
@@ -483,8 +494,8 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
             engine->params.mmproj_use_gpu = engine->params.mmproj_device != nullptr;
         }
 
-        // Same omission, arg.cpp:946-954: common_params_fit needs spare slots
-        // to write its overrides into and throws "did not provide buffer to
+        // Same omission, common_params_parse_ex: common_params_fit needs spare
+        // slots to write its overrides into and throws "did not provide buffer to
         // set tensor_buft_overrides" without them, so auto-fit silently gave
         // up and the load then asked for more VRAM than the device had.
         const size_t ntbo = llama_max_tensor_buft_overrides();
@@ -495,15 +506,15 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
             engine->params.speculative.draft.tensor_buft_overrides.push_back({nullptr, nullptr});
         }
 
-        // arg.cpp:935-938. llama_model_params::kv_overrides is a C array walked
-        // until an entry with an empty key, so a hand-edited `override-kv` in
+        // common_params_parse_ex. llama_model_params::kv_overrides is a C array
+        // walked until an entry with an empty key, so a hand-edited `override-kv` in
         // the ini would otherwise be read past its end.
         if (!engine->params.kv_overrides.empty()) {
             engine->params.kv_overrides.emplace_back();
             engine->params.kv_overrides.back().key[0] = 0;
         }
 
-        // arg.cpp:964-967, at the end of common_params_parse_ex. Since 0.4.0 the
+        // The end of common_params_parse_ex (arg.cpp). Since 0.4.0 the
         // kwarg defaults to on when the user did not name it, and a template
         // with `supports_preserve_reasoning` reads it -- so omitting this here
         // would have the preset path preserve less reasoning than the argv path
@@ -527,8 +538,8 @@ namespace {
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
-        // server.cpp:168-173, in llama-server's main() -- which neither entry
-        // point here goes through. n_parallel = -1 is the SERVER default, and
+        // server_prepare_params (server.cpp), in llama-server's startup --
+        // which neither entry point here goes through. n_parallel = -1 is the SERVER default, and
         // server_context loops `for (i = 0; i < n_parallel; i++)` to build its
         // slots, so leaving the sentinel unresolved yields an engine with no
         // slots at all and every request waiting forever.
@@ -537,8 +548,8 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
             engine->params.kv_unified = true;
         }
 
-        // server.cpp:176-186, immediately after the block above and dependent on
-        // it: the pool is n_parallel wide, so it can only be sized once the
+        // server_prepare_params, immediately after the block above and
+        // dependent on it: the pool is n_parallel wide, so it can only be sized once the
         // sentinel is resolved. Only `-c 0` (size to the model's trained
         // context) leaves n_ctx at 0 for this to act on; any explicit ctx-size
         // pins the pool and the cap then applies per slot inside it.
@@ -776,7 +787,7 @@ void jan_llama_load_backends(const char * dir) {
     }
 }
 
-// Mirrors common_print_available_devices (common/arg.cpp:1144-1167): load every
+// Mirrors common_print_available_devices (common/arg.cpp): load every
 // backend, then report the non-CPU devices with memory in MiB. The CPU device
 // is excluded there too -- "offload to CPU" is not a choice the setting offers.
 char * jan_llama_devices_json(void) {

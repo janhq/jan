@@ -16,6 +16,7 @@
     "MISSING_SHARED_LIBRARY": "A library the engine needs is missing, so it cannot start.",
     "GPU_DRIVER_TOO_OLD": "Your GPU driver is too old for this engine. Updating the driver, or switching to the CPU engine in Settings, will fix this.",
     "OUT_OF_MEMORY": "There is not enough memory to run this model. A smaller model or a smaller context size usually helps.",
+    "MODEL_DOES_NOT_FIT": "This model does not fit on this device, even with the smallest context Fit is allowed to use. A smaller model or a smaller quantization will load.",
     "ENGINE_STOPPED": "The llama.cpp engine stopped unexpectedly. Sending the message again starts it again; if it keeps stopping, security software or the GPU driver may be the cause.",
     "ENGINE_UNREACHABLE": "The llama.cpp engine is running, but Jan cannot connect to it on this computer (127.0.0.1). A VPN, proxy or security software may be blocking local connections.",
     "UNSUPPORTED_CPU": "Local models are not supported on this computer's processor. Jan's local engine is built for Apple Silicon Macs (M1 or newer), so it cannot start on an Intel Mac. Cloud and custom providers still work.",
@@ -27,10 +28,13 @@
   "engineReportedDetail": "The engine reported: {{detail}}",
   "startModelFailed": "Failed to start model: {{reason}}",
   "createModelFailed": "Failed to create model: {{reason}}",
+  "extensionProviderUnavailable": "{{provider}} comes from an extension that is not running, or that was loaded for development. Only a running installed extension can reach its provider.",
   "noRunningSession": "No running session found for model: {{model}}",
   "serverPortOccupied": "Port has been occupied",
   "serverPortOccupiedDescription": "Port {{port}} is already in use. Please try a different port.",
   "serverInvalidModelPath": "Invalid or inaccessible model path",
   "serverStartModelFailed": "Failed to start model",
-  "serverStartFailed": "Failed to start server"
+  "serverStartFailed": "Failed to start server",
+  "copyDiagnostics": "Copy diagnostics",
+  "diagnosticsCopied": "Diagnostics copied. Paste them into your bug report."
 }

@@ -61,7 +61,7 @@ fn generate_worker_key() -> String {
 /// so its absence always means the install is damaged rather than that the user
 /// has something to configure, and which directory came up empty is the only
 /// thing that distinguishes the ways that happens.
-fn resolve_worker_exe<R: tauri::Runtime>(
+pub(crate) fn resolve_worker_exe<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
 ) -> Result<PathBuf, String> {
     if let Some(p) = std::env::var_os("JAN_LLAMA_WORKER_BIN") {
@@ -364,6 +364,10 @@ pub async fn engine_devices<R: tauri::Runtime>(
 ) -> Result<Vec<EngineDevice>, String> {
     let exe = resolve_worker_exe(&app_handle)?;
     let mut cmd = tokio::process::Command::new(&exe);
+    // Same pinned cwd as a serving worker: device listing loads the backends too.
+    if let Some(dir) = worker::worker_cwd(&exe) {
+        cmd.current_dir(dir);
+    }
     cmd.arg("--list-devices").envs(envs);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -640,9 +644,9 @@ pub async fn get_engine_info(
 /// therefore no use to a settings screen that wants to name the engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
-    /// llama.cpp's own version, e.g. `0.7.0`.
+    /// llama.cpp's own version, e.g. `0.9.0`.
     pub version: String,
-    /// The upstream build tag the source was taken from, e.g. `b11669`.
+    /// The upstream build tag the source was taken from, e.g. `b12110`.
     pub tag: String,
     /// The same tag's build number, which is what the shim reports back over
     /// the FFI and what a version mismatch is checked against.

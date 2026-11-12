@@ -69,8 +69,8 @@ pub enum LoadSpec {
 }
 
 /// What `GET /models` reports per entry. The names match llama.cpp's router
-/// (`server-models.h:29-37`) because the plugin's polling arm
-/// (`commands::evaluate_load_poll`) already parses exactly these values, and
+/// (`server_model_status` in `server-models.h`) because the plugin's polling
+/// arm (`commands::evaluate_load_poll`) already parses exactly these values, and
 /// changing them would silently turn every load into a 600s timeout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelStatus {

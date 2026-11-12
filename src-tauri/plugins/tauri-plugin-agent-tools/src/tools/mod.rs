@@ -97,13 +97,17 @@ pub struct ToolContext<'a> {
     /// the target of `skill_write` with `scope: "user"`. `None` on surfaces
     /// with no user scope, where that scope is refused.
     pub skill_user_root: Option<&'a Path>,
-    /// `~/.jan`, reached by the `memory_*` tools as the `user:` scope and as
+    /// `~/.jan`, reached by the `memory` tool as the `user:` scope and as
     /// the parent of other projects' stores. `None` (the desktop) confines
     /// memory to `store_root`.
     pub memory_home: Option<&'a Path>,
     /// Whether other projects' memory is listed in the prompt and readable as
     /// `project:<slug>`. Only meaningful with `memory_home`.
     pub cross_project: bool,
+    /// The cap on memory mutations for this run: set only for Jan's memory
+    /// tidy subagent, so a tidy that misjudges the store is bounded by the
+    /// harness rather than by its prompt. `None` leaves memory uncapped.
+    pub memory_change_budget: Option<&'a crate::memory::ChangeBudget>,
     pub enabled_skills: &'a [String],
     pub allow_network: bool,
     /// When set, `write`/`edit` re-canonicalize the target and refuse a path
@@ -125,10 +129,16 @@ pub struct ToolContext<'a> {
     /// A session-scoped host directory the shell and the filesystem tools share
     /// for temporary work, so scratch files persist across `bash` calls in the
     /// run. See [`Policy::scratch_root`] for how each backend exposes it, and
-    /// [`crate::workspace::scratch_dir`] for where it lives. `None` keeps the
+    /// [`crate::workspace::scratch_dir_in`] for where it lives. `None` keeps the
     /// default throwaway per-command tmpfs. Cleaned up with the session (run end
     /// on the CLI, thread teardown on the desktop).
     pub scratch_root: Option<&'a Path>,
+    /// The project's package cache, which the confined shell's package
+    /// managers write to (see [`crate::tools::proc::PKG_CACHE_ENV`]). Only on a
+    /// confined run (sandboxed, or a read-only root) with a filesystem project;
+    /// `None` keeps the host's caches (unconfined) or none at all (desktop
+    /// chat, which has no network).
+    pub pkg_cache: Option<&'a crate::workspace::PkgCache>,
     /// Whether `bash` runs under OS confinement. On by default, and the desktop
     /// keeps it that way: there, `bash` is either sandboxed or withheld.
     ///
@@ -188,8 +198,9 @@ pub struct ToolContext<'a> {
     /// `[tools].env_set`. Applied after `env_passthrough` and winning per key;
     /// the one way to inject a secret-named variable on purpose.
     pub env_set: &'a [(String, String)],
-    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` falls back to
-    /// headless Chrome; the desktop injects a webview-backed renderer. See
+    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` renders through
+    /// headless Chrome; the desktop injects a webview-backed renderer, whose
+    /// failures are returned as-is rather than retried in Chrome. See
     /// [`ScreenshotBackend`].
     pub screenshot_backend: Option<ScreenshotBackend>,
     /// The run's lifecycle hooks. Carried on the context rather than passed to
@@ -209,10 +220,25 @@ pub struct ToolContext<'a> {
     /// `None` keeps the pull-only behaviour, which is right for a surface with
     /// no conversation to deliver into.
     pub shell_done_sink: Option<ShellDoneSink>,
+    /// While true, a running `bash` command is handed off to the background
+    /// before its timeout, the way the timeout itself does. Lets a surface free
+    /// the agent for a message the user typed mid-call instead of holding it
+    /// until the command ends. `None` leaves the timeout as the only hand-off.
+    pub detach_signal: Option<tokio::sync::watch::Receiver<bool>>,
+    /// Where the next `bash` call starts, carried over from the last one so a
+    /// `cd` holds for the session instead of being repeated in every command.
+    /// `None` starts every call in `project_root`, as a surface with no
+    /// conversation (the MCP server) wants. See [`ShellCwd`].
+    pub shell_cwd: Option<ShellCwd>,
     /// The backend `web_search`/`web_fetch` use, as the host's settings chose
     /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
     /// in the environment.
     pub web_search: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
+    /// `project_root` is read-only: a read-only subagent working in the user's
+    /// checkout. `write`/`edit` refuse any path under it (the scratch stays
+    /// writable), and the shell runs only confined, with the root bound
+    /// read-only; with no sandbox backend there is no shell at all.
+    pub workspace_readonly: bool,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -234,6 +260,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("hidden_root", &self.hidden_root)
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
+            .field("pkg_cache", &self.pkg_cache)
             .field("sandbox", &self.sandbox)
             .field("escalation", &self.escalation)
             .field("on_output", &self.on_output.is_some())
@@ -246,8 +273,11 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("screenshot_backend", &self.screenshot_backend.is_some())
             .field("hooks", &self.hooks.map(|h| h.len()).unwrap_or(0))
             .field("plan_mode", &self.plan_mode)
+            .field("workspace_readonly", &self.workspace_readonly)
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
+            .field("detach_signal", &self.detach_signal.is_some())
+            .field("shell_cwd", &self.shell_cwd.as_ref().map(|c| c.lock().unwrap().clone()))
             // The config can hold an API key, so only the backend id is shown.
             .field(
                 "web_search",
@@ -333,6 +363,11 @@ pub enum ShellEvent {
 /// call which created it.
 pub type ShellDoneSink = std::sync::Arc<dyn Fn(ShellEvent) + Send + Sync>;
 
+/// The shell's working directory between calls: `None` is the project root.
+/// Shared rather than borrowed so the session, not one run, owns it -- a `cd`
+/// made in one turn still holds in the next. Only POSIX shells update it.
+pub type ShellCwd = std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>;
+
 /// How long a caller should hold a run open waiting for one backgrounded
 /// command, in seconds.
 ///
@@ -353,7 +388,8 @@ pub fn shell_park_budget_secs(timeout_secs: u64) -> u64 {
         .clamp(MIN_PARK_SECS, MAX_PARK_SECS)
 }
 
-/// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
+/// Renders a local HTML/SVG file (path, width, height, scale, and what else the
+/// page may load) to PNG bytes.
 ///
 /// Injected by the desktop so `screenshot` can capture through the app's own
 /// webview instead of shelling out to Chrome. A boxed closure so this module
@@ -365,6 +401,7 @@ pub type ScreenshotBackend = std::sync::Arc<
             u64,
             u64,
             f64,
+            crate::screenshot_pages::PageScope,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + Send>,
         > + Send
@@ -381,6 +418,7 @@ impl<'a> ToolContext<'a> {
             skill_user_root: None,
             memory_home: None,
             cross_project: false,
+            memory_change_budget: None,
             enabled_skills,
             allow_network: false,
             confine_writes: false,
@@ -388,6 +426,7 @@ impl<'a> ToolContext<'a> {
             hidden_root: None,
             home_readonly: false,
             scratch_root: None,
+            pkg_cache: None,
             sandbox: true,
             escalation: false,
             on_output: None,
@@ -402,8 +441,28 @@ impl<'a> ToolContext<'a> {
             plan_mode: false,
             hook_sink: None,
             shell_done_sink: None,
+            detach_signal: None,
+            shell_cwd: None,
             web_search: None,
+            workspace_readonly: false,
         }
+    }
+
+    /// Make `project_root` read-only. See [`Self::workspace_readonly`].
+    /// Lifting it from an unsandboxed context drops the package cache, as
+    /// [`Self::with_sandbox`] does: the shell is no longer confined.
+    pub fn with_workspace_readonly(mut self, readonly: bool) -> Self {
+        self.workspace_readonly = readonly;
+        if !self.shell_confined() {
+            self.pkg_cache = None;
+        }
+        self
+    }
+
+    /// Whether `bash` runs confined: sandboxed, or in a read-only root, which
+    /// is never run without a sandbox whatever the surface chose.
+    pub fn shell_confined(&self) -> bool {
+        self.sandbox || self.workspace_readonly
     }
 
     /// Route the web tools to the host's chosen backend. See
@@ -420,6 +479,20 @@ impl<'a> ToolContext<'a> {
     /// [`Self::shell_done_sink`].
     pub fn with_shell_done_sink(mut self, sink: ShellDoneSink) -> Self {
         self.shell_done_sink = Some(sink);
+        self
+    }
+
+    /// Let `signal` background a running command early. See
+    /// [`Self::detach_signal`].
+    pub fn with_detach_signal(mut self, signal: tokio::sync::watch::Receiver<bool>) -> Self {
+        self.detach_signal = Some(signal);
+        self
+    }
+
+    /// Carry the shell's directory across calls in `cwd`. See
+    /// [`Self::shell_cwd`].
+    pub fn with_shell_cwd(mut self, cwd: ShellCwd) -> Self {
+        self.shell_cwd = Some(cwd);
         self
     }
 
@@ -483,7 +556,7 @@ impl<'a> ToolContext<'a> {
         self
     }
 
-    /// Give the `memory_*` tools the user scope and, when `cross_project`, the
+    /// Give the `memory` tool the user scope and, when `cross_project`, the
     /// other projects under `home`. See [`crate::memory::Scopes`].
     pub fn with_memory_home(mut self, home: &'a Path, cross_project: bool) -> Self {
         self.memory_home = Some(home);
@@ -491,7 +564,16 @@ impl<'a> ToolContext<'a> {
         self
     }
 
-    /// The memory scopes this context's `memory_*` tools resolve names in.
+    /// Cap this context's memory mutations (see [`Self::memory_change_budget`]).
+    pub fn with_memory_change_budget(
+        mut self,
+        budget: Option<&'a crate::memory::ChangeBudget>,
+    ) -> Self {
+        self.memory_change_budget = budget;
+        self
+    }
+
+    /// The memory scopes this context's `memory` tool resolves names in.
     pub fn memory_scopes(&self) -> crate::memory::Scopes<'a> {
         crate::memory::Scopes {
             store: self.store_root,
@@ -571,13 +653,26 @@ impl<'a> ToolContext<'a> {
         self
     }
 
-    /// Bind `scratch_root` over the sandbox's `/tmp` so scratch files survive
-    /// across `bash` calls. See [`Self::scratch_root`].
+    /// Make `scratch_root` writable to the sandboxed shell at its real path so
+    /// scratch files survive across `bash` calls. See [`Self::scratch_root`].
     /// Ignored when the sandbox is off, so the two builders commute (see
     /// [`Self::with_sandbox`] for why an unconfined run has no scratch).
     pub fn with_scratch_root(mut self, scratch_root: &'a Path) -> Self {
         if self.sandbox {
             self.scratch_root = Some(scratch_root);
+        }
+        self
+    }
+
+    /// Point the confined shell's package managers at `pkg`. See
+    /// [`Self::pkg_cache`]. Ignored when the shell runs unconfined. Unlike the
+    /// scratch it follows confinement rather than the sandbox setting: a
+    /// read-only root is confined with the sandbox off, and its read-only
+    /// `$HOME` leaves the host caches unwritable, so it needs one. Call after
+    /// [`Self::with_sandbox`] and [`Self::with_workspace_readonly`].
+    pub fn with_pkg_cache(mut self, pkg: Option<&'a crate::workspace::PkgCache>) -> Self {
+        if self.shell_confined() {
+            self.pkg_cache = pkg;
         }
         self
     }
@@ -590,15 +685,22 @@ impl<'a> ToolContext<'a> {
 
     /// Run `bash` under OS confinement (the default). See [`Self::sandbox`].
     ///
-    /// Turning it off also drops the scratch: the scratch only makes sense as
-    /// the thing bound over the sandbox's `/tmp`. Unconfined, the shell sees the
-    /// real `/tmp`, and leaving the scratch set would have the filesystem tools
-    /// still rewriting `/tmp/...` into a directory the shell never looks at --
-    /// two tools disagreeing about what one path means.
+    /// Turning it off also drops the scratch: it is the sandbox's sanctioned
+    /// writable area, and unconfined the shell already writes wherever the
+    /// user can, with the host's own `TMPDIR`. Keeping it would only grant the
+    /// filesystem tools a directory outside the project for no reason.
+    ///
+    /// The package cache goes too unless the root is read-only: that shell
+    /// stays confined (see [`Self::shell_confined`]), which is also why an
+    /// escalated command there keeps it, while an escalated command anywhere
+    /// else runs with the host's own caches.
     pub fn with_sandbox(mut self, sandbox: bool) -> Self {
         self.sandbox = sandbox;
         if !sandbox {
             self.scratch_root = None;
+        }
+        if !self.shell_confined() {
+            self.pkg_cache = None;
         }
         self
     }
@@ -672,19 +774,15 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     // Dedicated skill/memory tools. They operate on the store's `{skills,memory}/`
     // by name (never a path), so they are always workspace-scoped and never
     // prompt. `path_args` is empty: there is no path to sandbox-check.
+    // One `memory` tool with an `op` (view/search/write/edit/delete/move). Classed
+    // `Read` so plan mode keeps its reads and the parallel read path takes it: it
+    // writes only the agent's own notes, which the user does not manage
+    // (janhq/jan-internal#497). Plan mode's refusal of the changing ops is per
+    // op, in the handler, which also serializes those ops on a per-store lock
+    // so a parallel batch cannot lose one of two edits to a note.
     BuiltinTool {
-        name: "memory_list",
+        name: MEMORY_TOOL,
         capability: Capability::Read,
-        path_args: &[],
-    },
-    BuiltinTool {
-        name: "memory_read",
-        capability: Capability::Read,
-        path_args: &[],
-    },
-    BuiltinTool {
-        name: "memory_write",
-        capability: Capability::Write,
         path_args: &[],
     },
     BuiltinTool {
@@ -723,13 +821,33 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
 pub fn is_workspace_tool(name: &str) -> bool {
     matches!(
         name,
-        "memory_list"
-            | "memory_read"
-            | "memory_write"
-            | "skill_list"
+        MEMORY_TOOL | "skill_list"
             | "skill_read"
             | "skill_write"
     )
+}
+
+/// The single memory tool's name. Agent memory is the agent's to curate, so no
+/// op on it ever prompts.
+pub const MEMORY_TOOL: &str = "memory";
+
+/// The tools that reach the agent's own memory and skills, which live in the
+/// hidden Jan home. A refusal for that home points at whichever of these the
+/// caller actually offers.
+pub const JAN_HOME_TOOLS: [&str; 4] = [MEMORY_TOOL, "skill_list", "skill_read", "skill_write"];
+
+/// The refusal for a call that reaches the Jan home, naming only the `offered`
+/// subset of [`JAN_HOME_TOOLS`]: a subagent has no `memory`, and pointing it
+/// there only buys a second refusal. `refused` is the phrase telemetry keys on.
+pub fn hidden_home_refusal(name: &str, refused: &str, offered: &[&str]) -> String {
+    let head = format!(
+        "ERROR: tool '{name}' {refused} (~/.jan) is hidden from every tool; do not try to \
+         reach it another way."
+    );
+    if offered.is_empty() {
+        return head;
+    }
+    format!("{head} For memory and skills use: {}.", offered.join(", "))
 }
 
 /// The shell tool's name. Not `bash`: on Windows it runs PowerShell or cmd
@@ -748,6 +866,46 @@ pub fn renamed_shell_notice(name: &str, where_: &str) -> Option<String> {
              Rename it to `{SHELL_TOOL}` for it to apply.",
             name.trim()
         )
+    })
+}
+
+/// The memory tools' names before they became the one [`MEMORY_TOOL`].
+const LEGACY_MEMORY_TOOLS: [&str; 3] = ["memory_write", "memory_read", "memory_list"];
+
+/// Whether a user-written tool name or glob covered the old memory tools: it
+/// matches one of their names (any case) but not `memory` itself. Unlike
+/// `bash`, such an entry is carried over to `memory` -- a deny on
+/// `memory_write` that stopped matching would hand the agent every op it used
+/// to refuse -- and the whole tool is meant, since one tool now does what the
+/// three did. That includes a broad glob such as `*write*`: a user who denied
+/// every write with it would otherwise lose memory's coverage silently.
+pub fn names_legacy_memory(pattern: &str) -> bool {
+    let lower = pattern.trim().to_ascii_lowercase();
+    glob::Pattern::new(&lower).is_ok_and(|p| {
+        !p.matches(MEMORY_TOOL) && LEGACY_MEMORY_TOOLS.iter().any(|name| p.matches(name))
+    })
+}
+
+/// The notice for a user-written tool name or pattern that names a tool by a
+/// name it no longer has: the shell's `bash` (which now matches nothing) or an
+/// old memory tool (which now applies to all of `memory`). Reported once, at
+/// load. `where_` names the setting, e.g. "[tools] deny".
+pub fn renamed_tool_notice(name: &str, where_: &str) -> Option<String> {
+    renamed_shell_notice(name, where_).or_else(|| {
+        names_legacy_memory(name).then(|| {
+            let name = name.trim();
+            if name.to_ascii_lowercase().starts_with("memory_") {
+                format!(
+                    "{where_} names `{name}`, an old memory tool name: it now applies to the \
+                     whole `{MEMORY_TOOL}` tool (every op). Rename it to `{MEMORY_TOOL}`."
+                )
+            } else {
+                format!(
+                    "{where_} has `{name}`, which matched an old memory tool name: it now \
+                     also applies to the whole `{MEMORY_TOOL}` tool (every op)."
+                )
+            }
+        })
     })
 }
 
@@ -794,6 +952,29 @@ mod tests {
         }
     }
 
+    /// A pattern that meant the old memory tools maps to `memory`; one that
+    /// already matches `memory`, or never named memory, does not.
+    #[test]
+    fn old_memory_tool_names_map_to_memory_and_are_reported() {
+        for old in ["memory_write", "memory_read", "memory_list", "Memory_Write", "memory_*", " memory_read "] {
+            assert!(names_legacy_memory(old), "{old}");
+            let notice = renamed_tool_notice(old, "[tools] deny").expect("flagged");
+            assert!(notice.contains(&format!("[tools] deny names `{}`", old.trim())), "{notice}");
+            assert!(notice.contains("`memory`"), "{notice}");
+        }
+        // A broad glob that caught an old name keeps covering memory, and says so.
+        for broad in ["*write*", "*_read", "*_LIST"] {
+            assert!(names_legacy_memory(broad), "{broad}");
+            let notice = renamed_tool_notice(broad, "[tools] deny").expect("flagged");
+            assert!(notice.contains(&format!("`{broad}`, which matched")), "{notice}");
+        }
+        for other in ["memory", "memory*", "*", "skill_write", "mcp__x__memory_write", "read"] {
+            assert!(!names_legacy_memory(other), "{other}");
+            assert!(renamed_tool_notice(other, "x").is_none(), "{other}");
+        }
+        assert!(renamed_tool_notice("bash", "x").expect("shell").contains("now `shell`"));
+    }
+
     #[test]
     fn unknown_is_not_builtin() {
         assert!(lookup("nope").is_none());
@@ -802,10 +983,10 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
+        // 8 coding tools + 3 skill tools + 1 memory tool + 2 native web tools.
         // `screenshot` (one of the coding tools) is desktop-only, so the headless
         // CLI build (`feature = "tauri"` off) has one fewer.
-        let expected = if cfg!(feature = "tauri") { 16 } else { 15 };
+        let expected = if cfg!(feature = "tauri") { 14 } else { 13 };
         assert_eq!(BUILTIN_TOOLS.len(), expected);
     }
 
@@ -821,7 +1002,10 @@ mod tests {
 
     #[test]
     fn workspace_tools_are_classified() {
-        assert!(is_workspace_tool("memory_write"));
+        assert!(is_workspace_tool("memory"));
+        for gone in ["memory_list", "memory_read", "memory_write"] {
+            assert!(lookup(gone).is_none(), "{gone} has no alias");
+        }
         assert!(is_workspace_tool("skill_list"));
         assert!(!is_workspace_tool("write"));
         assert!(!is_workspace_tool("shell"));

@@ -45,9 +45,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::providers::ProviderOverrides;
 use super::{
-    adopt_turn_history, agent_dir_for, cli_read_messages_lenient, cli_save_thread,
-    find_resume_thread, fold_interrupted_tools, is_user_turn, prepare_agent_session,
-    rebuild_wire_history, thread_message_text, AgentSession, ResumeTarget, SessionFlags,
+    adopt_turn_history, agent_dir_for, cli_save_thread, find_resume_thread,
+    fold_interrupted_tools, is_user_turn, load_thread_record, prepare_agent_session,
+    thread_message_text, AgentSession, ResumeTarget, SessionFlags,
 };
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::r#loop::{run_orchestration_steered, settle_permission};
@@ -343,11 +343,11 @@ fn read_thread(agent_dir: &Path, id: &str) -> Result<Vec<Value>, Error> {
     if found.is_none() {
         return Err(Error::resource_not_found(None).data(json!({"sessionId": id})));
     }
-    let (messages, skipped) = cli_read_messages_lenient(agent_dir, id).map_err(internal)?;
-    if skipped > 0 {
-        log::warn!("ACP: skipped {skipped} unreadable message(s) loading {id}");
+    let loaded = load_thread_record(agent_dir, id).map_err(internal)?;
+    if loaded.skipped > 0 {
+        log::warn!("ACP: skipped {} unreadable line(s) loading {id}", loaded.skipped);
     }
-    Ok(rebuild_wire_history(&messages))
+    Ok(loaded.record.messages)
 }
 
 fn busy() -> Error {
@@ -414,7 +414,7 @@ fn replay(history: &[Value], cwd: &Path) -> Vec<SessionUpdate> {
                         .unwrap_or(Value::Null);
                     out.push(SessionUpdate::ToolCall(
                         ToolCall::new(id.to_string(), tool_title(name, &args))
-                            .kind(tool_kind(name))
+                            .kind(tool_kind(name, &args))
                             .status(ToolCallStatus::Completed)
                             .locations(tool_locations(&args, cwd))
                             .raw_input(args),
@@ -763,13 +763,13 @@ impl TurnMap {
                 let call = self.call(&id, &name);
                 call.announced = true;
                 update(SessionUpdate::ToolCall(
-                    ToolCall::new(id, name.clone()).kind(tool_kind(&name)).status(ToolCallStatus::Pending),
+                    ToolCall::new(id, name.clone()).kind(tool_kind(&name, &Value::Null)).status(ToolCallStatus::Pending),
                 ))
             }
             StreamEvent::ToolCall { id, name, args } => {
                 let locations = tool_locations(&args, &self.cwd);
                 let title = tool_title(&name, &args);
-                let kind = tool_kind(&name);
+                let kind = tool_kind(&name, &args);
                 let call = self.call(&id, &name);
                 call.args = Some(args.clone());
                 if call.announced {
@@ -870,6 +870,7 @@ impl TurnMap {
             | StreamEvent::AskResolved { .. }
             // Display-only, TUI-oriented, or diagnostics for other surfaces.
             | StreamEvent::Notice { .. }
+            | StreamEvent::AgentMessage { .. }
             | StreamEvent::Compaction { .. }
             | StreamEvent::Retry { .. }
             | StreamEvent::Monitors { .. }
@@ -930,7 +931,12 @@ impl TurnMap {
             (None, Some(path)) => format!("{tool_name} ({capability}) {path}"),
             (None, None) => format!("{tool_name} ({capability})"),
         };
-        let mut fields = ToolCallUpdateFields::new().title(title).kind(tool_kind(tool_name));
+        let args = matched
+            .as_ref()
+            .and_then(|id| self.calls.get(id))
+            .and_then(|c| c.args.clone())
+            .unwrap_or(Value::Null);
+        let mut fields = ToolCallUpdateFields::new().title(title).kind(tool_kind(tool_name, &args));
         if let Some(path) = &path {
             fields = fields.locations(vec![ToolCallLocation::new(absolute(&self.cwd, path))]);
         }
@@ -979,11 +985,23 @@ fn plan(list: &TodoList) -> Plan {
     Plan::new(entries)
 }
 
-/// What kind of work a tool does, for the client's icon and grouping.
-fn tool_kind(name: &str) -> ToolKind {
+/// What kind of work a tool does, for the client's icon and grouping. `args`
+/// matters only for `memory`, whose `op` decides between reading and editing;
+/// before its arguments are known it is `Other` rather than a guessed edit.
+fn tool_kind(name: &str, args: &Value) -> ToolKind {
     match name {
-        "read" | "ls" | "memory_read" | "memory_list" | "skill_read" | "skill_list" => ToolKind::Read,
-        "edit" | "write" | "memory_write" | "skill_write" => ToolKind::Edit,
+        tauri_plugin_agent_tools::tools::MEMORY_TOOL => match args.get("op").and_then(Value::as_str) {
+            Some("view") => ToolKind::Read,
+            Some("search") => ToolKind::Search,
+            Some("write" | "edit" | "delete" | "move") => ToolKind::Edit,
+            _ => ToolKind::Other,
+        },
+        // `memory_read`/`memory_list`/`memory_write` are the memory tool's
+        // pre-rename names, still in replayed history.
+        "read" | "ls" | "skill_read" | "skill_list" | "memory_read" | "memory_list" => {
+            ToolKind::Read
+        }
+        "edit" | "write" | "skill_write" | "memory_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
         // `bash` is the shell's pre-rename name, still in replayed history.
         "bash" | tauri_plugin_agent_tools::tools::SHELL_TOOL => ToolKind::Execute,
@@ -1051,6 +1069,25 @@ mod tests {
                 "always": ask.offers_always,
             }),
         }
+    }
+
+    /// `memory` is one tool for reads and writes, so its kind comes from the
+    /// call's `op`; before the arguments arrive it is not claimed to edit.
+    #[test]
+    fn a_memory_call_is_classified_by_its_op() {
+        let kind = |args: Value| tool_kind("memory", &args);
+        assert_eq!(kind(json!({"op": "view"})), ToolKind::Read);
+        assert_eq!(kind(json!({"op": "search", "query": "q"})), ToolKind::Search);
+        for op in ["write", "edit", "delete", "move"] {
+            assert_eq!(kind(json!({"op": op})), ToolKind::Edit, "{op}");
+        }
+        assert_eq!(kind(Value::Null), ToolKind::Other);
+        assert_eq!(tool_kind("write", &Value::Null), ToolKind::Edit);
+        assert_eq!(tool_kind("read", &Value::Null), ToolKind::Read);
+        // A thread recorded before the rename replays its old memory calls.
+        assert_eq!(tool_kind("memory_read", &Value::Null), ToolKind::Read);
+        assert_eq!(tool_kind("memory_list", &Value::Null), ToolKind::Read);
+        assert_eq!(tool_kind("memory_write", &Value::Null), ToolKind::Edit);
     }
 
     #[test]

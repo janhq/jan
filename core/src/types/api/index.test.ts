@@ -5,7 +5,6 @@ import { NativeRoute } from '../index';
 
 test('testNativeRouteEnum', () => {
   expect(NativeRoute.openExternalUrl).toBe('openExternalUrl');
-  expect(NativeRoute.openAppDirectory).toBe('openAppDirectory');
   expect(NativeRoute.openFileExplore).toBe('openFileExplorer');
   expect(NativeRoute.selectDirectory).toBe('selectDirectory');
   expect(NativeRoute.selectFiles).toBe('selectFiles');

@@ -27,6 +27,7 @@ use tokio::process::Command;
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::mcp::models::McpSettings;
 use crate::core::mcp::models::{extract_active_status, extract_command_args, McpServerConfig};
+use crate::core::mcp::identity;
 use crate::core::mcp::oauth;
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 
@@ -512,7 +513,7 @@ async fn connect_in(
         }
     };
 
-    servers.lock().await.insert(name.to_string(), service);
+    identity::insert_server(&mut *servers.lock().await, name, service);
     Ok(())
 }
 
@@ -526,10 +527,10 @@ fn stdio_command(params: &McpServerConfig, scrub: &[String]) -> Command {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
+    // Its own session: pgid == pid for `kill_process_tree`, and no controlling
+    // terminal, so a server cannot take the TUI's terminal away from Jan.
     #[cfg(unix)]
-    {
-        cmd.process_group(0);
-    }
+    tauri_plugin_agent_tools::tools::proc::detach_from_terminal(&mut cmd);
     cmd.kill_on_drop(true);
     for arg in params.args.iter().filter_map(Value::as_str) {
         cmd.arg(arg);
@@ -633,7 +634,7 @@ fn kill_process_tree(pid: u32) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("taskkill")
+        let _ = std::process::Command::new(jan_utils::windows_system_tool("taskkill.exe"))
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output();

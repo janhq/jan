@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,8 +9,9 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { useNavigate, useRouter } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 
 interface DeleteProjectDialogProps {
@@ -28,16 +29,9 @@ export function DeleteProjectDialog({
 }: DeleteProjectDialogProps) {
   const { t } = useTranslation()
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
-  const threads = useThreads((state) => state.threads)
   const { deleteFolderWithThreads } = useThreadManagement()
-
-  const threadCount = useMemo(() => {
-    if (!projectId) return 0
-
-    return Object.values(threads).filter(
-      (thread) => thread.metadata?.project?.id === projectId
-    ).length
-  }, [projectId, threads])
+  const navigate = useNavigate()
+  const router = useRouter()
 
   const handleConfirm = async () => {
     if (!projectId) return
@@ -50,6 +44,14 @@ export function DeleteProjectDialog({
           : t('projects.deleteProjectDialog.successWithoutName')
       )
       onOpenChange(false)
+      // Deleting the project on screen must leave its route, or the page is
+      // left on "Project Not Found". Read the location now, not when the
+      // dialog opened: the user may have navigated while the delete ran, and
+      // deleting from the sidebar while elsewhere must stay where they are.
+      const { pathname } = router.state.location
+      if (pathname.replace(/\/+$/, '') === `/project/${projectId}`) {
+        navigate({ to: route.home })
+      }
     } catch (error) {
       toast.error(t('projects.deleteProjectDialog.error'))
       console.error('Delete project error:', error)
@@ -62,8 +64,6 @@ export function DeleteProjectDialog({
     }
   }
 
-  const hasThreads = threadCount > 0
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -75,11 +75,9 @@ export function DeleteProjectDialog({
         <DialogHeader>
           <DialogTitle>{t('projects.deleteProjectDialog.title')}</DialogTitle>
           <DialogDescription>
-            {hasThreads
-              ? t('projects.deleteProjectDialog.permanentDelete')
-              : t('projects.deleteProjectDialog.deleteEmptyProject', {
-                  projectName,
-                })}
+            {t('projects.deleteProjectDialog.permanentDelete', {
+              projectName: projectName ?? '',
+            })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

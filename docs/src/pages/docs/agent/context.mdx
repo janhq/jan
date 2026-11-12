@@ -142,8 +142,10 @@ sit at the front of every request.
 - The advertised tool array is ordered deterministically, so a restart that advertises the same
   tools advertises them as the same bytes.
 
-Nothing is deleted by role: a compaction summary is a `system` message carrying condensed history,
-and it survives every one of these updates.
+Nothing is deleted by role, and a compaction does not touch the head: its continuation state is a
+`<SYSTEM>`-marked `user` message placed after the system prompt, so the system prompt and the tools
+stay byte-identical across a compaction. Sessions saved before this change carry a `system`-role
+summary instead; they still load, and that summary is merged into the next state.
 
 ## Automatic compaction
 
@@ -172,11 +174,27 @@ name = "small-window"
 compaction_ratio = 0.6
 ```
 
-The summary is written by `smol_model` from `~/.jan/config.toml` when one is set, so the session's
-own model is not spent on condensing its history. If the smol model fails (its smaller window
-overflows, it is unreachable, or it returns nothing), the session's model writes the summary
-instead. A run under a `[budget]` money limit always summarizes on its own model, so every request
-is charged at the rates the limit was priced against.
+The summary is written by the session's own model, from cache: the request it was about to send is
+sent as it is, with one instruction appended, so the provider serves everything before the
+instruction from its prompt cache and only the reply is new work. This path is skipped when the
+request forces a tool (the first turn of a `/goal` run), since the model would have to answer with
+that tool call.
+
+When that path cannot answer (the request no longer fits, as after a provider rejection; the model
+calls a tool or returns nothing; the request fails), the compacted span is summarized as text in
+chunks instead. Each chunk request carries the sections written so far, so the whole span is read
+rather than having its middle cut out. A summary takes at most eight such requests: past that the
+chunks grow, and past what the writer can read the middle of each long message is clipped, which
+the state says. A span so long that even clipped it does not fit loses its oldest messages, which
+are not summarized at all; the state gives their count in a separate note. `smol_model` from `~/.jan/config.toml` writes these chunks when one is set, sized
+for its own window. If it fails (its smaller window overflows, it is unreachable, or it returns
+nothing), the session's model writes the rest. A run under a `[budget]` money limit always
+summarizes on its own model, so every request is charged at the rates the limit was priced against.
+
+Only part of the state is written by a model. The rest is built by code from the session record,
+so it does not erode one compaction at a time (see [Continuation state](#continuation-state)). If
+no model can write its part, the state keeps the earlier summary, or only the code-built
+sections, and the run continues.
 
 The check runs on the request itself, before it is dispatched, so the break lands at a point the
 session chose rather than after a provider rejects an oversized prompt and the run retries. When it
@@ -189,13 +207,58 @@ auto-compacted 84 -> 31 messages (ctx 96K/128K)
 compacted 84 messages into a summary: the prompt neared the context window
 ```
 
-A run also compacts when it uses up its [session token budget](#budgets), and after a provider
-rejects a prompt as too long (see [Context overflow](#context-overflow)). Both report the same
-way, and so does a subagent's compaction, prefixed with its name.
+A run also compacts after a provider rejects a prompt as too long (see
+[Context overflow](#context-overflow)). That reports the same way, and so does a subagent's
+compaction, prefixed with its name. Using up the [session token budget](#budgets) does not compact:
+spend is not context size.
 
 Headless and RPC clients get a `compaction` event: `phase` is `started`, then `finished` (with
-`messages`, the number summarized) or `failed`, and `reason` is `preflight`, `context_overflow` or
-`session_budget`.
+`messages`, the number summarized), and `reason` is `preflight` or `context_overflow`. A run's own
+compaction never sends `failed`, because a summarizer that cannot run leaves the code-built state
+instead of an error. `failed` and `session_budget` are still in the schema but no longer sent by a
+run.
+
+## Continuation state
+
+A compaction replaces the span it covers with one message, the continuation state, followed by
+the most recent messages kept as they were. The kept tail is sized in tokens (a tenth of the
+trigger, with the newest tool call and its result allowed more) and never splits a tool call from
+its results. The state's sections:
+
+- **Built by code, copied exactly:** the task (the first user message, including a subagent's
+  phase handoff), and every later user or steering message.
+- **Built by code from the record:** the files written, with `git status` and the diff stat of
+  the workspace; the last five failing tool calls under Recent errors; the working directory and
+  branch; and background shells and monitors with their ids.
+- **Written by a model:** Progress, Decisions, Findings, Errors & dead ends, Current step and Next
+  actions. Current step and Next actions are always present.
+
+A later compaction reads the previous state back, rebuilds the code-built sections from it and
+the newer record, and asks the model to merge its own sections rather than summarize a summary.
+
+The state is sized against the compaction trigger, so the request after a compaction lands under
+it and the next turn does not compact again. The user messages take up to a tenth of the trigger,
+newest first, with the latest always kept; the task takes up to a fifth. A task longer than that
+(a pasted file, a long phase handoff) keeps its beginning and end, with a line saying how much was
+left out and, for a subagent, the path of its session file, which holds the task in full. If the
+whole request is still over the trigger, the kept tail shrinks first, then the user messages.
+
+The main agent and a subagent get different states. The main agent's state carries the global
+context: the todo list, plan mode and goal, and a roster of every subagent with its run id,
+status, one-line task and the `blackboard/<name>.md` path of its answer (cited, not copied, since
+the main agent can re-read it). A subagent's state carries only what its own task needs: its
+name, allowed tools, workspace and budget spent. It never gets the roster, the todo list, the
+mode or goal, or the main agent's conversation. The model is told the same: the main agent keeps
+the decisions that span tasks and what each subagent was asked and found, and a subagent keeps
+only what its task needs.
+
+The state is a `user` message, and a kept tail can open with a user message too, so two user
+messages can sit back to back after a compaction. They are kept apart on purpose: the user's
+message is the one rewind, input recall and resume find as a turn, and the state is the one they
+skip and a resume moves to the front. A single message holding both would be either, depending on
+the surface. Hosted APIs generally accept consecutive user messages; a local chat template that requires strictly alternating roles may reject such a request. The
+compaction instruction itself is appended to the trailing user message rather than sent as a
+message of its own, so the request that writes the state never has that problem.
 
 ## Compacting on purpose
 
@@ -214,9 +277,11 @@ preserves the thread of the conversation, including the parts that sent it off c
 ## Context overflow
 
 If a request overflows anyway, the loop compacts and retries rather than erroring out. That path is
-still needed: a route served by a local engine carries no window the loop can read, and an estimate
-is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
-conversation at all, it gives up rather than looping.
+still needed: a route served by a local engine carries no window the loop can read, so this is the
+only compaction it gets, and an estimate is an estimate. Each retry sizes the kept tail against a
+window half the size of the last one: on a route with no known window, the first retry takes the
+rejected request's own size as the window. If a pass fails to shrink the conversation at all, it
+gives up rather than looping.
 
 ## Capping output
 

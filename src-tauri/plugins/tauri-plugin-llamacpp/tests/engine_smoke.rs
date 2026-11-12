@@ -252,6 +252,81 @@ fn a_preset_without_parallel_gets_the_server_side_auto_default() {
     );
 }
 
+/// llama.cpp's router starts every child with `--alias <section name>`
+/// (`server-models.cpp`, `update_args`), so its responses name the model by its
+/// id. The preset path applies the section to `common_params` itself and has no
+/// router to do that, and an unset alias makes `server_context` fall back to the
+/// model *file path* -- which API clients then read back as the `model` of every
+/// response (`\\?\C:\...\model.gguf` on Windows, #9471).
+#[test]
+fn a_preset_engine_names_the_model_by_its_section_not_its_file_path() {
+    let Some(model) = model_path() else {
+        eprintln!("skipping: set JAN_TEST_GGUF to run");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ini = dir.path().join("router.preset.ini");
+    std::fs::write(
+        &ini,
+        format!(
+            "[*]\nfit = off\nctx-size = 2048\nno-warmup = true\n\n\
+             [jan-model-id]\nmodel = {model}\nn-gpu-layers = 0\n"
+        ),
+    )
+    .expect("write ini");
+    let engine = Engine::start_from_preset(&ini.to_string_lossy(), "jan-model-id", None)
+        .expect("engine should start from the preset");
+
+    let res = engine.request(
+        Route::ChatCompletions.as_shim_name(),
+        r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":8,"temperature":0}"#,
+    );
+    assert_eq!(res.status(), 200, "body: {}", res.body());
+    let v: serde_json::Value = serde_json::from_str(&res.body()).unwrap();
+    assert_eq!(
+        v.pointer("/model").and_then(|m| m.as_str()),
+        Some("jan-model-id"),
+        "completion: {}",
+        res.body()
+    );
+
+    // A stream carries the name on every chunk, from the first.
+    let mut res = engine.request(
+        Route::ChatCompletions.as_shim_name(),
+        r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":8,"temperature":0,"stream":true}"#,
+    );
+    assert!(res.is_stream(), "expected a streaming response");
+    // The first frame may sit in the body or arrive through the generator.
+    let mut text = res.body();
+    while !text.contains("data: {") {
+        match res.next_chunk().expect("generator threw") {
+            Some(more) => text.push_str(&more),
+            None => break,
+        }
+    }
+    let frame = text
+        .lines()
+        .filter_map(|l| l.strip_prefix("data: "))
+        .find(|f| f.starts_with('{'))
+        .expect("a JSON data frame");
+    let chunk: serde_json::Value = serde_json::from_str(frame).unwrap();
+    assert_eq!(
+        chunk.pointer("/model").and_then(|m| m.as_str()),
+        Some("jan-model-id"),
+        "first chunk: {frame}"
+    );
+    drop(res);
+
+    let res = engine.request(Route::Models.as_shim_name(), "");
+    let v: serde_json::Value = serde_json::from_str(&res.body()).unwrap();
+    assert_eq!(
+        v.pointer("/data/0/id").and_then(|m| m.as_str()),
+        Some("jan-model-id"),
+        "models: {}",
+        res.body()
+    );
+}
+
 /// `server_context` is the only source of real load progress: it reports it
 /// through `set_state_callback` and there is nothing to poll for it. Without
 /// the shim installing that callback the desktop's whole progress chain --

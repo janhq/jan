@@ -1,10 +1,7 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import {
-  useGeneralSetting,
-  HUGGINGFACE_TOKEN_SECRET_KEY,
-} from '@/hooks/useGeneralSetting'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useRef } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
@@ -12,15 +9,16 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
-import { ExtensionManager } from '@/lib/extension'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
-import { AppEvent, events } from '@janhq/core'
+import { AppEvent, events, HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
 import { sweepThreadWorkspaces } from '@/lib/agentTools'
 import { invoke } from '@tauri-apps/api/core'
 import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { useExtensionProviders } from '@/hooks/useExtensionProviders'
 
 type ProviderCustomHeader = {
   header: string
@@ -39,6 +37,9 @@ type RegisterProviderRequest = {
 async function registerRemoteProvider(provider: ModelProvider) {
   // Skip llamacpp - those are local models
   if (provider.provider === 'llamacpp') return
+  // An extension's provider is reachable from the chat only: registering it
+  // would serve it, with the extension's key, to every local API client.
+  if (provider.source) return
 
   const chain = providerRemoteApiKeyChain(provider)
   if (chain.length === 0) {
@@ -75,7 +76,8 @@ async function seedProviderKeysFromKeyring(
 ): Promise<ModelProvider[]> {
   return Promise.all(
     providers.map(async (provider) => {
-      if (provider.provider === 'llamacpp') return provider
+      // Extension providers keep their key in the extension's settings.
+      if (provider.provider === 'llamacpp' || provider.source) return provider
       try {
         const keys = await invoke<string[]>('get_provider_keys', {
           provider: provider.provider,
@@ -127,6 +129,7 @@ const syncRemoteProviders = () => {
     if (
       provider.active &&
       provider.provider !== 'llamacpp' &&
+      !provider.source &&
       providerHasRemoteApiKeys(provider)
     ) {
       registerRemoteProvider(provider)
@@ -187,11 +190,12 @@ export function DataProvider() {
   const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
   const setThreadsLoading = useThreads((s) => s.setThreadsLoading)
-  // The thread fetch re-runs on extension re-registration; the sandbox sweep
-  // should not.
+  // The thread fetch re-runs whenever its effect does (StrictMode remount,
+  // a new service hub); the sandbox sweep should run once per session.
   const sweptWorkspaces = useRef(false)
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  useExtensionProviders()
 
   // Local API Server hooks
   const {
@@ -227,7 +231,7 @@ export function DataProvider() {
       })
     })
     // Re-seed the Hugging Face token from the keyring (no longer persisted to
-    // settings storage) into the store + download extension for this session.
+    // settings storage) into the store for this session.
     invoke<string | null>('get_secret', {
       key: HUGGINGFACE_TOKEN_SECRET_KEY,
     })
@@ -285,9 +289,9 @@ export function DataProvider() {
   }, [serviceHub])
 
   useEffect(() => {
-    // fetchThreads throws while the Conversational extension is still loading
-    // (startup race, e.g. reload mid-stream). Retry with backoff instead of
-    // letting a single failed fetch leave the thread list permanently empty.
+    // fetchThreads throws while the backend is not ready yet (startup race,
+    // e.g. reload mid-stream). Retry with backoff instead of letting a single
+    // failed fetch leave the thread list permanently empty.
     let cancelled = false
     let attempt = 0
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -308,6 +312,10 @@ export function DataProvider() {
           }
           setThreads(threads)
           setThreadsLoading(false)
+          // SUCCESS branch only (never the retry-exhaustion catch): the service
+          // throws on a non-array response, so reaching here means a validated
+          // listing, including a genuinely empty one.
+          useThreads.getState().markThreadsHydrated()
           // Collect agent sandboxes whose thread is gone (crash, or a thread
           // deleted while the app was closed). Once per session, and only on a
           // non-empty result: sweeping against an empty list would delete live
@@ -315,7 +323,15 @@ export function DataProvider() {
           // Leftovers then wait for the next startup that does see threads.
           if (!sweptWorkspaces.current && threads.length > 0) {
             sweptWorkspaces.current = true
-            sweepThreadWorkspaces(threads.map((t) => t.id))
+            // A Cowork session that already started running keeps its sandbox
+            // before its thread.json exists (first write is debounced), so the
+            // live session ids are kept as well.
+            sweepThreadWorkspaces([
+              ...new Set([
+                ...threads.map((t) => t.id),
+                ...useCoworkSessions.getState().sessions.map((x) => x.id),
+              ]),
+            ])
           }
         })
         .catch(() => {
@@ -328,22 +344,10 @@ export function DataProvider() {
           timer = setTimeout(load, Math.min(1000, 150 * attempt))
         })
     }
-    // A late (or re-)registration re-arms the fetch even after the bounded
-    // retries above are exhausted, e.g. when extension setup itself failed
-    // and only recovers later.
-    const unsubscribe = ExtensionManager.getInstance().onRegistrationChange(
-      () => {
-        if (cancelled) return
-        attempt = 0
-        clearTimeout(timer)
-        load()
-      }
-    )
     load()
     return () => {
       cancelled = true
       clearTimeout(timer)
-      unsubscribe()
     }
   }, [serviceHub, setThreads, setThreadsLoading])
 
@@ -410,79 +414,84 @@ export function DataProvider() {
       )
   }, [serviceHub, runInBackground])
 
-  // Auto-start Local API Server on app startup if enabled
+  // Reconcile the UI with the backend server on every webview boot (the Rust
+  // server outlives the webview, e.g. across a hide-to-tray reload), then
+  // auto-start it only if enabled and not already running.
   useEffect(() => {
-    if (enableOnStartup) {
-      // Check if server is already running
-      serviceHub
-        .app()
-        .getServerStatus()
-        .then(async (isRunning) => {
-          if (isRunning) {
-            console.log('Local API Server is already running')
-            setServerStatus('running')
-            return
+    // Only a start this effect began may be rolled back to 'stopped': a failed
+    // status query must not clobber a start the user began elsewhere.
+    let startedPending = false
+    serviceHub
+      .app()
+      .getServerStatus()
+      .then(async (isRunning) => {
+        if (isRunning) {
+          console.log('Local API Server is already running')
+          setServerStatus('running')
+          return
+        }
+
+        if (!enableOnStartup) return
+
+        setServerStatus('pending')
+        startedPending = true
+
+        // Start model(s): prefer user-configured default, fall back to last session's models
+        const modelsToStart = (() => {
+          if (defaultModelLocalApiServer) {
+            return [defaultModelLocalApiServer]
           }
+          return lastServerModels
+        })()
 
-          setServerStatus('pending')
+        if (modelsToStart.length > 0) {
+          await Promise.allSettled(
+            modelsToStart.map(async ({ model, provider: providerName }) => {
+              const provider = getProviderByName(providerName)
+              if (!provider) return
+              try {
+                await serviceHub.models().startModel(provider, model, true)
+                console.log(`Auto-started server model: ${model}`)
+              } catch (err) {
+                console.warn(`Failed to auto-start server model ${model}:`, err)
+              }
+            })
+          )
+        }
 
-          // Start model(s): prefer user-configured default, fall back to last session's models
-          const modelsToStart = (() => {
-            if (defaultModelLocalApiServer) {
-              return [defaultModelLocalApiServer]
+        return window.core?.api
+          ?.startServer({
+            host: serverHost,
+            port: serverPort,
+            prefix: apiPrefix,
+            apiKey,
+            trustedHosts,
+            isCorsEnabled: corsEnabled,
+            isVerboseEnabled: verboseLogs,
+            proxyTimeout: proxyTimeout,
+          })
+          .then(async (actualPort: number) => {
+            // Store the actual port that was assigned (important for mobile with port 0)
+            if (actualPort && actualPort !== serverPort) {
+              setServerPort(actualPort)
             }
-            return lastServerModels
-          })()
-
-          if (modelsToStart.length > 0) {
-            await Promise.allSettled(
-              modelsToStart.map(async ({ model, provider: providerName }) => {
-                const provider = getProviderByName(providerName)
-                if (!provider) return
-                try {
-                  await serviceHub.models().startModel(provider, model, true)
-                  console.log(`Auto-started server model: ${model}`)
-                } catch (err) {
-                  console.warn(`Failed to auto-start server model ${model}:`, err)
-                }
+            setServerStatus('running')
+            // Persist whichever models are actually running so next startup can restore them
+            const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+            if (activeModels.length > 0) {
+              const allProviders = useModelProvider.getState().providers
+              const serverModels = activeModels.flatMap((id) => {
+                const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
+                return p ? [{ model: id, provider: p.provider }] : []
               })
-            )
-          }
-
-          return window.core?.api
-            ?.startServer({
-              host: serverHost,
-              port: serverPort,
-              prefix: apiPrefix,
-              apiKey,
-              trustedHosts,
-              isCorsEnabled: corsEnabled,
-              isVerboseEnabled: verboseLogs,
-              proxyTimeout: proxyTimeout,
-            })
-            .then(async (actualPort: number) => {
-              // Store the actual port that was assigned (important for mobile with port 0)
-              if (actualPort && actualPort !== serverPort) {
-                setServerPort(actualPort)
-              }
-              setServerStatus('running')
-              // Persist whichever models are actually running so next startup can restore them
-              const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
-              if (activeModels.length > 0) {
-                const allProviders = useModelProvider.getState().providers
-                const serverModels = activeModels.flatMap((id) => {
-                  const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
-                  return p ? [{ model: id, provider: p.provider }] : []
-                })
-                if (serverModels.length > 0) setLastServerModels(serverModels)
-              }
-            })
-        })
-        .catch((error: unknown) => {
-          console.error('Failed to start Local API Server on startup:', error)
-          setServerStatus('stopped')
-        })
-    }
+              if (serverModels.length > 0) setLastServerModels(serverModels)
+            }
+          })
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to sync or start Local API Server on startup:', error)
+        if (startedPending) setServerStatus('stopped')
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub])
 

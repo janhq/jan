@@ -93,7 +93,7 @@ pub fn is_process_alive(pid: u32) -> bool {
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
 
-        let mut cmd = Command::new("tasklist");
+        let mut cmd = Command::new(jan_utils::windows_system_tool("tasklist.exe"));
         cmd.args(&["/FI", &format!("PID eq {}", pid), "/NH"]);
 
         #[cfg(windows)]

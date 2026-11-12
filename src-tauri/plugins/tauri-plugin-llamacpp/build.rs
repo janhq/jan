@@ -13,10 +13,10 @@
 // vendor/llama.cpp and with engine::PINNED_* on the Rust side; the shim
 // re-exports llama_version()/llama_build_number() so a mismatch is caught at
 // runtime instead of producing a silently wrong engine.
-pub const LLAMA_CPP_TAG: &str = "b11669";
-pub const LLAMA_CPP_BUILD_NUMBER: u32 = 11669;
-pub const LLAMA_CPP_COMMIT: &str = "620d2225cc436ab0b001e3200e590e3b286ef9ab";
-pub const LLAMA_CPP_VERSION: &str = "0.7.0";
+pub const LLAMA_CPP_TAG: &str = "b12110";
+pub const LLAMA_CPP_BUILD_NUMBER: u32 = 12110;
+pub const LLAMA_CPP_COMMIT: &str = "cd959bae99ff4bed22bef2604f45241c09bbb8c8";
+pub const LLAMA_CPP_VERSION: &str = "0.9.0";
 
 const COMMANDS: &[&str] = &[
     // Cleanup command
@@ -41,6 +41,9 @@ const COMMANDS: &[&str] = &[
     "begin_engine_restart",
     "end_engine_restart",
     "erase_thread_slot_state",
+    // The ggml op diagnostic, orchestrated by the worker
+    "start_diagnostics",
+    "cancel_diagnostics",
     // GGUF commands
     "read_gguf_metadata",
     "find_gguf_tensors",
@@ -270,6 +273,7 @@ mod engine {
     pub fn build() {
         println!("cargo:rerun-if-changed=shim/jan_llama_shim.cpp");
         println!("cargo:rerun-if-changed=shim/jan_llama_shim.h");
+        println!("cargo:rerun-if-changed=shim/jan_llama_diag.cpp");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_PREBUILT_DIR");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_CPP_DIR");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
@@ -331,6 +335,7 @@ mod engine {
             };
 
         search_dirs.push(compile_shim(&src, &generated_include));
+        compile_diag(&src);
         emit_link_flags(&search_dirs);
 
         // ggml resolves backend modules against the *executable's* directory
@@ -582,7 +587,7 @@ mod engine {
         } else if feature_enabled("engine-cuda")
             && env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
         {
-            // A foreign JAN_LLAMA_CPP_DIR tree is not the b11669 the list was
+            // A foreign JAN_LLAMA_CPP_DIR tree is not the b12110 the list was
             // copied from, so only the vendored pin is held to it.
             if env::var_os("JAN_LLAMA_CPP_DIR").is_none() {
                 check_upstream_cuda_archs(src);
@@ -954,7 +959,7 @@ mod engine {
         words
     }
 
-    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b11669,
+    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b12110,
     /// with 75-virtual changed to 75-real (see the call site).
     /// check_upstream_cuda_archs fails the build if a tag bump changes it.
     fn default_cuda_archs(v: (u32, u32)) -> String {
@@ -1014,7 +1019,7 @@ mod engine {
         assert!(
             upstream == ours,
             "{} names CUDA archs {upstream:?}, but default_cuda_archs (copied from \
-             b11669) covers {ours:?}. Update default_cuda_archs to the new list, \
+             b12110) covers {ours:?}. Update default_cuda_archs to the new list, \
              keeping 75 as -real (#9185), or set JAN_ENGINE_CUDA_ARCHS.",
             cml.display()
         );
@@ -1085,6 +1090,52 @@ mod engine {
             .include(generated_include.join("common"));
         cc.compile("jan_llama_shim");
         PathBuf::from(env::var("OUT_DIR").unwrap())
+    }
+
+    /// Compiles `shim/jan_llama_diag.cpp`, which `#include`s upstream's
+    /// `tests/test-backend-ops.cpp` whole (after renaming its `main`).
+    ///
+    /// One translation unit through `cc`, not `-DLLAMA_BUILD_TESTS=ON`: that
+    /// switch would build and register every test target in `tests/`, which
+    /// the engine does not want and which would slow every build. The upstream
+    /// file needs ggml's headers only, so none of llama.cpp's generated headers
+    /// are on the include path and none of libllama or libcommon is linked in
+    /// for it; the ggml symbols resolve against the shared ggml the link line
+    /// already names.
+    ///
+    /// Not in `ARCHIVES`: it takes part in no link cycle, `cc` emits its own
+    /// link directive, and like the shim it is rebuilt on every build rather
+    /// than shipped in a prebuilt bundle (engine-prebuilt.sh reads `ARCHIVES`
+    /// to decide what the bundle must hold).
+    fn compile_diag(src: &Path) {
+        let upstream = src.join("tests/test-backend-ops.cpp");
+        assert!(
+            upstream.is_file(),
+            "{} is missing: the diagnostic wrapper includes it unmodified. A llama.cpp \
+             checkout pruned of tests/ cannot build the engine; re-run `make engine-source`.",
+            upstream.display()
+        );
+        println!("cargo:rerun-if-changed={}", upstream.display());
+
+        let mut cc = cc::Build::new();
+        cc.cpp(true)
+            .std("c++17")
+            .file("shim/jan_llama_diag.cpp")
+            .include("shim")
+            // `#include "tests/test-backend-ops.cpp"` resolves from the root.
+            .include(src)
+            .include(src.join("ggml/include"))
+            .include(src.join("vendor"));
+        if cc.get_compiler().is_like_msvc() {
+            // llama.cpp's own CMakeLists adds both for every target: the file
+            // holds non-ASCII literals and its test table overflows the default
+            // COFF section count.
+            cc.flag("/utf-8").flag("/bigobj");
+        }
+        // Upstream defines helpers its own main() uses (the output format
+        // names) that this driver does not; the file is not ours to prune.
+        cc.flag_if_supported("-Wno-unused-function");
+        cc.compile("jan_llama_diag");
     }
 
     fn emit_link_flags(dirs: &[PathBuf]) {

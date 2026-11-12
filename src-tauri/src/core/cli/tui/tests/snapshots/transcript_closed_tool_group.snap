@@ -20,8 +20,6 @@ expression: render_snapshot(buf)
  4 2..10 mod=BOLD
  5 0..4 fg=DarkGray
  5 4..10 fg=#56B6C2
- 6 0..4 fg=DarkGray
  6 4..10 fg=#56B6C2
- 7 0..4 fg=DarkGray
  7 4..8 fg=#56B6C2
  7 15..16 fg=DarkGray

@@ -1,5 +1,6 @@
 {
   "addProvider": "Добавить поставщика",
   "addOpenAIProvider": "Добавить поставщика OpenAI",
-  "enterNameForProvider": "Введите имя поставщика"
+  "enterNameForProvider": "Введите имя поставщика",
+  "nameLabel": "Название"
 }

@@ -10,17 +10,25 @@ use super::EngineError;
 /// must be `Send + Sync`.
 pub type StateCallback = std::sync::Arc<dyn Fn(&str, &str) + Send + Sync>;
 
+/// Sink for the op diagnostic's JSON events, one object per call. Runs on the
+/// calling thread or on one of the run's parallel workers, never concurrently
+/// with itself, hence `Sync` but not `Send`-bound state.
+pub type DiagSink<'a> = &'a (dyn Fn(&str) + Sync);
+
 #[cfg(feature = "engine")]
 mod imp {
     use super::EngineError;
     use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
-    use super::StateCallback;
+    use super::{DiagSink, StateCallback};
+    use crate::engine::diag::{DiagMode, DiagRunRequest};
 
     type EngineHandle = *mut c_void;
     type ResponseHandle = *mut c_void;
     type StateTrampoline =
         unsafe extern "C" fn(state: *const c_char, payload: *const c_char, user_data: *mut c_void);
+
+    type DiagTrampoline = unsafe extern "C" fn(line: *const c_char, user_data: *mut c_void);
 
     // The shim's ABI. Hand-declared rather than bindgen-generated: it is our
     // own 14-function surface, so there is no upstream struct layout to track
@@ -64,6 +72,19 @@ mod imp {
         fn jan_llama_load_backends(dir: *const c_char);
         fn jan_llama_devices_json() -> *mut c_char;
         fn jan_llama_device_identities_json() -> *mut c_char;
+        fn jan_llama_diag_run(
+            mode: c_int,
+            backend: *const c_char,
+            op_filter: *const c_char,
+            params_filter: *const c_char,
+            workers: c_int,
+            on_event: Option<DiagTrampoline>,
+            user_data: *mut c_void,
+            err: *mut u8,
+            err_len: usize,
+        ) -> c_int;
+        fn jan_llama_diag_ops_json() -> *mut c_char;
+        fn jan_llama_diag_backends_json() -> *mut c_char;
         fn jan_llama_string_free(s: *mut c_char);
         fn jan_llama_version() -> *const c_char;
         fn jan_llama_build_number() -> c_int;
@@ -106,6 +127,35 @@ mod imp {
             };
             cb(&state, &payload);
         });
+    }
+
+    /// The C ABI entry point for the op diagnostic's events. `user_data` is a
+    /// `*const DiagSink` living on `diag_run`'s stack for the whole call. A
+    /// panic is caught for the same reason as in `state_trampoline`.
+    unsafe extern "C" fn diag_trampoline(line: *const c_char, user_data: *mut c_void) {
+        if user_data.is_null() || line.is_null() {
+            return;
+        }
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: `diag_run` passes a pointer to a live `DiagSink` and the
+            // shim stops calling before it returns; `line` is a NUL-terminated
+            // string valid for this call.
+            let sink = unsafe { &*(user_data as *const DiagSink) };
+            let line = unsafe { CStr::from_ptr(line) }.to_string_lossy();
+            sink(&line);
+        }));
+    }
+
+    /// Reads and frees a string the shim returned, or `Unavailable` for null.
+    fn take_shim_string(raw: *mut c_char) -> Result<String, EngineError> {
+        if raw.is_null() {
+            return Err(EngineError::Unavailable);
+        }
+        // SAFETY: the shim malloc()s a NUL-terminated string and we hand the
+        // same pointer back to its free.
+        let json = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+        unsafe { jan_llama_string_free(raw) };
+        Ok(json)
     }
 
     /// Leaks the callback for the duration of the call; `from_handle` either
@@ -273,6 +323,76 @@ mod imp {
             Ok(json)
         }
 
+        /// Runs upstream's `test-backend-ops` cases on one device, streaming
+        /// one JSON object per call to `on_event` (see `engine::diag` for the
+        /// shape). `Ok(true)` when every case passed, `Ok(false)` when one
+        /// failed, `Err(Diagnostic)` when nothing could run. A crash inside a
+        /// backend kills the process, so callers run this in a leaf worker.
+        ///
+        /// Registers nothing: call `load_backend_modules` first.
+        pub fn diag_run(req: &DiagRunRequest, on_event: DiagSink) -> Result<bool, EngineError> {
+            let backend =
+                CString::new(req.backend.as_str()).map_err(|e| EngineError::Diagnostic(e.to_string()))?;
+            let ops = req
+                .op_filter
+                .as_deref()
+                .map(CString::new)
+                .transpose()
+                .map_err(|e| EngineError::Diagnostic(e.to_string()))?;
+            let params = req
+                .params_filter
+                .as_deref()
+                .map(CString::new)
+                .transpose()
+                .map_err(|e| EngineError::Diagnostic(e.to_string()))?;
+            let mode = match req.mode {
+                DiagMode::Test => 0,
+                DiagMode::Support => 1,
+            };
+            let workers = c_int::try_from(req.workers.max(1)).unwrap_or(1);
+            let mut err = vec![0u8; ERR_BUF_LEN];
+            let sink = on_event;
+            // SAFETY: every pointer outlives the call; `&sink` is a thin pointer
+            // to a fat one and the shim stops calling the trampoline before it
+            // returns. The shim copies nothing it keeps.
+            let rc = unsafe {
+                jan_llama_diag_run(
+                    mode,
+                    backend.as_ptr(),
+                    ops.as_ref().map_or(std::ptr::null(), |c| c.as_ptr()),
+                    params.as_ref().map_or(std::ptr::null(), |c| c.as_ptr()),
+                    workers,
+                    Some(diag_trampoline as DiagTrampoline),
+                    &sink as *const DiagSink as *mut c_void,
+                    err.as_mut_ptr(),
+                    err.len(),
+                )
+            };
+            match rc {
+                1 => Ok(true),
+                0 => Ok(false),
+                _ => Err(EngineError::Diagnostic(
+                    CStr::from_bytes_until_nul(&err)
+                        .map(|c| c.to_string_lossy().into_owned())
+                        .unwrap_or_else(|_| "unknown error".to_string()),
+                )),
+            }
+        }
+
+        /// `[{"op","cases"}]`: how many cases test mode runs per op family.
+        /// Builds the whole case list, so it takes a few seconds.
+        pub fn diag_ops_json() -> Result<String, EngineError> {
+            // SAFETY: a plain getter; the result is freed by take_shim_string.
+            take_shim_string(unsafe { jan_llama_diag_ops_json() })
+        }
+
+        /// `[{"name","description","type","reg"}]` for every registered ggml
+        /// device, CPU included, without querying any device's memory.
+        pub fn diag_backends_json() -> Result<String, EngineError> {
+            // SAFETY: as `diag_ops_json`.
+            take_shim_string(unsafe { jan_llama_diag_backends_json() })
+        }
+
         pub fn linked_version() -> Result<String, EngineError> {
             // SAFETY: returns a pointer to a static string in the shim.
             Ok(unsafe { CStr::from_ptr(jan_llama_version()) }
@@ -407,7 +527,8 @@ mod imp {
 
 #[cfg(not(feature = "engine"))]
 mod imp {
-    use super::EngineError;
+    use super::{DiagSink, EngineError};
+    use crate::engine::diag::DiagRunRequest;
 
     /// Placeholder so the crate compiles without a C++ toolchain. Every entry
     /// point reports `Unavailable` rather than panicking, so a build without
@@ -448,6 +569,15 @@ mod imp {
             Err(EngineError::Unavailable)
         }
         pub fn device_identities_json() -> Result<String, EngineError> {
+            Err(EngineError::Unavailable)
+        }
+        pub fn diag_run(_req: &DiagRunRequest, _on_event: DiagSink) -> Result<bool, EngineError> {
+            Err(EngineError::Unavailable)
+        }
+        pub fn diag_ops_json() -> Result<String, EngineError> {
+            Err(EngineError::Unavailable)
+        }
+        pub fn diag_backends_json() -> Result<String, EngineError> {
             Err(EngineError::Unavailable)
         }
         pub fn linked_version() -> Result<String, EngineError> {

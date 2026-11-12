@@ -30,7 +30,8 @@ use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
 use crate::core::cli::tui::{
-    input_box_height, subagent_rows, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+    background_rows, input_box_height, subagent_group, turn_stats_line, work_group_lines, Level,
+    TRANSCRIPT_BOTTOM_PAD,
 };
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
@@ -401,7 +402,7 @@ fn todo_panel_single_phase() {
 }
 
 #[test]
-fn todo_panel_multi_phase_beside_the_agents() {
+fn todo_panel_multi_phase() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![
@@ -411,32 +412,27 @@ fn todo_panel_multi_phase_beside_the_agents() {
         ),
         ("frontend", vec![("ui", Open)]),
     ]);
-    app.subagents = vec![cached_panel("api-review", 6, 12_000, 9_000, true)];
     assert_buffer(
-        "todo_panel_split_with_agents",
+        "todo_panel_multi_phase",
         &frame(&mut app, DARK, 100, 18),
     );
 }
 
 #[test]
-fn todo_panel_stacks_above_the_agents_when_narrow() {
+fn todo_panel_narrow() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![(
         "",
         vec![("routes", InProgress), ("auth", Open)],
     )]);
-    app.subagents = vec![cached_panel("api-review", 2, 0, 0, false)];
     assert_buffer(
-        "todo_panel_stacked_narrow",
+        "todo_panel_narrow",
         &frame(&mut app, DARK, 60, 18),
     );
 }
 
-// ---- Subagent panel and /agents --------------------------------------------
-
-/// The reduced-motion throbber, as `motion::spinner` returns it.
-const THROBBER: &str = "\u{2022}";
+// ---- Subagents and /agents ------------------------------------------------
 
 /// A running child with `calls` calls and, when `reported`, a prompt-cache
 /// history of `cached` out of `prompt` tokens.
@@ -473,24 +469,6 @@ fn fan_out() -> Vec<SubagentPanel> {
         queued,
         waiting,
     ]
-}
-
-#[test]
-fn subagent_dock_shows_stats_and_cache_rates() {
-    let mut panels = fan_out();
-    let buf = pinned(DARK, || {
-        lines_buffer(agents_column(&mut panels, 128_000, 72, 12, THROBBER), 72)
-    });
-    assert_buffer("subagent_dock_cache_rates", &buf);
-}
-
-#[test]
-fn subagent_dock_overflow_points_at_agents() {
-    let mut panels = fan_out();
-    let buf = pinned(DARK, || {
-        lines_buffer(agents_column(&mut panels, 128_000, 72, 4, THROBBER), 72)
-    });
-    assert_buffer("subagent_dock_overflow", &buf);
 }
 
 #[test]
@@ -531,13 +509,26 @@ fn monitors_inspector_empty() {
     assert_buffer("monitors_inspector_empty", &frame(&mut app, DARK, 60, 9));
 }
 
+/// `/worktrees`: the actions, then each checkout coloured by what may be
+/// done with it (removable green, holding work amber, in use dim).
 #[test]
-fn monitor_dock_overflow_points_at_monitors() {
-    let monitors: Vec<MonitorSnapshot> = (1..=4)
+fn worktrees_inspector_lists_each_state() {
+    let mut app = snapshot_app();
+    app.worktrees = Some(worktrees_fixture());
+    open_worktrees_picker(&mut app);
+    assert_buffer("worktrees_inspector_list", &frame(&mut app, DARK, 100, 15));
+}
+
+#[test]
+fn monitor_group_overflow_counts_the_rest() {
+    let mut app = snapshot_app();
+    app.monitors = (1..=4)
         .map(|n| monitor(&format!("mon-{n}"), "build", "grep OK build.log", n))
         .collect();
-    let buf = pinned(DARK, || lines_buffer(monitors_column(&monitors, 40, 3), 40));
-    assert_buffer("monitor_dock_overflow", &buf);
+    let buf = pinned(DARK, || {
+        lines_buffer(background_rows(&mut app, 60, 8, Instant::now()), 60)
+    });
+    assert_buffer("monitor_group_overflow", &buf);
 }
 
 #[test]
@@ -592,12 +583,12 @@ fn transcript_backgrounded_shell_command() {
     assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
 }
 
-/// The idle dock with two background shells: the dim row over the input.
+/// Two background shells on an idle session: their group over the input.
 #[test]
-fn bg_shells_row_over_the_input() {
+fn background_shells_over_the_input() {
     let mut app = snapshot_app();
     app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
-    assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 8));
+    assert_buffer("background_shells", &frame(&mut app, DARK, 80, 13));
 }
 
 /// Two subagents running and one queued after the main turn ended: the block
@@ -615,26 +606,91 @@ fn idle_fan_out(now: Instant) -> TestApp {
     app
 }
 
-fn subagent_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
-    pinned(DARK, || lines_buffer(subagent_rows(app, w, now).expect("shown"), w))
+fn background_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
+    pinned(DARK, || lines_buffer(background_rows(app, w, 8, now), w))
 }
 
 #[test]
 fn subagents_running_after_the_turn() {
     let now = Instant::now();
     let mut app = idle_fan_out(now);
-    assert_buffer("subagents_idle_running", &subagent_rows_buffer(&mut app, 80, now));
-    assert_buffer("subagents_idle_narrow", &subagent_rows_buffer(&mut app, 36, now));
+    assert_buffer("subagents_idle_running", &background_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_narrow", &background_rows_buffer(&mut app, 36, now));
     app.apply(StreamEvent::SubagentEnd {
         run_id: "sub-kv-review-1".into(),
         name: "kv-review".into(),
         error: None,
     });
-    assert_buffer("subagents_idle_one_finished", &subagent_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
 }
 
-/// Where the block sits: under the rule, over the shells row and the input,
-/// with the dock no longer listing the same children.
+/// A child that issues several calls in one request, as its stream delivers
+/// them: every call announced before any runs, then the results out of order.
+/// The row names the newest call still running, in continuous tense, and a
+/// label too long for the row is cut after its verb rather than dropped; each
+/// result retires its own call by id, so the row follows whatever is still
+/// running and flips to the past tense only once the last one answers.
+#[test]
+fn subagent_parallel_calls_stay_visible_until_the_last_result() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.subagents.truncate(1);
+    let child = |event: StreamEvent| StreamEvent::Subagent {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        event: Box::new(event),
+    };
+    let cmd = "cargo test --locked --no-default-features --features cli --lib tui";
+    let calls = [
+        ("a", "read", json!({ "path": "src/a.rs" })),
+        ("b", "read", json!({ "path": "src/b.rs" })),
+        ("c", "bash", json!({ "command": cmd })),
+    ];
+    for (id, tool, args) in calls {
+        app.apply(child(StreamEvent::ToolCall {
+            id: id.into(),
+            name: tool.into(),
+            args,
+        }));
+    }
+    let row = |app: &mut App, w: u16| {
+        let text = render_snapshot(&background_rows_buffer(app, w, now));
+        text.lines().nth(1).unwrap_or_default().to_string()
+    };
+    // The newest call's whole command does not fit, so the row keeps its verb
+    // and cuts the rest with a visible mark rather than going blank.
+    for w in [80, 50, 36] {
+        let shown = row(&mut app, w);
+        assert!(shown.contains("1m 05s \u{b7} Running"), "@{w}: {shown}");
+        assert!(shown.trim_end_matches([' ', '|']).ends_with("..."), "@{w}: {shown}");
+        assert!(!shown.contains("in flight"), "@{w}: {shown}");
+    }
+    assert!(row(&mut app, 120).contains(&format!("1m 05s \u{b7} Running {cmd}")));
+    assert_buffer("subagents_idle_parallel", &background_rows_buffer(&mut app, 80, now));
+    let result = |id: &str| {
+        child(StreamEvent::ToolResult {
+            id: id.into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        })
+    };
+    app.apply(result("c"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("1m 05s \u{b7} Reading b.rs "), "{shown}");
+    app.apply(result("b"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("1m 05s \u{b7} Reading a.rs "), "{shown}");
+    // The batch is done: the call the row last named stays, its verb now in
+    // the past tense.
+    app.apply(result("a"));
+    assert!(app.subagents[0].in_flight.is_empty());
+    let shown = row(&mut app, 120);
+    assert!(shown.contains("1m 05s \u{b7} Read a.rs "), "{shown}");
+}
+
+/// Where the block sits: over the rule, subagents over shells, the rule on
+/// the input.
 #[test]
 fn subagents_and_shells_over_the_idle_input() {
     let mut app = idle_fan_out(Instant::now());
@@ -642,7 +698,72 @@ fn subagents_and_shells_over_the_idle_input() {
         panel.started = None;
     }
     app.bg_shells = vec![shell(4242, "npm run dev", 65)];
-    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 13));
+    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 16));
+}
+
+/// Monitors, subagents and shells at once: one block, one grammar, parked on
+/// the rule over the input on the same rows whether the turn is idle or
+/// running; a narrow terminal sheds hints and facts before it cuts a name,
+/// and a very narrow one keeps the heads alone.
+#[test]
+fn background_work_block_idle_running_and_narrow() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.monitors = vec![monitor("mon-3", "CI done #9487", "gh pr checks 9487 --json bucket", 25)];
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    let idle = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_idle", &idle);
+    start_turn(&mut app, "keep going");
+    let running = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_running", &running);
+    // The rows from the block's first head down to the rule; the input below
+    // holds the working row in one state and the placeholder in the other.
+    let block = |buf: &Buffer| -> Vec<String> {
+        let text = render_snapshot(buf);
+        let rows: Vec<&str> = text.lines().take(20).collect();
+        let rule = rows.iter().rposition(|r| r.starts_with("|\u{2500}")).expect("rule");
+        let top = rows.iter().position(|r| r.starts_with("| 1 monitor")).expect("head");
+        rows[top..=rule].iter().map(|r| r.to_string()).collect()
+    };
+    assert_eq!(block(&idle), block(&running), "the block does not move with the turn");
+    assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 20));
+    assert_buffer("background_work_very_narrow", &frame(&mut app, DARK, 24, 20));
+    // Under `BACKGROUND_CHILD_MIN_NAME` columns of name: heads alone.
+    let heads = pinned(DARK, || lines_buffer(background_rows(&mut app, 12, 20, now), 12));
+    assert_buffer("background_work_heads_only", &heads);
+}
+
+/// Each way a child can be not-running reads distinctly: running, queued for
+/// a slot, waiting on an earlier phase, and parked on its own background
+/// work, in the block and in `/agents`.
+#[test]
+fn subagent_states_read_distinctly() {
+    let now = Instant::now();
+    let mut app = snapshot_app();
+    let mut running = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    running.started = Some(now - Duration::from_secs(65));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    let mut phased = cached_panel("collector", 0, 0, 0, false);
+    phased.pending = true;
+    phased.phase = Some(2);
+    let mut parked = cached_panel("builder", 2, 8_000, 0, false);
+    parked.started = Some(now - Duration::from_secs(30));
+    parked.parked = true;
+    app.subagents = vec![running, queued, phased, parked];
+    // Through the block's own helper with room for all four; the live block
+    // caps a group at `BACKGROUND_GROUP_ROWS` and counts the rest.
+    let buf = pinned(DARK, || {
+        let group = subagent_group(&mut app.subagents, now).expect("children");
+        lines_buffer(work_group_lines(&group, 4, 80), 80)
+    });
+    assert_buffer("subagent_states", &buf);
+    open_agents_picker(&mut app);
+    assert_buffer("subagent_states_inspector", &frame(&mut app, DARK, 100, 13));
 }
 
 /// Background pings, each as the row its kind calls for.
@@ -718,6 +839,8 @@ fn start_kv_review(app: &mut App) {
         run_id: "sub-kv-review-1".into(),
         name: "kv-review".into(),
         task: Some("Review the key-value store for races.\nThen report.".into()),
+        workspace: None,
+        internal: false,
     });
 }
 
@@ -818,6 +941,90 @@ fn agents_inspector_detail_for_a_richer_child() {
     );
 }
 
+/// The detail's input is the composer, aimed at the child: a parked child
+/// offers the placeholder addressed to it, and a draft shows with the main
+/// composer's prompt and cursor under the panel.
+#[test]
+fn agents_inspector_detail_takes_a_message() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Waiting on the test run.".into(),
+        },
+    );
+    child(&mut app, StreamEvent::Parked);
+    open_kv_review_detail(&mut app);
+    assert_buffer("agents_inspector_detail_idle_input", &frame(&mut app, DARK, 80, 16));
+    app.input = "check the lock order too".into();
+    app.cursor = app.input.len();
+    assert_buffer("agents_inspector_detail_draft", &frame(&mut app, DARK, 80, 16));
+}
+
+/// A permission request from the child lands while its detail is open: it is
+/// drawn over the detail, and the footer says only a picked option answers.
+#[test]
+fn agents_inspector_detail_under_a_permission_prompt() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Running the tests.".into(),
+        },
+    );
+    open_kv_review_detail(&mut app);
+    app.input = "also".into();
+    app.cursor = app.input.len();
+    child(
+        &mut app,
+        StreamEvent::PermissionRequest {
+            request_id: "p1".into(),
+            tool_name: "bash".into(),
+            capability: "execute".into(),
+            path: None,
+            command: Some("cargo test --lib".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+            justification: None,
+        },
+    );
+    assert_buffer(
+        "agents_inspector_detail_permission",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+/// The same for an `ask`: drawn over the detail, its help line naming the
+/// detail's keys.
+#[test]
+fn agents_inspector_detail_under_an_ask() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    open_kv_review_detail(&mut app);
+    let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+        "questions": [{
+            "id": "scope",
+            "question": "Which scope?",
+            "options": [{"label": "Small"}, {"label": "Large"}]
+        }]
+    }))
+    .unwrap();
+    app.apply(StreamEvent::AskRequest {
+        request_id: "a1".into(),
+        request,
+        timeout_secs: None,
+    });
+    assert_buffer("agents_inspector_detail_ask", &frame(&mut app, DARK, 80, 20));
+}
+
 // ---- Model picker -----------------------------------------------------------
 
 fn picker_app() -> TestApp {
@@ -875,7 +1082,7 @@ fn body(app: &mut App) -> Buffer {
     let full = frame(app, DARK, BODY_WIDTH, BODY_HEIGHT);
     let input_h = pinned(DARK, || input_box_height(app, BODY_WIDTH));
     // Header and the body's top border above; the air row, the rule, the
-    // input and the dock line below. No fixture docks a status panel.
+    // input and the dock line below. No fixture docks a plan.
     let last = BODY_HEIGHT - TRANSCRIPT_BOTTOM_PAD - 1 - input_h - 1;
     let blank = |y: u16| {
         (0..BODY_WIDTH).all(|x| {
@@ -1059,8 +1266,9 @@ fn run_three_commands(app: &mut App) {
     tool_result(app, "b3", &failed, true, None);
 }
 
-/// Consecutive commands, open and folded: one `Ran 3 commands` row listing each
-/// command with a short preview, the failed one naming its code, the bullet red.
+/// Consecutive commands, open and folded: one `Shell` row listing each command
+/// as its own `Ran <cmd>` with its own bullet and a short preview, the failed
+/// one naming its code, its bullet and the header's red.
 #[test]
 fn transcript_grouped_shell_commands() {
     let mut app = snapshot_app();
@@ -1208,4 +1416,202 @@ fn transcript_user_tool_and_answer() {
     token(&mut app, "It hands off to `app_lib::run`, which starts the app.");
     finish_turn(&mut app, 3_100, 18);
     assert_buffer("transcript_user_tool_and_answer", &body(&mut app));
+}
+
+// ---- Transcript events (#512): one layout for every kind ------------------
+
+/// Every row from `from` on, laid out at `width` as one plain text block, the
+/// expanded form when `open` (every region the shared renderer folds opened,
+/// as Ctrl-O does) and the folded form otherwise.
+fn event_rows(app: &mut App, from: usize, width: u16, open: bool) -> String {
+    pinned(DARK, || {
+        let t = &app.transcript;
+        let layout = t.layout_body(width, 0, false, open, None, Vec::new());
+        let height = layout.content_h;
+        let (lines, rows, _) = layout.window(&t.rows, width, 0, height, None, &|_| None);
+        lines
+            .iter()
+            .zip(rows)
+            .filter(|(_, row)| row.is_some_and(|r| r >= from))
+            .map(|(l, _)| line_text(l).trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
+/// One kind's rows in all three states the spec names: expanded while its
+/// step is in progress (or opened by the user), folded once it finishes, and
+/// wrapped on a narrow terminal.
+fn event_kind_snapshot(name: &str, build: impl Fn(&mut App)) {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    let from = app.transcript.rows.len();
+    build(&mut app);
+    let open = event_rows(&mut app, from, 80, true);
+    app.transcript.end_step();
+    let folded = event_rows(&mut app, from, 80, false);
+    let narrow = event_rows(&mut app, from, 28, false);
+    let doc = format!("-- expanded\n{open}\n-- collapsed\n{folded}\n-- narrow (28)\n{narrow}\n");
+    insta::with_settings!({ prepend_module_to_snapshot => false }, {
+        insta::assert_snapshot!(name, doc);
+    });
+}
+
+fn general_4(app: &mut App, event: StreamEvent) {
+    app.apply(StreamEvent::Subagent {
+        run_id: "sub-general-4".into(),
+        name: "general-4".into(),
+        event: Box::new(event),
+    });
+}
+
+#[test]
+fn event_note_and_report() {
+    event_kind_snapshot("event_note_and_report", |app| {
+        app.note("worktree:");
+        app.system_detail_text("path    /tmp/wt-a");
+        app.system_detail_text("branch  jan/agent/a");
+    });
+}
+
+#[test]
+fn event_error_and_denied_permission() {
+    event_kind_snapshot("event_error_and_denied_permission", |app| {
+        app.system(Level::Error, "denied: execute via 'bash' on rm -rf build");
+        app.on_error("upstream".into(), "502 Bad Gateway from the provider".into());
+    });
+}
+
+#[test]
+fn event_compaction_and_retry() {
+    use crate::core::agent::events::{CompactionPhase, CompactionReason};
+    event_kind_snapshot("event_compaction_and_retry", |app| {
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::Preflight,
+            messages: Some(12),
+            report: None,
+        });
+        app.apply(StreamEvent::Retry {
+            attempt: 2,
+            max_attempts: 5,
+            delay_ms: 0,
+            reason: "Upstream request failed: 502".into(),
+        });
+    });
+}
+
+#[test]
+fn event_memory_tidy() {
+    event_kind_snapshot("event_memory_tidy", |app| {
+        app.tidy_running = Some(super::super::TidyKind::Manual);
+        super::finish_memory_tidy(app, Ok("archived pr-1\narchived old\nmerged a into b".into()));
+    });
+}
+
+#[test]
+fn event_child_notes() {
+    event_kind_snapshot("event_child_notes", |app| {
+        general_4(app, StreamEvent::Notice {
+            text: "Upstream request failed: connection reset by the peer while reading".into(),
+        });
+        general_4(app, StreamEvent::Retry {
+            attempt: 2,
+            max_attempts: 5,
+            delay_ms: 0,
+            reason: "Upstream request failed: 502".into(),
+        });
+    });
+}
+
+#[test]
+fn event_background_notices() {
+    event_kind_snapshot("event_background_notices", |app| {
+        app.apply(StreamEvent::Notice { text: "Monitor mon-1: 'build' matched".into() });
+        app.apply(StreamEvent::Notice {
+            text: crate::core::agent::child_workspace::kept_notice(&[
+                "/tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))".into(),
+            ]),
+        });
+    });
+}
+
+#[test]
+fn event_messages_between_agents() {
+    event_kind_snapshot("event_messages_between_agents", |app| {
+        tool_call(app, "m1", "message_subagent", json!({
+            "name": "general-4",
+            "message": "Narrow it to the parser.\nSkip the lexer: it is covered.",
+        }));
+        tool_result(app, "m1", "Queued for subagent 'general-4'", false, None);
+        general_4(app, StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "Found the bug in parse_command.\nIt drops the last token." }),
+        });
+        app.apply(StreamEvent::AgentMessage {
+            from: "general-4".into(),
+            to: crate::core::agent::events::MAIN_AGENT.into(),
+            text: "Found the bug in parse_command.\nIt drops the last token.".into(),
+        });
+    });
+}
+
+#[test]
+fn event_subagent_dispatch_and_finish() {
+    event_kind_snapshot("event_subagent_dispatch_and_finish", |app| {
+        tool_call(app, "d1", "dispatch_subagent", json!({ "subagents": [
+            { "agent": "explore", "task": "Find the parser and report its entry point." },
+            { "agent": "general", "task": "Write the docs." },
+        ] }));
+        tool_result(app, "d1", "dispatched", false, None);
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: Some("stopped by the parent agent".into()),
+        });
+    });
+}
+
+#[test]
+fn event_collected_subagent_answer() {
+    event_kind_snapshot("event_collected_subagent_answer", |app| {
+        tool_call(app, "a1", "await_subagent", json!({ "run_id": "sub-explore-1" }));
+        tool_result(app, "a1", "The parser starts at parse_command.\nIt lives in tui.rs.", false, None);
+    });
+}
+
+#[test]
+fn event_tool_group_and_diff() {
+    event_kind_snapshot("event_tool_group_and_diff", |app| {
+        tool_call(app, "r1", "read", json!({ "path": "src/main.rs" }));
+        tool_call(app, "b1", "bash", json!({ "command": "cargo test" }));
+        tool_result(app, "r1", "fn main() {}", false, None);
+        tool_result(app, "b1", "ok\n[exit 0]", false, None);
+        app.transcript.finalize_tool_group();
+        tool_call(app, "e1", "edit", json!({ "path": "src/geometry.rs" }));
+        tool_result(app, "e1", "Applied 1 edit(s)", false, Some("-    9 | fn area(w: u32) -> u32 {\n+    9 | fn area(w: u64) -> u64 {"));
+    });
+}
+
+#[test]
+fn event_todo_ask_and_plan() {
+    event_kind_snapshot("event_todo_ask_and_plan", |app| {
+        tool_call(app, "t1", "todo", json!({ "op": "init", "list": [] }));
+        tool_result(app, "t1", "ok", false, None);
+        tool_call(app, "q1", "ask", json!({ "questions": [] }));
+        tool_result(app, "q1", "answered", false, None);
+        app.transcript.finalize_tool_group();
+        app.note("\u{25c8} PLAN \u{b7} read only -- investigate, then propose a plan for review");
+    });
+}
+
+#[test]
+fn event_turn_receipt_then_note() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    token(&mut app, "Done.");
+    finish_turn(&mut app, 4_000, 30);
+    app.note("model switched to gpt-5-mini");
+    assert_buffer("event_turn_receipt_then_note", &body(&mut app));
 }

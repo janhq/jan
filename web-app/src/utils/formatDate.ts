@@ -31,3 +31,34 @@ export const formatDate = (
     month: 'long',
   })
 }
+
+/**
+ * Compact timestamp for a message footer.
+ *
+ * - Same calendar day: just the time ("3:30 PM").
+ * - Same year: month and day, no year ("Oct 29, 5:32 PM").
+ * - Any other year: the date with its year, no time ("Oct 29, 2025"); the
+ *   full timestamp is still in the footer's hover title.
+ *
+ * `now` is a parameter so the day and year boundaries are testable.
+ */
+export const formatMessageTime = (
+  date: string | number | Date,
+  now: Date = new Date()
+): string => {
+  const d = new Date(date)
+  const time: Intl.DateTimeFormatOptions = {
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
+  }
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('en-US', time)
+  }
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? time : { year: 'numeric' }),
+  })
+}

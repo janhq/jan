@@ -131,8 +131,6 @@ jobs:
             --arg windows_arm_url "$WINDOWS_ARM_URL" \
             --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
             --arg darwin_arm_url "$DARWIN_URL" \
-            --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
-            --arg darwin_amd_url "$DARWIN_URL" \
             '.version = $version
               | .pub_date = $pub_date
               | .platforms["linux-x86_64"].signature = $linux_signature
@@ -144,9 +142,7 @@ jobs:
                   | .platforms["windows-aarch64"].url = $windows_arm_url
                 end
               | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
-              | .platforms["darwin-aarch64"].url = $darwin_arm_url
-              | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
-              | .platforms["darwin-x86_64"].url = $darwin_amd_url' \
+              | .platforms["darwin-aarch64"].url = $darwin_arm_url' \
             src-tauri/latest.json.template > latest.json
             cat latest.json
 

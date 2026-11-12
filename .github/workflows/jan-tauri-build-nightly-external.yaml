@@ -2,6 +2,11 @@ name: Tauri Builder - Nightly / External PRs
 
 on:
   pull_request:
+    # Desktop builds run on a pull request only while it carries the
+    # `ci:build` label (36-50 min across four platforms). `labeled` makes adding
+    # the label start a build; with the label on, every push rebuilds. Adding
+    # any other label builds nothing (the job conditions check which label).
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - main
     paths:
@@ -12,21 +17,23 @@ on:
       - 'web-app/**'
       - 'extensions/**'
       - 'scripts/**'
-      - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
 
 concurrency:
-  group: nightly-external-${{ github.ref }}
+  # Adding some other label to a PR that carries `ci:build` fires `labeled`
+  # too. That run builds nothing, so it gets a group of its own rather than
+  # cancelling the build in progress.
+  group: nightly-external-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci:build' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
   get-update-version:
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.pull_request.head.repo.full_name != github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build')
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.pull_request.head.repo.full_name != github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build')
     uses: ./.github/workflows/template-tauri-build-macos-external.yml
     needs: [get-update-version]
     with:
@@ -35,7 +42,7 @@ jobs:
       channel: nightly
 
   build-windows-x64:
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.pull_request.head.repo.full_name != github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build')
     uses: ./.github/workflows/template-tauri-build-windows-x64-external.yml
     needs: [get-update-version]
     with:
@@ -44,7 +51,7 @@ jobs:
       channel: nightly
 
   build-linux-x64:
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.pull_request.head.repo.full_name != github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build')
     uses: ./.github/workflows/template-tauri-build-linux-x64-external.yml
     needs: [get-update-version]
     with:

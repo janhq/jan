@@ -30,6 +30,19 @@ pub async fn check_for_app_updates(
 
     // Only return update info if the version is actually newer
     if let Some(ref info) = update_info {
+        // The feed leaves out platforms Jan no longer supports (Intel Macs).
+        // Offering the version anyway would show the update dialog and then
+        // fail the download, since tauri-plugin-updater picks the asset by
+        // the same platform key and returns TargetNotFound.
+        let target = tauri_plugin_updater::target();
+        if !feed_serves_target(info.platforms.as_ref(), target.as_deref()) {
+            log::info!(
+                "No update for this platform: {} is not in the feed for {}",
+                target.as_deref().unwrap_or("unknown"),
+                info.version
+            );
+            return Ok(None);
+        }
         if updater.is_update_available(&current_version, &info.version) {
             log::info!(
                 "Update available: current {} -> latest {}",
@@ -48,6 +61,22 @@ pub async fn check_for_app_updates(
     }
 
     Ok(None)
+}
+
+/// Whether a feed's `platforms` map has an asset for `target` (`{os}-{arch}`),
+/// under the same keys tauri-plugin-updater looks up: `{os}-{arch}` or
+/// `{os}-{arch}-{installer}`. A feed without `platforms` (the server format)
+/// or an unknown target is left to the version check, as before.
+fn feed_serves_target(platforms: Option<&serde_json::Value>, target: Option<&str>) -> bool {
+    let (Some(platforms), Some(target)) = (platforms.and_then(|p| p.as_object()), target) else {
+        return true;
+    };
+    platforms.keys().any(|key| {
+        key == target
+            || key
+                .strip_prefix(target)
+                .is_some_and(|rest| rest.starts_with('-'))
+    })
 }
 
 /// Get updater endpoints from tauri config
@@ -79,4 +108,49 @@ pub fn is_update_available(current_version: String, latest_version: String) -> b
         Err(_) => return false,
     };
     updater.is_update_available(&current_version, &latest_version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn entry() -> serde_json::Value {
+        json!({ "url": "https://example.com/Jan.app.tar.gz", "signature": "sig" })
+    }
+
+    #[test]
+    fn static_feed_without_this_target_is_not_an_update() {
+        let platforms = json!({ "darwin-aarch64": entry(), "linux-x86_64": entry() });
+        assert!(!feed_serves_target(Some(&platforms), Some("darwin-x86_64")));
+    }
+
+    #[test]
+    fn static_feed_with_this_target_is_an_update() {
+        let platforms = json!({ "darwin-aarch64": entry(), "darwin-x86_64": entry() });
+        assert!(feed_serves_target(Some(&platforms), Some("darwin-x86_64")));
+    }
+
+    #[test]
+    fn installer_qualified_key_serves_its_target() {
+        let platforms = json!({ "darwin-x86_64-app": entry() });
+        assert!(feed_serves_target(Some(&platforms), Some("darwin-x86_64")));
+    }
+
+    #[test]
+    fn similar_prefix_does_not_serve_target() {
+        let platforms = json!({ "darwin-x86_64h": entry() });
+        assert!(!feed_serves_target(Some(&platforms), Some("darwin-x86_64")));
+    }
+
+    #[test]
+    fn dynamic_feed_without_platforms_is_left_to_the_version_check() {
+        assert!(feed_serves_target(None, Some("darwin-x86_64")));
+    }
+
+    #[test]
+    fn unknown_target_is_left_to_the_version_check() {
+        let platforms = json!({ "darwin-aarch64": entry() });
+        assert!(feed_serves_target(Some(&platforms), None));
+    }
 }

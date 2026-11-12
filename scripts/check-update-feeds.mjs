@@ -30,6 +30,11 @@ import { fileURLToPath } from 'node:url'
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const fixturesDir = join(scriptDir, 'fixtures', 'update-feeds')
 
+// Platforms the feed must NOT list. Intel Macs are unsupported (the engine is
+// Apple Silicon only), and the updater offers a release to any platform the
+// feed lists, so a stray entry moves them onto a build that cannot run models.
+const forbiddenPlatforms = ['darwin-x86_64']
+
 const FEEDS = [
   {
     name: 'stable',
@@ -37,7 +42,7 @@ const FEEDS = [
     live: 'https://apps.jan.ai/update-check',
     // windows-aarch64 is deliberately absent today; shipping a stable arm64
     // build must consciously extend this set.
-    requiredPlatforms: ['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64', 'linux-x86_64'],
+    requiredPlatforms: ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64'],
   },
   {
     name: 'nightly',
@@ -45,7 +50,6 @@ const FEEDS = [
     live: 'https://delta.jan.ai/nightly/latest.json',
     requiredPlatforms: [
       'darwin-aarch64',
-      'darwin-x86_64',
       'windows-x86_64',
       'windows-aarch64',
       'linux-x86_64',
@@ -115,6 +119,11 @@ function checkFeed(feed, body) {
     if (typeof entry.signature !== 'string' || entry.signature.length < 32) {
       fail(`${feed.name}: ${required} signature missing or implausibly short`)
     }
+  }
+  for (const key of Object.keys(platforms)) {
+    // Also catches installer-qualified keys such as `darwin-x86_64-app`.
+    const hit = forbiddenPlatforms.find((p) => key === p || key.startsWith(`${p}-`))
+    if (hit) fail(`${feed.name}: unsupported platform "${key}" must not be in the manifest`)
   }
 }
 
