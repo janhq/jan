@@ -143,6 +143,7 @@ import {
   getLocalPropsExtension,
   readCtxLen,
 } from '@/lib/llamacppRouterProps'
+import { normalizeAppError } from '@/utils/appError'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -1230,7 +1231,7 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${JSON.stringify(error)}`,
+                errorText: `Error: ${normalizeAppError(error)}`,
               })
             }
           } finally {
