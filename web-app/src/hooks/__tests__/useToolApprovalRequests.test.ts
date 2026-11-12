@@ -62,6 +62,23 @@ describe('useToolApprovalRequests', () => {
     expect(consent.answer).toHaveBeenCalledWith('c1', 'allow-thread')
   })
 
+  it('denies a repeated call id instead of replacing the open prompt', async () => {
+    consent.request.mockResolvedValue('ask')
+    consent.answer.mockResolvedValue(true)
+    const { requestApproval } = useToolApprovalRequests.getState()
+    const first = requestApproval('c1', 'search', 't1', 'web')
+    const concurrent = requestApproval('c1', 'search', 't1', 'web')
+    await flush()
+    const later = requestApproval('c1', 'search', 't1', 'web')
+    await expect(concurrent).resolves.toBe(false)
+    await expect(later).resolves.toBe(false)
+    expect(useToolApprovalRequests.getState().pending.c1.toolName).toBe(
+      'search'
+    )
+    useToolApprovalRequests.getState().resolveApproval('c1', 'allow-once')
+    await expect(first).resolves.toBe(true)
+  })
+
   it('denies when Rust cannot be reached, asked or answered', async () => {
     consent.request.mockRejectedValueOnce(new Error('ipc'))
     await expect(

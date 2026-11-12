@@ -92,6 +92,9 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       })
       if (verdict === 'allowed') return true
       if (verdict === null) return false
+      // A second ask for an id whose prompt is open is denied: replacing the
+      // prompt would strand the first call's answer.
+      if (get().pending[toolCallId]) return false
       return new Promise<boolean>((resolve) => {
         set((s) => ({
           pending: {

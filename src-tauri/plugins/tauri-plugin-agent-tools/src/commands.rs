@@ -1276,12 +1276,13 @@ fn output_sink(
 }
 
 /// Whether a tool call needs the user's answer before it runs. `allowed`
-/// authorizes that one call; `ask` waits for [`consent_answer`].
+/// authorizes that one call; `ask` waits for [`consent_answer`]. A call id
+/// already pending under other parameters is refused.
 #[tauri::command]
 pub async fn consent_request(
     request: crate::consent::ConsentRequest,
 ) -> Result<crate::consent::Verdict, AgentToolsError> {
-    Ok(crate::consent::store().request(request))
+    Ok(crate::consent::store().request(request)?)
 }
 
 /// Record the user's answer to an asked call; returns whether it may run.
@@ -2625,14 +2626,16 @@ mod tests {
         let call_id = format!("call-{id}-{}", CALLS.fetch_add(1, Ordering::Relaxed));
         if approve {
             let store = crate::consent::store();
-            store.request(crate::consent::ConsentRequest {
-                thread_id: id.to_string(),
-                call_id: call_id.clone(),
-                tool: name.to_string(),
-                server: None,
-                origin: crate::consent::ToolOrigin::Builtin,
-                strict: true,
-            });
+            store
+                .request(crate::consent::ConsentRequest {
+                    thread_id: id.to_string(),
+                    call_id: call_id.clone(),
+                    tool: name.to_string(),
+                    server: None,
+                    origin: crate::consent::ToolOrigin::Builtin,
+                    strict: true,
+                })
+                .unwrap();
             assert!(store.answer(&call_id, crate::consent::ConsentAnswer::AllowOnce));
         }
         execute_tool(

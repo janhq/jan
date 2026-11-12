@@ -157,18 +157,32 @@ impl ConsentStore {
         self.persistence.set(persistence).is_ok()
     }
 
-    pub fn request(&self, req: ConsentRequest) -> Verdict {
+    /// A call id still pending (asked, or authorized and not yet used) keeps
+    /// its first request: repeating it returns the same verdict, and asking
+    /// under other parameters is refused rather than swapping what the user saw.
+    pub fn request(&self, req: ConsentRequest) -> Result<Verdict, String> {
         let mut inner = self.lock();
-        // A call id already decided keeps its first answer: asking again under
-        // other parameters must not swap what the user saw.
-        inner.asked.remove(&req.call_id);
-        inner.authorized.remove(&req.call_id);
+        let pending = match (inner.asked.get(&req.call_id), inner.authorized.get(&req.call_id)) {
+            (Some(first), _) => Some((first, Verdict::Ask)),
+            (None, Some(first)) => Some((first, Verdict::Allowed)),
+            (None, None) => None,
+        };
+        if let Some((first, verdict)) = pending {
+            return if *first == req {
+                Ok(verdict)
+            } else {
+                Err(format!(
+                    "tool '{}' was not run: its call id is already pending for another tool call",
+                    req.tool
+                ))
+            };
+        }
         if covered(&inner, &req) {
             inner.authorized.insert(req.call_id.clone(), req);
-            Verdict::Allowed
+            Ok(Verdict::Allowed)
         } else {
             inner.asked.insert(req.call_id.clone(), req);
-            Verdict::Ask
+            Ok(Verdict::Ask)
         }
     }
 
@@ -340,13 +354,13 @@ mod tests {
     fn an_approval_runs_its_one_call_only() {
         let s = ConsentStore::default();
         let r = req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp);
-        assert_eq!(s.request(r.clone()), Verdict::Ask);
+        assert_eq!(s.request(r.clone()), Ok(Verdict::Ask));
         assert!(s.consume("t1", "c1", "search", Some("web"), ToolOrigin::Mcp).is_err());
         assert!(s.answer("c1", ConsentAnswer::AllowOnce));
         assert!(s.consume("t1", "c1", "search", Some("web"), ToolOrigin::Mcp).is_ok());
         assert!(s.consume("t1", "c1", "search", Some("web"), ToolOrigin::Mcp).is_err());
         // Once saves nothing: the next call asks again.
-        assert_eq!(s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Ask));
     }
 
     #[test]
@@ -358,7 +372,7 @@ mod tests {
             ("t1", "search", Some("other"), ToolOrigin::Mcp),
             ("t1", "search", Some("web"), ToolOrigin::Extension),
         ] {
-            s.request(req("t1", "c", "search", Some("web"), ToolOrigin::Mcp));
+            s.request(req("t1", "c", "search", Some("web"), ToolOrigin::Mcp)).unwrap();
             assert!(s.answer("c", ConsentAnswer::AllowOnce));
             assert!(s.consume(thread, "c", tool, server, origin).is_err());
             // Used up by the mismatched attempt.
@@ -371,13 +385,13 @@ mod tests {
         let s = ConsentStore::default();
         let p = Arc::new(Memory(Mutex::new(None)));
         s.set_persistence(p.clone());
-        s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp));
+        s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp)).unwrap();
         assert!(s.answer("c1", ConsentAnswer::AllowThread));
-        assert_eq!(s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Allowed);
-        assert_eq!(s.request(req("t2", "c3", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Allowed));
+        assert_eq!(s.request(req("t2", "c3", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Ask));
         assert!(p.0.lock().unwrap().is_none(), "a thread grant is not persisted");
         s.cancel_thread("t1", true);
-        assert_eq!(s.request(req("t1", "c4", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c4", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Ask));
     }
 
     #[test]
@@ -385,26 +399,26 @@ mod tests {
         let s = ConsentStore::default();
         let p = Arc::new(Memory(Mutex::new(None)));
         s.set_persistence(p.clone());
-        s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp));
+        s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp)).unwrap();
         assert!(s.answer("c1", ConsentAnswer::AllowAlways));
-        assert_eq!(s.request(req("t9", "c2", "fetch", Some("web"), ToolOrigin::Mcp)), Verdict::Allowed);
+        assert_eq!(s.request(req("t9", "c2", "fetch", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Allowed));
 
-        s.request(req("t1", "c3", "notes", Some("ext:acme"), ToolOrigin::Extension));
+        s.request(req("t1", "c3", "notes", Some("ext:acme"), ToolOrigin::Extension)).unwrap();
         assert!(s.answer("c3", ConsentAnswer::AllowAlways));
-        assert_eq!(s.request(req("t1", "c4", "notes", Some("ext:acme"), ToolOrigin::Extension)), Verdict::Allowed);
-        assert_eq!(s.request(req("t1", "c5", "other", Some("ext:acme"), ToolOrigin::Extension)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c4", "notes", Some("ext:acme"), ToolOrigin::Extension)), Ok(Verdict::Allowed));
+        assert_eq!(s.request(req("t1", "c5", "other", Some("ext:acme"), ToolOrigin::Extension)), Ok(Verdict::Ask));
         // An MCP server named like an extension is not trusted whole either.
-        s.request(req("t1", "c6", "x", Some("ext:acme"), ToolOrigin::Mcp));
+        s.request(req("t1", "c6", "x", Some("ext:acme"), ToolOrigin::Mcp)).unwrap();
         assert!(s.answer("c6", ConsentAnswer::AllowAlways));
-        assert_eq!(s.request(req("t1", "c7", "notes", Some("ext:acme"), ToolOrigin::Extension)), Verdict::Allowed);
-        assert_eq!(s.request(req("t1", "c8", "y", Some("ext:acme"), ToolOrigin::Mcp)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c7", "notes", Some("ext:acme"), ToolOrigin::Extension)), Ok(Verdict::Allowed));
+        assert_eq!(s.request(req("t1", "c8", "y", Some("ext:acme"), ToolOrigin::Mcp)), Ok(Verdict::Ask));
 
         let saved = p.0.lock().unwrap().clone().unwrap();
         assert!(saved.servers.contains("web"));
         assert!(saved.tools.contains("ext:acme/notes"));
         assert!(saved.tools.contains("mcp:ext:acme/x"));
         assert!(s.revoke(GrantKind::Server, "web"));
-        assert_eq!(s.request(req("t1", "c9", "fetch", Some("web"), ToolOrigin::Mcp)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c9", "fetch", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Ask));
         assert!(!p.0.lock().unwrap().clone().unwrap().servers.contains("web"));
     }
 
@@ -414,35 +428,56 @@ mod tests {
         s.set_allow_all_mcp(true);
         let mut strict = req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp);
         strict.strict = true;
-        assert_eq!(s.request(strict.clone()), Verdict::Ask);
+        assert_eq!(s.request(strict.clone()), Ok(Verdict::Ask));
         assert!(s.answer("c1", ConsentAnswer::AllowAlways));
         assert!(s.saved().servers.is_empty());
-        assert_eq!(s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Allowed);
+        assert_eq!(s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Allowed));
 
         let write = req("t1", "c3", "write", None, ToolOrigin::Builtin);
-        assert_eq!(s.request(write.clone()), Verdict::Ask);
+        assert_eq!(s.request(write.clone()), Ok(Verdict::Ask));
         assert!(s.answer("c3", ConsentAnswer::AllowThread));
-        assert_eq!(s.request(req("t1", "c4", "write", None, ToolOrigin::Builtin)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c4", "write", None, ToolOrigin::Builtin)), Ok(Verdict::Ask));
         // "Allow all MCP" never covers an extension's tool.
-        assert_eq!(s.request(req("t1", "c5", "n", Some("ext:a"), ToolOrigin::Extension)), Verdict::Ask);
+        assert_eq!(s.request(req("t1", "c5", "n", Some("ext:a"), ToolOrigin::Extension)), Ok(Verdict::Ask));
     }
 
     #[test]
     fn deny_cancel_and_unknown_ids_never_authorize() {
         let s = ConsentStore::default();
-        s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp));
+        s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp)).unwrap();
         assert!(!s.answer("c1", ConsentAnswer::Deny));
         assert!(s.consume("t1", "c1", "search", Some("web"), ToolOrigin::Mcp).is_err());
         assert!(!s.answer("never-asked", ConsentAnswer::AllowOnce));
 
-        s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp));
+        s.request(req("t1", "c2", "search", Some("web"), ToolOrigin::Mcp)).unwrap();
         s.cancel_thread("t1", false);
         assert!(!s.answer("c2", ConsentAnswer::AllowOnce), "a cancelled ask is denied");
 
         s.set_allow_all_mcp(true);
-        assert_eq!(s.request(req("t1", "c3", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Allowed);
+        assert_eq!(s.request(req("t1", "c3", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Allowed));
         s.cancel_thread("t1", false);
         assert!(s.consume("t1", "c3", "search", Some("web"), ToolOrigin::Mcp).is_err());
+    }
+
+    #[test]
+    fn a_repeated_call_id_cannot_swap_the_call_the_user_was_asked_about() {
+        let s = ConsentStore::default();
+        let asked = req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp);
+        assert_eq!(s.request(asked.clone()), Ok(Verdict::Ask));
+        assert!(s.request(req("t1", "c1", "delete", Some("web"), ToolOrigin::Mcp)).is_err());
+        assert_eq!(s.request(asked.clone()), Ok(Verdict::Ask), "the same ask repeats");
+        assert!(s.answer("c1", ConsentAnswer::AllowOnce));
+        assert!(s.consume("t1", "c1", "delete", Some("web"), ToolOrigin::Mcp).is_err());
+
+        assert_eq!(s.request(asked.clone()), Ok(Verdict::Ask));
+        assert!(s.answer("c1", ConsentAnswer::AllowOnce));
+        let mut stricter = asked.clone();
+        stricter.strict = true;
+        assert!(s.request(stricter).is_err(), "an authorized id is not replaced either");
+        assert_eq!(s.request(asked), Ok(Verdict::Allowed));
+        assert!(s.consume("t1", "c1", "search", Some("web"), ToolOrigin::Mcp).is_ok());
+        // Used up, the id is free again.
+        assert_eq!(s.request(req("t1", "c1", "delete", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Ask));
     }
 
     #[test]
@@ -451,6 +486,6 @@ mod tests {
         let mut saved = SavedGrants::default();
         saved.servers.insert("web".into());
         s.set_persistence(Arc::new(Memory(Mutex::new(Some(saved)))));
-        assert_eq!(s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp)), Verdict::Allowed);
+        assert_eq!(s.request(req("t1", "c1", "search", Some("web"), ToolOrigin::Mcp)), Ok(Verdict::Allowed));
     }
 }
