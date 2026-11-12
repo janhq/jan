@@ -243,7 +243,6 @@
     "addToProject": "Thêm vào dự án",
     "removeFromProject": "Xóa khỏi dự án",
     "noConversationsIn": "Chưa có cuộc trò chuyện nào trong {{projectName}}",
-    "startNewConversation": "Bắt đầu một cuộc trò chuyện mới với {{projectName}} bên dưới",
     "conversationsIn": "Cuộc trò chuyện trong {{projectName}}",
     "conversationsDescription": "Nhấp vào bất kỳ cuộc trò chuyện nào để tiếp tục trò chuyện hoặc bắt đầu một cuộc trò chuyện mới bên dưới.",
     "thread": "chủ đề",
@@ -260,9 +259,8 @@
     "processButton": "Thêm",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
-      "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
+      "permanentDelete": "Thao tác này sẽ xóa vĩnh viễn \"{{projectName}}\" cùng tất cả cuộc trò chuyện trong đó. Không thể hoàn tác.",
       "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ các chủ đề trong dự án!",
-      "deleteEmptyProject": "Hành động này sẽ xóa dự án \"{{projectName}}\".",
       "saveThreadsAdvice": "Để lưu các chủ đề, hãy di chuyển chúng vào danh sách chủ đề của bạn hoặc dự án khác trước khi xóa.",
       "starredWarning": "Bạn vẫn có các chủ đề đã gắn dấu sao trong dự án.",
       "deleteButton": "Xóa",
@@ -281,7 +279,9 @@
       "alreadyExists": "Dự án \"{{projectName}}\" đã tồn tại",
       "createSuccess": "Dự án \"{{projectName}}\" đã được tạo thành công",
       "renameSuccess": "Dự án đã được đổi tên từ \"{{oldName}}\" thành \"{{newName}}\""
-    }
+    },
+    "viewProject": "Xem dự án",
+    "sendMessageToStart": "Gửi tin nhắn ở trên để bắt đầu."
   },
   "dialogs": {
     "changeDataFolder": {
@@ -292,10 +292,6 @@
       "cancel": "Hủy",
       "changeLocation": "Thay đổi vị trí"
     },
-    "deleteAllThreads": {
-      "title": "Xóa tất cả các chủ đề",
-      "description": "Tất cả các chủ đề sẽ bị xóa. Hành động này không thể hoàn tác."
-    },
     "deleteThread": {
       "description": "Bạn có chắc chắn muốn xóa cuộc trò chuyện này không? Hành động này không thể hoàn tác."
     },
@@ -304,6 +300,10 @@
     },
     "messageMetadata": {
       "title": "Siêu dữ liệu tin nhắn"
+    },
+    "deleteAllChats": {
+      "title": "Xóa các cuộc trò chuyện ngoài dự án",
+      "description": "Thao tác này sẽ xóa các cuộc trò chuyện không thuộc dự án nào. Các cuộc trò chuyện trong dự án, cuộc trò chuyện được gắn sao và các tác vụ sẽ được giữ lại. Không thể hoàn tác thao tác này."
     }
   },
   "errorDialog": {
@@ -398,6 +398,14 @@
     "threadRemovedFromProject": {
       "title": "Chủ đề đã được xóa",
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
+    },
+    "threadProjectMoveFailed": {
+      "title": "Di chuyển thất bại",
+      "description": "Không thể di chuyển cuộc trò chuyện này vì phiên của nó không khả dụng."
+    },
+    "deleteAllChats": {
+      "title": "Đã xóa các cuộc trò chuyện",
+      "description": "Đã xóa các cuộc trò chuyện ngoài dự án. Các cuộc trò chuyện trong dự án và các tác vụ vẫn được giữ lại."
     }
   },
   "llamacppBusyOnExit": {
@@ -406,5 +414,165 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Chưa có gì được tạo. Các tệp được tạo trong cuộc trò chuyện sẽ xuất hiện ở đây.",
+  "workspace": {
+    "chatFootnote": "Jan đọc thư mục này tự do và hỏi bạn trước mỗi lần chỉnh sửa hoặc chạy lệnh trong đó.",
+    "saveFailed": "Không thể lưu thư mục cho cuộc trò chuyện này"
+  },
+  "budget": {
+    "stoppedTokens": "Đã dừng: cuộc trò chuyện này đã đạt giới hạn token."
+  },
+  "agentSettings": "Tác nhân",
+  "artifacts": "Tạo phẩm",
+  "skills": "Kỹ năng",
+  "deleteSessionTitle": "Xóa phiên?",
+  "deleteSessionBody": "“{{title}}” và bản ghi của phiên sẽ bị xóa vĩnh viễn. Không thể hoàn tác thao tác này.",
+  "sidebar": {
+    "more": "Thêm",
+    "toggle": "Ẩn/hiện thanh bên",
+    "navigation": "Điều hướng",
+    "navigationDescription": "Chuyển đến trò chuyện, dự án, tệp đã tạo, kỹ năng và cài đặt."
+  },
+  "coworkSessionUnavailable": "Cuộc trò chuyện này chưa có gì để hiển thị.",
+  "coworkSync": {
+    "journalUnreadableTitle": "Một số cuộc trò chuyện Cowork đã nhập đang bị ẩn",
+    "journalUnreadableDescription": "Jan không đọc được bản ghi xóa của mình. Vì vậy, các cuộc trò chuyện được nhập từ phiên bản cũ sẽ tạm bị ẩn để tránh khôi phục nhầm những cuộc bạn đã xóa, và tạm thời không thể xóa cuộc trò chuyện Cowork nào. Dữ liệu của bạn vẫn còn nguyên. Để khắc phục: trước tiên hãy thoát Jan hoàn toàn, vì khi đang chạy, Jan sẽ ghi lại settings.json từ bộ nhớ và làm mất thay đổi của bạn. Sau đó sửa hoặc xóa mục 'cowork_deleted_ids' trong settings.json. Nếu xóa mục này, mọi cuộc trò chuyện đã nhập sẽ được khôi phục, kể cả những cuộc bạn đã xóa trước đó.",
+    "missingThreadTitle": "Không thể lưu một cuộc trò chuyện Cowork",
+    "missingThreadDescription": "Dữ liệu đã lưu của cuộc trò chuyện này bị thiếu, nên các thay đổi sẽ không được lưu nữa. Bạn vẫn có thể đọc, xuất hoặc xóa nó.",
+    "writeRefusedTitle": "Không thể lưu một cuộc trò chuyện Cowork",
+    "writeRefusedDescription": "Jan không thể lưu cuộc trò chuyện này với id hiện tại, nên các thay đổi sẽ không được lưu. Bạn vẫn có thể đọc, xuất hoặc xóa nó.",
+    "closeFailedTitle": "Jan chưa lưu được hết nên vẫn mở",
+    "closeFailedDescription": "Các thay đổi mới nhất của bạn vẫn nằm trong bộ nhớ. Hãy đóng cửa sổ lần nữa để thử lưu lại.",
+    "closeForceDescription": "Vẫn chưa lưu được. Bạn có thể đóng mà không lưu, nhưng sẽ mất những thay đổi chưa được ghi.",
+    "closeAnyway": "Đóng không lưu",
+    "quitFailedDescription": "Các thay đổi mới nhất của bạn vẫn nằm trong bộ nhớ. Hãy thoát lần nữa để thử lưu lại.",
+    "quitAnyway": "Thoát không lưu"
+  },
+  "messageWrites": {
+    "failedTitle": "Không thể lưu một số tin nhắn",
+    "failedDescription": "Jan vẫn đang thử lại. Cho đến khi thành công, các tin nhắn gần đây chỉ có trong cửa sổ này.",
+    "retry": "Thử lại ngay"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Cuộc trò chuyện này chưa sẵn sàng",
+    "notReadyDescription": "Jan chưa xác định được đây là cuộc trò chuyện thường hay tác vụ Cowork. Hãy thử lại. Nếu vẫn gặp lỗi, hãy khởi động lại ứng dụng.",
+    "retry": "Thử lại"
+  },
+  "composer": {
+    "addControls": "Thêm tệp đính kèm và tùy chọn",
+    "assistant": "Trợ lý",
+    "allTools": "Tất cả công cụ",
+    "samplingParameters": "Tham số lấy mẫu",
+    "openAssistantSettings": "Mở cài đặt trợ lý",
+    "samplingSaveFailed": "Không thể lưu tham số lấy mẫu. Vui lòng thử lại.",
+    "context": "Ngữ cảnh: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Chọn mô hình",
+    "none": "Không có",
+    "triggerLabel": "Chọn mô hình: {{name}}",
+    "dialogLabel": "Chọn mô hình",
+    "searchLabel": "Tìm mô hình hoặc nhà cung cấp",
+    "searchPlaceholder": "Tìm mô hình hoặc nhà cung cấp...",
+    "listLabel": "Mô hình",
+    "noMatches": "Không có mô hình phù hợp",
+    "noModels": "Chưa cấu hình mô hình nào",
+    "optionsLabel": "Tùy chọn mô hình",
+    "reasoning": "Suy luận",
+    "reasoningMode": "Chế độ suy luận",
+    "reasoningEffort": "Mức độ suy luận",
+    "thinkingBudget": "Ngân sách suy nghĩ",
+    "modelSettings": "Cài đặt mô hình",
+    "manageModels": "Quản lý mô hình",
+    "effort": {
+      "default": "Mặc định",
+      "auto": "Tự động",
+      "on": "Bật",
+      "off": "Tắt",
+      "low": "Thấp",
+      "medium": "Trung bình",
+      "high": "Cao",
+      "xhigh": "Rất cao",
+      "unlimited": "Không giới hạn"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Thêm vào dự án",
+    "newProject": "Dự án Mới",
+    "noProjects": "Chưa có dự án nào",
+    "addFolderAction": "Thêm thư mục"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Hãy chọn một mô hình hỗ trợ công cụ trước khi thêm quyền truy cập thư mục.",
+    "folderUnsupported": "Mô hình này không dùng được công cụ nên không thể thêm thư mục. Bạn vẫn có thể trò chuyện bình thường.",
+    "removeProject": "Bỏ chọn dự án",
+    "temporary": "Trò chuyện tạm thời không có quyền truy cập thư mục."
+  },
+  "skillDestination": "Lưu kỹ năng mới vào",
+  "skillDestinationFolder": "Thư mục này",
+  "skillDestinationGlobal": "Toàn cục (mọi cuộc trò chuyện)",
+  "overview": {
+    "title": "Tổng quan cuộc trò chuyện",
+    "description": "Tiến độ, tệp và tác vụ nền của cuộc trò chuyện này.",
+    "resize": "Đổi kích thước bảng bên",
+    "close": "Ẩn tổng quan cuộc trò chuyện",
+    "progress": "Tiến độ",
+    "files": "Tệp",
+    "backgroundTasks": "Tác vụ nền",
+    "monitorCount_one": "{{count}} trình theo dõi",
+    "monitorCount_other": "{{count}} trình theo dõi",
+    "noProgress": "Các bước sẽ hiện ra khi Jan làm việc.",
+    "noFiles": "Tệp sẽ hiển thị ở đây."
+  },
+  "artifactsLibraryDescription": "Tất cả tệp được tạo trong các cuộc trò chuyện của bạn, gom về một chỗ.",
+  "artifactsLibraryCount_one": "{{count}} tệp",
+  "artifactsLibraryCount_other": "{{count}} tệp",
+  "artifactsLibraryFilter": "Lọc theo loại tệp",
+  "artifactsLibraryReset": "Xóa bộ lọc",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Không thể nhập tác vụ này",
+      "body": "Jan không chuyển được tác vụ này từ phiên bản trước và đã dừng thử. Không có gì bị mất: bản gốc vẫn được giữ nguyên. Bạn có thể thử lại hoặc xuất nó ra tệp."
+    },
+    "id-collision": {
+      "title": "Không thể nhập tác vụ này",
+      "body": "Một cuộc trò chuyện khác đã dùng cùng id, nên tác vụ này chỉ được hiển thị ở chế độ chỉ đọc và cuộc trò chuyện kia được giữ nguyên. Hãy xuất tác vụ này để giữ một bản sao."
+    },
+    "missing-sidecar": {
+      "title": "Lịch sử của tác vụ này bị thiếu",
+      "body": "Không tìm thấy lịch sử đã lưu của tác vụ này, nên nó được hiển thị ở chế độ chỉ đọc. Các tệp của tác vụ trên ổ đĩa vẫn được giữ nguyên."
+    },
+    "unreadable-sidecar": {
+      "title": "Không thể đọc lịch sử của tác vụ này",
+      "body": "Lịch sử đã lưu của tác vụ này bị hỏng hoặc thuộc phiên bản Jan mới hơn, nên nó được hiển thị ở chế độ chỉ đọc và sẽ không bao giờ bị ghi đè."
+    },
+    "missing-thread": {
+      "title": "Tác vụ này đã bị xóa khỏi bộ nhớ lưu trữ",
+      "body": "Cuộc trò chuyện của tác vụ này không còn trên ổ đĩa. Nội dung đang hiển thị là bản sao còn trong bộ nhớ; hãy xuất ra để giữ lại."
+    },
+    "reason": "Lý do: {{reason}}",
+    "retry": "Thử lại",
+    "retrying": "Đang thử...",
+    "export": "Xuất",
+    "exported": "Đã xuất tác vụ",
+    "exportFailed": "Không thể xuất tác vụ",
+    "imported": "Đã nhập tác vụ",
+    "retryFailed": "Vẫn không thể nhập tác vụ",
+    "revealFailed": "Không thể mở thư mục",
+    "leftOut": {
+      "title": "Một số tệp chưa được sao chép",
+      "body_one": "{{count}} mục trong thư mục cũ của tác vụ này (một liên kết, hoặc một tệp Jan không được phép đọc) chưa được sao chép. Thư mục gốc vẫn được giữ nguyên.",
+      "body_other": "{{count}} mục trong thư mục cũ của tác vụ này (liên kết, hoặc tệp Jan không được phép đọc) chưa được sao chép. Thư mục gốc vẫn được giữ nguyên.",
+      "show": "Hiện thư mục gốc"
+    }
+  },
+  "deleteThreadFailed": "Không thể xóa cuộc trò chuyện. Nó có thể xuất hiện lại sau khi khởi động lại.",
+  "continueAsTask": {
+    "action": "Tiếp tục dưới dạng tác vụ",
+    "title": "Tiếp tục cuộc trò chuyện này dưới dạng tác vụ?",
+    "description": "Jan giữ cuộc trò chuyện này và tiếp tục nó dưới dạng tác vụ Cowork. Tác vụ có thể dùng công cụ, ghi tệp và chạy lệnh trong không gian làm việc riêng mà không hỏi ở mỗi bước. Không thể chuyển lại thành cuộc trò chuyện.",
+    "descriptionFolder": "Jan giữ cuộc trò chuyện này và tiếp tục nó dưới dạng tác vụ Cowork. Tác vụ có thể sửa tệp và chạy lệnh trong {{folder}} mà không hỏi ở mỗi thay đổi. Không thể chuyển lại thành cuộc trò chuyện.",
+    "confirm": "Tiếp tục dưới dạng tác vụ"
   }
 }

@@ -48,8 +48,10 @@ use crate::core::agent::session_log::{
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
-    helpers::{read_messages_from_file, update_thread_metadata},
-    utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
+    helpers::{read_messages_from_file, remove_thread_dir, update_thread_metadata},
+    utils::{
+        ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path, DELETING_PREFIX,
+    },
 };
 
 // ── Thread operations ──────────────────────────────────────────────────────
@@ -66,7 +68,12 @@ pub fn list_threads_in(base: &std::path::Path) -> Result<Vec<serde_json::Value>,
     }
     for entry in fs::read_dir(&data_dir).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
-        if path.is_dir() {
+        // A deleted thread whose files could not all be removed yet.
+        let deleting = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(DELETING_PREFIX));
+        if path.is_dir() && !deleting {
             let metadata_path = path.join(THREADS_FILE);
             if metadata_path.exists() {
                 let data = fs::read_to_string(&metadata_path).map_err(|e| e.to_string())?;
@@ -143,6 +150,15 @@ impl ResumeRequest {
         Some(Self { target, fork })
     }
 }
+/// Whether a saved thread was started in the desktop's Cowork mode
+/// (`metadata.mode == "cowork"`; absent means chat).
+fn is_cowork_thread(t: &serde_json::Value) -> bool {
+    t.get("metadata")
+        .and_then(|m| m.get("mode"))
+        .and_then(|v| v.as_str())
+        == Some("cowork")
+}
+
 /// Recency sort key for a saved thread (`updated`, falling back to `created`).
 pub fn thread_recency(t: &serde_json::Value) -> f64 {
     t.get("updated")
@@ -178,6 +194,24 @@ pub fn find_resume_thread(
     target: &ResumeTarget,
 ) -> Result<serde_json::Value, String> {
     let mut threads = list_threads_in(base)?;
+    // Cowork conversations carry their transcript on messages.jsonl in a shape
+    // only the desktop Cowork runtime replays (plus its cowork.json state and
+    // thread sandbox), so the CLI cannot resume or fork them. `Latest` skips
+    // them; naming one by id says why it is refused (#9656 tracks resume).
+    if let ResumeTarget::Id(id) = target {
+        if let Some(t) = threads.iter().find(|t| {
+            is_cowork_thread(t)
+                && t.get("id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|full| full == id || full.starts_with(id.as_str()))
+        }) {
+            let full = t.get("id").and_then(|v| v.as_str()).unwrap_or(id);
+            return Err(format!(
+                "thread '{full}' is a Cowork conversation and can only be resumed in the Jan desktop app"
+            ));
+        }
+    }
+    threads.retain(|t| !is_cowork_thread(t));
     match target {
         ResumeTarget::Latest => {
             sort_threads_recent(&mut threads);
@@ -338,13 +372,8 @@ pub fn cli_list_messages_in(
 
 /// Delete a thread directory.
 pub fn cli_delete_thread(thread_id: &str) -> Result<(), String> {
-    use std::fs;
-
     let data_folder = resolve_jan_data_folder();
-    let thread_dir = get_thread_dir(&data_folder, thread_id)?;
-    if thread_dir.exists() {
-        fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
-    }
+    remove_thread_dir(&data_folder, thread_id)?;
     crate::core::agent::git::cleanup_snapshot_index(thread_id);
     Ok(())
 }
@@ -4658,6 +4687,28 @@ mod tests {
         assert!(find_resume_thread(base, &ResumeTarget::Id("bbbb".into()))
             .unwrap_err()
             .contains("ambiguous"));
+    }
+
+    #[test]
+    fn find_resume_thread_skips_and_refuses_cowork_threads() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        seed_thread(base, "chat1111", 100.0);
+        // A newer Cowork thread must not win `Latest`.
+        let cw = "cowk2222";
+        std::fs::create_dir_all(get_thread_dir(base, cw).unwrap()).unwrap();
+        std::fs::write(
+            get_thread_metadata_path(base, cw).unwrap(),
+            serde_json::json!({"id": cw, "updated": 900.0, "metadata": {"mode": "cowork"}}).to_string(),
+        )
+        .unwrap();
+
+        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(latest["id"], "chat1111");
+
+        let err = find_resume_thread(base, &ResumeTarget::Id("cowk".into())).unwrap_err();
+        assert!(err.contains("Cowork"), "{err}");
+        assert!(resolve_resume(base, &ResumeRequest::fork(ResumeTarget::Id(cw.into()))).is_err());
     }
 
     #[test]

@@ -14,5 +14,6 @@
   "globalSettings": "全局设置",
   "stripReasoning": "上下文中不保留推理过程",
   "stripReasoningDesc": "在重发对话记录时，不保留前文推理过程（适用于所有模型提供商）。这样提高了本地模型 KV-Cache 复用率，但一些模型（例如最近的 Qwen 版本）建议保留它们以获得更好的多轮推理能力。",
+  "nameLabel": "名称",
   "providerAlreadyExists": "已添加名为 {{name}} 的提供商。"
 }

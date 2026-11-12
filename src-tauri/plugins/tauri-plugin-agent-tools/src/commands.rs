@@ -176,6 +176,21 @@ pub async fn session_workspace_path(
     Ok(dir.to_string_lossy().to_string())
 }
 
+/// Copy a Cowork session's sandbox into the thread workspace of the same id,
+/// for the Cowork-to-threads migration. A copy: the session sandbox is left in
+/// place as the rollback source. See [`workspace::copy_session_workspace_to_thread`]
+/// for the idempotence and symlink rules.
+#[cfg_attr(feature = "tauri", tauri::command)]
+pub async fn session_workspace_copy_to_thread(
+    data_folder: String,
+    session_id: String,
+) -> Result<workspace::WorkspaceCopy, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
+    workspace::copy_session_workspace_to_thread(Path::new(&data_folder), &session_id)
+        .await
+        .map_err(Into::into)
+}
+
 /// Delete a Cowork session's sandbox, with its scratch.
 #[cfg_attr(feature = "tauri", tauri::command)]
 pub async fn session_workspace_delete(
@@ -514,8 +529,8 @@ pub async fn blackboard_write(
     .map_err(|e| AgentToolsError::from(format!("blackboard write failed: {e}")))?
 }
 
-/// An attachment imported into a session workspace: host paths, which are also
-/// the model-visible spelling since the workspace is the tools' root.
+/// An attachment imported into a conversation's workspace: host paths, which
+/// are also the model-visible spelling since the workspace is the tools' root.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedAttachment {
@@ -523,20 +538,27 @@ pub struct ImportedAttachment {
     pub text_path: Option<String>,
 }
 
-/// Copy a user attachment into the Cowork session workspace, with its extracted
+/// Copy a user attachment into the conversation's workspace, with its extracted
 /// text beside it, so the agent's file tools can reach a file the picker found
 /// outside every root they may read. Host-side rather than a model tool: the
 /// source path is the user's, never the model's to name.
+///
+/// `scope` defaults to the thread sandbox: Cowork conversations are threads and
+/// run there, so that is where their tools look. `Session` remains only for a
+/// caller that still holds a legacy `sessions/<id>` sandbox.
 #[tauri::command]
 pub async fn attachment_import(
     data_folder: String,
     session_id: String,
     source: String,
     text: Option<String>,
+    scope: Option<WorkspaceScope>,
 ) -> Result<ImportedAttachment, AgentToolsError> {
     let data_folder = workspace::host_data_folder(&data_folder);
-    let workspace =
-        workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
+    let workspace = scope
+        .unwrap_or_default()
+        .ensure(Path::new(&data_folder), &session_id)
+        .await?;
     let imported = tokio::task::spawn_blocking(move || {
         crate::tools::attachments::import_attachment(
             &workspace,
@@ -739,6 +761,39 @@ fn attach_folder(
     Ok(vec![root])
 }
 
+/// The folder a chat conversation has attached, read from its own record
+/// (`<data>/threads/<id>/thread.json`, `metadata.folder` and
+/// `metadata.folderAccess`) rather than taken from the caller, so a webview
+/// request cannot widen what the user attached.
+///
+/// `None` when the id has no chat record: a Cowork thread (`metadata.mode` is
+/// `"cowork"`), whose runner still passes its folder per call, and an id with no
+/// thread.json yet (a Cowork session or subagent before its first write). A
+/// chat thread always has its record before its first message is sent.
+fn chat_folder_record(
+    data_folder: &Path,
+    thread_id: &str,
+) -> Result<Option<(Option<String>, bool)>, AgentToolsError> {
+    let path = workspace::committed_thread_json(data_folder, thread_id);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("could not read the conversation record: {e}").into()),
+    };
+    let record: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("could not read the conversation record: {e}"))?;
+    let metadata = record.get("metadata");
+    let field = |key: &str| metadata.and_then(|m| m.get(key)).and_then(|v| v.as_str());
+    if field("mode") == Some("cowork") {
+        return Ok(None);
+    }
+    let folder = field("folder")
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_string);
+    Ok(Some((folder, field("folderAccess") != Some("read"))))
+}
+
 /// Pick the workspace root a tool call resolves relative paths against, plus the
 /// side roots it may read and write.
 ///
@@ -766,6 +821,10 @@ fn resolve_workspace_root(
         _ => (sandbox, attached, Vec::new()),
     }
 }
+
+/// Built-in tools that can change a folder attached to a chat: asked for on
+/// every call, never saved.
+const CHAT_FOLDER_ASKED: [&str; 3] = ["write", "edit", crate::tools::SHELL_TOOL];
 
 /// Execute one built-in tool.
 ///
@@ -913,7 +972,38 @@ async fn execute_tool_inner(
         .map(PathBuf::from);
     let skill_project: Option<PathBuf> =
         project_dir.as_deref().map(workspace::project_store);
-    let writable = project_writable.unwrap_or(false);
+    // A chat thread's folder comes from its record; one passed by the caller
+    // is refused rather than ignored, so a caller that believes it attached a
+    // folder learns it did not.
+    let chat_record = match scope.unwrap_or_default() {
+        WorkspaceScope::Thread => chat_folder_record(Path::new(&data_folder), &thread_id)?,
+        WorkspaceScope::Session => None,
+    };
+    let is_chat = chat_record.is_some();
+    let (read_only_project, writable) = match chat_record {
+        Some(_) if read_only_project.is_some() || project_writable == Some(true) => {
+            return Err(
+                "a chat's folder is the one attached to the conversation; it cannot be \
+                 passed per call"
+                    .to_string()
+                    .into(),
+            );
+        }
+        Some((folder, writable)) => (folder, writable),
+        None => (read_only_project, project_writable.unwrap_or(false)),
+    };
+    // With a folder attached to a chat, a call that can change it runs only on
+    // the user's answer for that one call (see `consent`).
+    if is_chat && read_only_project.is_some() && CHAT_FOLDER_ASKED.contains(&name.as_str())
+    {
+        crate::consent::store().consume(
+            &thread_id,
+            call_id.as_deref().unwrap_or_default(),
+            &name,
+            None,
+            crate::consent::ToolOrigin::Builtin,
+        )?;
+    }
     let attached = attach_folder(
         read_only_project.as_deref(),
         &sandbox,
@@ -1183,6 +1273,69 @@ fn output_sink(
             stopped.store(true, Ordering::Relaxed);
         }
     })
+}
+
+/// Whether a tool call needs the user's answer before it runs. `allowed`
+/// authorizes that one call; `ask` waits for [`consent_answer`]. A call id
+/// already pending under other parameters is refused.
+#[tauri::command]
+pub async fn consent_request(
+    request: crate::consent::ConsentRequest,
+) -> Result<crate::consent::Verdict, AgentToolsError> {
+    Ok(crate::consent::store().request(request)?)
+}
+
+/// Record the user's answer to an asked call; returns whether it may run.
+#[tauri::command]
+pub async fn consent_answer(
+    call_id: String,
+    answer: crate::consent::ConsentAnswer,
+) -> Result<bool, AgentToolsError> {
+    Ok(crate::consent::store().answer(&call_id, answer))
+}
+
+/// Use up the authorization of a call the webview executes itself (an
+/// extension's tool), so it is single-use like the calls Rust executes.
+#[tauri::command]
+pub async fn consent_consume(
+    thread_id: String,
+    call_id: String,
+    tool: String,
+    server: Option<String>,
+    origin: crate::consent::ToolOrigin,
+) -> Result<(), AgentToolsError> {
+    Ok(crate::consent::store().consume(&thread_id, &call_id, &tool, server.as_deref(), origin)?)
+}
+
+/// Deny a thread's pending asks and drop its unused authorizations (Stop);
+/// with `forget_grants` its thread-scoped grants too (the thread deleted).
+#[tauri::command]
+pub async fn consent_cancel_thread(
+    thread_id: String,
+    forget_grants: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    crate::consent::store().cancel_thread(&thread_id, forget_grants.unwrap_or(false));
+    Ok(())
+}
+
+/// The configuration-level grants, for the settings page.
+#[tauri::command]
+pub async fn consent_saved() -> Result<crate::consent::SavedGrants, AgentToolsError> {
+    Ok(crate::consent::store().saved())
+}
+
+#[tauri::command]
+pub async fn consent_revoke(
+    kind: crate::consent::GrantKind,
+    name: String,
+) -> Result<bool, AgentToolsError> {
+    Ok(crate::consent::store().revoke(kind, &name))
+}
+
+#[tauri::command]
+pub async fn consent_set_allow_all_mcp(allow: bool) -> Result<(), AgentToolsError> {
+    crate::consent::store().set_allow_all_mcp(allow);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2068,6 +2221,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
     }
+    // ---- attachment import scope ---------------------------------------------
+
+    /// Cowork threads run in the thread sandbox the migration populated, so an
+    /// attachment imported without a scope must land where the agent's file
+    /// tools look, not in the legacy `sessions/` tree.
+    #[tokio::test]
+    async fn attachment_import_defaults_to_the_thread_sandbox() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let src = data.join("outside");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("notes.txt");
+        std::fs::write(&file, b"hello").unwrap();
+
+        let imported = attachment_import(
+            df.clone(),
+            "t-import".into(),
+            file.to_string_lossy().into_owned(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let thread_dir = workspace::thread_workspace(&data, "t-import").unwrap();
+        assert!(
+            Path::new(&imported.path).starts_with(&thread_dir),
+            "{} is not under {}",
+            imported.path,
+            thread_dir.display()
+        );
+        assert!(!workspace::session_workspace(&data, "t-import")
+            .unwrap()
+            .exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn attachment_import_honours_an_explicit_session_scope() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let src = data.join("outside");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("notes.txt");
+        std::fs::write(&file, b"hello").unwrap();
+
+        let imported = attachment_import(
+            df,
+            "s-import".into(),
+            file.to_string_lossy().into_owned(),
+            None,
+            Some(WorkspaceScope::Session),
+        )
+        .await
+        .unwrap();
+
+        let session_dir = workspace::session_workspace(&data, "s-import").unwrap();
+        assert!(Path::new(&imported.path).starts_with(&session_dir));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
     // ---- read-only attached folder, end to end ------------------------------
 
     /// The contract the workspace UI promises: the agent reads your folder and
@@ -2387,6 +2601,187 @@ mod tests {
         assert!(format!("{err:?}").contains("overlaps"), "{err:?}");
 
         let _ = std::fs::remove_dir_all(&data);
+    }
+
+    // ---- a chat's folder comes from its own record -------------------------
+
+    fn write_thread_record(data: &Path, id: &str, metadata: serde_json::Value) {
+        let path = workspace::committed_thread_json(data, id);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, json!({ "id": id, "metadata": metadata }).to_string()).unwrap();
+    }
+
+    /// One call as the chat makes it, the user having approved it when the
+    /// tool is one a chat asks for (`approve`).
+    async fn call_as(
+        df: &str,
+        id: &str,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+        writable: Option<bool>,
+        approve: bool,
+    ) -> Result<ToolResult, AgentToolsError> {
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        let call_id = format!("call-{id}-{}", CALLS.fetch_add(1, Ordering::Relaxed));
+        if approve {
+            let store = crate::consent::store();
+            store
+                .request(crate::consent::ConsentRequest {
+                    thread_id: id.to_string(),
+                    call_id: call_id.clone(),
+                    tool: name.to_string(),
+                    server: None,
+                    origin: crate::consent::ToolOrigin::Builtin,
+                    strict: true,
+                })
+                .unwrap();
+            assert!(store.answer(&call_id, crate::consent::ConsentAnswer::AllowOnce));
+        }
+        execute_tool(
+            df.to_string(),
+            id.to_string(),
+            None,
+            name.to_string(),
+            args,
+            None,
+            None,
+            folder.map(|f| f.to_string_lossy().to_string()),
+            writable,
+            None,
+            Some(call_id),
+        )
+        .await
+    }
+
+    async fn call(
+        df: &str,
+        id: &str,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+        writable: Option<bool>,
+    ) -> Result<ToolResult, AgentToolsError> {
+        call_as(df, id, name, args, folder, writable, true).await
+    }
+
+    /// A call that can change a chat's folder runs only with the user's answer
+    /// for that call: none, or one given for another call, is refused.
+    #[tokio::test]
+    async fn a_chat_folder_write_needs_its_own_approval() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_consent");
+        let id = "thread-chat-consent";
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "write" }));
+
+        for name in ["write", "edit", "shell"] {
+            let args = match name {
+                "shell" => json!({"command": "touch made.txt"}),
+                "edit" => json!({"path": "a.md", "old_string": "a", "new_string": "b"}),
+                _ => json!({"path": "a.md", "content": "a"}),
+            };
+            let err = call_as(&df, id, name, args, None, None, false)
+                .await
+                .expect_err("an unapproved call is refused");
+            assert!(format!("{err:?}").contains("not been approved"), "{name}: {err:?}");
+        }
+        assert!(!repo.join("a.md").exists());
+        assert!(!repo.join("made.txt").exists());
+        // Reads still run unasked.
+        std::fs::write(repo.join("r.md"), b"r").unwrap();
+        let read = call_as(&df, id, "read", json!({"path": "r.md"}), None, None, false).await;
+        assert!(read.is_ok_and(|r| !r.is_error));
+        // With no folder attached nothing is asked.
+        write_thread_record(&data, id, json!({}));
+        let write =
+            call_as(&df, id, "write", json!({"path": "s.md", "content": "s"}), None, None, false).await;
+        assert!(write.is_ok_and(|r| !r.is_error));
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The folder the user attached to a chat is used with no caller argument,
+    /// writable unless recorded read-only, and is the root for relative paths.
+    #[tokio::test]
+    async fn a_chat_uses_the_folder_its_record_names() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_record");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-chat-record";
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "write" }));
+
+        let read = call(&df, id, "read", json!({"path": "main.rs"}), None, None)
+            .await
+            .unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+        let write = call(&df, id, "write", json!({"path": "notes.md", "content": "hi"}), None, None)
+            .await
+            .unwrap();
+        assert!(!write.is_error, "{}", write.content);
+        assert_eq!(std::fs::read_to_string(repo.join("notes.md")).unwrap(), "hi");
+
+        // Recorded read-only: readable, never written.
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "read" }));
+        let abs = repo.join("main.rs").to_string_lossy().to_string();
+        let read = call(&df, id, "read", json!({"path": abs}), None, None).await.unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+        let err = call(&df, id, "write", json!({"path": repo.join("x.md"), "content": "x"}), None, None)
+            .await
+            .expect_err("a read-only record refuses writes");
+        assert!(format!("{err:?}").contains("read-only"), "{err:?}");
+        assert!(!repo.join("x.md").exists());
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The caller cannot widen a chat: a folder it passes is refused, and a chat
+    /// with no folder recorded cannot reach one.
+    #[tokio::test]
+    async fn a_chat_refuses_a_folder_the_caller_passes() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_caller");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-chat-caller";
+        write_thread_record(&data, id, json!({}));
+        let abs = json!({"path": repo.join("main.rs")});
+
+        let err = call(&df, id, "read", abs.clone(), Some(&repo), None)
+            .await
+            .expect_err("a caller-supplied folder is refused for a chat");
+        assert!(format!("{err:?}").contains("attached to the conversation"), "{err:?}");
+        assert!(call(&df, id, "read", json!({"path": "x"}), None, Some(true)).await.is_err());
+        let read = call(&df, id, "read", abs, None, None).await;
+        assert!(
+            read.is_err() || read.as_ref().unwrap().is_error,
+            "no folder is attached: {read:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A Cowork thread keeps passing its folder per call.
+    #[tokio::test]
+    async fn a_cowork_thread_keeps_the_callers_folder() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("cowork_caller");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-cowork-caller";
+        write_thread_record(&data, id, json!({ "mode": "cowork", "folder": "/elsewhere" }));
+
+        let read = call(&df, id, "read", json!({"path": "main.rs"}), Some(&repo), Some(true))
+            .await
+            .unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
     }
     // ---- live output streaming ---------------------------------------------
 

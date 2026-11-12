@@ -66,6 +66,8 @@ macro_rules! invoke_commands_with_extras {
         core::app::settings_store::settings_get,
         core::app::settings_store::settings_set,
         core::app::settings_store::settings_remove,
+        core::app::settings_store::settings_flush,
+        core::app::settings_store::settings_backup_once,
         core::server::provider_secrets::set_secret,
         core::server::provider_secrets::get_secret,
         // System commands
@@ -125,6 +127,9 @@ macro_rules! invoke_commands_with_extras {
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
         core::threads::commands::modify_thread,
+        core::threads::commands::read_thread_extra,
+        core::threads::commands::write_thread_extra,
+        core::threads::commands::replace_thread_messages,
         core::threads::commands::delete_thread,
         core::threads::commands::list_messages,
         core::threads::commands::create_message,
@@ -139,6 +144,10 @@ macro_rules! invoke_commands_with_extras {
         core::downloads::commands::pause_download_task,
         // App lifecycle
         confirm_exit,
+        main_window_hides_on_close,
+        exit_after_save,
+        cancel_exit_save,
+        exit_without_saving,
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
@@ -191,6 +200,143 @@ fn is_proxy_server_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool
     app.try_state::<AppState>()
         .and_then(|s| s.server_handle.try_lock().ok().map(|g| g.is_some()))
         .unwrap_or(false)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Whether closing the main window only hides it, keeping the app running:
+/// always on macOS (quit is Cmd+Q / dock / tray), and on Windows/Linux while
+/// the Local API Server runs with "keep running in background" on. Never once
+/// a shutdown has started. The window-event handler below and the web app's
+/// close handler both ask this, so they agree on whether a close is a quit.
+fn hides_main_window_on_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use std::sync::atomic::Ordering;
+    if SHUTTING_DOWN.load(Ordering::SeqCst) {
+        return false;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        is_proxy_server_running(app)
+            && core::server::commands::SERVER_RUN_IN_BACKGROUND.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+fn main_window_hides_on_close<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> bool {
+    hides_main_window_on_close(&app_handle)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Set once the web app has saved (or the user chose to quit without saving),
+/// so the next exit request goes through. Sticky: the exit is under way.
+static EXIT_SAVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+/// Non-zero while an exit waits on the web app's save: the attempt's number,
+/// so a stale timeout cannot act on a newer attempt.
+static EXIT_SAVE_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(feature = "cli"))]
+static EXIT_SAVE_ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(feature = "cli"))]
+static EXIT_SAVE_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[cfg(not(feature = "cli"))]
+/// How long an exit waits for the web app before going ahead anyway. Longer
+/// than the web app's own 10 s save deadline, so this only fires when the page
+/// never answers (not loaded, or hung).
+const EXIT_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[cfg(not(feature = "cli"))]
+/// Whether this exit request must first let the web app save. Only explicit
+/// exits (`app.exit`: tray Quit, the app-menu Quit / Cmd+Q) are held. Not a
+/// restart: the factory reset restarts through here after wiping the data
+/// folder, and a save would write it back. Not the exit that follows the last
+/// window closing (`code` is `None`): its close handler already saved.
+fn exit_needs_save(code: Option<i32>) -> bool {
+    use std::sync::atomic::Ordering;
+    matches!(code, Some(c) if c != tauri::RESTART_EXIT_CODE)
+        && !SHUTTING_DOWN.load(Ordering::SeqCst)
+        && !EXIT_SAVED.load(Ordering::SeqCst)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Ask the web app to save before exiting with `code`. It answers with
+/// `exit_after_save` or `cancel_exit_save`; if it never does, exit anyway
+/// after `EXIT_SAVE_TIMEOUT`. A repeat request while one is pending is ignored.
+fn request_save_before_exit<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    window: &tauri::WebviewWindow<R>,
+    code: i32,
+) {
+    use std::sync::atomic::Ordering;
+    let attempt = EXIT_SAVE_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
+    if EXIT_SAVE_PENDING
+        .compare_exchange(0, attempt, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    EXIT_SAVE_CODE.store(code, Ordering::SeqCst);
+    log::info!("Holding exit until the web app has saved");
+    if let Err(e) = window.emit("app-exit-requested", ()) {
+        log::warn!("could not ask the web app to save before exit: {e}");
+        EXIT_SAVE_PENDING.store(0, Ordering::SeqCst);
+        EXIT_SAVED.store(true, Ordering::SeqCst);
+        app.exit(code);
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(EXIT_SAVE_TIMEOUT).await;
+        if EXIT_SAVE_PENDING
+            .compare_exchange(attempt, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            log::warn!("web app did not answer the exit save in time; exiting");
+            EXIT_SAVED.store(true, Ordering::SeqCst);
+            app.exit(code);
+        }
+    });
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The web app saved: finish the held exit. A no-op when no exit is waiting.
+fn exit_after_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) == 0 {
+        return;
+    }
+    log::info!("Web app finished saving; exiting");
+    EXIT_SAVED.store(true, Ordering::SeqCst);
+    app_handle.exit(EXIT_SAVE_CODE.load(Ordering::SeqCst));
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The web app could not save: drop the held exit and show the window, so its
+/// "could not save" notice is visible. Quitting again retries the save.
+fn cancel_exit_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) != 0 {
+        core::system::commands::show_main_window(&app_handle);
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The user chose "quit without saving" after repeated save failures. The held
+/// exit was already cancelled by `cancel_exit_save`, so exit unconditionally
+/// with the code of the last quit request.
+fn exit_without_saving<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    EXIT_SAVE_PENDING.store(0, Ordering::SeqCst);
+    log::warn!("Quitting without saving at the user's request");
+    EXIT_SAVED.store(true, Ordering::SeqCst);
+    app_handle.exit(EXIT_SAVE_CODE.load(Ordering::SeqCst));
 }
 
 #[cfg(not(feature = "cli"))]
@@ -265,6 +411,10 @@ pub fn run() {
     tauri_plugin_agent_tools::tools::hooks::set_resolver(std::sync::Arc::new(|project| {
         crate::core::agent::hooks_config::resolve_hooks_for(project)
     }));
+    // Where the configuration-level tool grants ("Allow always") are saved.
+    tauri_plugin_agent_tools::consent::store().set_persistence(std::sync::Arc::new(
+        crate::core::app::tool_grants::SettingsGrants,
+    ));
 
     let builder = tauri::Builder::default();
     // Shadowed rather than mutated: under `e2e` the plugin below is the only
@@ -462,6 +612,11 @@ pub fn run() {
             store.save().expect("Failed to save store");
             // Migration completed
 
+            #[cfg(all(feature = "desktop", target_os = "macos"))]
+            if let Err(e) = setup::setup_app_menu_quit(app.handle()) {
+                log::warn!("Could not route Cmd+Q through the exit save: {e}");
+            }
+
             #[cfg(feature = "desktop")]
             if setup::tray_always_visible() {
                 log::info!("Enabling system tray icon");
@@ -511,35 +666,18 @@ pub fn run() {
             ..
         } = &event
         {
-            if label == "main" && !SHUTTING_DOWN.load(Ordering::SeqCst) {
-                // macOS: closing the window hides it; the app (and background
-                // services) keep running. Quit happens via Cmd+Q / dock / tray,
-                // which routes through RunEvent::ExitRequested.
-                #[cfg(target_os = "macos")]
-                {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    return;
+            // Closing the main window hides it when `hides_main_window_on_close`
+            // says so (macOS always; Windows/Linux only while the Local API
+            // Server runs in the background). Otherwise fall through to the
+            // normal quit-on-close. The llamacpp engine is not a reason to keep
+            // the app resident (normal chat usage keeps it alive), so it gets
+            // torn down via the ExitRequested path on quit.
+            if label == "main" && hides_main_window_on_close(app) {
+                api.prevent_close();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
                 }
-                // Windows/Linux: hide to tray only while the Local API Server is
-                // running and the user opted into keeping it alive in the
-                // background; otherwise fall through to the normal quit-on-close.
-                // The llamacpp engine is not a reason to keep the app resident
-                // (normal chat usage keeps it alive), so it gets torn down via
-                // the ExitRequested path on quit.
-                #[cfg(not(target_os = "macos"))]
-                if is_proxy_server_running(app)
-                    && core::server::commands::SERVER_RUN_IN_BACKGROUND
-                        .load(Ordering::SeqCst)
-                {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    return;
-                }
+                return;
             }
         }
         #[cfg(target_os = "macos")]
@@ -557,6 +695,13 @@ pub fn run() {
                 log::warn!("Ignoring exit request while a factory reset is running");
                 api.prevent_exit();
                 return;
+            }
+            if exit_needs_save(*code) {
+                if let Some(window) = app.get_webview_window("main") {
+                    api.prevent_exit();
+                    request_save_before_exit(app, &window, code.unwrap_or(0));
+                    return;
+                }
             }
             if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_engine_running(app) {
                 return;

@@ -22,7 +22,9 @@ const MCP_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 pub async fn shutdown_cleanup<R: Runtime>(app: &AppHandle<R>) {
     // Drain debounced settings writes so the next version, and the jan CLI,
     // never read a stale settings.json.
-    crate::core::app::settings_store::flush_settings();
+    if let Err(e) = crate::core::app::settings_store::flush_settings() {
+        log::warn!("settings exit flush failed: {e}");
+    }
 
     // No agent shell (or child it spawned) may outlive the app.
     tauri_plugin_agent_tools::tools::proc::kill_all();

@@ -734,7 +734,7 @@ impl ModelInvoker for HttpModelInvoker {
 }
 
 struct McpToolInvoker {
-    tool_to_server: HashMap<String, String>,
+    tool_to_server: crate::core::mcp::identity::ToolRoutes,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
 }
@@ -1503,35 +1503,27 @@ impl CompositeToolInvoker {
                 if let Some(refusal) = self.escalated_shell_cwd_refusal(name) {
                     return refusal;
                 }
-                let request_id = next_permission_id();
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                self.permission_requests
-                    .lock()
-                    .await
-                    .insert(request_id.clone(), tx);
-                let _ = self.events.send(StreamEvent::PermissionRequest {
-                    request_id: request_id.clone(),
-                    tool_name: name.to_string(),
-                    capability: "exec outside the sandbox".to_string(),
-                    // Where it runs, once a `cd` has moved the shell, as an
-                    // ordinary exec prompt shows: the command alone does not
-                    // say which tree an `rm -rf build` would hit.
-                    path: self.held_shell_cwd(tool),
-                    command: args.get("command").and_then(|v| v.as_str()).map(String::from),
-                    diff: None,
-                    prompt_kind: "escalate".to_string(),
-                    offers_always: false,
-                    justification: args
-                        .get(tauri_plugin_agent_tools::tools::gate::JUSTIFICATION_ARG)
-                        .and_then(|v| v.as_str())
-                        .map(str::trim)
-                        .filter(|j| !j.is_empty())
-                        .map(String::from),
-                });
-                // No timeout, like every other prompt: cancelling the run
-                // drops the sender, which reads as Deny.
-                let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-                self.permission_requests.lock().await.remove(&request_id);
+                let decision = self
+                    .ask_permission(|request_id| StreamEvent::PermissionRequest {
+                        request_id,
+                        tool_name: name.to_string(),
+                        capability: "exec outside the sandbox".to_string(),
+                        // Where it runs, once a `cd` has moved the shell, as an
+                        // ordinary exec prompt shows: the command alone does not
+                        // say which tree an `rm -rf build` would hit.
+                        path: self.held_shell_cwd(tool),
+                        command: args.get("command").and_then(|v| v.as_str()).map(String::from),
+                        diff: None,
+                        prompt_kind: "escalate".to_string(),
+                        offers_always: false,
+                        justification: args
+                            .get(tauri_plugin_agent_tools::tools::gate::JUSTIFICATION_ARG)
+                            .and_then(|v| v.as_str())
+                            .map(str::trim)
+                            .filter(|j| !j.is_empty())
+                            .map(String::from),
+                    })
+                    .await;
                 // `AllowAlways` is not offered; a client that sends it anyway
                 // gets this one call, never a lasting grant.
                 decision != PermissionDecision::Deny
@@ -1752,7 +1744,7 @@ impl CompositeToolInvoker {
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
-    /// A dropped responder (client gone / run cancelled) resolves to Deny.
+    /// A prompt nobody can answer (client gone / run cancelled) resolves to Deny.
     ///
     /// Plugin and host tools are prompted through here too: `prompt_kind` is
     /// `"mcp"` for all three because it names the *class* a consumer renders --
@@ -1762,14 +1754,8 @@ impl CompositeToolInvoker {
     /// carries the host's bare name (`move`) instead, since the host dispatches
     /// on the name it declared.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
-        let request_id = next_permission_id();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.permission_requests
-            .lock()
-            .await
-            .insert(request_id.clone(), tx);
-        let _ = self.events.send(StreamEvent::PermissionRequest {
-            request_id: request_id.clone(),
+        self.ask_permission(|request_id| StreamEvent::PermissionRequest {
+            request_id,
             tool_name: tool_name.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -1778,8 +1764,32 @@ impl CompositeToolInvoker {
             prompt_kind: "mcp".to_string(),
             offers_always: true,
             justification: None,
-        });
-        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+        })
+        .await
+    }
+
+    /// Asks the consumer to settle a prompt and waits for its answer. Resolves
+    /// to Deny when nobody can answer: the request cannot be delivered because
+    /// the consumer is gone (otherwise the call would wait on a prompt no one
+    /// will ever see), or the responder is dropped. No timeout: the run is
+    /// cancellable via agent_cancel, which drops this future.
+    async fn ask_permission(
+        &self,
+        request: impl FnOnce(String) -> StreamEvent,
+    ) -> PermissionDecision {
+        let request_id = next_permission_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.permission_requests
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
+        let decision = if self.events.send(request(request_id.clone())).is_err() {
+            log::warn!("permission prompt {request_id} has no consumer; denying");
+            PermissionDecision::Deny
+        } else {
+            rx.await.unwrap_or(PermissionDecision::Deny)
+        };
+        // Best-effort cleanup if the respond command didn't consume it.
         self.permission_requests.lock().await.remove(&request_id);
         decision
     }
@@ -1787,14 +1797,8 @@ impl CompositeToolInvoker {
     /// Prompt the user to approve a `user`-scope subagent write (it persists
     /// outside the current project). Project-scope writes are not prompted.
     async fn prompt_subagent_create(&self, name: &str) -> PermissionDecision {
-        let request_id = next_permission_id();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.permission_requests
-            .lock()
-            .await
-            .insert(request_id.clone(), tx);
-        let _ = self.events.send(StreamEvent::PermissionRequest {
-            request_id: request_id.clone(),
+        self.ask_permission(|request_id| StreamEvent::PermissionRequest {
+            request_id,
             tool_name: "create_subagent".to_string(),
             capability: "write".to_string(),
             path: Some(name.to_string()),
@@ -1803,10 +1807,8 @@ impl CompositeToolInvoker {
             prompt_kind: "subagent_create".to_string(),
             offers_always: false,
             justification: None,
-        });
-        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-        self.permission_requests.lock().await.remove(&request_id);
-        decision
+        })
+        .await
     }
 
     /// Execute a child run's `message_main_agent` call. Synchronous by design:
@@ -1978,12 +1980,6 @@ impl CompositeToolInvoker {
         &self,
         spec: &tauri_plugin_agent_tools::tools::monitor::MonitorSpec,
     ) -> PermissionDecision {
-        let request_id = next_permission_id();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.permission_requests
-            .lock()
-            .await
-            .insert(request_id.clone(), tx);
         // The cadence rides along as a shell comment, so the user approves a
         // script knowing how often it will run; the `$ ` preview stays honest.
         let command = format!(
@@ -1992,8 +1988,8 @@ impl CompositeToolInvoker {
             spec.interval.as_secs(),
             spec.script
         );
-        let _ = self.events.send(StreamEvent::PermissionRequest {
-            request_id: request_id.clone(),
+        self.ask_permission(|request_id| StreamEvent::PermissionRequest {
+            request_id,
             tool_name: tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -2002,10 +1998,8 @@ impl CompositeToolInvoker {
             prompt_kind: "monitor".to_string(),
             offers_always: false,
             justification: None,
-        });
-        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-        self.permission_requests.lock().await.remove(&request_id);
-        decision
+        })
+        .await
     }
 
     /// Execute one `monitor` tool call. `start` is gated (it schedules shell
@@ -2843,6 +2837,17 @@ impl ToolInvoker for CompositeToolInvoker {
                     ));
                     continue;
                 }
+                // A name no MCP server offered this run is not a tool. Refused
+                // before any prompt, so the user is never asked to approve a
+                // call that could only fail, and "Allow always" can never grant
+                // a name a server might claim later.
+                if !self.mcp.tool_to_server.contains_key(name) {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' is not available to this run"),
+                    ));
+                    continue;
+                }
                 let args: serde_json::Value = tc
                     .get("function")
                     .and_then(|f| f.get("arguments"))
@@ -3012,12 +3017,6 @@ impl ToolInvoker for CompositeToolInvoker {
                     (self.hard_deny_msg(name, reason), None, None)
                 }
                 Decision::Prompt(kind) => {
-                    let request_id = next_permission_id();
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    self.permission_requests
-                        .lock()
-                        .await
-                        .insert(request_id.clone(), tx);
                     let capability = match tool.capability {
                         Capability::Read => "read",
                         Capability::Write => "write",
@@ -3049,22 +3048,19 @@ impl ToolInvoker for CompositeToolInvoker {
                         .flatten()
                         .map(String::from);
                     let diff = preview_diff(tool, &args, &self.tool_context()).await;
-                    let _ = self.events.send(StreamEvent::PermissionRequest {
-                        request_id: request_id.clone(),
-                        tool_name: name.to_string(),
-                        capability: capability.to_string(),
-                        path,
-                        command,
-                        diff,
-                        prompt_kind: prompt_kind.to_string(),
-                        offers_always: true,
-                        justification: None,
-                    });
-                    // Sender dropped (client gone / run cancelled) => Deny. No timeout:
-                    // the run is cancellable via agent_cancel, which drops this future.
-                    let decision = rx.await.unwrap_or(PermissionDecision::Deny);
-                    // Best-effort cleanup if the respond command didn't consume it.
-                    self.permission_requests.lock().await.remove(&request_id);
+                    let decision = self
+                        .ask_permission(|request_id| StreamEvent::PermissionRequest {
+                            request_id,
+                            tool_name: name.to_string(),
+                            capability: capability.to_string(),
+                            path,
+                            command,
+                            diff,
+                            prompt_kind: prompt_kind.to_string(),
+                            offers_always: true,
+                            justification: None,
+                        })
+                        .await;
                     match decision {
                         PermissionDecision::AllowOnce => {
                             execute_builtin_with_diff(
@@ -3312,7 +3308,7 @@ fn tool_names(tools: &[serde_json::Value]) -> Vec<String> {
 
 fn apply_tool_allowlist(
     openai_tools: &mut Vec<serde_json::Value>,
-    tool_to_server: &mut HashMap<String, String>,
+    tool_to_server: &mut crate::core::mcp::identity::ToolRoutes,
     allowed: &[String],
 ) {
     let allow: std::collections::HashSet<&str> = allowed.iter().map(String::as_str).collect();
@@ -3332,7 +3328,7 @@ fn apply_tool_allowlist(
 /// advertisement; only an explicit deny (or `default = "deny"`) does.
 fn retain_advertisable_mcp_tools(
     openai_tools: &mut Vec<serde_json::Value>,
-    tool_to_server: &mut HashMap<String, String>,
+    tool_to_server: &mut crate::core::mcp::identity::ToolRoutes,
     permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
 ) {
     openai_tools.retain(|t| {
@@ -10246,6 +10242,13 @@ mod tests {
         assert_eq!(stop_reason_of(&json!({})), "stop");
     }
 
+    fn route(server: &str) -> crate::core::mcp::identity::ToolRoute {
+        crate::core::mcp::identity::ToolRoute {
+            server: server.to_string(),
+            generation: 1,
+        }
+    }
+
     #[test]
     fn tool_allowlist_keeps_only_named_tools() {
         let mut tools = vec![
@@ -10253,8 +10256,8 @@ mod tests {
             json!({ "type": "function", "function": { "name": "write" } }),
         ];
         let mut map = HashMap::from([
-            ("search".to_string(), "srv".to_string()),
-            ("write".to_string(), "srv".to_string()),
+            ("search".to_string(), route("srv")),
+            ("write".to_string(), route("srv")),
         ]);
 
         apply_tool_allowlist(&mut tools, &mut map, &["search".to_string()]);
@@ -10299,7 +10302,9 @@ mod tests {
             escalation: Escalation::Off,
             hidden_root: crate::core::agent::project::hidden_root(true),
             mcp: McpToolInvoker {
-                tool_to_server: HashMap::new(),
+                // The MCP tool the prompting tests call; no server is live, so
+                // an approved call still fails to execute.
+                tool_to_server: HashMap::from([("web_search_exa".to_string(), route("exa"))]),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
@@ -10719,7 +10724,7 @@ mod tests {
     #[tokio::test]
     async fn a_hook_can_deny_an_mcp_tool() {
         let root = hooks_root("mcpdeny");
-        let invoker = invoker_with_hooks(
+        let mut invoker = invoker_with_hooks(
             root.clone(),
             hook_set(vec![hook_entry(
                 "PreToolUse",
@@ -10729,9 +10734,14 @@ mod tests {
             Default::default(),
             crate::core::agent::plan::RunMode::Normal,
         );
-        // The invoker's MCP registry is empty, so reaching the call at all
-        // would surface as a transport error rather than this deny message:
-        // the assertion distinguishes "stopped by the hook" from "failed".
+        // Offered by a server, so the call reaches the hook; the registry is
+        // empty, so reaching the call itself would surface as a transport
+        // error rather than this deny message: the assertion distinguishes
+        // "stopped by the hook" from "failed".
+        invoker
+            .mcp
+            .tool_to_server
+            .insert("mcp__srv__doit".to_string(), route("srv"));
         let out = invoker
             .invoke(&[hooked_tool_call("mcp__srv__doit", "{}")])
             .await
@@ -10756,7 +10766,7 @@ mod tests {
     async fn an_mcp_pretooluse_hook_sees_the_call_and_may_let_it_through() {
         let root = hooks_root("mcpallow");
         let seen = root.join("seen.json");
-        let invoker = invoker_with_hooks(
+        let mut invoker = invoker_with_hooks(
             root.clone(),
             hook_set(vec![hook_entry(
                 "PreToolUse",
@@ -10766,6 +10776,10 @@ mod tests {
             Default::default(),
             crate::core::agent::plan::RunMode::Normal,
         );
+        invoker
+            .mcp
+            .tool_to_server
+            .insert("mcp__srv__doit".to_string(), route("srv"));
         // The call goes on to the empty MCP registry and fails there, which is
         // the point: the hook did not stop it.
         let _ = invoker
@@ -13349,6 +13363,54 @@ mod tests {
         json!({ "id": id, "type": "function", "function": { "name": name, "arguments": "{}" } })
     }
 
+    /// A name the model made up, or one no server offers any more, is refused
+    /// without a prompt and leaves no grant behind, even under auto-approval.
+    #[tokio::test]
+    async fn an_unknown_tool_fails_closed_without_a_prompt() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+
+        let out = invoker.invoke(&[mcp_call("u1", "made_up_tool")]).await.unwrap();
+
+        assert_eq!(
+            out[0].content,
+            "ERROR: tool 'made_up_tool' is not available to this run"
+        );
+        assert!(!invoker.grants.lock().unwrap().covers_mcp("made_up_tool"));
+        drop(invoker);
+        while let Some(ev) = rx.recv().await {
+            assert!(!matches!(ev, StreamEvent::PermissionRequest { .. }), "prompted");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A prompt nobody can see cannot be answered: with the event consumer
+    /// gone, the call is denied at once instead of waiting forever on a
+    /// responder that is still registered.
+    #[tokio::test]
+    async fn a_prompt_with_no_consumer_is_denied() {
+        let root = unique_project_root();
+        let (tx, rx) = mpsc::unbounded_channel();
+        drop(rx);
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            invoker.invoke(&[mcp_call("m1", "web_search_exa")]),
+        )
+        .await
+        .expect("an undeliverable prompt must not wait")
+        .unwrap();
+
+        assert!(out[0].content.contains("denied"), "got: {}", out[0].content);
+        assert!(registry.lock().await.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn mcp_prompt_deny_reports_error_and_skips_execution() {
         let root = unique_project_root();
@@ -13425,7 +13487,7 @@ mod tests {
     #[test]
     fn tool_allowlist_empty_removes_all() {
         let mut tools = vec![json!({ "type": "function", "function": { "name": "search" } })];
-        let mut map = HashMap::from([("search".to_string(), "srv".to_string())]);
+        let mut map = HashMap::from([("search".to_string(), route("srv"))]);
 
         apply_tool_allowlist(&mut tools, &mut map, &[]);
 
@@ -13438,7 +13500,7 @@ mod tests {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools =
             vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
-        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let mut map = HashMap::from([("web_search_exa".to_string(), route("exa"))]);
         // The scaffolded CLI project default: read-only, no allow-list.
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
 
@@ -13460,8 +13522,8 @@ mod tests {
             json!({ "type": "function", "function": { "name": "dangerous_write" } }),
         ];
         let mut map = HashMap::from([
-            ("web_search_exa".to_string(), "exa".to_string()),
-            ("dangerous_write".to_string(), "exa".to_string()),
+            ("web_search_exa".to_string(), route("exa")),
+            ("dangerous_write".to_string(), route("exa")),
         ]);
         let perms = ToolPermissions::new(
             PermissionDefault::ReadOnly,
@@ -13485,7 +13547,7 @@ mod tests {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools =
             vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
-        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let mut map = HashMap::from([("web_search_exa".to_string(), route("exa"))]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);

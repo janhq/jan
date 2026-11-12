@@ -1709,6 +1709,7 @@ async fn collect_and_format(
     let mut be = vec![0u8; 8192];
     let mut out_open = stdout.is_some();
     let mut err_open = stderr.is_some();
+    let mut startup = proc::StderrStartupFilter::default();
     // A read boundary can land mid-character, so decoding each chunk on its own
     // would emit a replacement character for any multi-byte sequence unlucky
     // enough to straddle one. Hold the incomplete tail back for the next chunk.
@@ -1744,8 +1745,17 @@ async fn collect_and_format(
                 }
             },
             r = stderr.as_mut().unwrap().read(&mut be), if err_open => match r {
-                Ok(0) | Err(_) => err_open = false,
-                Ok(n) => { cap.push(&be[..n]); tee(&be[..n], &mut carry); }
+                Ok(0) | Err(_) => {
+                    err_open = false;
+                    let held = startup.finish();
+                    cap.push(&held);
+                    tee(&held, &mut carry);
+                }
+                Ok(n) => {
+                    let shown = startup.feed(&be[..n]);
+                    cap.push(&shown);
+                    tee(&shown, &mut carry);
+                }
             },
         }
     }

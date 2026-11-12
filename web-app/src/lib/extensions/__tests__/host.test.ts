@@ -8,6 +8,7 @@ import {
 } from '@janhq/core'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ExtensionHost, toastTitle } from '../host'
+import { listExtensionTools } from '../tools'
 import { loopbackFetch } from '@/lib/loopback-fetch'
 import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
@@ -286,6 +287,51 @@ describe('ExtensionHost', () => {
     expect(disposed).toHaveBeenCalledTimes(1)
     expect(states(host)).toEqual({ 'jan.bad-exit': 'inactive' })
     error.mockRestore()
+  })
+
+  it('gives a rebound same-schema tool a new generation and refuses a call approved for the old one', async () => {
+    const replies = ['old', 'new']
+    const host = newHost()
+    const def = builtin(
+      manifest('jan.regen', {
+        permissions: ['tools'],
+        contributes: {
+          tools: [
+            { name: 'echo', description: 'Echo', inputSchema: { type: 'object' } },
+          ],
+        },
+      }),
+      {
+        activate: (ctx) => {
+          const reply = replies.shift()!
+          ctx.subscriptions.add(
+            ctx.tools.registerTool('echo', async () => ({
+              content: [{ type: 'text', text: reply }],
+            }))
+          )
+        },
+      }
+    )
+    const listed = () => listExtensionTools(host.contributions.getState())
+    await host.activateBuiltins([def])
+    const [before] = listed()
+    expect(await host.callTool('jan.regen', 'echo', {}, { generation: before.generation })).toEqual({
+      content: [{ type: 'text', text: 'old' }],
+    })
+    await host.deactivateAll()
+    expect(listed()).toEqual([])
+    await host.activateBuiltins([def])
+    const [after] = listed()
+    // Identical declaration, different binding: only `generation` tells them apart.
+    expect({ ...after, generation: 0 }).toEqual({ ...before, generation: 0 })
+    expect(after.generation).not.toBe(before.generation)
+    expect(JSON.stringify(after)).not.toBe(JSON.stringify(before))
+    const stale = await host.callTool('jan.regen', 'echo', {}, { generation: before.generation })
+    expect(stale.error).toMatch(/changed since it was offered/)
+    expect(
+      await host.callTool('jan.regen', 'echo', {}, { generation: after.generation })
+    ).toEqual({ content: [{ type: 'text', text: 'new' }] })
+    expect(replies).toEqual([])
   })
 
   it('ignores a second activation of an active built-in and reactivates after deactivateAll', async () => {

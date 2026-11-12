@@ -49,13 +49,23 @@ See [Linux installation](/docs/desktop/install/linux) for the install commands.
 </Tabs.Tab>
 </Tabs>
 
-## Starting a Session
+## Starting a Task
 
 <Steps>
 
-### Open Cowork
+### Start from a Chat
 
-Click **Cowork** in the left sidebar, then **New session**.
+Start a chat with **New Chat** in the left sidebar. When the conversation
+should become a task, click **+** beside the message input, then
+**Continue as task**, and confirm. The conversation keeps its messages and its
+place in the **Chats** history list; from then on Jan works on it as a Cowork
+task. A task can edit files and run commands without asking for each change,
+which is why Jan asks you to confirm first. A task cannot be switched back to a
+chat.
+
+Adding a folder with **+** -> **Add folder** on a new chat does not start a
+task: the chat gets the folder, and Jan asks before every change it makes there
+(see [Adding a Folder to an Existing Chat](#adding-a-folder-to-an-existing-chat)).
 
 ### Choose a Model and Workspace
 
@@ -64,9 +74,9 @@ existing project, use the folder control beside the message input to attach a
 project folder. Jan can read and edit files in the attached folder, so review
 its changes before keeping them.
 
-Without an attached project, Jan uses a separate workspace for the session in
-your Jan data folder. Files it creates there are available from **Files** and
-from artifact cards in the conversation.
+When no project folder is attached, for example after you remove it, Jan uses a separate workspace
+for the task in your Jan data folder. Files it creates there are available
+from **Files** and from artifact cards in the conversation.
 
 ### Describe Your Task
 
@@ -102,6 +112,15 @@ session workspace. Attaching a folder lets Jan read and edit that project's
 files in place; it does not create a separate copy of the project. Describe
 which files Jan should work on, and review **Agent changes** afterward.
 Use **Plan** first if you want to review the proposed work before allowing edits.
+
+### Adding a Folder to an Existing Chat
+
+In a chat that is already open, click **+** beside the message input, then
+**Add folder**. The chat stays a chat: Jan can read, list, and search the
+folder's files without asking, and asks you before every file it writes or
+edits and every command it runs there. Nothing you approve is remembered, so
+the next change asks again. To remove the folder, click its name beside the
+message input, then **Detach folder**.
 
 ## Planning a Task
 
@@ -179,7 +198,7 @@ folders are served.
 
 <Callout type="warning">
 Leave network access and unsandboxed mode off for untrusted content. Preview
-network access is separate from the shell network setting in **Settings > Cowork**.
+network access is separate from the shell network setting in **Settings > Agent**.
 </Callout>
 
 ### Browsing the Artifacts Library
@@ -227,9 +246,40 @@ work is still pending. A watching or waiting notice replaces the working
 spinner. The model is idle, not generating more text. A monitor notification
 or subagent result can wake the agent to continue.
 
+## Sessions from Earlier Versions
+
+Earlier nightly builds kept Cowork sessions in a separate list. On the first
+launch of a version with the shared **Chats** list, Jan copies each session
+into a conversation with the same id. Large histories finish in the
+background, so some tasks can appear a few seconds after the window opens.
+
+Nothing is moved or deleted:
+
+- Before the first copy, Jan saves `settings.pre-cowork-migration.json` next
+  to `settings.json` in your data folder. It holds the old session list and is
+  never overwritten.
+- Each session's files are copied from `agent-workspace/sessions/<session_id>`
+  to `agent-workspace/threads/<session_id>`. The original folder stays. Jan
+  checks for enough free disk space first and tries again on the next launch
+  if there is not.
+- Links and files Jan is not allowed to read are not copied. The task then
+  shows **Some files were not copied** with a button to open the original
+  folder.
+
+If a session cannot be copied after several launches, it stays in the list as
+read-only with **This task could not be imported** and the reason. Click
+**Try again** after fixing the cause (for example, freeing disk space), or
+**Export** to save it as a JSON file under `cowork-exports/` in your data
+folder.
+
+<Callout type="warning">
+Going back to an older Jan version afterward shows your sessions as they were
+before the upgrade. Work done after the upgrade is not visible there.
+</Callout>
+
 ## Configuring Cowork
 
-Open **Settings** in the left sidebar, then select **Cowork**.
+Open **Settings** in the left sidebar, then select **Agent**.
 
 ![Cowork settings with shell network access and memories highlighted](./_assets/cowork-settings.png)
 
@@ -238,8 +288,8 @@ Open **Settings** in the left sidebar, then select **Cowork**.
 
 ### Sandbox and Network
 
-Each session has a workspace in
-`agent-workspace/sessions/<session_id>` inside your Jan data folder. An attached
+Each task has a workspace in
+`agent-workspace/threads/<thread_id>` inside your Jan data folder. An attached
 project folder gives Jan additional read and write access to that project.
 
 Under **Shell Commands**, check whether an OS sandbox is available. When it
@@ -261,7 +311,7 @@ Cowork stores reusable knowledge in your Jan data folder:
 - **Memories**: Facts such as project decisions, preferences, and constraints, stored in `agent-workspace/memory`.
 - **Skills**: Reusable instructions for tasks such as releasing a project or debugging a subsystem, stored in `agent-workspace/skills`. Jan loads the full instructions when a task needs them.
 
-To manage an entry in **Settings > Cowork**:
+To manage an entry in **Settings > Agent**:
 
 1. Click **Add** in the Memories or Skills section to create an entry.
 2. Click the pencil icon beside an existing entry to edit it.

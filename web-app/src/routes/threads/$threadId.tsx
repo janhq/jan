@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
-import { cn } from '@/lib/utils'
+import {
+  createFileRoute,
+  redirect,
+  useParams,
+  useRouter,
+  useSearch,
+} from '@tanstack/react-router'
 
 import HeaderPage from '@/containers/HeaderPage'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
+import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
@@ -12,10 +19,17 @@ import { MessageItem } from '@/containers/MessageItem'
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
 import { buildLoadDiagnosticsReport } from '@/lib/loadDiagnosticsReport'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import GlobalError from '@/containers/GlobalError'
+import { shouldRedirectThreadToCowork } from '@/lib/threadRouteGuard'
+import {
+  ThreadClassificationUnavailableError,
+  resolveThreadForRoute,
+} from '@/lib/threadRouteClassification'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
+import { SESSION_STORAGE_PREFIX, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
@@ -98,7 +112,7 @@ import {
 } from '@/lib/chatFinish'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
-import { useToolApproval } from '@/hooks/useToolApproval'
+import { consentConsume } from '@janhq/tauri-plugin-agent-tools-api'
 import {
   useToolApprovalRequests,
   type ApprovalOptions,
@@ -107,9 +121,19 @@ import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import {
+  CHAT_FOLDER_TOOL_NAMES,
+  chatFolderOf,
+  chatToolNeedsApproval,
+} from '@/lib/chatFolder'
+import { useChatFolder } from '@/hooks/useChatFolder'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { ContinueAsTaskDialog } from '@/containers/dialogs/ContinueAsTaskDialog'
+import { continueChatAsTask } from '@/lib/coworkSync'
+import { route } from '@/constants/routes'
+import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { extensionAuthorOf } from '@/lib/extensions/authorship'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ServiceKeys } from '@janhq/core'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
@@ -119,6 +143,7 @@ import {
   getLocalPropsExtension,
   readCtxLen,
 } from '@/lib/llamacppRouterProps'
+import { normalizeAppError } from '@/utils/appError'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -259,6 +284,12 @@ const SHELL_DISABLED_TOOL_ERROR =
   'Shell is turned off: the user disabled it, so this command was not run. ' +
   'Do not call the shell again in this chat; use another approach or tell the user it is needed.'
 
+// Recorded for a call to a file tool (read, write, ...) in a chat with no folder
+// attached, e.g. one issued before the user detached it.
+const NO_FOLDER_TOOL_ERROR =
+  'No folder is attached to this chat, so this call was not run. ' +
+  'Do not call the file tools again unless the user attaches a folder.'
+
 // Recorded for a call to a built-in web tool while the user has web search off
 // and no MCP server provides a tool of that name.
 const WEB_DISABLED_TOOL_ERROR =
@@ -308,6 +339,7 @@ function toolOriginOf(toolName: string) {
       origin: 'extension' as const,
       server: extensionTool.server,
       extensionTool,
+      mcpGeneration: undefined,
     }
   }
   const mcpTool = useAppState
@@ -317,6 +349,10 @@ function toolOriginOf(toolName: string) {
     origin: 'mcp' as const,
     server: mcpTool?.server,
     extensionTool: undefined,
+    // The connection that listed the tool. The call carries it, so a server
+    // restarted between the call arriving and it running refuses it rather
+    // than the new process running a call it never offered.
+    mcpGeneration: mcpTool?.generation,
   }
 }
 
@@ -339,21 +375,38 @@ function turnModelOf(threadId: string) {
   )
 }
 
-// How a call to a chat agent tool name is served. The switch is enforced where
-// the command would run, not only where the tool is offered: a call can still
-// arrive from replayed history or from a turn in flight when it flips. Such a
-// call is refused outright, before any approval prompt, because a prompt for a
-// tool the user turned off could save a permission for it. With the switch off
-// the built-in is not offered, so an MCP tool of the same name is the user's
-// own: it is served as an MCP tool and prompts like any other.
-function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
-  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
-  if (useChatShell.getState().shellEnabled) return 'builtin'
+// How a call to a built-in chat agent tool name is served. The shell switch and
+// the attached folder are enforced where the command would run, not only where
+// the tool is offered: a call can still arrive from replayed history or from a
+// turn in flight when they change. Such a call is refused outright, before any
+// approval prompt, because a prompt for a tool the user turned off could save a
+// permission for it. When the built-in is not offered, an MCP tool of the same
+// name is the user's own: it is served as an MCP tool and prompts like any
+// other.
+function chatAgentRoute(
+  toolName: string,
+  threadId: string
+): 'builtin' | 'disabled' | 'other' {
+  let offered: boolean
+  if (CHAT_FOLDER_TOOL_NAMES.has(toolName)) {
+    offered = chatFolderOf(threadId) !== null
+  } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+    offered = useChatShell.getState().shellEnabled
+  } else {
+    return 'other'
+  }
+  if (offered) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
 
-function isDisabledChatAgentTool(toolName: string): boolean {
-  return chatShellRoute(toolName) === 'disabled'
+function disabledChatAgentToolError(
+  toolName: string,
+  threadId: string
+): string | null {
+  if (chatAgentRoute(toolName, threadId) !== 'disabled') return null
+  return CHAT_FOLDER_TOOL_NAMES.has(toolName)
+    ? NO_FOLDER_TOOL_ERROR
+    : SHELL_DISABLED_TOOL_ERROR
 }
 
 // How a call to a built-in web tool name is served. Same contract as the shell:
@@ -371,25 +424,33 @@ function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
 }
 
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
-// the built-in shell is gated in Rust (execute_tool refuses anything needing
-// approval), so only workspace-confined calls ever reach here. The web tools
-// do prompt on a turn an extension's provider serves: there the model is the
-// extension's, and a free `web_fetch` would reach any host its network grants
-// leave out.
+// the built-in tools are gated in Rust (execute_tool refuses anything needing
+// approval), so only workspace-confined calls ever reach here. Two exceptions
+// ask. The web tools on a turn an extension's provider serves: there the model
+// is the extension's, and a free `web_fetch` would reach any host its network
+// grants leave out. And with a folder attached, every call that can change it
+// (write, edit, shell): the folder is the user's own files, not a scratch space.
 function isAutoAllowedTool(toolName: string, threadId: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     (webRoute(toolName) === 'builtin' && !turnOnExtensionProvider(threadId)) ||
-    chatShellRoute(toolName) === 'builtin'
+    (chatAgentRoute(toolName, threadId) === 'builtin' &&
+      !chatToolNeedsApproval(toolName, threadId))
   )
 }
 
-// Every call the model an extension serves makes is asked for on its own:
-// neither "allow all MCP" nor a grant given on another turn covers it.
+// Asked for on its own, with neither "allow all MCP" nor a saved grant covering
+// it: every call the model an extension serves makes, and a built-in call that
+// changes the attached folder (no "allow always" for writing the user's files).
+// Rust refuses such a built-in call unless this one call was approved.
 function approvalOptions(
   threadId: string,
+  toolName: string,
   origin: ToolOrigin['origin']
 ): ApprovalOptions {
+  if (chatAgentRoute(toolName, threadId) === 'builtin') {
+    return { strict: true, origin: 'builtin' }
+  }
   return turnOnExtensionProvider(threadId)
     ? { strict: true, origin }
     : { origin }
@@ -431,9 +492,80 @@ type SearchParams = {
   threadModel?: ThreadModel
 }
 
+/**
+ * Route-local error screen. A classification failure (the conversation backend
+ * never answered within the startup retry window) is recoverable: Retry re-runs
+ * `beforeLoad` via router.invalidate(), so the deep link is not stranded on the
+ * root GlobalError, which only offers a full reload. Any other error keeps the
+ * root boundary's presentation.
+ */
+function ThreadRouteError({ error }: { error: Error }) {
+  const router = useRouter()
+  const { t } = useTranslation()
+  if (error instanceof ThreadClassificationUnavailableError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-5">
+        <div className="max-w-md text-center">
+          <IconAlertCircle className="mx-auto size-8 text-destructive" />
+          <h2 className="mt-3 text-base font-semibold text-main-view-fg">
+            {t('common:threadRoute.notReadyTitle')}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('common:threadRoute.notReadyDescription')}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => void router.invalidate()}
+          >
+            <IconRefresh className="size-4 mr-2" />
+            {t('common:threadRoute.retry')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return <GlobalError error={error} />
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
+  // A Cowork conversation runs on the Cowork runner and its transcript has a
+  // sidecar authority: mounting the writable chat view over it would fork the
+  // transcript into messages.jsonl. Decide before the chat view mounts.
+  beforeLoad: async ({ params }) => {
+    const { threadId } = params as { threadId: string }
+    let thread: Thread | undefined = useThreads.getState().threads[threadId]
+    // A deep link can load before the threads store hydrates, so a Cowork
+    // thread would look like a chat. Look it up from the backend (bounded
+    // retries, store re-read around every await; nothing fetched is written
+    // back). An undecidable thread throws a typed error, rendered as Retry,
+    // instead of mounting a writable chat. The temporary chat is never stored.
+    if (!thread && threadId !== TEMPORARY_CHAT_ID) {
+      thread = await resolveThreadForRoute<Thread>({
+        threadId,
+        readThread: () => useThreads.getState().threads[threadId],
+        fetchThreads: () => getServiceHub().threads().fetchThreads(),
+        isHydrated: () => useThreads.getState().threadsHydrated,
+      })
+    }
+    if (
+      shouldRedirectThreadToCowork(
+        threadId,
+        useCoworkSessions.getState().sessions,
+        thread
+      )
+    ) {
+      throw redirect({
+        to: '/cowork/$sessionId',
+        params: { sessionId: threadId },
+        replace: true,
+      })
+    }
+  },
   component: ThreadDetail,
+  errorComponent: ThreadRouteError,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     return {
       threadModel: search.threadModel as ThreadModel | undefined,
@@ -456,6 +588,16 @@ function ThreadDetail() {
   const currentThread = useRef<string | undefined>(undefined)
 
   useTools()
+  const chatFolder = useChatFolder(threadId)
+  const taskRouter = useRouter()
+  const [continueAsTaskOpen, setContinueAsTaskOpen] = useState(false)
+  const continueAsTask = useCallback(async () => {
+    await continueChatAsTask(threadId)
+    void taskRouter.navigate({
+      to: route.coworkSession,
+      params: { sessionId: threadId },
+    } as never)
+  }, [threadId, taskRouter])
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -900,12 +1042,13 @@ function ThreadDetail() {
               continue
             }
 
-            if (isDisabledChatAgentTool(toolName)) {
+            const disabledError = disabledChatAgentToolError(toolName, threadId)
+            if (disabledError) {
               record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: SHELL_DISABLED_TOOL_ERROR,
+                errorText: disabledError,
               })
               continue
             }
@@ -922,7 +1065,7 @@ function ThreadDetail() {
                       toolName,
                       threadId,
                       origin.server,
-                      approvalOptions(threadId, origin.origin)
+                      approvalOptions(threadId, toolName, origin.origin)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -981,14 +1124,20 @@ function ThreadDetail() {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
-                } else if (chatShellRoute(toolName) === 'builtin') {
+                } else if (chatAgentRoute(toolName, threadId) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.
                   const agentResult = await executeAgentTool(
                     toolName,
                     toolCall.input,
-                    threadId
+                    threadId,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    toolCall.toolCallId
                   )
                   // The diff is display-only, so it goes to the runtime store
                   // rather than into `result`: anything in `result` reaches the
@@ -1012,12 +1161,25 @@ function ThreadDetail() {
                 } else if (extensionTool) {
                   // Contributed tools always prompt (they are never in
                   // isAutoAllowedTool); Stop cancels the call in the
-                  // extension's worker, not only here.
+                  // extension's worker, not only here. The extension host
+                  // runs it, so the approval is used up here, as Rust uses
+                  // up the ones for the calls it runs.
+                  await consentConsume(
+                    threadId,
+                    toolCall.toolCallId,
+                    toolName,
+                    origin.server,
+                    'extension'
+                  )
                   return await getExtensionHost().callTool(
                     extensionTool.extensionId,
                     extensionTool.name,
                     toolCall.input,
-                    { signal: stopSignal, maxOutputChars }
+                    {
+                      signal: stopSignal,
+                      maxOutputChars,
+                      generation: extensionTool.generation,
+                    }
                   )
                 } else if (mcpToolNames.has(toolName)) {
                   // Give the backend the budget scaled to the window; it narrows
@@ -1025,8 +1187,12 @@ function ThreadDetail() {
                   // Stop ends the call on the backend as well as in this loop.
                   const call = serviceHub.mcp().callToolWithCancellation({
                     toolName,
+                    serverName: origin.server,
+                    serverGeneration: origin.mcpGeneration,
                     arguments: toolCall.input,
                     maxOutputChars,
+                    threadId,
+                    callId: toolCall.toolCallId,
                   })
                   const cancel = () => void call.cancel().catch(() => {})
                   stopSignal.addEventListener('abort', cancel, { once: true })
@@ -1065,7 +1231,7 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${JSON.stringify(error)}`,
+                errorText: `Error: ${normalizeAppError(error)}`,
               })
             }
           } finally {
@@ -1188,7 +1354,7 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       if (
         !isAutoAllowedTool(toolCall.toolName, threadId) &&
-        !isDisabledChatAgentTool(toolCall.toolName) &&
+        !disabledChatAgentToolError(toolCall.toolName, threadId) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
@@ -1201,7 +1367,7 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               origin.server,
-              approvalOptions(threadId, origin.origin)
+              approvalOptions(threadId, toolCall.toolName, origin.origin)
             ),
           origin,
         })
@@ -1673,11 +1839,6 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
-            const toolApproval = useToolApproval.getState()
-            const ragTools = useAppState.getState().ragToolNames
-            for (const toolName of ragTools) {
-              toolApproval.approveToolForThread(threadId, toolName)
-            }
             // Merge into the thread's metadata as it is now, not as it was at
             // send: replacing it drops `metadata.project` and detaches the
             // thread from its project, and a stale copy reverts a project move
@@ -2411,7 +2572,10 @@ function ThreadDetail() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
+          <ConversationHeaderTitle
+            title={thread?.title}
+            project={thread?.metadata?.project}
+          />
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -2425,9 +2589,7 @@ function ThreadDetail() {
           }
         >
           <Conversation className="absolute inset-0 text-start">
-            <ConversationContent
-              className={cn('mx-auto w-full px-6 pb-4 md:w-4/5 xl:w-4/6')}
-            >
+            <ConversationContent column className="pb-4">
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
@@ -2579,15 +2741,45 @@ function ThreadDetail() {
         {/* Chat Input - Fixed at bottom. No top padding: the scroll area (and
             its fade) runs right up to the composer, with the resting gap kept
             inside the scroll content as pb-4. */}
-        <div className="pb-4 px-6 mx-auto w-full md:w-4/5 xl:w-4/6">
+        <ConversationColumn reserveScrollGutter className="pb-4">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
             onStop={handleStop}
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
+            menuWorkspace={
+              chatFolder.available ? (
+                <CoworkComposerMenu
+                  onAttachFolder={chatFolder.folder ? undefined : chatFolder.attach}
+                  onContinueAsTask={
+                    chatMessages.length > 0 &&
+                    effectiveStatus === 'ready' &&
+                    !toolsRunning
+                      ? () => setContinueAsTaskOpen(true)
+                      : undefined
+                  }
+                />
+              ) : undefined
+            }
+            surfaceControls={
+              chatFolder.folder ? (
+                <CoworkWorkspacePill
+                  folder={chatFolder.folder}
+                  onAttach={chatFolder.attach}
+                  onDetach={chatFolder.detach}
+                  footnote={t('common:workspace.chatFootnote')}
+                />
+              ) : undefined
+            }
           />
-        </div>
+          <ContinueAsTaskDialog
+            open={continueAsTaskOpen}
+            onOpenChange={setContinueAsTaskOpen}
+            folder={chatFolder.folder}
+            onConfirm={continueAsTask}
+          />
+        </ConversationColumn>
       </div>
     </div>
   )

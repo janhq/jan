@@ -24,7 +24,7 @@ vi.mock('fzf', () => ({
 }))
 
 const mockCreateThread = vi.fn()
-const mockDeleteThread = vi.fn()
+const mockDeleteThread = vi.fn().mockResolvedValue(undefined)
 const mockUpdateThread = vi.fn()
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -307,7 +307,7 @@ describe('useThreads - coverage', () => {
     expect(result.current.threads['t3']).toBeDefined()
   })
 
-  it('drops the vector DB collection of each thread deleted in bulk', () => {
+  it('drops the vector DB collection of each thread deleted in bulk', async () => {
     const { result } = renderHook(() => useThreads())
     act(() => {
       result.current.setThreads([{ id: 't2', title: 'Normal' } as Thread])
@@ -315,7 +315,25 @@ describe('useThreads - coverage', () => {
     act(() => {
       result.current.deleteAllThreads()
     })
-    expect(vectorDB.deleteCollection).toHaveBeenCalledWith('attachments_t2')
+    await vi.waitFor(() =>
+      expect(vectorDB.deleteCollection).toHaveBeenCalledWith('attachments_t2')
+    )
+  })
+
+  // A delete that fails brings the thread back on restart, so what lives
+  // outside the thread store must still be there for it.
+  it('keeps the artifacts of a thread whose delete failed', async () => {
+    mockDeleteThread.mockRejectedValueOnce(new Error('file in use'))
+    const { result } = renderHook(() => useThreads())
+    act(() => {
+      result.current.setThreads([{ id: 't2', title: 'Normal' } as Thread])
+    })
+    act(() => {
+      result.current.deleteThread('t2')
+    })
+    await vi.waitFor(() => expect(mockDeleteThread).toHaveBeenCalledWith('t2'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(vectorDB.deleteCollection).not.toHaveBeenCalled()
   })
 
   // Removing the chat session is what ends a turn still running in the

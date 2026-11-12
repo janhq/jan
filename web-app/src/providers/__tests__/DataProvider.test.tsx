@@ -18,6 +18,9 @@ const h = vi.hoisted(() => {
     setThreads: vi.fn(),
     setThreadsLoading: vi.fn(),
     threadsInStore: {} as Record<string, unknown>,
+    markThreadsHydrated: vi.fn(),
+    sweepThreadWorkspaces: vi.fn(),
+    coworkSessions: [] as Array<{ id: string }>,
     setLastServerModels: vi.fn(),
     setServerPort: vi.fn(),
     setServerStatus: vi.fn(),
@@ -76,6 +79,12 @@ vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({ setAssistants: h.setAssistants }),
 }))
 
+vi.mock('@/lib/agentTools', () => ({
+  sweepThreadWorkspaces: h.sweepThreadWorkspaces,
+}))
+vi.mock('@/hooks/useCoworkSessions', () => ({
+  useCoworkSessions: { getState: () => ({ sessions: h.coworkSessions }) },
+}))
 vi.mock('@/hooks/useThreads', () => {
   const state = () => ({
     setThreads: h.setThreads,
@@ -88,7 +97,10 @@ vi.mock('@/hooks/useThreads', () => {
     (selector?: (s: unknown) => unknown): unknown
     getState: () => { threads: Record<string, unknown> }
   }
-  useThreads.getState = () => ({ threads: h.threadsInStore })
+  useThreads.getState = () => ({
+    threads: h.threadsInStore,
+    markThreadsHydrated: h.markThreadsHydrated,
+  })
   return { useThreads }
 })
 
@@ -213,6 +225,9 @@ describe('DataProvider', () => {
     resetHubState()
     h.providers = []
     h.threadsInStore = {}
+    h.markThreadsHydrated.mockClear()
+    h.sweepThreadWorkspaces.mockClear()
+    h.coworkSessions = []
     h.isDev.mockReturnValue(false)
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
@@ -276,6 +291,30 @@ describe('DataProvider', () => {
     await waitFor(() => {
       expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
     })
+  })
+
+  it('marks the thread list hydrated only after a successful listing (an empty one counts), never on a failed attempt', async () => {
+    hubState.fetchThreads
+      .mockRejectedValueOnce(new Error('backend not ready'))
+      .mockResolvedValueOnce([])
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(h.markThreadsHydrated).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps the sandbox of a live Cowork session that has no thread.json yet when sweeping', async () => {
+    h.coworkSessions = [{ id: 'live-unsaved' }]
+    hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])
+    render(<DataProvider />)
+    await waitFor(() => expect(h.sweepThreadWorkspaces).toHaveBeenCalledTimes(1))
+    expect(h.sweepThreadWorkspaces.mock.calls[0][0].sort()).toEqual(['live-unsaved', 't1'])
+  })
+
+  it('never marks the thread list hydrated when every attempt fails', async () => {
+    hubState.fetchThreads.mockRejectedValue(new Error('backend not ready'))
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalled())
+    expect(h.markThreadsHydrated).not.toHaveBeenCalled()
   })
 
   it('does not wipe a populated thread list when fetchThreads resolves empty', async () => {

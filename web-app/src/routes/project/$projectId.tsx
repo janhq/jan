@@ -8,12 +8,12 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
 import ProjectFiles from '@/containers/ProjectFiles'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +26,9 @@ import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 import { DeleteAllThreadsInProjectDialog } from '@/containers/dialogs/DeleteAllThreadsInProjectDialog'
 import { SidebarMenu } from '@/components/ui/sidebar'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { DraftWorkspacePill } from '@/containers/DraftWorkspacePill'
+import { useFolderDraft } from '@/hooks/useFolderDraft'
 
 export const Route = createFileRoute('/project/$projectId')({
   component: ProjectPageContent,
@@ -45,6 +48,8 @@ function ProjectPageContent() {
 
   // Find the project
   const project = getFolderById(projectId)
+  // A folder attached here is given to the project's next chat.
+  const workspace = useFolderDraft()
 
   // Find the assigned assistant
   const projectAssistant = useMemo(() => {
@@ -89,7 +94,7 @@ function ProjectPageContent() {
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full">
-          <DropdownModelProvider />
+          <ConversationHeaderTitle project={project} />
         </div>
       </HeaderPage>
 
@@ -131,6 +136,18 @@ function ProjectPageContent() {
               initialMessage={true}
               projectId={projectId}
               projectAssistantId={project.assistantId}
+              menuWorkspace={
+                <CoworkComposerMenu
+                  onAttachFolder={workspace.available ? workspace.attach : undefined}
+                />
+              }
+              draftFolder={workspace.folder}
+              onDraftFolderUsed={workspace.detach}
+            />
+            <DraftWorkspacePill
+              folder={workspace.folder}
+              onPickFolder={workspace.attach}
+              onDetach={workspace.detach}
             />
           </div>
 
@@ -175,7 +192,7 @@ function ProjectPageContent() {
                 {t('projects.noConversationsIn', { projectName: project.name })}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {t('projects.startNewConversation', { projectName: project.name })}
+                {t('projects.sendMessageToStart')}
               </p>
             </div>
           )}

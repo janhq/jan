@@ -27,6 +27,7 @@ use tokio::process::Command;
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::mcp::models::McpSettings;
 use crate::core::mcp::models::{extract_active_status, extract_command_args, McpServerConfig};
+use crate::core::mcp::identity;
 use crate::core::mcp::oauth;
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 
@@ -512,7 +513,7 @@ async fn connect_in(
         }
     };
 
-    servers.lock().await.insert(name.to_string(), service);
+    identity::insert_server(&mut *servers.lock().await, name, service);
     Ok(())
 }
 

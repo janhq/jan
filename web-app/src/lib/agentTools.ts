@@ -3,6 +3,7 @@ import {
   executeTool,
   sandboxStatus,
   threadWorkspaceDelete,
+  sessionWorkspaceCopyToThread,
   threadWorkspaceSweep,
   memoryCatalog,
   memoryRead,
@@ -22,6 +23,7 @@ import {
   type ToolImage,
   type ToolSchema,
   type WorkspaceScope,
+  type WorkspaceCopy,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
 
@@ -279,7 +281,12 @@ export async function executeAgentTool(
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills
    * global-only. Memory and skill writes stay on the permanent store regardless.
    */
-  skillProject?: string | null
+  skillProject?: string | null,
+  /**
+   * The model's tool call id. A chat call that changes an attached folder runs
+   * only on the user's approval of this id (agent-tools `consent`).
+   */
+  callId?: string
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -298,7 +305,8 @@ export async function executeAgentTool(
       allowNetwork,
       readOnlyProject ?? undefined,
       projectWritable,
-      scope
+      scope,
+      callId
     )
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the
@@ -322,7 +330,7 @@ function isMemoryChange(args: Record<string, unknown>): boolean {
 export type { MonitorUpdate }
 
 /**
- * Start a file monitor for a Cowork session. `onUpdate` receives every match
+ * Start a file monitor for a Cowork conversation (a thread). `onUpdate` receives every match
  * (and the terminal all-met/timeout update) as it happens; the returned string
  * is the model-facing `monitor` tool result. An error comes back as an
  * `ERROR:`-prefixed output rather than a throw, matching the tool contract.
@@ -344,7 +352,7 @@ export async function startAgentMonitor(
       allowNetwork,
       readOnlyProject: readOnlyProject ?? undefined,
       projectWritable,
-      scope: 'session',
+      scope: 'thread',
     })
     return { output }
   } catch (e) {
@@ -411,6 +419,13 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   } catch (e) {
     console.warn('[agentTools] Failed to cancel session shells:', messageOf(e))
   }
+}
+
+/** Close must confirm native teardown rather than treating it as best-effort. */
+export async function cancelAgentThreadBashStrict(
+  sessionId: string
+): Promise<void> {
+  await cancelThreadBash(sessionId)
 }
 
 /** A file claimed for a subagent's answer: the name to fill it by, and its
@@ -484,7 +499,8 @@ export async function importAttachment(
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
     if (!dataFolder) return null
-    return await attachmentImport(dataFolder, sessionId, source, text)
+    // Thread scope: the sandbox the conversation's tools run in.
+    return await attachmentImport(dataFolder, sessionId, source, text, 'thread')
   } catch (e) {
     console.warn('[agentTools] Failed to import attachment:', messageOf(e))
     return null
@@ -507,6 +523,26 @@ export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
       messageOf(e)
     )
   }
+}
+
+/**
+ * Copy a Cowork session's sandbox into the thread workspace of the same id
+ * (Cowork migration). Unlike the cleanup helpers this THROWS: the migration
+ * must not commit a thread whose files did not arrive.
+ *
+ * The data folder comes from the backend command, not `window.core.api`: the
+ * migration starts before the extension API is installed, and reading the
+ * folder there returned nothing, which skipped the copy and committed threads
+ * without their files.
+ */
+export async function copySessionWorkspaceToThread(
+  sessionId: string
+): Promise<WorkspaceCopy> {
+  const dataFolder = await getServiceHub()
+    .core()
+    .invoke<string>('get_jan_data_folder_path')
+  if (!dataFolder) throw new Error('the Jan data folder is not known yet')
+  return await sessionWorkspaceCopyToThread(dataFolder, sessionId)
 }
 
 /**

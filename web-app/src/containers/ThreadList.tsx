@@ -1,5 +1,9 @@
 import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { hasCoworkSession } from '@/lib/coworkDelete'
+import { isCoworkThread } from '@/lib/threadMode'
+import { updateThreadProject } from '@/lib/threadProject'
 import { useIsThreadActive } from '@/hooks/useAppState'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useMessages } from '@/hooks/useMessages'
@@ -26,13 +30,30 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { memo, useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
+import type { ComponentProps } from 'react'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ThreadMessage } from '@janhq/core'
 import { ContributedMenuItems } from '@/containers/extensions/ContributedMenuItems'
 
-const ThreadItem = memo(
+/**
+ * A conversation opens in the view that can run it: a Cowork thread in the
+ * Cowork view, anything else as a chat. Both routes put the id in the URL, so
+ * the row is selected from either param.
+ */
+function ThreadLink({
+  thread,
+  ...props
+}: { thread: Thread } & Omit<ComponentProps<'a'>, 'href'>) {
+  return isCoworkThread(thread) ? (
+    <Link to="/cowork/$sessionId" params={{ sessionId: thread.id }} {...props} />
+  ) : (
+    <Link to="/threads/$threadId" params={{ threadId: thread.id }} {...props} />
+  )
+}
+
+export const ThreadItem = memo(
   ({
     thread,
     isMobile,
@@ -44,7 +65,6 @@ const ThreadItem = memo(
   }) => {
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
-    const updateThread = useThreads((state) => state.updateThread)
     const getFolderById = useThreadManagement().getFolderById
     const { folders } = useThreadManagement()
     const { t } = useTranslation()
@@ -122,21 +142,22 @@ const ThreadItem = memo(
 
     const assignThreadToProject = (threadId: string, projectId: string) => {
       const project = getFolderById(projectId)
-      if (project && updateThread) {
-        const projectMetadata = {
+      if (project) {
+        // Cowork persists from its session, so the move goes through it and
+        // can be refused; only a move that happened is reported as success.
+        const moved = updateThreadProject(threadId, {
           id: project.id,
           name: project.name,
           updated_at: project.updated_at,
-        }
-
-        updateThread(threadId, {
-          metadata: {
-            ...thread.metadata,
-            project: projectMetadata,
-          },
         })
 
-        toast.success(`Thread assigned to "${project.name}" successfully`)
+        if (moved) {
+          toast.success(t('common:toast.threadAssignedToProject.description', {
+            projectName: project.name,
+          }))
+        } else {
+          toast.error(t('common:toast.threadProjectMoveFailed.description'))
+        }
       }
     }
 
@@ -148,14 +169,24 @@ const ThreadItem = memo(
 
     const currentThreadId = useParams({
       strict: false,
-      select: (params) => params.threadId,
+      select: (params) =>
+        (params as { threadId?: string; sessionId?: string }).threadId ??
+        (params as { sessionId?: string }).sessionId,
     })
     const isSelected = currentThreadId === thread.id
+    const onRename = (threadId: string, title: string) => {
+      // A live Cowork session owns its title; the mirrored thread follows it.
+      if (isCoworkThread(thread) && hasCoworkSession(threadId)) {
+        useCoworkSessions.getState().setTitle(threadId, title)
+      } else {
+        renameThread(threadId, title)
+      }
+    }
 
     return (
       <SidebarMenuItem>
         {currentProjectId ?
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} data-testid={`thread-row-${thread.id}`} className={cn("bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block max-w-full overflow-hidden", isSelected && "border-primary")}>
+          <ThreadLink thread={thread} data-testid={`thread-row-${thread.id}`} className={cn("bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block max-w-full overflow-hidden", isSelected && "border-primary")}>
               <div className="flex items-center gap-1.5 min-w-0">
                 {isActive && (
                   <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
@@ -167,15 +198,15 @@ const ThreadItem = memo(
                   {lastUserMessageText}
                 </div>
               )}
-          </Link>
+          </ThreadLink>
           :
-          <SidebarMenuButton asChild isActive={isSelected}>
-            <Link to="/threads/$threadId" params={{ threadId: thread.id }} data-testid={`thread-row-${thread.id}`}>
+          <SidebarMenuButton asChild isActive={isSelected} className="data-[active=true]:bg-sidebar-foreground/10 dark:data-[active=true]:bg-sidebar-accent">
+            <ThreadLink thread={thread} data-testid={`thread-row-${thread.id}`}>
               {isActive && (
                 <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
               )}
               <span className={cn("block truncate", isSelected && "font-medium")} title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
-            </Link>
+            </ThreadLink>
           </SidebarMenuButton>
         }
         <DropdownMenu>
@@ -186,7 +217,7 @@ const ThreadItem = memo(
               className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-4 mr-2')}
             >
               <MoreHorizontal />
-              <span className="sr-only">More</span>
+              <span className="sr-only">{t('common:sidebar.more')}</span>
             </SidebarMenuAction>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -235,19 +266,21 @@ const ThreadItem = memo(
                   onClick={(e) => {
                     e.stopPropagation()
                     const projectName = thread.metadata?.project?.name
-                    updateThread(thread.id, {
-                      metadata: {
-                        ...thread.metadata,
-                        project: undefined,
-                      },
-                    })
-                    toast.success(
-                      `Thread removed from "${projectName}" successfully`
-                    )
+                    if (updateThreadProject(thread.id, undefined)) {
+                      toast.success(
+                        t('common:toast.threadRemovedFromProject.description', {
+                          projectName,
+                        })
+                      )
+                    } else {
+                      toast.error(
+                        t('common:toast.threadProjectMoveFailed.description')
+                      )
+                    }
                   }}
                 >
                   <X className="size-4" />
-                  <span>Remove from project</span>
+                  <span>{t('common:projects.removeFromProject')}</span>
                 </DropdownMenuItem>
               </>
             )}
@@ -276,7 +309,7 @@ const ThreadItem = memo(
         <RenameThreadDialog
           thread={thread}
           plainTitleForRename={plainTitleForRename}
-          onRename={renameThread}
+          onRename={onRename}
           open={renameOpen}
           onOpenChange={setRenameOpen}
           withoutTrigger

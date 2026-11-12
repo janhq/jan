@@ -272,10 +272,6 @@
       "cancel": "キャンセル",
       "changeLocation": "場所を変更"
     },
-    "deleteAllThreads": {
-      "title": "すべてのスレッドを削除",
-      "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
-    },
     "deleteAllThreadsInProject": {
       "title": "すべての会話を削除",
       "description": "「{{projectName}}」内の{{count}}件の会話が削除されます。この操作は元に戻せません。"
@@ -288,6 +284,10 @@
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
+    },
+    "deleteAllChats": {
+      "title": "プロジェクト外の会話を削除",
+      "description": "プロジェクトに属していない会話を削除します。プロジェクト内の会話、スター付きの会話、タスクは残ります。この操作は元に戻せません。"
     }
   },
   "errorDialog": {
@@ -327,9 +327,8 @@
     "processButton": "追加",
     "deleteProjectDialog": {
       "title": "プロジェクトを削除",
-      "permanentDelete": "これにより、すべてのスレッドが完全に削除されます。",
+      "permanentDelete": "「{{projectName}}」とそのすべての会話が完全に削除されます。この操作は元に戻せません。",
       "permanentDeleteWarning": "この操作は、プロジェクト内のすべてのスレッドを完全に削除します！",
-      "deleteEmptyProject": "この操作は、プロジェクト「{{projectName}}」を削除します。",
       "saveThreadsAdvice": "スレッドを残すには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
       "starredWarning": "プロジェクト内にスター付きのスレッドが残っています。",
       "deleteButton": "削除",
@@ -354,7 +353,6 @@
       "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
-    "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
     "conversationsIn": "{{projectName}}での会話",
     "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
     "conversation": "会話",
@@ -370,7 +368,9 @@
     "update": "更新",
     "searchProjects": "プロジェクトを検索...",
     "noProjectsFound": "プロジェクトが見つかりません",
-    "tryDifferentSearch": "別の検索語をお試しください"
+    "tryDifferentSearch": "別の検索語をお試しください",
+    "viewProject": "プロジェクトを表示",
+    "sendMessageToStart": "上でメッセージを送信すると会話を始められます。"
   },
   "attachmentsIngestion": {
     "title": "添付ファイルの取り込み方法を選択",
@@ -471,6 +471,10 @@
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
     },
+    "threadProjectMoveFailed": {
+      "title": "移動に失敗しました",
+      "description": "この会話を移動できませんでした。セッションを利用できません。"
+    },
     "fileUploaded": {
       "title": "ファイルを処理しました",
       "description": "ファイルは正常に処理され、インデックス化されました"
@@ -508,6 +512,10 @@
     "attachmentsDisabledInfo": {
       "title": "添付ファイルが無効です",
       "description": "添付ファイルは設定で無効になっています"
+    },
+    "deleteAllChats": {
+      "title": "会話を削除しました",
+      "description": "プロジェクト外の会話を削除しました。プロジェクト内の会話とタスクは残しています。"
     }
   },
   "errors": {
@@ -523,5 +531,165 @@
     "forceQuit": "強制終了",
     "forcing": "強制終了しています…",
     "shuttingDown": "シャットダウンしています…"
+  },
+  "artifactsEmpty": "まだ何も作成されていません。会話で作成されたファイルがここに表示されます。",
+  "workspace": {
+    "chatFootnote": "Jan はこのフォルダーを自由に読み取り、その中での編集やコマンドの実行の前には毎回確認します。",
+    "saveFailed": "このチャットのフォルダーを保存できませんでした"
+  },
+  "budget": {
+    "stoppedTokens": "停止しました: この会話はトークン上限に達しました。"
+  },
+  "coworkSync": {
+    "journalUnreadableTitle": "インポートした一部のCowork会話が非表示になっています",
+    "journalUnreadableDescription": "Janが削除記録を読み取れないため、削除済みの会話を誤って復元しないよう、以前のバージョンからインポートした会話は非表示のままです。また、Cowork会話の削除は一時的にブロックされています。データは変更されていません。復旧するには、まずJanを完全に終了してください。Janは実行中にメモリからsettings.jsonを書き直すため、編集内容が元に戻ってしまいます。その後、settings.jsonの 'cowork_deleted_ids' を修正するか削除してください。削除すると、すでに削除した会話を含め、インポートしたすべての会話が復元されます。",
+    "missingThreadTitle": "Cowork会話を保存できませんでした",
+    "missingThreadDescription": "保存されているスレッドが見つからないため、変更は保存されなくなりました。読み取り、エクスポート、削除は引き続き可能です。",
+    "writeRefusedTitle": "Cowork会話を保存できません",
+    "writeRefusedDescription": "Janはこの会話を現在のIDで保存できないため、変更は保存されません。読み取り、エクスポート、削除は引き続き可能です。",
+    "closeFailedTitle": "Janはすべてを保存できなかったため、開いたままです",
+    "closeFailedDescription": "最新の変更はまだメモリ上にあります。もう一度ウィンドウを閉じると、保存を再試行します。",
+    "closeForceDescription": "保存が失敗し続けています。保存せずに閉じることもできますが、書き込めなかった変更は失われます。",
+    "closeAnyway": "保存せずに閉じる",
+    "quitFailedDescription": "最新の変更はまだメモリ上にあります。もう一度終了すると保存を再試行します。",
+    "quitAnyway": "保存せずに終了"
+  },
+  "messageWrites": {
+    "failedTitle": "保存できなかったメッセージがあります",
+    "failedDescription": "Janは再試行を続けます。成功するまで、最近のメッセージはこのウィンドウ内にのみ存在します。",
+    "retry": "今すぐ再試行"
+  },
+  "threadRoute": {
+    "notReadyTitle": "この会話はまだ準備できていません",
+    "notReadyDescription": "この会話がチャットかCoworkタスクかをJanが確認できませんでした。再試行してください。解決しない場合はアプリを再起動してください。",
+    "retry": "再試行"
+  },
+  "agentSettings": "エージェント",
+  "artifacts": "アーティファクト",
+  "skills": "スキル",
+  "coworkSessionUnavailable": "この会話にはまだ表示できる内容がありません。",
+  "deleteSessionTitle": "セッションを削除しますか？",
+  "deleteSessionBody": "「{{title}}」とそのトランスクリプトは完全に削除されます。この操作は元に戻せません。",
+  "sidebar": {
+    "more": "その他",
+    "toggle": "サイドバーの表示を切り替え",
+    "navigation": "ナビゲーション",
+    "navigationDescription": "チャット、プロジェクト、アーティファクト、スキル、設定に移動します。"
+  },
+  "composer": {
+    "addControls": "添付ファイルとコントロールを追加",
+    "assistant": "アシスタント",
+    "allTools": "すべてのツール",
+    "samplingParameters": "サンプリングパラメータ",
+    "openAssistantSettings": "アシスタント設定を開く",
+    "samplingSaveFailed": "サンプリングパラメータを保存できませんでした。もう一度お試しください。",
+    "context": "コンテキスト: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "モデルを選択",
+    "none": "なし",
+    "triggerLabel": "モデルを選択: {{name}}",
+    "dialogLabel": "モデルを選択",
+    "searchLabel": "モデルまたはプロバイダーを検索",
+    "searchPlaceholder": "モデルまたはプロバイダーを検索…",
+    "listLabel": "モデル",
+    "noMatches": "一致するモデルがありません",
+    "noModels": "モデルが設定されていません",
+    "optionsLabel": "モデルのオプション",
+    "reasoning": "推論",
+    "reasoningMode": "推論モード",
+    "reasoningEffort": "推論の強度",
+    "thinkingBudget": "思考バジェット",
+    "modelSettings": "モデル設定",
+    "manageModels": "モデルを管理",
+    "effort": {
+      "default": "デフォルト",
+      "auto": "自動",
+      "on": "オン",
+      "off": "オフ",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "最高",
+      "unlimited": "無制限"
+    }
+  },
+  "homeMode": {
+    "addToProject": "プロジェクトに追加",
+    "newProject": "新しいプロジェクト",
+    "noProjects": "プロジェクトはまだありません",
+    "addFolderAction": "フォルダーを追加"
+  },
+  "conversationScope": {
+    "folderSelectModel": "フォルダーへのアクセスを追加する前に、ツール対応モデルを選択してください。",
+    "folderUnsupported": "このモデルはツールを使用できないため、フォルダーを追加できません。通常のチャットは引き続き使えます。",
+    "removeProject": "プロジェクトの選択を解除",
+    "temporary": "一時チャットではフォルダーへのアクセスは保持されません。"
+  },
+  "skillDestination": "新しいスキルの保存先",
+  "skillDestinationFolder": "このフォルダー",
+  "skillDestinationGlobal": "グローバル（すべての会話）",
+  "overview": {
+    "title": "会話の概要",
+    "description": "この会話の進捗、ファイル、バックグラウンドタスク。",
+    "resize": "サイドパネルのサイズを変更",
+    "close": "会話の概要を非表示",
+    "progress": "進捗",
+    "files": "ファイル",
+    "backgroundTasks": "バックグラウンドタスク",
+    "monitorCount_one": "{{count}} 件のモニター",
+    "monitorCount_other": "{{count}} 件のモニター",
+    "noProgress": "Janが作業を進めると、ここに手順が表示されます。",
+    "noFiles": "ファイルはここに表示されます。"
+  },
+  "artifactsLibraryDescription": "すべての会話で作成されたファイルを一か所にまとめて表示します。",
+  "artifactsLibraryCount_one": "{{count}} 件のファイル",
+  "artifactsLibraryCount_other": "{{count}} 件のファイル",
+  "artifactsLibraryFilter": "ファイルの種類で絞り込む",
+  "artifactsLibraryReset": "フィルターをクリア",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "このタスクをインポートできませんでした",
+      "body": "Jan は以前のバージョンからこのタスクを移行できなかったため、処理を中止しました。データは失われていません。元のデータはそのまま保持されています。もう一度試すか、ファイルにエクスポートできます。"
+    },
+    "id-collision": {
+      "title": "このタスクをインポートできませんでした",
+      "body": "同じ ID を持つ別の会話がすでにあるため、このタスクは読み取り専用で表示しています。もう一方の会話には手を加えていません。コピーを残すにはエクスポートしてください。"
+    },
+    "missing-sidecar": {
+      "title": "このタスクの履歴が見つかりません",
+      "body": "このタスクの保存済み履歴が見つからないため、読み取り専用で表示しています。ディスク上のファイルはそのまま保持されています。"
+    },
+    "unreadable-sidecar": {
+      "title": "このタスクの履歴を読み込めません",
+      "body": "このタスクの保存済み履歴が破損しているか、新しいバージョンの Jan で作成されたものです。そのため読み取り専用で表示しており、上書きされることはありません。"
+    },
+    "missing-thread": {
+      "title": "このタスクはストレージから削除されました",
+      "body": "このタスクの会話はディスク上に存在しません。表示されているのはメモリに残っているコピーです。残しておくにはエクスポートしてください。"
+    },
+    "reason": "理由: {{reason}}",
+    "retry": "もう一度試す",
+    "retrying": "試行中...",
+    "export": "エクスポート",
+    "exported": "タスクをエクスポートしました",
+    "exportFailed": "タスクをエクスポートできませんでした",
+    "imported": "タスクをインポートしました",
+    "retryFailed": "タスクをインポートできませんでした",
+    "revealFailed": "フォルダーを開けませんでした",
+    "leftOut": {
+      "title": "一部のファイルがコピーされませんでした",
+      "body_one": "このタスクの以前のフォルダーにある {{count}} 個の項目 (リンク、または Jan に読み取りが許可されていないファイル) がコピーされませんでした。元のフォルダーはそのまま保持されています。",
+      "body_other": "このタスクの以前のフォルダーにある {{count}} 個の項目 (リンク、または Jan に読み取りが許可されていないファイル) がコピーされませんでした。元のフォルダーはそのまま保持されています。",
+      "show": "元のフォルダーを表示"
+    }
+  },
+  "deleteThreadFailed": "会話を削除できませんでした。再起動後に再び表示される場合があります。",
+  "continueAsTask": {
+    "action": "タスクとして続ける",
+    "title": "このチャットをタスクとして続けますか?",
+    "description": "Jan はこの会話を残したまま、Cowork タスクとして続けます。タスクは手順ごとに確認せずに、専用のワークスペースでツールを使い、ファイルを書き込み、コマンドを実行できます。チャットに戻すことはできません。",
+    "descriptionFolder": "Jan はこの会話を残したまま、Cowork タスクとして続けます。タスクは変更ごとに確認せずに、{{folder}} 内のファイルを編集し、コマンドを実行できます。チャットに戻すことはできません。",
+    "confirm": "タスクとして続ける"
   }
 }

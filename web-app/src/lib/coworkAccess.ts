@@ -8,5 +8,5 @@ import { isCoworkEnabled } from '@/lib/version'
  * on `fallback` instead of mounting a surface that has no entry point left.
  */
 export function ensureCoworkEnabled(fallback: string = route.home) {
-  if (!isCoworkEnabled()) throw redirect({ to: fallback })
+  if (!isCoworkEnabled()) throw redirect({ to: fallback, replace: true })
 }

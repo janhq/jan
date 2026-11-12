@@ -62,9 +62,10 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
   validateSearch: (
     search: Record<string, unknown>
   ): { step?: string; diagnose?: string; diagnoseModel?: string } => {
-    // validate and parse the search params into a typed state
+    // An absent step stays absent: String(undefined) put `?step=undefined` in
+    // the URL.
     return {
-      step: String(search?.step),
+      ...(search?.step === undefined ? {} : { step: String(search.step) }),
       // The hardware page's per-device entry point; it preselects a device in
       // the hardware check rather than starting one.
       diagnose:

@@ -26,6 +26,7 @@ use crate::core::server::proxy::engine_upstream;
 #[cfg(not(feature = "cli"))]
 use crate::core::server::MlxBackendSession;
 use crate::core::{
+    mcp::identity::{self, ToolRoute, ToolRoutes},
     mcp::models::McpSettings,
     mcp::truncate::truncate_tool_result,
     state::{ProviderConfig, SharedMcpServers},
@@ -891,8 +892,15 @@ pub(crate) fn copy_optional_chat_params(
 }
 
 /// One MCP tool already rendered into the OpenAI `function` shape, paired with
-/// the tool name used for ordering and for `tool_to_server` lookup.
+/// the tool name used for ordering and for routing lookup.
 pub(crate) type RenderedTool = (String, serde_json::Value);
+
+/// One server's listing attempt: its name, the connection generation it was
+/// made against (see `mcp::identity`), and the tools, `None` when it failed.
+pub(crate) type ListingAttempt = (String, u64, Option<Vec<RenderedTool>>);
+
+/// A server's resolved listing: name, the generation the tools came from, tools.
+pub(crate) type ServerListing = (String, u64, Vec<RenderedTool>);
 
 /// Ordering key for the advertised tool array: `(server name, tool name)`.
 ///
@@ -907,11 +915,14 @@ fn tool_sort_key<'a>(server_name: &'a str, tool_name: &'a str) -> (&'a str, &'a 
     (server_name, tool_name)
 }
 
-/// Last successful listing per MCP server, for the lifetime of the process.
-fn last_good_listings() -> &'static std::sync::Mutex<HashMap<String, Vec<RenderedTool>>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Vec<RenderedTool>>>> =
-        std::sync::OnceLock::new();
-    CACHE.get_or_init(Default::default)
+/// Last successful listing per MCP server, with the generation it came from.
+pub(crate) type ListingCache = HashMap<String, (u64, Vec<RenderedTool>)>;
+
+/// The [`ListingCache`] for the lifetime of the process.
+fn last_good_listings() -> &'static std::sync::Mutex<ListingCache> {
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<ListingCache>> =
+        std::sync::LazyLock::new(Default::default);
+    &CACHE
 }
 
 /// Resolve each server's listing attempt against the last-known-good one.
@@ -922,35 +933,39 @@ fn last_good_listings() -> &'static std::sync::Mutex<HashMap<String, Vec<Rendere
 /// again on the turn the server comes back. A server that has never listed
 /// successfully is still omitted - there is nothing to reuse.
 ///
+/// A reused listing keeps the generation it was listed from, so if the server
+/// was replaced in between, calls to those tools are refused instead of being
+/// run on a process that never offered them.
+///
 /// `listings` is assumed to cover every configured server (every caller probes
 /// the whole `SharedMcpServers` map and filters afterwards), so a server absent
 /// from it has been removed and its cached listing is dropped. That keeps the
 /// cache from growing across a long session, and means removing a server changes
 /// the array exactly once, at the point of the change.
 pub(crate) fn reuse_last_good_listings(
-    cache: &mut HashMap<String, Vec<RenderedTool>>,
-    listings: Vec<(String, Option<Vec<RenderedTool>>)>,
-) -> Vec<(String, Vec<RenderedTool>)> {
+    cache: &mut ListingCache,
+    listings: Vec<ListingAttempt>,
+) -> Vec<ServerListing> {
     let probed: std::collections::HashSet<String> =
-        listings.iter().map(|(name, _)| name.clone()).collect();
+        listings.iter().map(|(name, _, _)| name.clone()).collect();
     cache.retain(|name, _| probed.contains(name));
 
     let mut resolved = Vec::with_capacity(listings.len());
 
-    for (server_name, tools) in listings {
+    for (server_name, generation, tools) in listings {
         match tools {
             Some(tools) => {
-                cache.insert(server_name.clone(), tools.clone());
-                resolved.push((server_name, tools));
+                cache.insert(server_name.clone(), (generation, tools.clone()));
+                resolved.push((server_name, generation, tools));
             }
             None => match cache.get(&server_name) {
-                Some(tools) => {
+                Some((cached_generation, tools)) => {
                     log::warn!(
                         "Reusing last known tool listing for MCP server {} ({} tools)",
                         server_name,
                         tools.len()
                     );
-                    resolved.push((server_name, tools.clone()));
+                    resolved.push((server_name, *cached_generation, tools.clone()));
                 }
                 None => {
                     log::warn!(
@@ -966,37 +981,49 @@ pub(crate) fn reuse_last_good_listings(
 }
 
 /// Flatten the per-server listings into the advertised array, ordered by
-/// [`tool_sort_key`], with `tool_to_server` kept consistent with that order.
+/// [`tool_sort_key`], with the routes kept consistent with that order.
+///
+/// A name no single server can be held to (offered by two servers, or empty)
+/// is left out of the array and the routes alike: the model calls tools by
+/// bare name, so any route for it would be a guess.
 pub(crate) fn assemble_tool_array(
-    listings: Vec<(String, Vec<RenderedTool>)>,
-) -> (Vec<serde_json::Value>, HashMap<String, String>) {
-    let mut flattened: Vec<(String, String, serde_json::Value)> = listings
+    listings: Vec<ServerListing>,
+) -> (Vec<serde_json::Value>, ToolRoutes) {
+    let unroutable =
+        identity::unroutable_tool_names(listings.iter().flat_map(|(server_name, _, tools)| {
+            tools
+                .iter()
+                .map(move |(tool_name, _)| (server_name.as_str(), tool_name.as_str()))
+        }));
+
+    let mut flattened: Vec<(String, u64, String, serde_json::Value)> = listings
         .into_iter()
-        .flat_map(|(server_name, tools)| {
+        .flat_map(|(server_name, generation, tools)| {
             tools
                 .into_iter()
-                .map(move |(tool_name, tool)| (server_name.clone(), tool_name, tool))
+                .map(move |(tool_name, tool)| (server_name.clone(), generation, tool_name, tool))
         })
+        .filter(|(_, _, tool_name, _)| !unroutable.contains(tool_name))
         .collect();
 
-    flattened.sort_by(|(a_server, a_tool, _), (b_server, b_tool, _)| {
+    flattened.sort_by(|(a_server, _, a_tool, _), (b_server, _, b_tool, _)| {
         tool_sort_key(a_server, a_tool).cmp(&tool_sort_key(b_server, b_tool))
     });
 
     let mut openai_tools = Vec::with_capacity(flattened.len());
-    let mut tool_to_server: HashMap<String, String> = HashMap::new();
-    for (server_name, tool_name, tool) in flattened {
-        tool_to_server.insert(tool_name, server_name);
+    let mut routes = ToolRoutes::new();
+    for (server, generation, tool_name, tool) in flattened {
+        routes.insert(tool_name, ToolRoute { server, generation });
         openai_tools.push(tool);
     }
 
-    (openai_tools, tool_to_server)
+    (openai_tools, routes)
 }
 
 pub(crate) async fn collect_mcp_openai_tools(
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
-) -> Result<(Vec<serde_json::Value>, HashMap<String, String>), String> {
+) -> Result<(Vec<serde_json::Value>, ToolRoutes), String> {
     let timeout_duration = mcp_settings.lock().await.tool_call_timeout_duration();
     let servers = mcp_servers.lock().await;
 
@@ -1005,6 +1032,8 @@ pub(crate) async fn collect_mcp_openai_tools(
     // the full timeout before the next was contacted).
     let listings =
         futures_util::future::join_all(servers.iter().map(|(server_name, service)| async move {
+            // Read under the servers lock, which every replacement also holds.
+            let generation = identity::current_generation(server_name);
             let result =
                 match tokio::time::timeout(timeout_duration, service.list_all_tools()).await {
                     Ok(Ok(tools)) => Some(
@@ -1051,7 +1080,7 @@ pub(crate) async fn collect_mcp_openai_tools(
                         None
                     }
                 };
-            (server_name.clone(), result)
+            (server_name.clone(), generation, result)
         }))
         .await;
 
@@ -1067,7 +1096,7 @@ pub(crate) async fn collect_mcp_openai_tools(
 
 pub(crate) async fn execute_mcp_tool_calls(
     tool_calls: &[serde_json::Value],
-    tool_to_server: &HashMap<String, String>,
+    routes: &ToolRoutes,
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
 ) -> Vec<(String, String)> {
@@ -1111,7 +1140,7 @@ pub(crate) async fn execute_mcp_tool_calls(
                 serde_json::Map::new()
             };
 
-        let Some(server_name) = tool_to_server.get(&tool_name) else {
+        let Some(route) = routes.get(&tool_name) else {
             results.push((
                 tool_call_id,
                 format!("ERROR: No MCP server registered for tool '{tool_name}'"),
@@ -1119,13 +1148,19 @@ pub(crate) async fn execute_mcp_tool_calls(
             continue;
         };
 
-        let Some(service) = servers.get(server_name) else {
+        // The servers lock is held across this check and the call, and every
+        // replacement takes it, so the connection checked is the one called.
+        let Some(service) = servers.get(&route.server) else {
             results.push((
                 tool_call_id,
-                format!("ERROR: MCP server '{server_name}' is not running"),
+                format!("ERROR: MCP server '{}' is not running", route.server),
             ));
             continue;
         };
+        if let Err(e) = identity::check_generation(&route.server, route.generation) {
+            results.push((tool_call_id, format!("ERROR: {e}")));
+            continue;
+        }
 
         let tool_call = service.call_tool(
             CallToolRequestParams::new(tool_name.clone()).with_arguments(args_map),
@@ -2248,12 +2283,20 @@ mod tests {
     #[test]
     fn tool_array_is_byte_identical_whatever_order_the_servers_are_walked_in() {
         let one = vec![
-            ("fs".to_string(), vec![rendered("write"), rendered("read")]),
-            ("git".to_string(), vec![rendered("commit")]),
+            (
+                "fs".to_string(),
+                1,
+                vec![rendered("write"), rendered("read")],
+            ),
+            ("git".to_string(), 2, vec![rendered("commit")]),
         ];
         let two = vec![
-            ("git".to_string(), vec![rendered("commit")]),
-            ("fs".to_string(), vec![rendered("read"), rendered("write")]),
+            ("git".to_string(), 2, vec![rendered("commit")]),
+            (
+                "fs".to_string(),
+                1,
+                vec![rendered("read"), rendered("write")],
+            ),
         ];
 
         let (first, _) = assemble_tool_array(one);
@@ -2267,45 +2310,48 @@ mod tests {
         assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
     }
 
-    /// Two servers exposing the same tool name is a pre-existing collision the
-    /// array does not dedupe - but which server wins `tool_to_server` used to
-    /// depend on iteration order, so the same call could route to either one
-    /// across restarts. Sorting makes it the last server by name, always.
+    /// The model calls tools by bare name, so a name two servers offer cannot be
+    /// attributed to either: it is left out rather than routed to one of them,
+    /// while the servers' other tools stay.
     #[test]
-    fn a_tool_name_exposed_by_two_servers_routes_the_same_way_every_run() {
-        let listings = |flipped: bool| {
-            let fs = ("fs".to_string(), vec![rendered("search")]);
-            let zed = ("zed".to_string(), vec![rendered("search")]);
-            if flipped {
-                vec![zed, fs]
-            } else {
-                vec![fs, zed]
-            }
-        };
+    fn a_tool_name_exposed_by_two_servers_is_not_offered_or_routed() {
+        let (tools, routes) = assemble_tool_array(vec![
+            (
+                "fs".to_string(),
+                1,
+                vec![rendered("search"), rendered("read")],
+            ),
+            ("zed".to_string(), 2, vec![rendered("search")]),
+        ]);
 
-        let (first, first_map) = assemble_tool_array(listings(false));
-        let (second, second_map) = assemble_tool_array(listings(true));
-
-        assert_eq!(
-            serde_json::to_string(&first).unwrap(),
-            serde_json::to_string(&second).unwrap()
-        );
-        assert_eq!(advertised_names(&first), ["search", "search"]);
-        assert_eq!(first_map.get("search").unwrap(), "zed");
-        assert_eq!(first_map, second_map);
+        assert_eq!(advertised_names(&tools), ["read"]);
+        assert!(!routes.contains_key("search"));
+        assert_eq!(routes["read"].server, "fs");
     }
 
     #[test]
-    fn tool_to_server_stays_consistent_with_the_reordered_array() {
-        let (tools, tool_to_server) = assemble_tool_array(vec![
-            ("git".to_string(), vec![rendered("commit")]),
-            ("fs".to_string(), vec![rendered("read")]),
+    fn routes_stay_consistent_with_the_reordered_array() {
+        let (tools, routes) = assemble_tool_array(vec![
+            ("git".to_string(), 2, vec![rendered("commit")]),
+            ("fs".to_string(), 1, vec![rendered("read")]),
         ]);
 
         assert_eq!(advertised_names(&tools), ["read", "commit"]);
-        assert_eq!(tool_to_server.get("read").unwrap(), "fs");
-        assert_eq!(tool_to_server.get("commit").unwrap(), "git");
-        assert_eq!(tool_to_server.len(), tools.len());
+        assert_eq!(
+            routes["read"],
+            ToolRoute {
+                server: "fs".to_string(),
+                generation: 1
+            }
+        );
+        assert_eq!(
+            routes["commit"],
+            ToolRoute {
+                server: "git".to_string(),
+                generation: 2
+            }
+        );
+        assert_eq!(routes.len(), tools.len());
     }
 
     /// A listing timeout must not shrink the advertised array mid-session - the
@@ -2313,27 +2359,45 @@ mod tests {
     #[test]
     fn a_failed_listing_reuses_the_last_known_tools() {
         let mut cache = HashMap::new();
-        let good = vec![("fs".to_string(), Some(vec![rendered("read")]))];
+        let good = vec![("fs".to_string(), 1, Some(vec![rendered("read")]))];
         let (before, _) = assemble_tool_array(reuse_last_good_listings(&mut cache, good));
 
-        let timed_out = vec![("fs".to_string(), None)];
-        let (after, mapping) = assemble_tool_array(reuse_last_good_listings(&mut cache, timed_out));
+        let timed_out = vec![("fs".to_string(), 1, None)];
+        let (after, routes) = assemble_tool_array(reuse_last_good_listings(&mut cache, timed_out));
 
         assert_eq!(
             serde_json::to_string(&before).unwrap(),
             serde_json::to_string(&after).unwrap()
         );
-        assert_eq!(mapping.get("read").unwrap(), "fs");
+        assert_eq!(routes["read"].server, "fs");
+    }
+
+    /// A server replaced while its listing fails keeps the old tools advertised
+    /// (the prefix stays warm) but routed to the old connection, so a call is
+    /// refused rather than run on a process that never offered the tool.
+    #[test]
+    fn a_reused_listing_keeps_the_generation_it_was_listed_from() {
+        let mut cache = HashMap::new();
+        reuse_last_good_listings(
+            &mut cache,
+            vec![("fs".to_string(), 1, Some(vec![rendered("read")]))],
+        );
+
+        let replaced_and_failing = vec![("fs".to_string(), 2, None)];
+        let (_, routes) =
+            assemble_tool_array(reuse_last_good_listings(&mut cache, replaced_and_failing));
+
+        assert_eq!(routes["read"].generation, 1);
     }
 
     #[test]
     fn a_server_that_never_listed_successfully_is_omitted() {
         let mut cache = HashMap::new();
-        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), None)]);
-        let (tools, mapping) = assemble_tool_array(resolved);
+        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), 1, None)]);
+        let (tools, routes) = assemble_tool_array(resolved);
 
         assert!(tools.is_empty());
-        assert!(mapping.is_empty());
+        assert!(routes.is_empty());
     }
 
     /// Removing a server changes the array exactly once: its cached listing goes
@@ -2344,12 +2408,12 @@ mod tests {
         reuse_last_good_listings(
             &mut cache,
             vec![
-                ("fs".to_string(), Some(vec![rendered("read")])),
-                ("git".to_string(), Some(vec![rendered("commit")])),
+                ("fs".to_string(), 1, Some(vec![rendered("read")])),
+                ("git".to_string(), 2, Some(vec![rendered("commit")])),
             ],
         );
 
-        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), None)]);
+        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), 1, None)]);
         let (tools, _) = assemble_tool_array(resolved);
 
         assert_eq!(advertised_names(&tools), ["read"]);
@@ -2367,6 +2431,7 @@ mod tests {
             &mut cache,
             vec![(
                 "fs".to_string(),
+                1,
                 Some(vec![rendered("read"), rendered("write")]),
             )],
         );
@@ -2374,16 +2439,16 @@ mod tests {
         // `write` is no longer exposed by the server.
         let relisted = reuse_last_good_listings(
             &mut cache,
-            vec![("fs".to_string(), Some(vec![rendered("read")]))],
+            vec![("fs".to_string(), 1, Some(vec![rendered("read")]))],
         );
-        let (tools, mapping) = assemble_tool_array(relisted);
+        let (tools, routes) = assemble_tool_array(relisted);
         assert_eq!(advertised_names(&tools), ["read"]);
-        assert!(!mapping.contains_key("write"));
+        assert!(!routes.contains_key("write"));
 
         // A later hiccup reuses that listing, not the pre-removal one.
         let (after_hiccup, _) = assemble_tool_array(reuse_last_good_listings(
             &mut cache,
-            vec![("fs".to_string(), None)],
+            vec![("fs".to_string(), 1, None)],
         ));
         assert_eq!(advertised_names(&after_hiccup), ["read"]);
     }

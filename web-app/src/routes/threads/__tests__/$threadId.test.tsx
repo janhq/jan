@@ -58,6 +58,7 @@ const h = vi.hoisted(() => {
       extensionId: string
       name: string
       server: string
+      generation?: number
     }>,
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
@@ -134,14 +135,9 @@ const h = vi.hoisted(() => {
   useToolAvailableMock.getState = () => toolAvailableState
 
   const toolApprovalState: any = {
-    approveToolForThread: vi.fn(),
     clearPendingForThread: vi.fn(),
     requestApproval: vi.fn().mockResolvedValue(true),
   }
-  const useToolApprovalMock: any = (selector: any) => selector(toolApprovalState)
-  useToolApprovalMock.getState = () => toolApprovalState
-  // Transient approval store shares the same backing object so existing
-  // toolApprovalState.requestApproval / clearPendingForThread refs keep working.
   const useToolApprovalRequestsMock: any = (selector: any) =>
     selector(toolApprovalState)
   useToolApprovalRequestsMock.getState = () => toolApprovalState
@@ -186,7 +182,6 @@ const h = vi.hoisted(() => {
     toolAvailableState,
     useToolAvailableMock,
     toolApprovalState,
-    useToolApprovalMock,
     useToolApprovalRequestsMock,
     agentModeState,
     useAgentModeMock,
@@ -203,15 +198,16 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
   useParams: () => ({ threadId: h.routeParams.threadId }),
   useSearch: () => ({ threadModel: undefined }),
+  useRouter: () => ({ navigate: vi.fn() }),
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: any) => <div data-testid="header-page">{children}</div>,
 }))
 
-vi.mock('@/containers/DropdownModelProvider', () => ({
-  default: ({ model }: any) => (
-    <div data-testid="model-dropdown">{model ? model.id : 'no-model'}</div>
+vi.mock('@/containers/ConversationHeaderTitle', () => ({
+  ConversationHeaderTitle: ({ title }: { title?: string }) => (
+    <span data-testid="conversation-title">{title}</span>
   ),
 }))
 
@@ -449,7 +445,31 @@ vi.mock('@/lib/agentTools', () => ({
   CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
   executeAgentTool: shell.execute,
 }))
-vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
+const folder = vi.hoisted(() => ({ path: null as string | null }))
+vi.mock('@/lib/chatFolder', () => ({
+  CHAT_FOLDER_TOOL_NAMES: new Set(['read', 'ls', 'find', 'grep', 'write', 'edit']),
+  chatFolderOf: () => folder.path,
+  chatToolNeedsApproval: (name: string) =>
+    folder.path !== null && ['write', 'edit', 'shell'].includes(name),
+}))
+vi.mock('@/hooks/useChatFolder', () => ({
+  useChatFolder: () => ({
+    available: false,
+    folder: null,
+    attach: vi.fn(),
+    detach: vi.fn(),
+  }),
+}))
+vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: () => null }))
+vi.mock('@/containers/dialogs/ContinueAsTaskDialog', () => ({
+  ContinueAsTaskDialog: () => null,
+}))
+vi.mock('@/lib/coworkSync', () => ({ continueChatAsTask: vi.fn() }))
+vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: () => null }))
+const consent = vi.hoisted(() => ({ consume: vi.fn() }))
+vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
+  consentConsume: consent.consume,
+}))
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
 }))
@@ -587,10 +607,9 @@ describe('ThreadDetail route', () => {
     expect(result.threadModel).toBeUndefined()
   })
 
-  it('renders header, model dropdown, and chat input', () => {
+  it('renders header and chat input', () => {
     renderComponent()
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('model-dropdown')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('chat-status')).toHaveTextContent('ready')
   })
@@ -1597,11 +1616,110 @@ describe('ThreadDetail route', () => {
       await act(async () => {
         await finish()
       })
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
       expect(callTool).toHaveBeenCalledTimes(1)
+      // The backend runs it only on the approval of this call.
+      expect(callTool).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId: 'thread-1', callId: 'sh4' })
+      )
       expect(shell.execute).not.toHaveBeenCalled()
       expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
         expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
+      )
+    })
+  })
+
+  // #9649: a folder attached to the chat. Reads run on it without asking; every
+  // call that can change it asks on its own, and the answer is never saved.
+  describe('a chat with an attached folder', () => {
+    const call = (id: string, toolName: string) => ({
+      toolCall: { toolCallId: id, toolName, input: { path: 'a.md' } },
+    })
+    const finish = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-folder',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+    const run = async (...calls: ReturnType<typeof call>[]) => {
+      renderComponent()
+      for (const c of calls) {
+        await act(async () => {
+          await (h as any).capturedOnToolCall(c)
+        })
+      }
+      await act(async () => {
+        await finish()
+      })
+    }
+
+    beforeEach(() => {
+      shell.enabled = true
+      shell.execute.mockClear()
+      folder.path = '/Users/me/project'
+    })
+    afterEach(() => {
+      folder.path = null
+    })
+
+    it('reads the folder without asking', async () => {
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+      await run(call('f1', 'read'))
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute.mock.calls[0].slice(0, 2)).toEqual(['read', { path: 'a.md' }])
+    })
+
+    it('asks before every write, edit or command, with no grant saved', async () => {
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      await run(call('f2', 'write'), call('f3', 'shell'))
+      for (const [id, name] of [['f2', 'write'], ['f3', 'shell']]) {
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          id,
+          name,
+          expect.anything(),
+          undefined,
+          { strict: true, origin: 'builtin' }
+        )
+        // The call id rides along: Rust runs the call only on its approval.
+        expect(shell.execute).toHaveBeenCalledWith(
+          name,
+          expect.anything(),
+          expect.anything(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          id
+        )
+      }
+      expect(shell.execute).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not write when the user declines', async () => {
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+      await run(call('f4', 'edit'))
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: 'f4', state: 'output-error' })
+      )
+    })
+
+    it('refuses a file tool, without asking, once no folder is attached', async () => {
+      folder.path = null
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      await run(call('f5', 'write'))
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCallId: 'f5',
+          state: 'output-error',
+          errorText: expect.stringMatching(/No folder is attached/),
+        })
       )
     })
   })
@@ -2857,6 +2975,14 @@ describe('ThreadDetail route', () => {
           'ext:acme.one',
           { origin: 'extension' }
         )
+        // The host runs it, so the approval is used up before it does.
+        expect(consent.consume).toHaveBeenCalledWith(
+          'thread-1',
+          'te1',
+          wireName,
+          'ext:acme.one',
+          'extension'
+        )
         expect(extensionHost.callTool).toHaveBeenCalledWith(
           'acme.one',
           'echo',
@@ -2972,6 +3098,41 @@ describe('ThreadDetail route', () => {
             errorText:
               'Tool call refused: the tool changed while it was waiting for approval.',
           })
+        )
+      })
+
+      // The host refuses a call approved for a replaced handler binding, so
+      // the route must hand it the generation the tool was advertised with.
+      it('passes the advertised binding generation to callTool for an approved tool', async () => {
+        h.appStateState.extensionTools = [
+          {
+            wireName,
+            extensionId: 'acme.one',
+            name: 'echo',
+            server: 'ext:acme.one',
+            generation: 7,
+          },
+        ]
+        extensionHost.callTool.mockResolvedValue({
+          content: [{ type: 'text', text: 'HI' }],
+        })
+        renderComponent()
+        await act(async () => {
+          await (
+            h as unknown as {
+              capturedOnToolCall: (call: unknown) => Promise<void>
+            }
+          ).capturedOnToolCall(extToolCall('te7'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).toHaveBeenCalledTimes(1)
+        expect(extensionHost.callTool).toHaveBeenCalledWith(
+          'acme.one',
+          'echo',
+          { text: 'hi' },
+          expect.objectContaining({ generation: 7 })
         )
       })
 

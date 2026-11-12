@@ -63,18 +63,17 @@ export interface MCPService {
   /**
    * `maxOutputChars` is a per-result character budget derived from the active
    * model's context window; the backend narrows its own configured cap to it so
-   * one oversized result cannot exhaust the context.
+   * one oversized result cannot exhaust the context. `threadId` and `callId`
+   * name the approved call: the backend runs it only on that approval.
    */
-  callTool(args: {
-    toolName: string
-    serverName?: string
-    arguments: object
-    maxOutputChars?: number
-  }): Promise<MCPToolCallResult>
   callToolWithCancellation(args: {
     toolName: string
     serverName?: string
+    /** `MCPTool.generation` of the tool being called. */
+    serverGeneration?: number
     arguments: object
+    threadId: string
+    callId: string
     cancellationToken?: string
     maxOutputChars?: number
   }): ToolCallWithCancellationResult

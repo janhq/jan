@@ -235,7 +235,7 @@ describe('useTools', () => {
       useContributions.setState({
         tools: {
           'acme.one': {
-            echo: { ...declared, handler: async () => ({ content: [] }) },
+            echo: { ...declared, handler: async () => ({ content: [] }), generation: 1 },
           },
         },
       })

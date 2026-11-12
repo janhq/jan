@@ -29,6 +29,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { CHAT_FOLDER_TOOL_NAMES, chatFolderOf } from '@/lib/chatFolder'
 import { useChatShell } from '@/hooks/useChatShell'
 import {
   WEB_SEARCH_DESCRIPTION,
@@ -1254,16 +1255,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // The main chat offers exactly one built-in agent tool: the sandboxed
-      // shell, with no network. The full toolset lives in Cowork. Schemas come
-      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it. A user
-      // who switched it off (#9222) gets none of it.
+      // Built-in agent tools. Without a folder chat offers one: the sandboxed
+      // shell, with no network. A folder the user attached to this thread adds
+      // the file tools, served on that folder (Rust reads it from the thread's
+      // record, see chatFolder.ts). Schemas come from Rust so they are never
+      // re-typed here, and `getAgentToolSchemas` already withholds shell when
+      // no sandbox backend can confine it. A user who switched the shell off
+      // (#9222) does not get it, folder or not.
       try {
         const shellOn = useChatShell.getState().shellEnabled
-        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
-          if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
-          toolsRecord[schema.function.name] = {
+        const hasFolder = chatFolderOf(this.threadId) !== null
+        const wanted = shellOn || hasFolder
+        for (const schema of wanted ? await getAgentToolSchemas() : []) {
+          const name = schema.function.name
+          const offered =
+            (shellOn && CHAT_AGENT_TOOL_NAMES.has(name)) ||
+            (hasFolder && CHAT_FOLDER_TOOL_NAMES.has(name))
+          if (!offered) continue
+          toolsRecord[name] = {
             description: schema.function.description,
             inputSchema: jsonSchema(schema.function.parameters),
           } as Tool
@@ -1794,15 +1803,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? prependContinuationToUIStream(uiStream, continueContent)
       : uiStream
 
-    // A call to the built-in shell while the user has it switched off is not in
+    // A call to a built-in the thread does not offer right now (the shell
+    // switched off, a file tool after the folder was detached) is not in
     // `this.tools`, so the SDK would reject it and end the turn. Hand it to the
-    // tool loop instead, which answers it with the "turned off" refusal.
+    // tool loop instead, which answers it with a refusal the model can read.
     return routeRefusedToolCalls(
       continuedStream,
       (toolName) =>
-        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
         !(toolName in this.tools) &&
-        !useChatShell.getState().shellEnabled
+        ((CHAT_AGENT_TOOL_NAMES.has(toolName) &&
+          !useChatShell.getState().shellEnabled) ||
+          (CHAT_FOLDER_TOOL_NAMES.has(toolName) &&
+            chatFolderOf(this.threadId) === null))
     )
   }
 
@@ -1940,26 +1952,51 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces or when the user has turned
-   * the shell off, because shell is then withheld too — stating limits for a
-   * tool that is not offered would only confuse the model, and an empty string
-   * keeps the prompt prefix stable.
+   * Static instruction for the built-in tools chat offers: the sandboxed shell,
+   * and the file tools while a folder is attached. Empty when none of them is
+   * offered, because stating limits for a tool the model was not given only
+   * confuses it, and an empty string keeps the prompt prefix stable.
    */
   buildAgentToolsSystemInstruction(): string {
-    // Describing a tool the model was not given only invites it to ask for it.
-    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
-    // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused.
-    return [
-      '# Shell',
-      'shell runs commands in an isolated scratch workspace under an OS',
-      'sandbox: it starts there, can only write there, and cannot read files',
-      "in the user's home directory. The workspace belongs to this",
-      'conversation alone and is deleted with it, so do not keep anything',
-      'there that should last. It has no network access, so commands that',
-      'download or upload will fail.',
-    ].join(' ')
+    const folder = chatFolderOf(this.threadId)
+    const shell = useChatShell.getState().shellEnabled && sandboxEnforces()
+    const sections: string[] = []
+    if (folder) {
+      sections.push(
+        [
+          '# Folder',
+          `The user attached the folder \`${folder}\` to this conversation.`,
+          'It is your working directory: relative paths resolve against it.',
+          'Read, list and search it with read, ls, find and grep. write and edit',
+          'change its files in place, and the user is asked to approve every',
+          'such call (and every shell command) before it runs; a declined call',
+          'did not happen, so do not retry it unchanged.',
+        ].join(' ')
+      )
+    }
+    // Stating the shell's limits up front is cheaper than letting the model
+    // discover them by having a command refused.
+    if (shell) {
+      sections.push(
+        folder
+          ? [
+              '# Shell',
+              'shell runs commands in the attached folder under an OS sandbox:',
+              "it cannot read the rest of the user's home directory, and it has",
+              'no network access, so commands that download or upload will fail.',
+            ].join(' ')
+          : [
+              '# Shell',
+              'shell runs commands in an isolated scratch workspace under an OS',
+              'sandbox: it starts there, can only write there, and cannot read files',
+              "in the user's home directory. The workspace belongs to this",
+              'conversation alone and is deleted with it, so do not keep anything',
+              'there that should last. It has no network access, so commands that',
+              'download or upload will fail.',
+            ].join(' ')
+      )
+    }
+    return sections.join('\n\n')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

@@ -128,8 +128,6 @@
     "threadScrollFlowHint": "Keeps the viewport anchored to the latest message you send.",
     "threadScrollStickyTitle": "Sticky scroll",
     "threadScrollStickyHint": "Automatically follows along as replies stream in real time.",
-    "tokenCounterCompact": "紧凑 token 计数器",
-    "tokenCounterCompactDesc": "在聊天输入框内显示 token 计数器。禁用时，token 计数器显示在输入框下方。",
     "codeBlockTitle": "代码块",
     "codeBlockDesc": "选择语法高亮样式。",
     "showLineNumbers": "显示行号",
@@ -137,7 +135,8 @@
     "resetCodeBlockStyle": "重置代码块样式",
     "resetCodeBlockStyleDesc": "将代码块样式重置为默认值。",
     "resetCodeBlockSuccess": "代码块样式重置成功",
-    "resetCodeBlockSuccessDesc": "代码块样式已恢复为默认值。"
+    "resetCodeBlockSuccessDesc": "代码块样式已恢复为默认值。",
+    "themeDescFixed": "始终使用此主题。选择“系统”可跟随操作系统。"
   },
   "hardware": {
     "os": "操作系统",
@@ -281,7 +280,7 @@
     "checkForUpdates": "检查更新",
     "checkForUpdatesDesc": "检查是否有更新版本的 Jan 可用。",
     "checkingForUpdates": "正在检查更新...",
-      "autoUpdateCheck": "自动检查更新",
+    "autoUpdateCheck": "自动检查更新",
     "autoUpdateCheckDesc": "启动时自动检查更新。同时定期检查更新。",
     "copied": "已复制",
     "copyPath": "复制路径",
@@ -319,7 +318,10 @@
     "creditsDesc1": "👋 Jan by Menlo 团队 用 ❤️ 发电。",
     "creditsDesc2": "特别感谢我们依赖的开源组件——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。",
     "huggingfaceToken": "HuggingFace 令牌",
-    "huggingfaceTokenDesc": "您用于访问模型的 HuggingFace API 令牌。"
+    "huggingfaceTokenDesc": "您用于访问模型的 HuggingFace API 令牌。",
+    "janCli": "Jan CLI",
+    "janCliDesc": "在终端中运行 Jan 的智能体。按照指南安装并开始使用。",
+    "janCliSetupGuide": "安装指南"
   },
   "extensions": {
     "title": "扩展"
@@ -335,5 +337,31 @@
     }
   },
   "backendInstallSuccess": "后端安装成功",
-  "backendInstallError": "后端安装失败"
+  "backendInstallError": "后端安装失败",
+  "cowork": {
+    "title": "智能体",
+    "description": "设置 Jan 在您电脑上的能力：沙箱中的 shell，以及永久保存在 Jan 数据文件夹中的记忆和技能。",
+    "networkDesc": "允许 shell 命令访问网络，例如安装软件包或拉取代码仓库。默认开启。沙箱仍会限制命令可以访问的文件。",
+    "shell": "Shell 命令",
+    "shellChecking": "正在检查沙箱…",
+    "shellSandboxed": "命令受 {{backend}} 限制：只能在会话工作区内写入，无法读取您主文件夹中的文件。",
+    "shellUnavailable": "此系统没有可用的沙箱，因此不提供 shell 工具。命令绝不会在未隔离的环境中运行。",
+    "network": "允许网络访问",
+    "openFolder": "打开文件夹",
+    "memories": "记忆",
+    "noMemories": "暂无记忆。模型学到值得保留的信息时，会使用记忆工具添加记录。",
+    "skills": "技能",
+    "noSkills": "暂无技能。技能是一组可重复使用的指令，模型可以按需加载。",
+    "add": "添加",
+    "editMemory": "编辑记忆",
+    "editMemoryDesc": "每条笔记只记录一个主题。模型会使用记忆工具重新读取这些笔记。",
+    "editSkill": "编辑技能",
+    "editSkillDesc": "Markdown 格式的指令，可在 YAML 前置信息中添加描述。模型加载技能前会先看到此描述。",
+    "namePlaceholder": "名称",
+    "contentPlaceholder": "内容",
+    "loadFailed": "无法加载智能体工作区",
+    "saveFailed": "无法保存",
+    "deleteFailed": "无法删除",
+    "revealFailed": "无法打开文件夹"
+  }
 }
