@@ -841,9 +841,32 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 21 && state?.providers) {
+          // llama.cpp's load-mode gets a per-model control; add it to persisted
+          // llamacpp models so the sidebar renders it. It starts empty
+          // (inherit global) so no model changes behaviour. The engine-wide
+          // mlock / no_mmap checkboxes need nothing here: the extension
+          // converts their stored values and the provider settings are rebuilt
+          // from the extension on every load.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp') return
+            provider.models?.forEach((model) => {
+              if (!model.settings) model.settings = {}
+              if (!model.settings.load_mode) {
+                model.settings.load_mode = {
+                  ...modelSettings.load_mode,
+                  controller_props: {
+                    ...modelSettings.load_mode.controller_props,
+                  },
+                }
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 21,
+      version: 22,
     }
   )
 )

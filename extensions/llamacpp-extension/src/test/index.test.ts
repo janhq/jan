@@ -358,8 +358,7 @@ describe('llamacpp_extension', () => {
         main_gpu: 0,
         flash_attn: false,
         cont_batching: false,
-        no_mmap: false,
-        mlock: false,
+        load_mode: 'auto',
         no_kv_offload: false,
         cache_type_k: 'f16',
         cache_type_v: 'f16',
@@ -692,6 +691,75 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('registerSettings load_mode migration', () => {
+    const stored = (key: string, value: unknown) => ({
+      key,
+      title: key,
+      description: '',
+      controllerType: 'checkbox' as const,
+      controllerProps: { value },
+    })
+
+    // Drives the real merge so the legacy keys are shown to be consumed, then
+    // written back without them (which is what makes a rerun a no-op).
+    const register = async (previous: ReturnType<typeof stored>[]) => {
+      let written: { key: string; controllerProps: { value?: unknown } }[] = []
+      vi.spyOn(store, 'readSettingsFile').mockResolvedValue(
+        previous as never
+      )
+      vi.spyOn(store, 'writeSettingsFile').mockImplementation(async (s) => {
+        written = s as typeof written
+      })
+      const shipped = [
+        {
+          key: 'load_mode',
+          title: 'Load Mode',
+          description: '',
+          controllerType: 'dropdown' as const,
+          controllerProps: {
+            value: 'auto',
+            options: ['auto', 'none', 'mmap', 'mlock', 'mmap+mlock', 'dio'].map(
+              (value) => ({ value, name: value })
+            ),
+          },
+        },
+      ]
+      await (extension as any).registerSettings(shipped)
+      return written
+    }
+    const loadMode = (w: Awaited<ReturnType<typeof register>>) =>
+      w.find((s) => s.key === 'load_mode')?.controllerProps.value
+
+    it.each([
+      [false, false, 'auto'],
+      [false, true, 'none'],
+      [true, false, 'mmap+mlock'],
+      [true, true, 'mlock'],
+    ])('converts mlock=%s no_mmap=%s to %s', async (mlock, noMmap, expected) => {
+      const written = await register([
+        stored('no_mmap', noMmap),
+        stored('mlock', mlock),
+      ])
+      expect(loadMode(written)).toBe(expected)
+      expect(written.map((s) => s.key)).toEqual(['load_mode'])
+    })
+
+    it('is idempotent: its own output converts to itself', async () => {
+      const first = await register([stored('no_mmap', true)])
+      const second = await register(first as never)
+      expect(loadMode(second)).toBe('none')
+    })
+
+    it('does not clobber a load_mode the user already chose', async () => {
+      const written = await register([
+        stored('no_mmap', true),
+        stored('mlock', true),
+        stored('load_mode', 'dio'),
+      ])
+      expect(loadMode(written)).toBe('dio')
+    })
+  })
+
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
@@ -799,6 +867,46 @@ describe('llamacpp_extension', () => {
       expect(reloadEngineModels).not.toHaveBeenCalled()
       expect(startEngine).not.toHaveBeenCalled()
       expect((await extension.getSettings())[0].controllerProps.value).toBe(true)
+    })
+
+    describe('per-model load_mode', () => {
+      let savedModel: Record<string, unknown>
+      const persist = (value: unknown) =>
+        extension.updateModelSettings('model', {
+          load_mode: value as string,
+        })
+
+      beforeEach(() => {
+        savedModel = { ctx_size: 4096 }
+        vi.mocked(fs.existsSync).mockResolvedValue(true)
+        vi.mocked(fs.readYaml).mockImplementation(async () =>
+          structuredClone(savedModel)
+        )
+        vi.mocked(fs.writeYaml).mockImplementation(async (_path, data) => {
+          savedModel = structuredClone(data as Record<string, unknown>)
+        })
+      })
+
+      it.each(['auto', 'none', 'mmap', 'mlock', 'mmap+mlock', 'dio'])(
+        'persists %s to model.yml',
+        async (mode) => {
+          await persist(mode)
+          expect(savedModel.load_mode).toBe(mode)
+        }
+      )
+
+      // The empty option is "inherit global": no key, so no line in the preset.
+      it('removes the key when the user goes back to inheriting', async () => {
+        savedModel = { ctx_size: 4096, load_mode: 'mlock' }
+        await persist('')
+        expect(savedModel).toEqual({ ctx_size: 4096 })
+      })
+
+      it('does not persist a value llama.cpp would reject', async () => {
+        await persist('bogus')
+        expect(savedModel).toEqual({ ctx_size: 4096 })
+        expect(fs.writeYaml).not.toHaveBeenCalled()
+      })
     })
 
     it('rejects a failed context application and restores model.yml', async () => {

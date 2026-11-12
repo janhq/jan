@@ -39,6 +39,7 @@ import {
 } from './settings-store'
 import { applyPlatformFitDefault } from './fit-default'
 import { findModelEntries } from './model-tree'
+import { applyLegacyLoadMode, parseLoadMode } from './load-mode'
 
 import {
  getProxyConfig,
@@ -138,8 +139,7 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  'device',
  'split_mode',
  'main_gpu',
- 'no_mmap',
- 'mlock',
+ 'load_mode',
  'rope_scaling',
  'rope_freq_base',
  'rope_freq_scale',
@@ -359,6 +359,10 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
   yamlKey: 'mmproj_offload',
   coerce: (v) => (v === false ? false : null),
  },
+ // Empty is the UI's "inherit global": null drops the key, so the model gets
+ // no load-mode line. Any valid value, auto included, is kept because it
+ // overrides a non-auto global.
+ load_mode: { yamlKey: 'load_mode', coerce: parseLoadMode },
 }
 
 async function readPersistedLlamacppModels(): Promise<PersistedModelState[]> {
@@ -809,6 +813,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   })
   const old = await readSettingsFile()
   if (old.length) {
+   // Before the merge below: the stored mlock / no_mmap checkboxes have no
+   // counterpart in `settings` any more, so the merge would silently drop them.
+   applyLegacyLoadMode(settings, old)
    settings.forEach((s) => {
     const prev = old.find((o) => o.key === s.key)
     if (!prev) return

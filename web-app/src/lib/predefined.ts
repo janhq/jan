@@ -237,6 +237,28 @@ export const modelSettings = {
       textAlign: 'right',
     },
   },
+  load_mode: {
+    key: 'load_mode',
+    title: 'Load Mode',
+    description:
+      'How this model\'s weights are read into memory. Inherit global uses the engine-wide Load Mode; any other choice, including Auto, overrides it for this model.',
+    controller_type: 'dropdown',
+    controller_props: {
+      // Empty means inherit: the extension drops the yaml key, so no
+      // load-mode line is written for the model. Auto is not that: it is an
+      // explicit override of a non-auto global.
+      value: '',
+      options: [
+        { value: '', name: 'Inherit global' },
+        { value: 'auto', name: 'Auto (mmap if supported)' },
+        { value: 'none', name: 'None (no mmap)' },
+        { value: 'mmap', name: 'mmap' },
+        { value: 'mlock', name: 'mlock (no mmap)' },
+        { value: 'mmap+mlock', name: 'mmap + mlock' },
+        { value: 'dio', name: 'Direct I/O' },
+      ],
+    },
+  },
   reasoning: {
     key: 'reasoning',
     title: 'Reasoning',
