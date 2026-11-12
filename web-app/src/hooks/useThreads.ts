@@ -143,20 +143,23 @@ const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) =>
     deleteCoworkConversation(threadId)
     return
   }
-  cleanupThreadArtifacts(threadId)
   // The row is already gone from the list; when the files stay behind the
-  // conversation comes back on restart, so the user is told now.
+  // conversation comes back on restart, so the user is told now and its
+  // artifacts are kept for it.
   void getServiceHub()
     .threads()
     .deleteThread(threadId)
-    .catch((error) => {
-      console.error(`Could not delete thread ${threadId}:`, error)
-      // Same id as the dialog's "deleted" toast, so this replaces it.
-      toast.error(i18n.t('common:deleteThreadFailed'), {
-        id: 'delete-thread',
-        description: String(error),
-      })
-    })
+    .then(
+      () => cleanupThreadArtifacts(threadId),
+      (error) => {
+        console.error(`Could not delete thread ${threadId}:`, error)
+        // Same id as the dialog's "deleted" toast, so this replaces it.
+        toast.error(i18n.t('common:deleteThreadFailed'), {
+          id: 'delete-thread',
+          description: String(error),
+        })
+      }
+    )
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
