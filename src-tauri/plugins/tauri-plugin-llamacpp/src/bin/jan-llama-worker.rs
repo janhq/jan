@@ -568,17 +568,7 @@ async fn diagnose_root(diag: &DiagArgs) {
             diag_root_fail("--diagnose-preset model needs a --diagnose-plan".to_string())
         }
     };
-    let asked = wanted.len();
-    let families = diagnose::tested_families(wanted, &tested);
-    // Every family dropped means nothing would run in test mode, and the
-    // support probe alone would then report a clean run. Refuse rather than
-    // answer "your hardware is fine" having checked nothing.
-    if families.is_empty() && asked > 0 {
-        diag_root_fail(format!(
-            "none of the {asked} requested op families exist in llama.cpp {}",
-            PINNED_TAG
-        ));
-    }
+    let families = diagnose::tested_families(wanted, &tested).unwrap_or_else(|e| diag_root_fail(e));
 
     let plan = diagnose::DiagnosePlan {
         preset: diag.preset,

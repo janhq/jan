@@ -45,11 +45,29 @@ pub const ALL_FAMILIES: &str = "*";
 /// the one wrong answer a diagnostic must not give. The shape dimension cannot
 /// be checked ahead of time and is caught at the other end, by
 /// [`FamilyStatus::NoCases`].
-pub fn tested_families(wanted: Vec<FamilyFilter>, tested: &[String]) -> Vec<FamilyFilter> {
-    wanted
+///
+/// Nothing left is an error whatever was asked for: the support probe alone
+/// would otherwise report a clean run having checked nothing.
+pub fn tested_families(
+    wanted: Vec<FamilyFilter>,
+    tested: &[String],
+) -> Result<Vec<FamilyFilter>, String> {
+    let asked = wanted.len();
+    let kept: Vec<FamilyFilter> = wanted
         .into_iter()
         .filter(|f| tested.contains(&f.family))
-        .collect()
+        .collect();
+    if !kept.is_empty() {
+        return Ok(kept);
+    }
+    let tag = super::PINNED_TAG;
+    Err(if asked > 0 {
+        format!("none of the {asked} requested op families exist in llama.cpp {tag}")
+    } else if tested.is_empty() {
+        format!("llama.cpp {tag} reported no op families to test")
+    } else {
+        "the diagnostic plan names no op families to test".to_string()
+    })
 }
 
 /// Per-family ceiling. The slowest measured family is MUL_MAT_ID at 121 s on a
@@ -857,12 +875,33 @@ mod tests {
         let kept = tested_families(wanted, &["ADD".to_string(), "MUL_MAT".to_string()]);
         assert_eq!(
             kept,
-            vec![
+            Ok(vec![
                 FamilyFilter::new("ADD", None),
                 FamilyFilter::new("MUL_MAT", Some("type_a=q4_K,")),
-            ],
+            ]),
             "the filter must survive the intersection, and UNARY must not"
         );
+    }
+
+    #[test]
+    fn a_request_upstream_has_none_of_is_refused() {
+        let err = tested_families(vec![FamilyFilter::new("UNARY", None)], &["ADD".to_string()])
+            .unwrap_err();
+        assert!(err.contains("none of the 1 requested"), "{err}");
+    }
+
+    // Full asks for exactly what the op probe listed, so a probe that failed
+    // and listed nothing must not turn into a run that checks nothing.
+    #[test]
+    fn an_empty_op_list_is_refused_rather_than_passing_vacuously() {
+        let err = tested_families(vec![], &[]).unwrap_err();
+        assert!(err.contains("reported no op families"), "{err}");
+    }
+
+    #[test]
+    fn a_plan_naming_no_families_is_refused() {
+        let err = tested_families(vec![], &["ADD".to_string()]).unwrap_err();
+        assert!(err.contains("names no op families"), "{err}");
     }
 
     #[test]
