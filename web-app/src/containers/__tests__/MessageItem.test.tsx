@@ -943,11 +943,20 @@ describe('MessageItem', () => {
     beforeEach(() => useMessageErrors.getState().clearAll())
 
     it('offers the hardware check, carrying the model that failed', () => {
-      show()
+      show('m1')
       const link = screen.getByText('providers:diagnostics.checkThisModel')
       expect(link.getAttribute('data-search')).toBe(
         JSON.stringify({ diagnoseModel: 'm1' })
       )
+    })
+
+    // No recorded model means the turn did not run on llama.cpp, so the
+    // llama.cpp model selected now has nothing to do with the failure.
+    it('offers no check when the failed turn recorded no model', () => {
+      show()
+      expect(
+        screen.queryByText('providers:diagnostics.checkThisModel')
+      ).not.toBeInTheDocument()
     })
 
     // The message is read long after the user moved on, so the link has to
@@ -959,14 +968,6 @@ describe('MessageItem', () => {
       expect(link.getAttribute('data-search')).toBe(
         JSON.stringify({ diagnoseModel: 'qwen3-8b' })
       )
-    })
-
-    it('says nothing about llama.cpp hardware on a cloud provider', () => {
-      selectedProviderRef.current = 'anthropic'
-      show()
-      expect(
-        screen.queryByText('providers:diagnostics.checkThisModel')
-      ).not.toBeInTheDocument()
     })
   })
 })

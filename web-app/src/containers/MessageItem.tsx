@@ -131,7 +131,6 @@ export const MessageItem = memo(
         // as they appeared and again as they settled.
         'opacity-0 transition-opacity will-change-[opacity] group-hover/message:opacity-100 group-has-[:focus-visible]/message:opacity-100'
     const selectedModel = useModelProvider((state) => state.selectedModel)
-    const selectedProvider = useModelProvider((state) => state.selectedProvider)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
     const metadata = message.metadata as Record<string, unknown> | undefined
     // Written by a third-party extension: nothing in it may load from the
@@ -139,11 +138,9 @@ export const MessageItem = memo(
     const extensionAuthored = extensionAuthorOf(metadata) !== undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const loadReport = useMessageErrors((s) => s.reports[message.id])
-    // The failed turn's model when it was recorded; otherwise the current
-    // selection, which is all an older session has.
-    const diagnoseModel =
-      loadReport?.model ??
-      (selectedProvider === 'llamacpp' ? selectedModel?.id : undefined)
+    // Recorded only when the failed turn ran on llama.cpp; the current
+    // selection would name a model that had nothing to do with the failure.
+    const diagnoseModel = loadReport?.model
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
     // which a malformed stored value must not turn into a crashed message.
