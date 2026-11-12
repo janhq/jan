@@ -496,6 +496,64 @@ async fn read_xdg_portal_color_scheme() -> Result<Option<&'static str>, Box<dyn 
     })
 }
 
+/// The user's theme choice (`"light"`, `"dark"` or `"auto"`) as persisted by
+/// the frontend's zustand `theme` store in `settings.json`.
+fn persisted_active_theme() -> String {
+    parse_active_theme(crate::core::app::settings_store::settings_get(
+        "theme".to_string(),
+    ))
+}
+
+/// Extract `state.activeTheme` from the persisted zustand blob, defaulting to
+/// `"auto"` when it is missing, malformed or not a known value.
+fn parse_active_theme(raw: Option<String>) -> String {
+    raw.and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|v| {
+            v.pointer("/state/activeTheme")
+                .and_then(|t| t.as_str())
+                .map(str::to_string)
+        })
+        .filter(|t| t == "light" || t == "dark")
+        .unwrap_or_else(|| "auto".to_string())
+}
+
+/// Script injected into every webview before any page script runs, exposing
+/// the effective theme as `window.__JAN_INITIAL_THEME__` so the first paint
+/// (the boot splash) and the first React render already use the right theme.
+///
+/// The webview cannot resolve this alone: the theme choice lives in the
+/// backend `settings.json` (only reachable through async IPC), and on Linux
+/// WebKitGTK's `prefers-color-scheme` does not follow the XDG Desktop Portal,
+/// so without this the splash paints light and flips to dark once the async
+/// portal read lands.
+pub fn initial_theme_init_script() -> String {
+    let active_theme = persisted_active_theme();
+
+    // `null` lets the frontend fall back to `prefers-color-scheme`, which is
+    // reliable on macOS and Windows.
+    #[allow(unused_mut)]
+    let mut system_dark = "null";
+    #[cfg(target_os = "linux")]
+    {
+        // Bounded so a missing or hung portal never delays startup noticeably.
+        let read = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_millis(500), read_xdg_portal_color_scheme()).await
+        });
+        match read {
+            Ok(Ok(Some(theme))) => system_dark = if theme == "dark" { "true" } else { "false" },
+            Ok(Ok(None)) => {}
+            Ok(Err(e)) => log::warn!("initial theme: portal read failed: {e}"),
+            Err(_) => log::warn!("initial theme: portal read timed out"),
+        }
+    }
+
+    format!(
+        "window.__JAN_INITIAL_THEME__ = Object.freeze({{ activeTheme: {}, systemDark: {} }});",
+        serde_json::Value::String(active_theme),
+        system_dark
+    )
+}
+
 /// Window-control placement split by side. Values are `"minimize"`,
 /// `"maximize"`, `"close"`; the borderless frontend renders its own buttons in
 /// this order so they match the desktop's configured layout.
@@ -731,4 +789,30 @@ fn setup_window_theme_listener<R: Runtime>(
             let _ = app_handle_clone.emit("theme-changed", theme_str);
         }
     });
+}
+
+#[cfg(test)]
+mod initial_theme_tests {
+    use super::parse_active_theme;
+
+    fn blob(theme: &str) -> Option<String> {
+        Some(format!(
+            r#"{{"state":{{"activeTheme":"{theme}","isDark":false}},"version":0}}"#
+        ))
+    }
+
+    #[test]
+    fn reads_explicit_choice() {
+        assert_eq!(parse_active_theme(blob("dark")), "dark");
+        assert_eq!(parse_active_theme(blob("light")), "light");
+        assert_eq!(parse_active_theme(blob("auto")), "auto");
+    }
+
+    #[test]
+    fn defaults_to_auto() {
+        assert_eq!(parse_active_theme(None), "auto");
+        assert_eq!(parse_active_theme(Some("not json".into())), "auto");
+        assert_eq!(parse_active_theme(Some("{}".into())), "auto");
+        assert_eq!(parse_active_theme(blob("solarized")), "auto");
+    }
 }
