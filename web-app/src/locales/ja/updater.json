@@ -6,5 +6,7 @@
   "hideReleaseNotes": "リリースノートを非表示",
   "remindMeLater": "後で通知",
   "downloading": "ダウンロード中...",
-  "updateNow": "今すぐ更新"
+  "updateNow": "今すぐ更新",
+  "retry": "再試行",
+  "restartFailed": "再起動に失敗しました"
 }
