@@ -88,9 +88,23 @@ pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
 
 /// [`write_atomic`] for the thread.json commit: a failed parent sync is an
 /// error, since the migration's ordering (messages before thread.json) relies
-/// on it. The content is in place either way.
+/// on it. The content is in place either way. A filesystem that cannot sync a
+/// directory at all is not a failure: no stronger promise exists there.
 pub fn write_atomic_durable(path: &Path, body: &[u8]) -> Result<(), String> {
     write_atomic_with(path, body, sync_dir, true)
+}
+
+#[cfg(unix)]
+fn directory_sync_unsupported(e: &std::io::Error) -> bool {
+    matches!(
+        e.raw_os_error(),
+        Some(code) if code == libc::EINVAL || code == libc::ENOTSUP || code == libc::EOPNOTSUPP
+    )
+}
+
+#[cfg(not(unix))]
+fn directory_sync_unsupported(_e: &std::io::Error) -> bool {
+    false
 }
 
 fn write_atomic_with(
@@ -116,7 +130,7 @@ fn write_atomic_with(
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
     match sync(parent.unwrap_or_else(|| Path::new("."))) {
         Ok(()) => Ok(()),
-        Err(e) if strict => Err(e.to_string()),
+        Err(e) if strict && !directory_sync_unsupported(&e) => Err(e.to_string()),
         Err(e) => {
             log::debug!("directory sync after writing {} failed: {e}", path.display());
             Ok(())
@@ -297,13 +311,41 @@ mod atomic_tests {
         assert_eq!(fs::read(&path).unwrap(), b"body");
     }
 
-    /// The thread.json commit asks for the strict form: there a refused
-    /// directory sync is reported (the content is in place either way).
+    fn failed_sync(_: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::from_raw_os_error(5))
+    }
+
+    /// A filesystem that cannot sync a directory at all offers no stronger
+    /// promise to wait for, so even the strict form must not fail every
+    /// thread created on it.
+    #[cfg(unix)]
     #[test]
-    fn the_strict_write_reports_a_refused_directory_sync() {
+    fn the_strict_write_accepts_a_filesystem_without_directory_sync() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("thread.json");
-        assert!(write_atomic_with(&path, b"body", refused_sync, true).is_err());
+        write_atomic_with(&path, b"body", refused_sync, true).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"body");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_refusals_count_as_a_filesystem_without_directory_sync() {
+        let err = std::io::Error::from_raw_os_error;
+        for errno in [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP] {
+            assert!(directory_sync_unsupported(&err(errno)), "errno {errno}");
+        }
+        for errno in [libc::EIO, libc::ENOSPC, libc::EACCES] {
+            assert!(!directory_sync_unsupported(&err(errno)), "errno {errno}");
+        }
+    }
+
+    /// The thread.json commit asks for the strict form: there a directory sync
+    /// that failed is reported (the content is in place either way).
+    #[test]
+    fn the_strict_write_reports_a_failed_directory_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("thread.json");
+        assert!(write_atomic_with(&path, b"body", failed_sync, true).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"body");
         write_atomic_durable(&path, b"again").unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"again");
