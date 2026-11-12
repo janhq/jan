@@ -141,6 +141,11 @@ export const MessageItem = memo(
     // Recorded only when the failed turn ran on llama.cpp; the current
     // selection would name a model that had nothing to do with the failure.
     const diagnoseModel = loadReport?.model
+    const canRegenerate =
+      !!selectedModel &&
+      !!onRegenerate &&
+      status !== CHAT_STATUS.STREAMING &&
+      status !== CHAT_STATUS.SUBMITTED
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
     // which a malformed stored value must not turn into a crashed message.
@@ -713,56 +718,58 @@ export const MessageItem = memo(
               <div className="text-muted-foreground break-words">
                 {messageError}
               </div>
+              {/* Below the text rather than beside it: three actions in one
+                  row squeezed the error into a narrow column. */}
+              {(loadReport || canRegenerate) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {loadReport && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard
+                          .writeText(loadReport.text)
+                          .then(() =>
+                            toast.success(t('model-errors:diagnosticsCopied'))
+                          )
+                          .catch(() =>
+                            toast.error(t('common:toast.errorCopyFailed.title'))
+                          )
+                      }}
+                    >
+                      <IconCopy size={14} />
+                      <span>{t('model-errors:copyDiagnostics')}</span>
+                    </Button>
+                  )}
+                  {canRegenerate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRegenerate}
+                    >
+                      <IconRefresh size={14} />
+                      <span>Regenerate</span>
+                    </Button>
+                  )}
+                  {/* A load report is only built for a llama.cpp engine
+                      failure, so its presence is what says the hardware check
+                      has something to say about this message. The check itself
+                      lives on the provider page; this carries the model over
+                      rather than being a second place a minutes-long run can
+                      start from. */}
+                  {loadReport && diagnoseModel && (
+                    <Link
+                      to={route.settings.providers}
+                      params={{ providerName: 'llamacpp' }}
+                      search={{ diagnoseModel }}
+                      className="whitespace-nowrap text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                    >
+                      {t('providers:diagnostics.checkThisModel')}
+                    </Link>
+                  )}
+                </div>
+              )}
             </div>
-            {loadReport && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  navigator.clipboard
-                    .writeText(loadReport.text)
-                    .then(() =>
-                      toast.success(t('model-errors:diagnosticsCopied'))
-                    )
-                    .catch(() =>
-                      toast.error(t('common:toast.errorCopyFailed.title'))
-                    )
-                }}
-                className="shrink-0"
-              >
-                <IconCopy size={14} />
-                <span>{t('model-errors:copyDiagnostics')}</span>
-              </Button>
-            )}
-            {/* A load report is only built for a llama.cpp engine failure, so
-                its presence is what says the hardware check has something to
-                say about this message. The check itself lives on the provider
-                page; this carries the model over rather than being a second
-                place a minutes-long run can start from. */}
-            {loadReport && diagnoseModel && (
-                <Link
-                  to={route.settings.providers}
-                  params={{ providerName: 'llamacpp' }}
-                  search={{ diagnoseModel }}
-                  className="shrink-0 whitespace-nowrap text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                >
-                  {t('providers:diagnostics.checkThisModel')}
-                </Link>
-              )}
-            {selectedModel &&
-              onRegenerate &&
-              status !== CHAT_STATUS.STREAMING &&
-              status !== CHAT_STATUS.SUBMITTED && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRegenerate}
-                  className="shrink-0"
-                >
-                  <IconRefresh size={14} />
-                  <span>Regenerate</span>
-                </Button>
-              )}
           </div>
         )}
 

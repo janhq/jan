@@ -190,7 +190,7 @@
     "columnParams": "Parameters",
     "columnStatus": "Result",
     "noCases": "No cases match this filter.",
-    "casesTruncated": "Passing cases beyond the first {{count}} were not kept. Every failure is listed.",
+    "casesTruncated": "Only the first {{count}} cases that passed or ran on the CPU were kept. Every failure is listed.",
     "statusOk": "Passed",
     "statusFail": "Failed",
     "statusNotSupported": "Runs on CPU",

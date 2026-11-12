@@ -17,7 +17,7 @@ import {
  * emits tens of thousands of passes per device, and holding them all would
  * cost more memory than the answer is worth.
  */
-const PASSING_CASE_LIMIT = 5000
+const KEPT_CASE_LIMIT = 5000
 
 /**
  * How often accumulated events reach React. The stream peaks in the thousands
@@ -126,7 +126,7 @@ export interface DiagnosticsRun {
   backendModules: string[]
   devices: DiagnosticsDeviceRun[]
   cases: DiagnosticsCase[]
-  /** True when passing cases were dropped at [`PASSING_CASE_LIMIT`]. */
+  /** True when non-failing cases were dropped at [`KEPT_CASE_LIMIT`]. */
   casesTruncated: boolean
   totalUnits: number
   finishedUnits: number
@@ -201,7 +201,7 @@ export function applyDiagnosticsEvent(
       break
     case 'case': {
       const failing = event.status === 'fail'
-      if (failing || run.cases.length < PASSING_CASE_LIMIT) {
+      if (failing || run.cases.length < KEPT_CASE_LIMIT) {
         run.cases.push({
           device: event.device,
           family: event.family,
