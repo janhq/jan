@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
@@ -10,7 +10,11 @@ import { useHardware, type GPU } from '@/hooks/useHardware'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { IconDeviceDesktopAnalytics, IconRefresh } from '@tabler/icons-react'
+import {
+  IconDeviceDesktopAnalytics,
+  IconRefresh,
+  IconStethoscope,
+} from '@tabler/icons-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type {
   DeviceList,
@@ -273,6 +277,18 @@ function GpuGroupCard({
             ))}
           </dl>
         )}
+        {/* The check itself lives on the provider page, with the results and
+            the run controls; this carries the device over rather than being a
+            second place a minutes-long run can be started from. */}
+        <Link
+          to={route.settings.providers}
+          params={{ providerName: 'llamacpp' }}
+          search={{ diagnose: device.id }}
+          className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <IconStethoscope size={14} />
+          {t('providers:diagnostics.checkThisDevice')}
+        </Link>
       </div>
     </div>
   )

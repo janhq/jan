@@ -11,6 +11,7 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
+import { buildLoadDiagnosticsReport } from '@/lib/loadDiagnosticsReport'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
@@ -2326,6 +2327,29 @@ function ThreadDetail() {
       return
     }
     useMessageErrors.getState().setError(targetId, errMessage)
+    const reportTarget = targetId
+    // The turn's own model, not the one selected by the time anyone reads
+    // this: the check offered from the message has to be about the model
+    // that actually failed.
+    const failedTurn = turnModelOf(threadId)
+    const failedModel =
+      failedTurn.selectedProvider === 'llamacpp'
+        ? failedTurn.selectedModel?.id
+        : undefined
+    void buildLoadDiagnosticsReport(error)
+      .then((report) => {
+        // Only if this is still the error on screen: a second failure on the
+        // same message must not be handed the previous one's report, and one
+        // that resolves after `clearError` must not put it back.
+        if (!report) return
+        if (useMessageErrors.getState().errors[reportTarget] !== errMessage) {
+          return
+        }
+        useMessageErrors.getState().setReport(reportTarget, report, failedModel)
+      })
+      .catch((e) =>
+        console.warn('could not build the load diagnostics report:', e)
+      )
     const tm = useMessages.getState().getMessages(threadId).find(
       (m) => m.id === targetId
     )

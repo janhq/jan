@@ -137,7 +137,8 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({ WebviewWindow: vi.fn() }))
 vi.mock('@/constants/routes', () => ({ 
   route: { 
     settings: { 
-      hardware: '/settings/hardware' 
+      hardware: '/settings/hardware',
+      providers: '/settings/providers/$providerName',
     }, 
     systemMonitor: '/monitor' 
   } 
@@ -146,11 +147,25 @@ vi.mock('@/constants/windows', () => ({ windowKey: { systemMonitorWindow: 'monit
 vi.mock('@tabler/icons-react', () => ({
   IconDeviceDesktopAnalytics: () => <div data-testid="icon" />,
   IconRefresh: () => <div data-testid="icon-refresh" />,
+  IconStethoscope: () => <div data-testid="icon-stethoscope" />,
 }))
 
 // Mock the route structure properly
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => config,
+  // Each GPU card links to the hardware check on the llama.cpp provider page.
+  Link: ({ children, to, params, search, ...rest }: any) => (
+    <a
+      href={Object.entries(params ?? {}).reduce(
+        (path: string, [k, v]) => path.replace(`$${k}`, String(v)),
+        to
+      )}
+      data-search={JSON.stringify(search ?? {})}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
 }))
 
 // Mock platform utils to enable hardware monitoring
@@ -223,6 +238,25 @@ describe('Hardware Settings', () => {
     await waitFor(() => {
       expect(screen.getByText('settings:hardware.gpus')).toBeInTheDocument()
       expect(screen.getByText('RTX 3080')).toBeInTheDocument()
+    })
+  })
+
+  // The check itself lives on the provider page; this is a signpost that
+  // carries the device over, not a second place a long run can start from.
+  it('points each GPU at the hardware check, preselecting that device', async () => {
+    llamacpp.devices = [
+      { id: 'CUDA0', name: 'RTX 3090', mem: 24127, free: 1259, activated: true },
+    ]
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    const link = await screen.findByText(
+      'providers:diagnostics.checkThisDevice'
+    )
+    const anchor = link.closest('a')
+    expect(anchor).toHaveAttribute('href', '/settings/providers/llamacpp')
+    expect(JSON.parse(anchor?.dataset.search ?? '{}')).toEqual({
+      diagnose: 'CUDA0',
     })
   })
 

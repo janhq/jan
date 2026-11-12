@@ -9,6 +9,16 @@
 //!
 //! Usage:
 //!   jan-llama-worker --preset <router.preset.ini> [--port N] [--models-max N]
+//!   jan-llama-worker --diagnose [--diagnose-preset quick|full|model]
+//!                    [--diagnose-plan JSON] [--device NAME]...
+//!   jan-llama-worker --diagnose-run <device> [--mode test|support] [--op RE]
+//!                    [--params RE] [--workers N]
+//!   jan-llama-worker --diagnose-devices | --diagnose-ops | --list-devices
+//!
+//! The diagnose modes are the ggml op check. `--diagnose` is the root: it loads
+//! no ggml and supervises one `--diagnose-run` leaf per device and op family,
+//! printing one JSON event per line (see `engine::diagnose::RootEvent`). Cancel
+//! it the same way the serving mode stops, by closing its stdin.
 //!
 //! The bearer token comes from `JAN_LLAMA_API_KEY`, never argv: argv is
 //! readable by any other process on the machine (`ps`, `/proc/<pid>/cmdline`,
@@ -20,12 +30,35 @@
 
 use std::sync::Arc;
 
+use tauri_plugin_llamacpp::engine::diag::{DiagMode, DiagRunRequest, FamilyFilter};
+use tauri_plugin_llamacpp::engine::model_plan::{self, ModelPlan};
+use tauri_plugin_llamacpp::engine::diagnose;
 use tauri_plugin_llamacpp::engine::http::EngineServer;
 use tauri_plugin_llamacpp::engine::preset;
 use tauri_plugin_llamacpp::engine::registry::Registry;
 use tauri_plugin_llamacpp::engine::slots::StateStore;
 use tauri_plugin_llamacpp::engine::{assert_pinned_version, PINNED_TAG};
 use tokio::sync::Mutex;
+
+/// What this invocation is for. All but [`Mode::Diagnose`] need ggml; the root
+/// deliberately does not, which is what makes it the crash boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Mode {
+    Serve,
+    /// Print the offloadable devices as JSON and exit. The desktop process
+    /// links the plugin *without* the engine feature, so it has no ggml to ask
+    /// -- it shells out here, exactly as it used to shell out to
+    /// `llama-server --list-devices`.
+    ListDevices,
+    /// Orchestrate an op diagnostic over leaf processes of this same binary.
+    Diagnose,
+    /// One device, one slice of the op list: the leaf a root spawns.
+    DiagnoseRun(String),
+    /// Every ggml device with its kind and memory, for a root building a plan.
+    DiagnoseDevices,
+    /// Every op family with its case count, for the Full preset.
+    DiagnoseOps,
+}
 
 struct Args {
     preset: Option<String>,
@@ -35,11 +68,56 @@ struct Args {
     /// persistence off entirely: the directory is what the feature is, so
     /// there is nothing to keep without a budget for it.
     slot_cache_mib: u64,
-    /// Print the offloadable devices as JSON and exit. The desktop process
-    /// links the plugin *without* the engine feature, so it has no ggml to ask
-    /// -- it shells out here, exactly as it used to shell out to
-    /// `llama-server --list-devices`.
-    list_devices: bool,
+    mode: Mode,
+    diag: DiagArgs,
+}
+
+#[derive(Debug, Clone)]
+struct DiagArgs {
+    preset: diagnose::DiagPreset,
+    mode: DiagMode,
+    op_filter: Option<String>,
+    params_filter: Option<String>,
+    /// Devices the root should check. Empty means every device the probe finds.
+    devices: Vec<String>,
+    /// The model-specific family list, from `--diagnose-plan`. Built by the
+    /// caller (which can read a gguf) rather than here, so the root still
+    /// holds no model and no ggml.
+    plan: Option<ModelPlan>,
+    /// 0 means "pick from the machine", which is only sensible in test mode.
+    workers: u32,
+    family_timeout: std::time::Duration,
+    deadline: std::time::Duration,
+}
+
+impl Default for DiagArgs {
+    fn default() -> Self {
+        Self {
+            preset: diagnose::DiagPreset::Quick,
+            mode: DiagMode::Test,
+            op_filter: None,
+            params_filter: None,
+            devices: Vec::new(),
+            plan: None,
+            workers: 0,
+            family_timeout: diagnose::DEFAULT_FAMILY_TIMEOUT,
+            deadline: diagnose::DEFAULT_DEADLINE,
+        }
+    }
+}
+
+impl DiagArgs {
+    /// Upstream threads test mode only, and a support probe builds graphs
+    /// rather than running them, so parallelism there buys nothing.
+    fn workers(&self) -> u32 {
+        if self.mode == DiagMode::Support {
+            return 1;
+        }
+        match self.workers {
+            0 => std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
+            n => n,
+        }
+    }
 }
 
 /// Read from the environment rather than argv so the token never appears in a
@@ -53,7 +131,8 @@ fn parse_args() -> Result<Args, String> {
         port: 0,
         models_max: 1,
         slot_cache_mib: 0,
-        list_devices: false,
+        mode: Mode::Serve,
+        diag: DiagArgs::default(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -76,7 +155,53 @@ fn parse_args() -> Result<Args, String> {
                     .parse()
                     .map_err(|e| format!("bad --slot-cache-mib: {e}"))?
             }
-            "--list-devices" => out.list_devices = true,
+            "--list-devices" => out.mode = Mode::ListDevices,
+            "--diagnose" => out.mode = Mode::Diagnose,
+            "--diagnose-run" => out.mode = Mode::DiagnoseRun(value()?),
+            "--diagnose-devices" => out.mode = Mode::DiagnoseDevices,
+            "--diagnose-ops" => out.mode = Mode::DiagnoseOps,
+            "--diagnose-preset" => {
+                out.diag.preset = match value()?.as_str() {
+                    "quick" => diagnose::DiagPreset::Quick,
+                    "full" => diagnose::DiagPreset::Full,
+                    "model" => diagnose::DiagPreset::Model,
+                    other => return Err(format!("bad --diagnose-preset: {other}")),
+                }
+            }
+            "--diagnose-plan" => {
+                out.diag.plan = Some(
+                    serde_json::from_str(&value()?)
+                        .map_err(|e| format!("bad --diagnose-plan: {e}"))?,
+                );
+                out.diag.preset = diagnose::DiagPreset::Model;
+            }
+            "--mode" => {
+                out.diag.mode = match value()?.as_str() {
+                    "test" => DiagMode::Test,
+                    "support" => DiagMode::Support,
+                    other => return Err(format!("bad --mode: {other}")),
+                }
+            }
+            "--op" => out.diag.op_filter = Some(value()?),
+            "--params" => out.diag.params_filter = Some(value()?),
+            "--device" => out.diag.devices.push(value()?),
+            "--workers" => {
+                out.diag.workers = value()?
+                    .parse()
+                    .map_err(|e| format!("bad --workers: {e}"))?
+            }
+            "--family-timeout" => {
+                out.diag.family_timeout = std::time::Duration::from_secs(
+                    value()?
+                        .parse()
+                        .map_err(|e| format!("bad --family-timeout: {e}"))?,
+                )
+            }
+            "--deadline" => {
+                out.diag.deadline = std::time::Duration::from_secs(
+                    value()?.parse().map_err(|e| format!("bad --deadline: {e}"))?,
+                )
+            }
             "--version" => {
                 println!("jan-llama-worker (llama.cpp {PINNED_TAG})");
                 std::process::exit(0);
@@ -100,9 +225,15 @@ fn device_identities() -> serde_json::Value {
 
 #[tokio::main]
 async fn main() {
+    // Before `parse_args`, since a failure to parse is one of the reasons the
+    // root never starts and the supervisor reads reasons off stdout alone.
+    let diagnosing = std::env::args().any(|a| a == "--diagnose");
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
+            if diagnosing {
+                diag_root_fail(e);
+            }
             eprintln!("jan-llama-worker: {e}");
             std::process::exit(2);
         }
@@ -112,22 +243,52 @@ async fn main() {
     // common_params and llama_context_params cross the boundary by value and
     // their layout has changed repeatedly upstream.
     if let Err(e) = assert_pinned_version() {
+        if diagnosing {
+            diag_root_fail(e.to_string());
+        }
         eprintln!("jan-llama-worker: {e}");
         std::process::exit(3);
+    }
+
+    // The root is the one mode that must never hold ggml: it supervises the
+    // leaves that do, so a kernel that aborts cannot take the run with it.
+    if args.mode == Mode::Diagnose {
+        diagnose_root(&args.diag).await;
+        // Exit rather than return: the cancel watcher is a blocking read on
+        // stdin, and tokio waits for its blocking pool when the runtime drops,
+        // so a parent still holding the pipe would keep a finished root alive.
+        // Every event has already been written and flushed.
+        std::process::exit(0);
     }
 
     // Must precede any ggml call, including device enumeration.
     tauri_plugin_llamacpp::engine::load_backend_modules();
 
-    if args.list_devices {
-        match tauri_plugin_llamacpp::engine::Engine::devices_json() {
-            Ok(json) => println!("{json}"),
-            Err(e) => {
-                eprintln!("jan-llama-worker: could not list devices: {e}");
-                std::process::exit(6);
+    match &args.mode {
+        Mode::ListDevices => {
+            match tauri_plugin_llamacpp::engine::Engine::devices_json() {
+                Ok(json) => println!("{json}"),
+                Err(e) => {
+                    eprintln!("jan-llama-worker: could not list devices: {e}");
+                    std::process::exit(6);
+                }
             }
+            return;
         }
-        return;
+        Mode::DiagnoseDevices => {
+            arm_leaf_deadline(diagnose::PROBE_TIMEOUT);
+            return print_diagnose_devices();
+        }
+        Mode::DiagnoseOps => {
+            arm_leaf_deadline(diagnose::PROBE_TIMEOUT);
+            return print_diagnose_ops();
+        }
+        Mode::DiagnoseRun(device) => {
+            arm_leaf_deadline(args.diag.family_timeout);
+            return diagnose_leaf(device, &args.diag);
+        }
+        Mode::Diagnose => unreachable!("handled above, before ggml is loaded"),
+        Mode::Serve => {}
     }
 
     let mut registry = Registry::new(args.models_max);
@@ -243,6 +404,192 @@ async fn main() {
     if !released.is_empty() {
         eprintln!("jan-llama-worker: released {}", released.join(", "));
     }
+}
+
+/// Exit code for a diagnostic that could not start. A leaf that merely found a
+/// failing case exits 0: its verdict is in the event stream.
+const DIAG_EXIT: i32 = 8;
+
+/// For the probe leaves (`--diagnose-devices`, `--diagnose-ops`), whose stdout
+/// is a single JSON document the root parses -- an event line printed there
+/// would corrupt it. Their reason still reaches the user: a nonzero exit makes
+/// `diagnose::probe` fold the last stderr lines into its error, and the root
+/// then reports that through [`diag_root_fail`].
+fn diag_fail(msg: String) -> ! {
+    eprintln!("jan-llama-worker: {msg}");
+    std::process::exit(DIAG_EXIT);
+}
+
+/// The same, for the root, whose stdout *is* the event stream. Every run ends
+/// with a `done`, so a setup failure reports its reason there rather than only
+/// on a stderr the user never sees.
+fn diag_root_fail(msg: String) -> ! {
+    let done = diagnose::RootEvent::Done {
+        ok: false,
+        cancelled: false,
+        inconclusive: false,
+        error: Some(msg.clone()),
+    };
+    if let Ok(line) = serde_json::to_string(&done) {
+        print_event(&line);
+    }
+    diag_fail(msg)
+}
+
+/// Exit code for a leaf whose reader is gone. Distinct from [`DIAG_EXIT`]
+/// because nothing is left to read either one.
+const DIAG_EXIT_NO_READER: i32 = 9;
+
+/// Exit code for a leaf that outlived the deadline the root gave it.
+const DIAG_EXIT_DEADLINE: i32 = 10;
+
+/// How long after the root's own limit a leaf waits before ending itself. The
+/// root kills an overrunning leaf at the limit exactly, so this only ever
+/// fires when there is no root left to do it.
+const LEAF_DEADLINE_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Ends this leaf if it is still alive well after the root would have killed
+/// it.
+///
+/// The backstop for an orphan: on Windows the plugin cannot kill a
+/// grandchild (see `engine::diagnose_commands::kill_process_group`), and a
+/// leaf wedged inside a driver call writes nothing, so the broken-stdout exit
+/// in [`print_event`] never gets a chance to fire. A plain OS thread is what
+/// makes this work -- it keeps running while the main thread is blocked
+/// inside ggml, which is the state being bounded.
+fn arm_leaf_deadline(limit: std::time::Duration) {
+    let deadline = limit + LEAF_DEADLINE_GRACE;
+    std::thread::spawn(move || {
+        std::thread::sleep(deadline);
+        eprintln!(
+            "jan-llama-worker: no root took this leaf down within {}s; exiting",
+            deadline.as_secs()
+        );
+        std::process::exit(DIAG_EXIT_DEADLINE);
+    });
+}
+
+/// stdout is a pipe to the root, so it is block-buffered; a run that streams
+/// has to flush each line or the UI sees nothing until the leaf exits.
+///
+/// A failed write means the root is gone, and this process is then an orphan
+/// holding a device with nobody to report to, so it stops. On Unix the broken
+/// pipe would raise SIGPIPE and end it anyway; Windows has no such signal,
+/// which is where this is load-bearing -- the plugin cannot kill a
+/// grandchild there (see `kill_process_group`). It does not bound a leaf hung
+/// inside a driver call, which by definition prints nothing.
+fn print_event(line: &str) {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    if writeln!(out, "{line}").and_then(|()| out.flush()).is_err() {
+        std::process::exit(DIAG_EXIT_NO_READER);
+    }
+}
+
+fn print_diagnose_devices() {
+    use tauri_plugin_llamacpp::engine::diag::{merge_devices, DiagBackend, DiagDeviceMemory};
+    use tauri_plugin_llamacpp::engine::Engine;
+
+    let backends: Vec<DiagBackend> = Engine::diag_backends_json()
+        .map_err(|e| e.to_string())
+        .and_then(|json| serde_json::from_str(&json).map_err(|e| e.to_string()))
+        .unwrap_or_else(|e| diag_fail(format!("could not list ggml devices: {e}")));
+    // Memory is a nice-to-have: a backend that will not report it must not cost
+    // us the device list the plan is built from.
+    let memory: Vec<DiagDeviceMemory> = Engine::devices_json()
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    println!(
+        "{}",
+        serde_json::to_string(&merge_devices(backends, &memory)).unwrap_or_else(|_| "[]".into())
+    );
+}
+
+fn print_diagnose_ops() {
+    match tauri_plugin_llamacpp::engine::Engine::diag_ops_json() {
+        Ok(json) => println!("{json}"),
+        Err(e) => diag_fail(format!("could not list ops: {e}")),
+    }
+}
+
+/// One device, one slice of the op list. Everything this prints on stdout is an
+/// event; ggml's own logging goes to stderr, which the root reads separately.
+fn diagnose_leaf(device: &str, diag: &DiagArgs) {
+    let request = DiagRunRequest {
+        mode: diag.mode,
+        backend: device.to_string(),
+        op_filter: diag.op_filter.clone(),
+        params_filter: diag.params_filter.clone(),
+        workers: diag.workers(),
+    };
+    let outcome = tauri_plugin_llamacpp::engine::Engine::diag_run(&request, &|line| {
+        print_event(line)
+    });
+    // The wrapper emits `done` on every path it reaches, including a throw.
+    // This covers the one it cannot: a build with no engine to call at all.
+    if let Err(e) = outcome {
+        print_event(
+            &serde_json::json!({"event": "done", "ok": false, "error": e.to_string()}).to_string(),
+        );
+    }
+}
+
+/// Picks the work, then supervises one leaf per device and family.
+async fn diagnose_root(diag: &DiagArgs) {
+    let exe = std::env::current_exe()
+        .unwrap_or_else(|e| diag_root_fail(format!("could not find my own path: {e}")));
+    let spec = diagnose::LeafSpec::new(exe);
+
+    let (mut devices, backend_modules) = diagnose::probe_devices(&spec)
+        .await
+        .unwrap_or_else(|e| diag_root_fail(e));
+    if !diag.devices.is_empty() {
+        devices.retain(|d| diag.devices.iter().any(|name| name == &d.name));
+        if devices.is_empty() {
+            diag_root_fail(format!("no ggml device named {}", diag.devices.join(", ")));
+        }
+    }
+
+    // Asked for even on Quick: a family name upstream does not know runs no
+    // cases and reports a clean pass, which is the one wrong answer a
+    // diagnostic must not give.
+    let tested = diagnose::probe_families(&spec)
+        .await
+        .unwrap_or_else(|e| diag_root_fail(e));
+    let wanted: Vec<FamilyFilter> = match (&diag.plan, diag.preset) {
+        (Some(plan), _) => plan.families.clone(),
+        (None, diagnose::DiagPreset::Full) => tested
+            .iter()
+            .map(|t| FamilyFilter::new(t.clone(), None))
+            .collect(),
+        (None, diagnose::DiagPreset::Quick) => model_plan::quick_families(),
+        (None, diagnose::DiagPreset::Model) => {
+            diag_root_fail("--diagnose-preset model needs a --diagnose-plan".to_string())
+        }
+    };
+    let families = diagnose::tested_families(wanted, &tested).unwrap_or_else(|e| diag_root_fail(e));
+
+    let plan = diagnose::DiagnosePlan {
+        preset: diag.preset,
+        engine: tauri_plugin_llamacpp::diagnostics::EngineBuild::pinned(),
+        devices,
+        families,
+        model: diag.plan.as_ref().map(|p| p.model.clone()),
+        support_probe: true,
+        workers: diag.workers(),
+        backend_modules,
+        family_timeout: diag.family_timeout,
+        deadline: diag.deadline,
+    };
+
+    diagnose::run(&plan, &spec, shutdown_requested(), &mut |event| {
+        match serde_json::to_string(&event) {
+            Ok(line) => print_event(&line),
+            Err(e) => eprintln!("jan-llama-worker: could not encode an event: {e}"),
+        }
+    })
+    .await;
 }
 
 /// How long in-flight requests get to finish once shutdown is requested.

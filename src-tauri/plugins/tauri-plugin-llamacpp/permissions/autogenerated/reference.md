@@ -22,6 +22,8 @@ Default permissions for the llamacpp plugin
 - `allow-begin-engine-restart`
 - `allow-end-engine-restart`
 - `allow-erase-thread-slot-state`
+- `allow-start-diagnostics`
+- `allow-cancel-diagnostics`
 - `allow-read-gguf-metadata`
 - `allow-find-gguf-tensors`
 - `allow-is-model-supported`
@@ -57,6 +59,32 @@ Enables the begin_engine_restart command without any pre-configured scope.
 <td>
 
 Denies the begin_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-cancel-diagnostics`
+
+</td>
+<td>
+
+Enables the cancel_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-cancel-diagnostics`
+
+</td>
+<td>
+
+Denies the cancel_diagnostics command without any pre-configured scope.
 
 </td>
 </tr>
@@ -499,6 +527,32 @@ Enables the reload_engine_models command without any pre-configured scope.
 <td>
 
 Denies the reload_engine_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-start-diagnostics`
+
+</td>
+<td>
+
+Enables the start_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-start-diagnostics`
+
+</td>
+<td>
+
+Denies the start_diagnostics command without any pre-configured scope.
 
 </td>
 </tr>

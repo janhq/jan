@@ -1414,6 +1414,37 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     useAppState
       .getState()
       .setCurrentStreamThreadId(threadId, this.streamRoutesToCowork)
+    try {
+      return await this.openStream(options, threadId, myGeneration)
+    } catch (error) {
+      // No stream exists yet, so its onError/onFinish will never release this.
+      this.releaseStream(threadId, myGeneration)
+      throw error
+    }
+  }
+
+  /**
+   * Clears the per-request UI state, unless a newer request (e.g. after
+   * Reload) has since taken it over.
+   */
+  private releaseStream(threadId: string, generation: number) {
+    if (this.streamGeneration !== generation) return
+    const app = useAppState.getState()
+    app.updatePromptProgress(undefined)
+    app.updateThreadPromptProgress(threadId, undefined)
+    this.setLoadingModel(threadId, false)
+    app.updateLiveTokenStats(undefined)
+    app.updateThreadLiveTokenStats(threadId, undefined)
+    if (app.currentStreamThreadId === threadId) {
+      app.setCurrentStreamThreadId(undefined)
+    }
+  }
+
+  private async openStream(
+    options: Parameters<CustomChatTransport['sendMessages']>[0],
+    threadId: string,
+    myGeneration: number
+  ): Promise<ReadableStream<UIMessageChunk>> {
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -1725,18 +1756,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // streaming surface shares (see `lib/stepMetadata`).
       messageMetadata: ({ part }) => stepMetadata.onPart(part),
       onError: (error) => {
-        // A superseded request (e.g. after Reload) must not clear loading/stream
-        // state the newer request already owns.
-        if (this.streamGeneration === myGeneration) {
-          useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          this.setLoadingModel(threadId, false)
-          useAppState.getState().updateLiveTokenStats(undefined)
-          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
-          if (useAppState.getState().currentStreamThreadId === threadId) {
-            useAppState.getState().setCurrentStreamThreadId(undefined)
-          }
-        }
+        this.releaseStream(threadId, myGeneration)
         const unwrapped = unwrapRetryError(error)
         const rawMessage = unwrapped == null
           ? 'Unknown error'
@@ -1754,16 +1774,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return baseMessage
       },
       onFinish: ({ responseMessage }) => {
-        if (this.streamGeneration === myGeneration) {
-          useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          this.setLoadingModel(threadId, false)
-          useAppState.getState().updateLiveTokenStats(undefined)
-          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
-          if (useAppState.getState().currentStreamThreadId === threadId) {
-            useAppState.getState().setCurrentStreamThreadId(undefined)
-          }
-        }
+        this.releaseStream(threadId, myGeneration)
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>

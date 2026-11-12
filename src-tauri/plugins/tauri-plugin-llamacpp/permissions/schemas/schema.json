@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the begin_engine_restart command without any pre-configured scope."
         },
         {
+          "description": "Enables the cancel_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-diagnostics",
+          "markdownDescription": "Enables the cancel_diagnostics command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-diagnostics",
+          "markdownDescription": "Denies the cancel_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the cleanup_llama_processes command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cleanup-llama-processes",
@@ -511,6 +523,18 @@
           "markdownDescription": "Denies the reload_engine_models command without any pre-configured scope."
         },
         {
+          "description": "Enables the start_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-diagnostics",
+          "markdownDescription": "Enables the start_diagnostics command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-diagnostics",
+          "markdownDescription": "Denies the start_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the start_engine command without any pre-configured scope.",
           "type": "string",
           "const": "allow-start-engine",
@@ -547,10 +571,10 @@
           "markdownDescription": "Denies the unload_llama_model command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-generate-api-key`\n- `allow-ensure-session-ready`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-get-engine-info`\n- `allow-get-engine-version`\n- `allow-reload-engine-models`\n- `allow-engine-devices`\n- `allow-force-stop-engine`\n- `allow-engine-slots-idle`\n- `allow-begin-engine-restart`\n- `allow-end-engine-restart`\n- `allow-erase-thread-slot-state`\n- `allow-read-gguf-metadata`\n- `allow-find-gguf-tensors`\n- `allow-is-model-supported`",
+          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-generate-api-key`\n- `allow-ensure-session-ready`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-get-engine-info`\n- `allow-get-engine-version`\n- `allow-reload-engine-models`\n- `allow-engine-devices`\n- `allow-force-stop-engine`\n- `allow-engine-slots-idle`\n- `allow-begin-engine-restart`\n- `allow-end-engine-restart`\n- `allow-erase-thread-slot-state`\n- `allow-start-diagnostics`\n- `allow-cancel-diagnostics`\n- `allow-read-gguf-metadata`\n- `allow-find-gguf-tensors`\n- `allow-is-model-supported`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-generate-api-key`\n- `allow-ensure-session-ready`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-get-engine-info`\n- `allow-get-engine-version`\n- `allow-reload-engine-models`\n- `allow-engine-devices`\n- `allow-force-stop-engine`\n- `allow-engine-slots-idle`\n- `allow-begin-engine-restart`\n- `allow-end-engine-restart`\n- `allow-erase-thread-slot-state`\n- `allow-read-gguf-metadata`\n- `allow-find-gguf-tensors`\n- `allow-is-model-supported`"
+          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-generate-api-key`\n- `allow-ensure-session-ready`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-get-engine-info`\n- `allow-get-engine-version`\n- `allow-reload-engine-models`\n- `allow-engine-devices`\n- `allow-force-stop-engine`\n- `allow-engine-slots-idle`\n- `allow-begin-engine-restart`\n- `allow-end-engine-restart`\n- `allow-erase-thread-slot-state`\n- `allow-start-diagnostics`\n- `allow-cancel-diagnostics`\n- `allow-read-gguf-metadata`\n- `allow-find-gguf-tensors`\n- `allow-is-model-supported`"
         }
       ]
     }

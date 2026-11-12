@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
  SessionInfo,
  DeviceList,
@@ -7,6 +8,9 @@ import {
  EngineInfo,
  EngineVersion,
  GgufMetadata,
+ DiagnosticsEvent,
+ DiagnosticsJob,
+ DiagnosticsPreset,
 } from './types'
 
 // Helpers
@@ -248,6 +252,56 @@ export async function isModelSupported(
 // Cleanup commands
 export async function cleanupLlamaProcesses(): Promise<void> {
  return await invoke('plugin:llamacpp|cleanup_llama_processes')
+}
+
+// The ggml op diagnostic
+
+/** Every event of every run arrives here, tagged with its job id. */
+const DIAGNOSTICS_EVENT = 'llamacpp-diagnostics'
+
+/**
+ * Starts a hardware check and returns its id. One run at a time: the check
+ * saturates every core, so a second would make both unreliable.
+ *
+ * Events arrive via `onDiagnosticsEvent` until one carries `event: 'done'`,
+ * which is emitted on every path including a run that could not start.
+ *
+ * `model` is a model id and is required by the `model` preset, which resolves
+ * it to its gguf and runs only the families that model's graph contains. The
+ * other presets ignore it.
+ */
+export async function startDiagnostics(
+ preset: DiagnosticsPreset,
+ devices: string[] = [],
+ envs: Record<string, string> = {},
+ model?: string
+): Promise<DiagnosticsJob> {
+ return await invoke('plugin:llamacpp|start_diagnostics', {
+  preset,
+  devices,
+  envs,
+  model,
+ })
+}
+
+/**
+ * Asks a run to stop. Resolves once the request is made, not once it lands --
+ * the terminal `done` event is what says the run is over.
+ */
+export async function cancelDiagnostics(job: string): Promise<void> {
+ return await invoke('plugin:llamacpp|cancel_diagnostics', { job })
+}
+
+/**
+ * Subscribes to the run stream. Filter on `job`: events from a superseded run
+ * can still be in flight when a new one starts.
+ */
+export async function onDiagnosticsEvent(
+ handler: (event: DiagnosticsEvent) => void
+): Promise<UnlistenFn> {
+ return await listen<DiagnosticsEvent>(DIAGNOSTICS_EVENT, (e) =>
+  handler(e.payload)
+ )
 }
 
 export * from './types'

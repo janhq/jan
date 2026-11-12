@@ -34,5 +34,7 @@
   "serverPortOccupiedDescription": "Port {{port}} is already in use. Please try a different port.",
   "serverInvalidModelPath": "Invalid or inaccessible model path",
   "serverStartModelFailed": "Failed to start model",
-  "serverStartFailed": "Failed to start server"
+  "serverStartFailed": "Failed to start server",
+  "copyDiagnostics": "Copy diagnostics",
+  "diagnosticsCopied": "Diagnostics copied. Paste them into your bug report."
 }
