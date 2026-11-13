@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.superbot.gg/v1',
+    explore_models_url: 'https://superbot.gg/api?utm_source=jan&utm_medium=registry&utm_campaign=default-slots',
+    provider: 'superbot',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The superbot API uses caller keys for authentication. Create one under Account > API at [superbot.gg](https://superbot.gg/api?utm_source=jan&utm_medium=registry&utm_campaign=default-slots). Caller keys start with sbc_.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]
