@@ -144,6 +144,7 @@ export const modelSettings = {
         'e.g., {% for message in messages %}...{% endfor %} or /path/to/template.jinja (default is read from GGUF)',
       type: 'text',
       textAlign: 'right',
+      rows: 10,
     },
   },
   grammar: {
