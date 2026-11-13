@@ -647,7 +647,7 @@ export function fillMissingToolInputs(messages: UIMessage[]): UIMessage[] {
     let mutated = false
     const nextParts = parts.map((part) => {
       const type = (part as { type?: string }).type
-      if (typeof type !== 'string' || !type.startsWith('tool-')) return part
+      if (type !== 'dynamic-tool' && !type?.startsWith('tool-')) return part
       if ((part as { input?: unknown }).input != null) return part
       mutated = true
       return { ...(part as object), input: {} } as typeof part

@@ -132,9 +132,17 @@ describe('fillMissingToolInputs', () => {
           rawInput: '{"path": "C:\\',
           errorText: 'Invalid input',
         },
+        {
+          type: 'dynamic-tool',
+          toolName: 'mcp_tool',
+          toolCallId: 'c3',
+          state: 'output-error',
+          errorText: 'Tool call did not complete',
+        },
       ]),
     ])
     expect(out[0].parts.map((p) => (p as { input?: unknown }).input)).toEqual([
+      {},
       {},
       {},
     ])
