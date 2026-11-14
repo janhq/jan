@@ -58,5 +58,152 @@
   },
   "addProvider": "Добавить поставщика",
   "addOpenAIProvider": "Добавить поставщика OpenAI",
-  "enterNameForProvider": "Введите имя поставщика"
+  "enterNameForProvider": "Введите имя поставщика",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Переменные окружения"
+    },
+    "models_max": {
+      "title": "Макс. число моделей, загруженных одновременно"
+    },
+    "timeout": {
+      "title": "Тайм-аут для llamacpp"
+    },
+    "fit": {
+      "title": "Подгонка (автоподстройка под память устройства)"
+    },
+    "fit_target": {
+      "title": "Цель подгонки на устройство (МиБ)"
+    },
+    "fit_ctx": {
+      "title": "Минимальный размер контекста для подгонки"
+    },
+    "threads": {
+      "title": "Потоки"
+    },
+    "threads_batch": {
+      "title": "Потоки (пакет)"
+    },
+    "ctx_shift": {
+      "title": "Сдвиг контекста"
+    },
+    "n_predict": {
+      "title": "Макс. число токенов для предсказания"
+    },
+    "batch_size": {
+      "title": "Размер пакета"
+    },
+    "ubatch_size": {
+      "title": "Размер микропакета"
+    },
+    "n_cpu_moe": {
+      "title": "Слои MoE на CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Плотные слои FFN на CPU"
+    },
+    "no_kv_offload": {
+      "title": "Отключить выгрузку кэша KV"
+    },
+    "device": {
+      "title": "Устройства для выгрузки"
+    },
+    "split_mode": {
+      "title": "Режим разделения GPU"
+    },
+    "main_gpu": {
+      "title": "Индекс основной GPU"
+    },
+    "tensor_split": {
+      "title": "Разделение тензоров"
+    },
+    "no_op_offload": {
+      "title": "Отключить выгрузку операций"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Параллельные последовательности"
+    },
+    "cont_batching": {
+      "title": "Непрерывная пакетная обработка"
+    },
+    "load_mode": {
+      "title": "Режим загрузки"
+    },
+    "lazy_mode": {
+      "title": "Отложенное чтение тензоров"
+    },
+    "cache_type_k": {
+      "title": "Тип кэша KV K"
+    },
+    "cache_type_v": {
+      "title": "Тип кэша KV V"
+    },
+    "rope_scaling": {
+      "title": "Метод масштабирования RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Базовая частота RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Коэффициент масштабирования RoPE"
+    },
+    "cache_ram": {
+      "title": "ОЗУ кэша промптов (МиБ)"
+    },
+    "persist_thread_cache": {
+      "title": "Запоминать разговоры между сеансами"
+    },
+    "thread_cache_size": {
+      "title": "Лимит диска для кэша разговоров (МиБ)"
+    },
+    "cache_reuse": {
+      "title": "Повторное использование кэша"
+    },
+    "ctx_checkpoints": {
+      "title": "Контрольные точки контекста"
+    },
+    "checkpoint_min_step": {
+      "title": "Мин. шаг между контрольными точками"
+    },
+    "swa_full": {
+      "title": "Полный кэш SWA"
+    },
+    "kv_unified": {
+      "title": "Единый кэш KV"
+    },
+    "kv_unified_per_slot": {
+      "title": "Контекст на слот"
+    },
+    "reasoning_preserve": {
+      "title": "Сохранять историю рассуждений"
+    },
+    "keep": {
+      "title": "Сохранять первые N токенов"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Нет",
+    "layer": "Слой",
+    "row": "Строка",
+    "tensor_experimental": "Тензор (экспериментально)",
+    "auto": "Авто",
+    "on": "Вкл.",
+    "off": "Выкл.",
+    "auto_mmap_if_supported": "Авто (mmap, если поддерживается)",
+    "none_no_mmap": "Нет (без mmap)",
+    "mlock_no_mmap": "mlock (без mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "Прямой ввод-вывод",
+    "model_default": "Значение модели",
+    "linear": "Линейное"
+  },
+  "engineReleaseNotes": "Примечания к выпуску",
+  "engineBuild": "Сборка",
+  "engineCommit": "Коммит",
+  "engineBundled": "Движок вывода встроен в Jan, поэтому отдельно ничего скачивать или обновлять не нужно. Укажите эту версию при сообщении о модели, которая не загружается.",
+  "engineOtherVersion": "Нужна другая версия llama.cpp? Запустите собственный llama-server и добавьте его как пользовательский поставщик, совместимый с OpenAI.",
+  "engineOtherVersionLink": "Как это сделать"
 }

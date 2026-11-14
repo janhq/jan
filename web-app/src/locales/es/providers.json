@@ -58,5 +58,152 @@
   },
   "addProvider": "Agregar proveedor",
   "addOpenAIProvider": "Agregar proveedor OpenAI",
-  "enterNameForProvider": "Ingresa un nombre para el proveedor"
+  "enterNameForProvider": "Ingresa un nombre para el proveedor",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Variables de entorno"
+    },
+    "models_max": {
+      "title": "Máximo de modelos cargados a la vez"
+    },
+    "timeout": {
+      "title": "Tiempo de espera para llamacpp"
+    },
+    "fit": {
+      "title": "Ajuste (autoajuste a la memoria del dispositivo)"
+    },
+    "fit_target": {
+      "title": "Objetivo de ajuste por dispositivo (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Tamaño de contexto mínimo para el ajuste"
+    },
+    "threads": {
+      "title": "Hilos"
+    },
+    "threads_batch": {
+      "title": "Hilos (lote)"
+    },
+    "ctx_shift": {
+      "title": "Desplazamiento de contexto"
+    },
+    "n_predict": {
+      "title": "Máximo de tokens a predecir"
+    },
+    "batch_size": {
+      "title": "Tamaño del lote"
+    },
+    "ubatch_size": {
+      "title": "Tamaño del microlote"
+    },
+    "n_cpu_moe": {
+      "title": "Capas MoE en CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Capas FFN densas en CPU"
+    },
+    "no_kv_offload": {
+      "title": "Desactivar la descarga de la caché KV"
+    },
+    "device": {
+      "title": "Dispositivos para descargar"
+    },
+    "split_mode": {
+      "title": "Modo de reparto de GPU"
+    },
+    "main_gpu": {
+      "title": "Índice de la GPU principal"
+    },
+    "tensor_split": {
+      "title": "Reparto de tensores"
+    },
+    "no_op_offload": {
+      "title": "Desactivar la descarga de operaciones"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Secuencias paralelas"
+    },
+    "cont_batching": {
+      "title": "Procesamiento por lotes continuo"
+    },
+    "load_mode": {
+      "title": "Modo de carga"
+    },
+    "lazy_mode": {
+      "title": "Lectura diferida de tensores"
+    },
+    "cache_type_k": {
+      "title": "Tipo de caché KV K"
+    },
+    "cache_type_v": {
+      "title": "Tipo de caché KV V"
+    },
+    "rope_scaling": {
+      "title": "Método de escalado RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Frecuencia base RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Factor de escalado RoPE"
+    },
+    "cache_ram": {
+      "title": "RAM de caché de prompt (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Recordar conversaciones entre sesiones"
+    },
+    "thread_cache_size": {
+      "title": "Límite de disco de caché de conversación (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Reutilización de caché"
+    },
+    "ctx_checkpoints": {
+      "title": "Puntos de control de contexto"
+    },
+    "checkpoint_min_step": {
+      "title": "Paso mínimo entre puntos de control"
+    },
+    "swa_full": {
+      "title": "Caché SWA completa"
+    },
+    "kv_unified": {
+      "title": "Caché KV unificada"
+    },
+    "kv_unified_per_slot": {
+      "title": "Contexto por ranura"
+    },
+    "reasoning_preserve": {
+      "title": "Conservar el historial de razonamiento"
+    },
+    "keep": {
+      "title": "Conservar los primeros N tokens"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Ninguno",
+    "layer": "Capa",
+    "row": "Fila",
+    "tensor_experimental": "Tensor (experimental)",
+    "auto": "Auto",
+    "on": "Activado",
+    "off": "Desactivado",
+    "auto_mmap_if_supported": "Auto (mmap si es compatible)",
+    "none_no_mmap": "Ninguno (sin mmap)",
+    "mlock_no_mmap": "mlock (sin mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "E/S directa",
+    "model_default": "Valor del modelo",
+    "linear": "Lineal"
+  },
+  "engineReleaseNotes": "Notas de la versión",
+  "engineBuild": "Compilación",
+  "engineCommit": "Commit",
+  "engineBundled": "El motor de inferencia está integrado en Jan, así que no hay nada que descargar ni actualizar por separado. Indica esta versión al informar de un modelo que no se carga.",
+  "engineOtherVersion": "¿Necesitas otra versión de llama.cpp? Ejecuta tu propio llama-server y añádelo como proveedor personalizado compatible con OpenAI.",
+  "engineOtherVersionLink": "Cómo hacerlo"
 }

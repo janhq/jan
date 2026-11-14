@@ -58,5 +58,152 @@
   },
   "addProvider": "Přidat poskytovatele",
   "addOpenAIProvider": "Přidat OpenAI poskytovatele",
-  "enterNameForProvider": "Zadejte název pro poskytovatele"
+  "enterNameForProvider": "Zadejte název pro poskytovatele",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Proměnné prostředí"
+    },
+    "models_max": {
+      "title": "Max. počet modelů načtených najednou"
+    },
+    "timeout": {
+      "title": "Časový limit pro llamacpp"
+    },
+    "fit": {
+      "title": "Přizpůsobení (automaticky podle paměti zařízení)"
+    },
+    "fit_target": {
+      "title": "Cíl přizpůsobení na zařízení (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Minimální velikost kontextu pro přizpůsobení"
+    },
+    "threads": {
+      "title": "Vlákna"
+    },
+    "threads_batch": {
+      "title": "Vlákna (dávka)"
+    },
+    "ctx_shift": {
+      "title": "Posun kontextu"
+    },
+    "n_predict": {
+      "title": "Max. počet tokenů k predikci"
+    },
+    "batch_size": {
+      "title": "Velikost dávky"
+    },
+    "ubatch_size": {
+      "title": "Velikost mikrodávky"
+    },
+    "n_cpu_moe": {
+      "title": "Vrstvy MoE na CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Husté vrstvy FFN na CPU"
+    },
+    "no_kv_offload": {
+      "title": "Vypnout odkládání mezipaměti KV"
+    },
+    "device": {
+      "title": "Zařízení pro odkládání"
+    },
+    "split_mode": {
+      "title": "Režim rozdělení GPU"
+    },
+    "main_gpu": {
+      "title": "Index hlavní GPU"
+    },
+    "tensor_split": {
+      "title": "Rozdělení tenzorů"
+    },
+    "no_op_offload": {
+      "title": "Vypnout odkládání operací"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Paralelní sekvence"
+    },
+    "cont_batching": {
+      "title": "Průběžné dávkování"
+    },
+    "load_mode": {
+      "title": "Režim načítání"
+    },
+    "lazy_mode": {
+      "title": "Odložené čtení tenzorů"
+    },
+    "cache_type_k": {
+      "title": "Typ mezipaměti KV K"
+    },
+    "cache_type_v": {
+      "title": "Typ mezipaměti KV V"
+    },
+    "rope_scaling": {
+      "title": "Metoda škálování RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Základní frekvence RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Faktor škálování RoPE"
+    },
+    "cache_ram": {
+      "title": "RAM mezipaměti promptů (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Pamatovat si konverzace mezi relacemi"
+    },
+    "thread_cache_size": {
+      "title": "Diskový limit mezipaměti konverzací (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Opětovné použití mezipaměti"
+    },
+    "ctx_checkpoints": {
+      "title": "Kontrolní body kontextu"
+    },
+    "checkpoint_min_step": {
+      "title": "Minimální krok mezi kontrolními body"
+    },
+    "swa_full": {
+      "title": "Plná mezipaměť SWA"
+    },
+    "kv_unified": {
+      "title": "Sjednocená mezipaměť KV"
+    },
+    "kv_unified_per_slot": {
+      "title": "Kontext na slot"
+    },
+    "reasoning_preserve": {
+      "title": "Zachovat historii uvažování"
+    },
+    "keep": {
+      "title": "Zachovat prvních N tokenů"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Žádné",
+    "layer": "Vrstva",
+    "row": "Řádek",
+    "tensor_experimental": "Tenzor (experimentální)",
+    "auto": "Auto",
+    "on": "Zapnuto",
+    "off": "Vypnuto",
+    "auto_mmap_if_supported": "Auto (mmap, pokud je podporováno)",
+    "none_no_mmap": "Žádné (bez mmap)",
+    "mlock_no_mmap": "mlock (bez mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "Přímý vstup/výstup",
+    "model_default": "Hodnota modelu",
+    "linear": "Lineární"
+  },
+  "engineReleaseNotes": "Poznámky k vydání",
+  "engineBuild": "Sestavení",
+  "engineCommit": "Commit",
+  "engineBundled": "Inferenční engine je součástí Jana, takže není třeba nic samostatně stahovat ani aktualizovat. Uveďte tuto verzi při hlášení modelu, který se nenačte.",
+  "engineOtherVersion": "Potřebujete jinou verzi llama.cpp? Spusťte vlastní llama-server a přidejte jej jako vlastního poskytovatele kompatibilního s OpenAI.",
+  "engineOtherVersionLink": "Jak na to"
 }

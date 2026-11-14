@@ -58,5 +58,152 @@
   },
   "addProvider": "Afegeix un proveïdor",
   "addOpenAIProvider": "Afegeix un proveïdor d’OpenAI",
-  "enterNameForProvider": "Introdueix el nom del proveïdor"
+  "enterNameForProvider": "Introdueix el nom del proveïdor",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Variables d'entorn"
+    },
+    "models_max": {
+      "title": "Màxim de models carregats alhora"
+    },
+    "timeout": {
+      "title": "Temps d'espera per a llamacpp"
+    },
+    "fit": {
+      "title": "Ajust (autoajust a la memòria del dispositiu)"
+    },
+    "fit_target": {
+      "title": "Objectiu d'ajust per dispositiu (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Mida de context mínima per a l'ajust"
+    },
+    "threads": {
+      "title": "Fils"
+    },
+    "threads_batch": {
+      "title": "Fils (lot)"
+    },
+    "ctx_shift": {
+      "title": "Desplaçament de context"
+    },
+    "n_predict": {
+      "title": "Màxim de tokens a predir"
+    },
+    "batch_size": {
+      "title": "Mida del lot"
+    },
+    "ubatch_size": {
+      "title": "Mida del microlot"
+    },
+    "n_cpu_moe": {
+      "title": "Capes MoE a la CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Capes FFN denses a la CPU"
+    },
+    "no_kv_offload": {
+      "title": "Desactivar la descàrrega de la memòria cau KV"
+    },
+    "device": {
+      "title": "Dispositius per descarregar"
+    },
+    "split_mode": {
+      "title": "Mode de repartiment de GPU"
+    },
+    "main_gpu": {
+      "title": "Índex de la GPU principal"
+    },
+    "tensor_split": {
+      "title": "Repartiment de tensors"
+    },
+    "no_op_offload": {
+      "title": "Desactivar la descàrrega d'operacions"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Seqüències paral·leles"
+    },
+    "cont_batching": {
+      "title": "Processament per lots continu"
+    },
+    "load_mode": {
+      "title": "Mode de càrrega"
+    },
+    "lazy_mode": {
+      "title": "Lectura diferida de tensors"
+    },
+    "cache_type_k": {
+      "title": "Tipus de memòria cau KV K"
+    },
+    "cache_type_v": {
+      "title": "Tipus de memòria cau KV V"
+    },
+    "rope_scaling": {
+      "title": "Mètode d'escalat RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Freqüència base RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Factor d'escalat RoPE"
+    },
+    "cache_ram": {
+      "title": "RAM de memòria cau de prompt (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Recordar converses entre sessions"
+    },
+    "thread_cache_size": {
+      "title": "Límit de disc de memòria cau de conversa (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Reutilització de memòria cau"
+    },
+    "ctx_checkpoints": {
+      "title": "Punts de control de context"
+    },
+    "checkpoint_min_step": {
+      "title": "Pas mínim entre punts de control"
+    },
+    "swa_full": {
+      "title": "Memòria cau SWA completa"
+    },
+    "kv_unified": {
+      "title": "Memòria cau KV unificada"
+    },
+    "kv_unified_per_slot": {
+      "title": "Context per ranura"
+    },
+    "reasoning_preserve": {
+      "title": "Conservar l'historial de raonament"
+    },
+    "keep": {
+      "title": "Conservar els primers N tokens"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Cap",
+    "layer": "Capa",
+    "row": "Fila",
+    "tensor_experimental": "Tensor (experimental)",
+    "auto": "Auto",
+    "on": "Activat",
+    "off": "Desactivat",
+    "auto_mmap_if_supported": "Auto (mmap si és compatible)",
+    "none_no_mmap": "Cap (sense mmap)",
+    "mlock_no_mmap": "mlock (sense mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "E/S directa",
+    "model_default": "Valor del model",
+    "linear": "Lineal"
+  },
+  "engineReleaseNotes": "Notes de la versió",
+  "engineBuild": "Compilació",
+  "engineCommit": "Commit",
+  "engineBundled": "El motor d'inferència està integrat a Jan, així que no cal baixar ni actualitzar res per separat. Indica aquesta versió quan informis d'un model que no es carrega.",
+  "engineOtherVersion": "Necessites una altra versió de llama.cpp? Executa el teu propi llama-server i afegeix-lo com a proveïdor personalitzat compatible amb OpenAI.",
+  "engineOtherVersionLink": "Com fer-ho"
 }

@@ -58,5 +58,152 @@
   },
   "addProvider": "Tambah Penyedia",
   "addOpenAIProvider": "Tambah Penyedia OpenAI",
-  "enterNameForProvider": "Masukkan nama untuk penyedia"
+  "enterNameForProvider": "Masukkan nama untuk penyedia",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Variabel lingkungan"
+    },
+    "models_max": {
+      "title": "Maks. model yang dimuat bersamaan"
+    },
+    "timeout": {
+      "title": "Batas waktu untuk llamacpp"
+    },
+    "fit": {
+      "title": "Penyesuaian (otomatis ke memori perangkat)"
+    },
+    "fit_target": {
+      "title": "Target penyesuaian per perangkat (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Ukuran konteks minimum untuk penyesuaian"
+    },
+    "threads": {
+      "title": "Thread"
+    },
+    "threads_batch": {
+      "title": "Thread (batch)"
+    },
+    "ctx_shift": {
+      "title": "Pergeseran konteks"
+    },
+    "n_predict": {
+      "title": "Maks. token untuk diprediksi"
+    },
+    "batch_size": {
+      "title": "Ukuran batch"
+    },
+    "ubatch_size": {
+      "title": "Ukuran micro-batch"
+    },
+    "n_cpu_moe": {
+      "title": "Lapisan MoE di CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Lapisan FFN padat di CPU"
+    },
+    "no_kv_offload": {
+      "title": "Nonaktifkan offload cache KV"
+    },
+    "device": {
+      "title": "Perangkat untuk offload"
+    },
+    "split_mode": {
+      "title": "Mode pemisahan GPU"
+    },
+    "main_gpu": {
+      "title": "Indeks GPU utama"
+    },
+    "tensor_split": {
+      "title": "Pemisahan tensor"
+    },
+    "no_op_offload": {
+      "title": "Nonaktifkan offload operasi"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Urutan paralel"
+    },
+    "cont_batching": {
+      "title": "Batching berkelanjutan"
+    },
+    "load_mode": {
+      "title": "Mode pemuatan"
+    },
+    "lazy_mode": {
+      "title": "Pembacaan tensor tertunda"
+    },
+    "cache_type_k": {
+      "title": "Jenis cache KV K"
+    },
+    "cache_type_v": {
+      "title": "Jenis cache KV V"
+    },
+    "rope_scaling": {
+      "title": "Metode penskalaan RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Frekuensi dasar RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Faktor penskalaan RoPE"
+    },
+    "cache_ram": {
+      "title": "RAM cache prompt (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Ingat percakapan antar sesi"
+    },
+    "thread_cache_size": {
+      "title": "Batas disk cache percakapan (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Penggunaan ulang cache"
+    },
+    "ctx_checkpoints": {
+      "title": "Titik pemeriksaan konteks"
+    },
+    "checkpoint_min_step": {
+      "title": "Langkah minimum antar titik pemeriksaan"
+    },
+    "swa_full": {
+      "title": "Cache SWA penuh"
+    },
+    "kv_unified": {
+      "title": "Cache KV terpadu"
+    },
+    "kv_unified_per_slot": {
+      "title": "Konteks per slot"
+    },
+    "reasoning_preserve": {
+      "title": "Pertahankan riwayat penalaran"
+    },
+    "keep": {
+      "title": "Simpan N token pertama"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Tidak ada",
+    "layer": "Lapisan",
+    "row": "Baris",
+    "tensor_experimental": "Tensor (eksperimental)",
+    "auto": "Otomatis",
+    "on": "Aktif",
+    "off": "Nonaktif",
+    "auto_mmap_if_supported": "Otomatis (mmap jika didukung)",
+    "none_no_mmap": "Tidak ada (tanpa mmap)",
+    "mlock_no_mmap": "mlock (tanpa mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "I/O langsung",
+    "model_default": "Nilai model",
+    "linear": "Linear"
+  },
+  "engineReleaseNotes": "Catatan rilis",
+  "engineBuild": "Build",
+  "engineCommit": "Commit",
+  "engineBundled": "Mesin inferensi sudah terpasang di Jan, jadi tidak ada yang perlu diunduh atau diperbarui secara terpisah. Sertakan versi ini saat melaporkan model yang gagal dimuat.",
+  "engineOtherVersion": "Butuh versi llama.cpp lain? Jalankan llama-server sendiri dan tambahkan sebagai penyedia kustom yang kompatibel dengan OpenAI.",
+  "engineOtherVersionLink": "Cara melakukannya"
 }

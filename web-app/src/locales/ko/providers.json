@@ -58,5 +58,152 @@
   },
   "addProvider": "공급자 추가",
   "addOpenAIProvider": "OpenAI 공급자 추가",
-  "enterNameForProvider": "공급자 이름 입력"
+  "enterNameForProvider": "공급자 이름 입력",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "환경 변수"
+    },
+    "models_max": {
+      "title": "동시에 로드되는 최대 모델 수"
+    },
+    "timeout": {
+      "title": "llamacpp 시간 제한"
+    },
+    "fit": {
+      "title": "맞춤 (장치 메모리에 자동 조정)"
+    },
+    "fit_target": {
+      "title": "장치별 맞춤 목표 (MiB)"
+    },
+    "fit_ctx": {
+      "title": "맞춤을 위한 최소 컨텍스트 크기"
+    },
+    "threads": {
+      "title": "스레드"
+    },
+    "threads_batch": {
+      "title": "스레드 (배치)"
+    },
+    "ctx_shift": {
+      "title": "컨텍스트 시프트"
+    },
+    "n_predict": {
+      "title": "예측할 최대 토큰 수"
+    },
+    "batch_size": {
+      "title": "배치 크기"
+    },
+    "ubatch_size": {
+      "title": "마이크로 배치 크기"
+    },
+    "n_cpu_moe": {
+      "title": "CPU의 MoE 레이어"
+    },
+    "n_cpu_ffn": {
+      "title": "CPU의 고밀도 FFN 레이어"
+    },
+    "no_kv_offload": {
+      "title": "KV 캐시 오프로드 비활성화"
+    },
+    "device": {
+      "title": "오프로드할 장치"
+    },
+    "split_mode": {
+      "title": "GPU 분할 모드"
+    },
+    "main_gpu": {
+      "title": "기본 GPU 인덱스"
+    },
+    "tensor_split": {
+      "title": "텐서 분할"
+    },
+    "no_op_offload": {
+      "title": "연산 오프로드 비활성화"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "병렬 시퀀스"
+    },
+    "cont_batching": {
+      "title": "연속 배치 처리"
+    },
+    "load_mode": {
+      "title": "로드 모드"
+    },
+    "lazy_mode": {
+      "title": "지연된 텐서 읽기"
+    },
+    "cache_type_k": {
+      "title": "KV 캐시 유형 K"
+    },
+    "cache_type_v": {
+      "title": "KV 캐시 유형 V"
+    },
+    "rope_scaling": {
+      "title": "RoPE 스케일링 방식"
+    },
+    "rope_freq_base": {
+      "title": "RoPE 기본 주파수"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE 스케일링 계수"
+    },
+    "cache_ram": {
+      "title": "프롬프트 캐시 RAM (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "세션 간 대화 기억"
+    },
+    "thread_cache_size": {
+      "title": "대화 캐시 디스크 한도 (MiB)"
+    },
+    "cache_reuse": {
+      "title": "캐시 재사용"
+    },
+    "ctx_checkpoints": {
+      "title": "컨텍스트 체크포인트"
+    },
+    "checkpoint_min_step": {
+      "title": "체크포인트 간 최소 단계"
+    },
+    "swa_full": {
+      "title": "전체 SWA 캐시"
+    },
+    "kv_unified": {
+      "title": "통합 KV 캐시"
+    },
+    "kv_unified_per_slot": {
+      "title": "슬롯별 컨텍스트"
+    },
+    "reasoning_preserve": {
+      "title": "추론 기록 유지"
+    },
+    "keep": {
+      "title": "처음 N개 토큰 유지"
+    }
+  },
+  "llamacppOptions": {
+    "none": "없음",
+    "layer": "레이어",
+    "row": "행",
+    "tensor_experimental": "텐서 (실험적)",
+    "auto": "자동",
+    "on": "켜짐",
+    "off": "꺼짐",
+    "auto_mmap_if_supported": "자동 (지원 시 mmap)",
+    "none_no_mmap": "없음 (mmap 미사용)",
+    "mlock_no_mmap": "mlock (mmap 미사용)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "직접 I/O",
+    "model_default": "모델 값",
+    "linear": "선형"
+  },
+  "engineReleaseNotes": "릴리스 노트",
+  "engineBuild": "빌드",
+  "engineCommit": "커밋",
+  "engineBundled": "추론 엔진은 Jan에 내장되어 있으므로 별도로 다운로드하거나 업데이트할 필요가 없습니다. 모델이 로드되지 않는다고 보고할 때 이 버전을 알려주세요.",
+  "engineOtherVersion": "다른 llama.cpp 버전이 필요하신가요? 직접 llama-server를 실행하고 OpenAI 호환 사용자 지정 공급자로 추가하세요.",
+  "engineOtherVersionLink": "방법"
 }

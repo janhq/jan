@@ -58,5 +58,152 @@
   },
   "addProvider": "प्रदाता जोड़ें",
   "addOpenAIProvider": "OpenAI प्रदाता जोड़ें",
-  "enterNameForProvider": "कृपया प्रदाता का नाम दर्ज करें"
+  "enterNameForProvider": "कृपया प्रदाता का नाम दर्ज करें",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "पर्यावरण चर"
+    },
+    "models_max": {
+      "title": "एक साथ लोड किए गए मॉडल की अधिकतम संख्या"
+    },
+    "timeout": {
+      "title": "llamacpp के लिए समय-सीमा"
+    },
+    "fit": {
+      "title": "फ़िट (डिवाइस मेमोरी के अनुसार स्वतः समायोजन)"
+    },
+    "fit_target": {
+      "title": "प्रति डिवाइस फ़िट लक्ष्य (MiB)"
+    },
+    "fit_ctx": {
+      "title": "फ़िट के लिए न्यूनतम संदर्भ आकार"
+    },
+    "threads": {
+      "title": "थ्रेड"
+    },
+    "threads_batch": {
+      "title": "थ्रेड (बैच)"
+    },
+    "ctx_shift": {
+      "title": "संदर्भ स्थानांतरण"
+    },
+    "n_predict": {
+      "title": "पूर्वानुमान के लिए अधिकतम टोकन"
+    },
+    "batch_size": {
+      "title": "बैच आकार"
+    },
+    "ubatch_size": {
+      "title": "माइक्रो-बैच आकार"
+    },
+    "n_cpu_moe": {
+      "title": "CPU पर MoE परतें"
+    },
+    "n_cpu_ffn": {
+      "title": "CPU पर सघन FFN परतें"
+    },
+    "no_kv_offload": {
+      "title": "KV कैश ऑफ़लोड अक्षम करें"
+    },
+    "device": {
+      "title": "ऑफ़लोड के लिए डिवाइस"
+    },
+    "split_mode": {
+      "title": "GPU विभाजन मोड"
+    },
+    "main_gpu": {
+      "title": "मुख्य GPU इंडेक्स"
+    },
+    "tensor_split": {
+      "title": "टेंसर विभाजन"
+    },
+    "no_op_offload": {
+      "title": "ऑपरेशन ऑफ़लोड अक्षम करें"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "समानांतर अनुक्रम"
+    },
+    "cont_batching": {
+      "title": "निरंतर बैचिंग"
+    },
+    "load_mode": {
+      "title": "लोड मोड"
+    },
+    "lazy_mode": {
+      "title": "टेंसर की विलंबित रीडिंग"
+    },
+    "cache_type_k": {
+      "title": "KV कैश प्रकार K"
+    },
+    "cache_type_v": {
+      "title": "KV कैश प्रकार V"
+    },
+    "rope_scaling": {
+      "title": "RoPE स्केलिंग विधि"
+    },
+    "rope_freq_base": {
+      "title": "RoPE आधार आवृत्ति"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE स्केलिंग कारक"
+    },
+    "cache_ram": {
+      "title": "प्रॉम्प्ट कैश RAM (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "सत्रों के बीच बातचीत याद रखें"
+    },
+    "thread_cache_size": {
+      "title": "बातचीत कैश डिस्क सीमा (MiB)"
+    },
+    "cache_reuse": {
+      "title": "कैश पुनः उपयोग"
+    },
+    "ctx_checkpoints": {
+      "title": "संदर्भ चेकपॉइंट"
+    },
+    "checkpoint_min_step": {
+      "title": "चेकपॉइंट के बीच न्यूनतम चरण"
+    },
+    "swa_full": {
+      "title": "पूर्ण SWA कैश"
+    },
+    "kv_unified": {
+      "title": "एकीकृत KV कैश"
+    },
+    "kv_unified_per_slot": {
+      "title": "प्रति स्लॉट संदर्भ"
+    },
+    "reasoning_preserve": {
+      "title": "तर्क इतिहास सुरक्षित रखें"
+    },
+    "keep": {
+      "title": "पहले N टोकन रखें"
+    }
+  },
+  "llamacppOptions": {
+    "none": "कोई नहीं",
+    "layer": "परत",
+    "row": "पंक्ति",
+    "tensor_experimental": "टेंसर (प्रयोगात्मक)",
+    "auto": "ऑटो",
+    "on": "चालू",
+    "off": "बंद",
+    "auto_mmap_if_supported": "ऑटो (समर्थित होने पर mmap)",
+    "none_no_mmap": "कोई नहीं (mmap के बिना)",
+    "mlock_no_mmap": "mlock (mmap के बिना)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "प्रत्यक्ष I/O",
+    "model_default": "मॉडल मान",
+    "linear": "रैखिक"
+  },
+  "engineReleaseNotes": "रिलीज़ नोट्स",
+  "engineBuild": "बिल्ड",
+  "engineCommit": "कमिट",
+  "engineBundled": "इन्फ़रेंस इंजन Jan में अंतर्निहित है, इसलिए अलग से कुछ डाउनलोड या अपडेट करने की आवश्यकता नहीं है। ऐसे मॉडल की रिपोर्ट करते समय यह संस्करण बताएं जो लोड नहीं होता।",
+  "engineOtherVersion": "llama.cpp का दूसरा संस्करण चाहिए? अपना llama-server चलाएँ और उसे OpenAI-संगत कस्टम प्रदाता के रूप में जोड़ें।",
+  "engineOtherVersionLink": "तरीका"
 }

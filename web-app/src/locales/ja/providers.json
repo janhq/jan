@@ -106,5 +106,152 @@
     "oneKeyHint": "任意のフォールバックキーは詳細設定で構成します。",
     "addKey": "キーを追加",
     "removeKey": "キーを削除"
-  }
+  },
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "環境変数"
+    },
+    "models_max": {
+      "title": "同時に読み込むモデルの最大数"
+    },
+    "timeout": {
+      "title": "llamacpp のタイムアウト"
+    },
+    "fit": {
+      "title": "フィット（デバイスメモリに自動調整）"
+    },
+    "fit_target": {
+      "title": "デバイスごとのフィット目標 (MiB)"
+    },
+    "fit_ctx": {
+      "title": "フィット用の最小コンテキストサイズ"
+    },
+    "threads": {
+      "title": "スレッド数"
+    },
+    "threads_batch": {
+      "title": "スレッド数（バッチ）"
+    },
+    "ctx_shift": {
+      "title": "コンテキストシフト"
+    },
+    "n_predict": {
+      "title": "予測するトークンの最大数"
+    },
+    "batch_size": {
+      "title": "バッチサイズ"
+    },
+    "ubatch_size": {
+      "title": "マイクロバッチサイズ"
+    },
+    "n_cpu_moe": {
+      "title": "CPU 上の MoE レイヤー"
+    },
+    "n_cpu_ffn": {
+      "title": "CPU 上の高密度 FFN レイヤー"
+    },
+    "no_kv_offload": {
+      "title": "KV キャッシュのオフロードを無効化"
+    },
+    "device": {
+      "title": "オフロード先のデバイス"
+    },
+    "split_mode": {
+      "title": "GPU 分割モード"
+    },
+    "main_gpu": {
+      "title": "メイン GPU インデックス"
+    },
+    "tensor_split": {
+      "title": "テンソル分割"
+    },
+    "no_op_offload": {
+      "title": "演算のオフロードを無効化"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "並列シーケンス数"
+    },
+    "cont_batching": {
+      "title": "連続バッチ処理"
+    },
+    "load_mode": {
+      "title": "読み込みモード"
+    },
+    "lazy_mode": {
+      "title": "テンソルの遅延読み込み"
+    },
+    "cache_type_k": {
+      "title": "KV キャッシュの種類 K"
+    },
+    "cache_type_v": {
+      "title": "KV キャッシュの種類 V"
+    },
+    "rope_scaling": {
+      "title": "RoPE スケーリング方式"
+    },
+    "rope_freq_base": {
+      "title": "RoPE 基本周波数"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE スケーリング係数"
+    },
+    "cache_ram": {
+      "title": "プロンプトキャッシュ RAM (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "セッション間で会話を記憶する"
+    },
+    "thread_cache_size": {
+      "title": "会話キャッシュのディスク上限 (MiB)"
+    },
+    "cache_reuse": {
+      "title": "キャッシュの再利用"
+    },
+    "ctx_checkpoints": {
+      "title": "コンテキストチェックポイント"
+    },
+    "checkpoint_min_step": {
+      "title": "チェックポイント間の最小ステップ"
+    },
+    "swa_full": {
+      "title": "完全な SWA キャッシュ"
+    },
+    "kv_unified": {
+      "title": "統合 KV キャッシュ"
+    },
+    "kv_unified_per_slot": {
+      "title": "スロットごとのコンテキスト"
+    },
+    "reasoning_preserve": {
+      "title": "推論履歴を保持する"
+    },
+    "keep": {
+      "title": "先頭 N トークンを保持"
+    }
+  },
+  "llamacppOptions": {
+    "none": "なし",
+    "layer": "レイヤー",
+    "row": "行",
+    "tensor_experimental": "テンソル（実験的）",
+    "auto": "自動",
+    "on": "オン",
+    "off": "オフ",
+    "auto_mmap_if_supported": "自動（対応時は mmap）",
+    "none_no_mmap": "なし（mmap 不使用）",
+    "mlock_no_mmap": "mlock（mmap 不使用）",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "ダイレクト I/O",
+    "model_default": "モデルの値",
+    "linear": "リニア"
+  },
+  "engineReleaseNotes": "リリースノート",
+  "engineBuild": "ビルド",
+  "engineCommit": "コミット",
+  "engineBundled": "推論エンジンは Jan に組み込まれているため、別途ダウンロードや更新は不要です。モデルが読み込めないことを報告する際はこのバージョンを示してください。",
+  "engineOtherVersion": "別の llama.cpp バージョンが必要ですか？ 独自の llama-server を実行し、OpenAI 互換のカスタムプロバイダーとして追加してください。",
+  "engineOtherVersionLink": "手順"
 }

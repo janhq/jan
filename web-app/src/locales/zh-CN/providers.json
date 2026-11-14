@@ -78,5 +78,152 @@
     "oneKeyHint": "（可选）于高级设定中添加备用 keys。",
     "addKey": "添加 key",
     "removeKey": "移除 key"
-  }
+  },
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "环境变量"
+    },
+    "models_max": {
+      "title": "同时加载的最大模型数"
+    },
+    "timeout": {
+      "title": "llamacpp 超时时间"
+    },
+    "fit": {
+      "title": "适配（自动调整以适应设备内存）"
+    },
+    "fit_target": {
+      "title": "每台设备的适配目标 (MiB)"
+    },
+    "fit_ctx": {
+      "title": "适配所需的最小上下文大小"
+    },
+    "threads": {
+      "title": "线程数"
+    },
+    "threads_batch": {
+      "title": "线程数（批处理）"
+    },
+    "ctx_shift": {
+      "title": "上下文移位"
+    },
+    "n_predict": {
+      "title": "最大预测 Token 数"
+    },
+    "batch_size": {
+      "title": "批处理大小"
+    },
+    "ubatch_size": {
+      "title": "微批处理大小"
+    },
+    "n_cpu_moe": {
+      "title": "CPU 上的 MoE 层"
+    },
+    "n_cpu_ffn": {
+      "title": "CPU 上的稠密 FFN 层"
+    },
+    "no_kv_offload": {
+      "title": "禁用 KV 缓存卸载"
+    },
+    "device": {
+      "title": "卸载设备"
+    },
+    "split_mode": {
+      "title": "GPU 拆分模式"
+    },
+    "main_gpu": {
+      "title": "主 GPU 索引"
+    },
+    "tensor_split": {
+      "title": "张量拆分"
+    },
+    "no_op_offload": {
+      "title": "禁用运算卸载"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "并行序列"
+    },
+    "cont_batching": {
+      "title": "连续批处理"
+    },
+    "load_mode": {
+      "title": "加载模式"
+    },
+    "lazy_mode": {
+      "title": "延迟读取张量"
+    },
+    "cache_type_k": {
+      "title": "KV 缓存类型 K"
+    },
+    "cache_type_v": {
+      "title": "KV 缓存类型 V"
+    },
+    "rope_scaling": {
+      "title": "RoPE 缩放方法"
+    },
+    "rope_freq_base": {
+      "title": "RoPE 基础频率"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE 缩放系数"
+    },
+    "cache_ram": {
+      "title": "提示缓存 RAM (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "在会话之间记住对话"
+    },
+    "thread_cache_size": {
+      "title": "对话缓存磁盘限制 (MiB)"
+    },
+    "cache_reuse": {
+      "title": "缓存复用"
+    },
+    "ctx_checkpoints": {
+      "title": "上下文检查点"
+    },
+    "checkpoint_min_step": {
+      "title": "检查点之间的最小步长"
+    },
+    "swa_full": {
+      "title": "完整 SWA 缓存"
+    },
+    "kv_unified": {
+      "title": "统一 KV 缓存"
+    },
+    "kv_unified_per_slot": {
+      "title": "每个槽位的上下文"
+    },
+    "reasoning_preserve": {
+      "title": "保留推理历史"
+    },
+    "keep": {
+      "title": "保留前 N 个 Token"
+    }
+  },
+  "llamacppOptions": {
+    "none": "无",
+    "layer": "层",
+    "row": "行",
+    "tensor_experimental": "张量（实验性）",
+    "auto": "自动",
+    "on": "开",
+    "off": "关",
+    "auto_mmap_if_supported": "自动（支持时使用 mmap）",
+    "none_no_mmap": "无（不使用 mmap）",
+    "mlock_no_mmap": "mlock（不使用 mmap）",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "直接 I/O",
+    "model_default": "模型默认值",
+    "linear": "线性"
+  },
+  "engineReleaseNotes": "发行说明",
+  "engineBuild": "构建",
+  "engineCommit": "提交",
+  "engineBundled": "推理引擎已内置于 Jan，因此无需单独下载或更新。反馈模型无法加载时请注明此版本。",
+  "engineOtherVersion": "需要其他 llama.cpp 版本？运行你自己的 llama-server，并将其添加为兼容 OpenAI 的自定义提供商。",
+  "engineOtherVersionLink": "操作方法"
 }

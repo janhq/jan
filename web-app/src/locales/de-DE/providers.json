@@ -58,5 +58,152 @@
   },
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
-  "enterNameForProvider": "Namen für den Anbieter eingeben"
+  "enterNameForProvider": "Namen für den Anbieter eingeben",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Umgebungsvariablen"
+    },
+    "models_max": {
+      "title": "Max. gleichzeitig geladene Modelle"
+    },
+    "timeout": {
+      "title": "Zeitlimit für llamacpp"
+    },
+    "fit": {
+      "title": "Anpassung (automatisch an den Gerätespeicher)"
+    },
+    "fit_target": {
+      "title": "Anpassungsziel pro Gerät (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Minimale Kontextgröße für die Anpassung"
+    },
+    "threads": {
+      "title": "Threads"
+    },
+    "threads_batch": {
+      "title": "Threads (Batch)"
+    },
+    "ctx_shift": {
+      "title": "Kontextverschiebung"
+    },
+    "n_predict": {
+      "title": "Max. vorherzusagende Tokens"
+    },
+    "batch_size": {
+      "title": "Batch-Größe"
+    },
+    "ubatch_size": {
+      "title": "Micro-Batch-Größe"
+    },
+    "n_cpu_moe": {
+      "title": "MoE-Schichten auf der CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Dichte FFN-Schichten auf der CPU"
+    },
+    "no_kv_offload": {
+      "title": "KV-Cache-Auslagerung deaktivieren"
+    },
+    "device": {
+      "title": "Geräte zum Auslagern"
+    },
+    "split_mode": {
+      "title": "GPU-Aufteilungsmodus"
+    },
+    "main_gpu": {
+      "title": "Index der Haupt-GPU"
+    },
+    "tensor_split": {
+      "title": "Tensor-Aufteilung"
+    },
+    "no_op_offload": {
+      "title": "Operations-Auslagerung deaktivieren"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Parallele Sequenzen"
+    },
+    "cont_batching": {
+      "title": "Kontinuierliche Bündelung"
+    },
+    "load_mode": {
+      "title": "Lademodus"
+    },
+    "lazy_mode": {
+      "title": "Verzögertes Lesen von Tensoren"
+    },
+    "cache_type_k": {
+      "title": "KV-Cache-Typ K"
+    },
+    "cache_type_v": {
+      "title": "KV-Cache-Typ V"
+    },
+    "rope_scaling": {
+      "title": "RoPE-Skalierungsmethode"
+    },
+    "rope_freq_base": {
+      "title": "RoPE-Basisfrequenz"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE-Skalierungsfaktor"
+    },
+    "cache_ram": {
+      "title": "Prompt-Cache-RAM (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Unterhaltungen zwischen Sitzungen merken"
+    },
+    "thread_cache_size": {
+      "title": "Festplattenlimit für Unterhaltungs-Cache (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Cache-Wiederverwendung"
+    },
+    "ctx_checkpoints": {
+      "title": "Kontext-Prüfpunkte"
+    },
+    "checkpoint_min_step": {
+      "title": "Minimaler Schritt zwischen Prüfpunkten"
+    },
+    "swa_full": {
+      "title": "Vollständiger SWA-Cache"
+    },
+    "kv_unified": {
+      "title": "Einheitlicher KV-Cache"
+    },
+    "kv_unified_per_slot": {
+      "title": "Kontext pro Slot"
+    },
+    "reasoning_preserve": {
+      "title": "Denkverlauf beibehalten"
+    },
+    "keep": {
+      "title": "Erste N Tokens behalten"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Keine",
+    "layer": "Schicht",
+    "row": "Zeile",
+    "tensor_experimental": "Tensor (experimentell)",
+    "auto": "Auto",
+    "on": "Ein",
+    "off": "Aus",
+    "auto_mmap_if_supported": "Auto (mmap, falls unterstützt)",
+    "none_no_mmap": "Keine (ohne mmap)",
+    "mlock_no_mmap": "mlock (ohne mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "Direkte E/A",
+    "model_default": "Modellwert",
+    "linear": "Linear"
+  },
+  "engineReleaseNotes": "Versionshinweise",
+  "engineBuild": "Build",
+  "engineCommit": "Commit",
+  "engineBundled": "Die Inferenz-Engine ist in Jan integriert, es muss also nichts separat heruntergeladen oder aktualisiert werden. Gib diese Version an, wenn du ein Modell meldest, das nicht geladen werden kann.",
+  "engineOtherVersion": "Brauchst du eine andere llama.cpp-Version? Starte deinen eigenen llama-server und füge ihn als benutzerdefinierten OpenAI-kompatiblen Anbieter hinzu.",
+  "engineOtherVersionLink": "Anleitung"
 }

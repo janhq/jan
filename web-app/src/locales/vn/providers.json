@@ -58,5 +58,152 @@
   },
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
-  "enterNameForProvider": "Nhập tên cho nhà cung cấp"
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Biến môi trường"
+    },
+    "models_max": {
+      "title": "Số mô hình tải cùng lúc tối đa"
+    },
+    "timeout": {
+      "title": "Thời gian chờ cho llamacpp"
+    },
+    "fit": {
+      "title": "Điều chỉnh (tự động theo bộ nhớ thiết bị)"
+    },
+    "fit_target": {
+      "title": "Mục tiêu điều chỉnh mỗi thiết bị (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Kích thước ngữ cảnh tối thiểu để điều chỉnh"
+    },
+    "threads": {
+      "title": "Luồng"
+    },
+    "threads_batch": {
+      "title": "Luồng (lô)"
+    },
+    "ctx_shift": {
+      "title": "Dịch chuyển ngữ cảnh"
+    },
+    "n_predict": {
+      "title": "Số token dự đoán tối đa"
+    },
+    "batch_size": {
+      "title": "Kích thước lô"
+    },
+    "ubatch_size": {
+      "title": "Kích thước lô nhỏ"
+    },
+    "n_cpu_moe": {
+      "title": "Lớp MoE trên CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Lớp FFN dày đặc trên CPU"
+    },
+    "no_kv_offload": {
+      "title": "Tắt chuyển bộ nhớ đệm KV"
+    },
+    "device": {
+      "title": "Thiết bị để chuyển tải"
+    },
+    "split_mode": {
+      "title": "Chế độ chia GPU"
+    },
+    "main_gpu": {
+      "title": "Chỉ số GPU chính"
+    },
+    "tensor_split": {
+      "title": "Chia tensor"
+    },
+    "no_op_offload": {
+      "title": "Tắt chuyển tải thao tác"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Chuỗi song song"
+    },
+    "cont_batching": {
+      "title": "Xử lý theo lô liên tục"
+    },
+    "load_mode": {
+      "title": "Chế độ tải"
+    },
+    "lazy_mode": {
+      "title": "Đọc tensor trì hoãn"
+    },
+    "cache_type_k": {
+      "title": "Loại bộ nhớ đệm KV K"
+    },
+    "cache_type_v": {
+      "title": "Loại bộ nhớ đệm KV V"
+    },
+    "rope_scaling": {
+      "title": "Phương pháp mở rộng RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Tần số cơ sở RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Hệ số mở rộng RoPE"
+    },
+    "cache_ram": {
+      "title": "RAM bộ nhớ đệm prompt (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Ghi nhớ hội thoại giữa các phiên"
+    },
+    "thread_cache_size": {
+      "title": "Giới hạn đĩa cho bộ nhớ đệm hội thoại (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Tái sử dụng bộ nhớ đệm"
+    },
+    "ctx_checkpoints": {
+      "title": "Điểm kiểm tra ngữ cảnh"
+    },
+    "checkpoint_min_step": {
+      "title": "Bước tối thiểu giữa các điểm kiểm tra"
+    },
+    "swa_full": {
+      "title": "Bộ nhớ đệm SWA đầy đủ"
+    },
+    "kv_unified": {
+      "title": "Bộ nhớ đệm KV hợp nhất"
+    },
+    "kv_unified_per_slot": {
+      "title": "Ngữ cảnh mỗi vị trí"
+    },
+    "reasoning_preserve": {
+      "title": "Giữ lịch sử suy luận"
+    },
+    "keep": {
+      "title": "Giữ N token đầu tiên"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Không",
+    "layer": "Lớp",
+    "row": "Hàng",
+    "tensor_experimental": "Tensor (thử nghiệm)",
+    "auto": "Tự động",
+    "on": "Bật",
+    "off": "Tắt",
+    "auto_mmap_if_supported": "Tự động (mmap nếu được hỗ trợ)",
+    "none_no_mmap": "Không (không dùng mmap)",
+    "mlock_no_mmap": "mlock (không dùng mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "I/O trực tiếp",
+    "model_default": "Giá trị của mô hình",
+    "linear": "Tuyến tính"
+  },
+  "engineReleaseNotes": "Ghi chú phát hành",
+  "engineBuild": "Bản dựng",
+  "engineCommit": "Commit",
+  "engineBundled": "Công cụ suy luận được tích hợp sẵn trong Jan nên không cần tải xuống hay cập nhật riêng. Hãy nêu phiên bản này khi báo cáo mô hình không tải được.",
+  "engineOtherVersion": "Cần phiên bản llama.cpp khác? Hãy chạy llama-server của riêng bạn và thêm nó làm nhà cung cấp tùy chỉnh tương thích OpenAI.",
+  "engineOtherVersionLink": "Cách thực hiện"
 }

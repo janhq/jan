@@ -58,5 +58,152 @@
   },
   "addProvider": "Dodaj Dostawcę",
   "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
-  "enterNameForProvider": "Wprowadź nazwę dostawcy"
+  "enterNameForProvider": "Wprowadź nazwę dostawcy",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Zmienne środowiskowe"
+    },
+    "models_max": {
+      "title": "Maks. liczba modeli ładowanych jednocześnie"
+    },
+    "timeout": {
+      "title": "Limit czasu dla llamacpp"
+    },
+    "fit": {
+      "title": "Dopasowanie (automatyczne do pamięci urządzenia)"
+    },
+    "fit_target": {
+      "title": "Cel dopasowania na urządzenie (MiB)"
+    },
+    "fit_ctx": {
+      "title": "Minimalny rozmiar kontekstu dla dopasowania"
+    },
+    "threads": {
+      "title": "Wątki"
+    },
+    "threads_batch": {
+      "title": "Wątki (partia)"
+    },
+    "ctx_shift": {
+      "title": "Przesunięcie kontekstu"
+    },
+    "n_predict": {
+      "title": "Maks. liczba tokenów do przewidzenia"
+    },
+    "batch_size": {
+      "title": "Rozmiar partii"
+    },
+    "ubatch_size": {
+      "title": "Rozmiar mikro-partii"
+    },
+    "n_cpu_moe": {
+      "title": "Warstwy MoE na CPU"
+    },
+    "n_cpu_ffn": {
+      "title": "Gęste warstwy FFN na CPU"
+    },
+    "no_kv_offload": {
+      "title": "Wyłącz przenoszenie pamięci podręcznej KV"
+    },
+    "device": {
+      "title": "Urządzenia do przenoszenia"
+    },
+    "split_mode": {
+      "title": "Tryb podziału GPU"
+    },
+    "main_gpu": {
+      "title": "Indeks głównego GPU"
+    },
+    "tensor_split": {
+      "title": "Podział tensorów"
+    },
+    "no_op_offload": {
+      "title": "Wyłącz przenoszenie operacji"
+    },
+    "flash_attn": {
+      "title": "Flash Attention"
+    },
+    "parallel": {
+      "title": "Sekwencje równoległe"
+    },
+    "cont_batching": {
+      "title": "Ciągłe przetwarzanie wsadowe"
+    },
+    "load_mode": {
+      "title": "Tryb ładowania"
+    },
+    "lazy_mode": {
+      "title": "Opóźniony odczyt tensorów"
+    },
+    "cache_type_k": {
+      "title": "Typ pamięci podręcznej KV K"
+    },
+    "cache_type_v": {
+      "title": "Typ pamięci podręcznej KV V"
+    },
+    "rope_scaling": {
+      "title": "Metoda skalowania RoPE"
+    },
+    "rope_freq_base": {
+      "title": "Bazowa częstotliwość RoPE"
+    },
+    "rope_freq_scale": {
+      "title": "Współczynnik skalowania RoPE"
+    },
+    "cache_ram": {
+      "title": "RAM pamięci podręcznej promptów (MiB)"
+    },
+    "persist_thread_cache": {
+      "title": "Pamiętaj rozmowy między sesjami"
+    },
+    "thread_cache_size": {
+      "title": "Limit dyskowy pamięci podręcznej rozmów (MiB)"
+    },
+    "cache_reuse": {
+      "title": "Ponowne użycie pamięci podręcznej"
+    },
+    "ctx_checkpoints": {
+      "title": "Punkty kontrolne kontekstu"
+    },
+    "checkpoint_min_step": {
+      "title": "Minimalny krok między punktami kontrolnymi"
+    },
+    "swa_full": {
+      "title": "Pełna pamięć podręczna SWA"
+    },
+    "kv_unified": {
+      "title": "Ujednolicona pamięć podręczna KV"
+    },
+    "kv_unified_per_slot": {
+      "title": "Kontekst na slot"
+    },
+    "reasoning_preserve": {
+      "title": "Zachowaj historię rozumowania"
+    },
+    "keep": {
+      "title": "Zachowaj pierwsze N tokenów"
+    }
+  },
+  "llamacppOptions": {
+    "none": "Brak",
+    "layer": "Warstwa",
+    "row": "Wiersz",
+    "tensor_experimental": "Tensor (eksperymentalny)",
+    "auto": "Auto",
+    "on": "Włączone",
+    "off": "Wyłączone",
+    "auto_mmap_if_supported": "Auto (mmap, jeśli obsługiwane)",
+    "none_no_mmap": "Brak (bez mmap)",
+    "mlock_no_mmap": "mlock (bez mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "Bezpośrednie I/O",
+    "model_default": "Wartość modelu",
+    "linear": "Liniowe"
+  },
+  "engineReleaseNotes": "Informacje o wersji",
+  "engineBuild": "Kompilacja",
+  "engineCommit": "Commit",
+  "engineBundled": "Silnik wnioskowania jest wbudowany w Jana, więc nie trzeba niczego osobno pobierać ani aktualizować. Podaj tę wersję, zgłaszając model, który się nie ładuje.",
+  "engineOtherVersion": "Potrzebujesz innej wersji llama.cpp? Uruchom własny llama-server i dodaj go jako niestandardowego dostawcę zgodnego z OpenAI.",
+  "engineOtherVersionLink": "Jak to zrobić"
 }
