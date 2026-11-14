@@ -59,6 +59,8 @@
   "finish": "Abschließen",
   "skip": "Überspringen",
   "allow": "Erlauben",
+  "analyticsConsentDetail": "Wir erfassen anonyme Daten, um die Nutzung von Funktionen zu verstehen. Deine Chats und persönlichen Daten werden niemals verfolgt. Du kannst dies jederzeit unter Einstellungen > Datenschutz ändern.",
+  "analyticsConsentQuestion": "Möchtest du uns helfen, Jan zu verbessern?",
   "deny": "Verbieten",
   "start": "Start",
   "stop": "Stop",

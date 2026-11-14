@@ -75,6 +75,8 @@
   "finish": "完了",
   "skip": "スキップ",
   "allow": "許可",
+  "analyticsConsentDetail": "機能の利用状況を把握するため、匿名のデータを収集します。チャットや個人情報が追跡されることはありません。設定 > プライバシーでいつでも変更できます。",
+  "analyticsConsentQuestion": "Jan の改善にご協力いただけますか？",
   "deny": "拒否",
   "start": "開始",
   "stop": "停止",

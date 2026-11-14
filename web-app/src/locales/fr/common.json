@@ -59,6 +59,8 @@
   "finish": "Terminer",
   "skip": "Passer",
   "allow": "Autoriser",
+  "analyticsConsentDetail": "Nous collectons des données anonymes pour comprendre l'utilisation des fonctionnalités. Vos conversations et données personnelles ne sont jamais suivies. Vous pouvez modifier ce choix à tout moment dans Paramètres > Confidentialité.",
+  "analyticsConsentQuestion": "Souhaitez-vous nous aider à améliorer Jan ?",
   "deny": "Refuser",
   "start": "Démarrer",
   "stop": "Arrêter",
