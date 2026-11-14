@@ -399,4 +399,45 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.edenai.run/v3',
+    explore_models_url:
+      'https://app.edenai.run/admin/api-settings/features-preferences',
+    provider: 'edenai',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Eden AI uses API keys for authentication. Visit your [API keys page](https://app.edenai.run/admin/api-settings/features-preferences) to retrieve the key you will use in your requests.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'openai/gpt-5.5',
+        name: 'GPT-5.5 (OpenAI)',
+        version: '1.0',
+        description:
+          'OpenAI GPT-5.5 routed through Eden AI. Models are addressed as "<provider>/<model>".',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'mistral/mistral-large-latest',
+        name: 'Mistral Large',
+        version: '1.0',
+        description:
+          'Mistral Large routed through Eden AI, showing cross-provider access from a single key.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
 ]
