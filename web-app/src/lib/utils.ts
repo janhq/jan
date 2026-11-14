@@ -185,6 +185,8 @@ export const getProviderTitle = (
       return 'OpenAI'
     case 'openrouter':
       return 'OpenRouter'
+    case 'tokenlab':
+      return 'TokenLab'
     case 'gemini':
       return 'Gemini'
     case 'huggingface':
