@@ -162,7 +162,7 @@
     },
     "n_cpu_ffn": {
       "title": "CPU 上の高密度 FFN レイヤー",
-      "description": "最初の N 層の高密度 feed-forward 重みを CPU メモリに保持します。高密度モデル向けの MoE 設定の counterpart です。0 で無効。"
+      "description": "最初の N 層の高密度 feed-forward 重みを CPU メモリに保持します。高密度モデル向けの MoE 設定に相当するものです。0 で無効。"
     },
     "no_kv_offload": {
       "title": "KV キャッシュのオフロードを無効化",

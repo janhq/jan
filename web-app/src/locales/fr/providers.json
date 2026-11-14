@@ -77,7 +77,7 @@
       "description": "Ajuster ou non les arguments non définis pour tenir dans la mémoire du périphérique ('on' ou 'off'). (env : LLAMA_ARG_FIT)"
     },
     "fit_target": {
-      "title": "Cible d'ajustement par périphérique (Mio)",
+      "title": "Cible d'ajustement par périphérique (MiB)",
       "description": "Marge cible par périphérique pour l'ajustement, valeurs MiB séparées par des virgules. Une seule valeur s'applique à tous les périphériques. (env : LLAMA_ARG_FIT_TARGET)"
     },
     "fit_ctx": {
@@ -146,7 +146,7 @@
     },
     "parallel": {
       "title": "Séquences parallèles",
-      "description": "Nombre de séquences parallèles à décoder (0 = valeur par défaut de llama.cpp). Jan ne réserve aucun slot : chat, Cowork et requêtes d'arrière-plan partagent le slot 0, leurs caches KV étant parqués et restaurés par conversation."
+      "description": "Nombre de séquences parallèles à décoder (0 = valeur par défaut de llama.cpp). Jan ne réserve aucun slot : chat, Cowork et requêtes d'arrière-plan partagent le slot 0, leur cache KV est mis en attente puis restauré pour chaque conversation."
     },
     "cont_batching": {
       "title": "Traitement par lots continu",
@@ -181,7 +181,7 @@
       "description": "Facteur de mise à l'échelle des fréquences RoPE. 0 charge la valeur du modèle ; 1 force l'absence de mise à l'échelle."
     },
     "cache_ram": {
-      "title": "RAM du cache de prompt (Mio)",
+      "title": "RAM du cache de prompt (MiB)",
       "description": "Taille du cache de prompt en MiB (par défaut : 8192, ou désactivé pour les modèles de décision sauf modification). -1 = illimité, 0 le désactive."
     },
     "persist_thread_cache": {
@@ -189,7 +189,7 @@
       "description": "Garder sur disque le cache de prompt de chaque conversation pour ne pas relire toute la conversation à la réouverture. Restauré seulement si le modèle, ses réglages et la version de llama.cpp correspondent à ceux qui l'ont enregistré."
     },
     "thread_cache_size": {
-      "title": "Limite disque du cache de conversation (Mio)",
+      "title": "Limite disque du cache de conversation (MiB)",
       "description": "Budget disque des caches de conversation sauvegardés (par défaut : 8192). Les plus anciens sont supprimés en premier. Une longue conversation peut occuper des centaines de MiB."
     },
     "cache_reuse": {
