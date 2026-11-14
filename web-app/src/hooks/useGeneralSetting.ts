@@ -4,6 +4,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
+import { detectLanguage } from '@/i18n/languages'
 
 type GeneralSettingState = {
   currentLanguage: Language
@@ -21,7 +22,7 @@ type GeneralSettingState = {
 export const useGeneralSetting = create<GeneralSettingState>()(
   persist(
     (set) => ({
-      currentLanguage: 'en',
+      currentLanguage: detectLanguage() as Language,
       spellCheckChatInput: true,
       autoUpdateCheck: true,
       stripReasoningFromContext: false,

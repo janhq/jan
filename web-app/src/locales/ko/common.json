@@ -70,6 +70,8 @@
   "finish": "마침",
   "skip": "건너뛰기",
   "allow": "허용",
+  "analyticsConsentDetail": "기능 사용 방식을 이해하기 위해 익명 데이터를 수집합니다. 채팅과 개인 정보는 절대 추적되지 않습니다. 설정 > 개인정보 보호에서 언제든지 변경할 수 있습니다.",
+  "analyticsConsentQuestion": "Jan 개선을 돕고 싶으신가요?",
   "deny": "거부",
   "start": "시작",
   "stop": "중지",

@@ -71,6 +71,8 @@
   "finish": "Finalizar",
   "skip": "Omitir",
   "allow": "Permitir",
+  "analyticsConsentDetail": "Recopilamos datos anónimos para entender el uso de las funciones. Tus conversaciones y datos personales nunca se rastrean. Puedes cambiarlo en cualquier momento en Ajustes > Privacidad.",
+  "analyticsConsentQuestion": "¿Quieres ayudarnos a mejorar Jan?",
   "deny": "Denegar",
   "start": "Iniciar",
   "stop": "Detener",
