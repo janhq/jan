@@ -61,127 +61,168 @@
   "enterNameForProvider": "輸入提供者名稱",
   "llamacppSettings": {
     "llamacpp_env": {
-      "title": "環境變數"
+      "title": "環境變數",
+      "description": "llama.cpp 的環境變數（KEY=VALUE），以 ';' 分隔。"
     },
     "models_max": {
-      "title": "同時載入的最大模型數"
+      "title": "同時載入的最大模型數",
+      "description": "路由器同時保持載入的最大模型數。0 = 不限。"
     },
     "timeout": {
-      "title": "llamacpp 逾時時間"
+      "title": "llamacpp 逾時時間",
+      "description": "llamacpp 的連線與載入逾時時間（秒）。"
     },
     "fit": {
-      "title": "調適（自動調整以符合裝置記憶體）"
+      "title": "調適（自動調整以符合裝置記憶體）",
+      "description": "是否調整未設定的參數以符合裝置記憶體（'on' 或 'off'）。(env: LLAMA_ARG_FIT)"
     },
     "fit_target": {
-      "title": "每台裝置的調適目標 (MiB)"
+      "title": "每台裝置的調適目標 (MiB)",
+      "description": "每個裝置的調適目標餘量，MiB 值以逗號分隔。單一值會套用到所有裝置。(env: LLAMA_ARG_FIT_TARGET)"
     },
     "fit_ctx": {
-      "title": "調適所需的最小內容大小"
+      "title": "調適所需的最小內容大小",
+      "description": "自動調適可設定的最小內容大小（Token）。"
     },
     "threads": {
-      "title": "執行緒數"
+      "title": "執行緒數",
+      "description": "產生時使用的執行緒數（-1 表示邏輯核心數）。"
     },
     "threads_batch": {
-      "title": "執行緒數（批次）"
+      "title": "執行緒數（批次）",
+      "description": "用於批次與提示處理的執行緒數（預設：與執行緒數相同）。"
     },
     "ctx_shift": {
-      "title": "內容位移"
+      "title": "內容位移",
+      "description": "視窗滿時移動內容而不是停止，讓長對話在記憶體不足時仍能繼續。"
     },
     "n_predict": {
-      "title": "最大預測 Token 數"
+      "title": "最大預測 Token 數",
+      "description": "要產生的最大 Token 數。-1 = 不限，-2 = 直到填滿內容。"
     },
     "batch_size": {
-      "title": "批次大小"
+      "title": "批次大小",
+      "description": "處理提示的最大邏輯批次大小。"
     },
     "ubatch_size": {
-      "title": "微批次大小"
+      "title": "微批次大小",
+      "description": "處理提示的最大實體批次大小。"
     },
     "n_cpu_moe": {
-      "title": "CPU 上的 MoE 層"
+      "title": "CPU 上的 MoE 層",
+      "description": "將前 N 層的 Mixture-of-Experts 權重保留在 CPU 記憶體中。可讓大型 MoE 模型裝入有限的 VRAM。0 表示停用。"
     },
     "n_cpu_ffn": {
-      "title": "CPU 上的稠密 FFN 層"
+      "title": "CPU 上的稠密 FFN 層",
+      "description": "將前 N 層的稠密 feed-forward 權重保留在 CPU 記憶體中，是稠密模型對應的 MoE 設定。0 表示停用。"
     },
     "no_kv_offload": {
-      "title": "停用 KV 快取卸載"
+      "title": "停用 KV 快取卸載",
+      "description": "將 KV 快取保留在系統 RAM 而不是 GPU 記憶體中。VRAM 不足時有用，但會犧牲速度。"
     },
     "device": {
-      "title": "卸載裝置"
+      "title": "卸載裝置",
+      "description": "用於卸載的加速器，以逗號分隔，名稱與偵測到的硬體清單一致。留空 = 所有加速器；\"none\" 表示停用卸載。"
     },
     "split_mode": {
-      "title": "GPU 分割模式"
+      "title": "GPU 分割模式",
+      "description": "如何在多個 GPU 之間分割模型。"
     },
     "main_gpu": {
-      "title": "主 GPU 索引"
+      "title": "主 GPU 索引",
+      "description": "用於模型（split-mode=none）或中間結果（split-mode=row）的 GPU。"
     },
     "tensor_split": {
-      "title": "張量分割"
+      "title": "張量分割",
+      "description": "模型在裝置之間分割的比例，以逗號分隔，例如 \"3,1\"。留空 = 平均分割。"
     },
     "no_op_offload": {
-      "title": "停用運算卸載"
+      "title": "停用運算卸載",
+      "description": "將主機張量運算保留在 CPU 上，而不是卸載到加速器。"
     },
     "flash_attn": {
-      "title": "Flash Attention"
+      "title": "Flash Attention",
+      "description": "啟用 Flash Attention 以最佳化效能。"
     },
     "parallel": {
-      "title": "平行序列"
+      "title": "平行序列",
+      "description": "要解碼的平行序列數（0 = llama.cpp 預設值）。Jan 不保留自己的插槽：聊天、Cowork 和背景要求共用插槽 0，其 KV 快取會依對話停放與還原。"
     },
     "cont_batching": {
-      "title": "連續批次處理"
+      "title": "連續批次處理",
+      "description": "為並行要求啟用連續批次處理（dynamic batching）。預設啟用，與 llama.cpp 一致。"
     },
     "load_mode": {
-      "title": "載入模式"
+      "title": "載入模式",
+      "description": "模型權重讀入記憶體的方式。Auto 會在裝置允許時對檔案進行記憶體對應。None 不使用 mmap 讀取（較慢，減少頁面換出）。mlock 將權重保留在 RAM 中以避免交換，無論是否使用 mmap。Direct I/O 在可用時略過作業系統頁面快取。每個模型都可以覆寫此設定。"
     },
     "lazy_mode": {
-      "title": "延遲讀取張量"
+      "title": "延遲讀取張量",
+      "description": "視需要從磁碟讀取由架構標記的大型張量列（例如逐層嵌入），而不是保留在記憶體中。Auto 在超過 4 GiB 時啟用。需要 mmap：請選擇帶 mmap 的載入模式（Auto、mmap 或 mmap + mlock）。"
     },
     "cache_type_k": {
-      "title": "KV 快取類型 K"
+      "title": "KV 快取類型 K",
+      "description": "Keys 的 KV 快取資料類型（預設：f16）。"
     },
     "cache_type_v": {
-      "title": "KV 快取類型 V"
+      "title": "KV 快取類型 V",
+      "description": "Values 的 KV 快取資料類型（預設：f16）。"
     },
     "rope_scaling": {
-      "title": "RoPE 縮放方法"
+      "title": "RoPE 縮放方法",
+      "description": "RoPE 頻率縮放方法。「模型值」由模型決定；「無」明確停用縮放。"
     },
     "rope_freq_base": {
-      "title": "RoPE 基礎頻率"
+      "title": "RoPE 基礎頻率",
+      "description": "RoPE 基礎頻率（0 = 從模型載入）。"
     },
     "rope_freq_scale": {
-      "title": "RoPE 縮放係數"
+      "title": "RoPE 縮放係數",
+      "description": "RoPE 頻率縮放係數。0 從模型載入值；1 強制不縮放。"
     },
     "cache_ram": {
-      "title": "提示快取 RAM (MiB)"
+      "title": "提示快取 RAM (MiB)",
+      "description": "提示快取大小（MiB，預設：8192；除非變更，否則決策模型為關閉）。-1 = 不限，0 表示停用。"
     },
     "persist_thread_cache": {
-      "title": "在工作階段之間記住對話"
+      "title": "在工作階段之間記住對話",
+      "description": "將每個對話的提示快取保存在磁碟上，重新開啟時無需重讀整個對話。僅當模型、設定和 llama.cpp 建置與儲存時完全一致才還原。"
     },
     "thread_cache_size": {
-      "title": "對話快取磁碟限制 (MiB)"
+      "title": "對話快取磁碟限制 (MiB)",
+      "description": "已儲存對話快取的磁碟預算（預設：8192）。達到上限後優先刪除最舊的。一個長對話可能佔用數百 MiB。"
     },
     "cache_reuse": {
-      "title": "快取重複使用"
+      "title": "快取重複使用",
+      "description": "從快取重複使用的相符前置 Token 最小區塊大小。0 = 停用。"
     },
     "ctx_checkpoints": {
-      "title": "內容檢查點"
+      "title": "內容檢查點",
+      "description": "每個插槽保留的最大內容檢查點數，可還原已移動的內容而無需重新處理。"
     },
     "checkpoint_min_step": {
-      "title": "檢查點之間的最小步長"
+      "title": "檢查點之間的最小步長",
+      "description": "內容檢查點之間的最小 Token 數。"
     },
     "swa_full": {
-      "title": "完整 SWA 快取"
+      "title": "完整 SWA 快取",
+      "description": "為滑動視窗 attention 模型（例如 Gemma）使用完整大小的 KV 快取。如果此類模型每輪都重新處理整個提示，請啟用；會佔用更多記憶體。"
     },
     "kv_unified": {
-      "title": "統一 KV 快取"
+      "title": "統一 KV 快取",
+      "description": "使用所有插槽共用的單一統一 KV 緩衝區。在多個平行插槽時節省記憶體。"
     },
     "kv_unified_per_slot": {
-      "title": "每個插槽的內容"
+      "title": "每個插槽的內容",
+      "description": "限制單一插槽可使用的統一 KV 快取比例（以 Token 計）。0 允許插槽填滿整個快取。僅適用於統一快取。"
     },
     "reasoning_preserve": {
-      "title": "保留推理歷史"
+      "title": "保留推理歷史",
+      "description": "在提示中保留每個先前助理輪次的推理，而不僅是最新輪次。僅影響聊天範本允許的模型，並消耗提示 Token。"
     },
     "keep": {
-      "title": "保留前 N 個 Token"
+      "title": "保留前 N 個 Token",
+      "description": "移動內容時保留的初始提示 Token 數。-1 = 全部保留。"
     }
   },
   "llamacppOptions": {

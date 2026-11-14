@@ -109,127 +109,168 @@
   },
   "llamacppSettings": {
     "llamacpp_env": {
-      "title": "環境変数"
+      "title": "環境変数",
+      "description": "llama.cpp の環境変数（KEY=VALUE）を ';' で区切って指定します。"
     },
     "models_max": {
-      "title": "同時に読み込むモデルの最大数"
+      "title": "同時に読み込むモデルの最大数",
+      "description": "ルーターが同時に読み込んだままにするモデルの最大数。0 = 無制限。"
     },
     "timeout": {
-      "title": "llamacpp のタイムアウト"
+      "title": "llamacpp のタイムアウト",
+      "description": "llamacpp の接続と読み込みのタイムアウト（秒）。"
     },
     "fit": {
-      "title": "フィット（デバイスメモリに自動調整）"
+      "title": "フィット（デバイスメモリに自動調整）",
+      "description": "未設定の引数をデバイスメモリに収まるよう調整するかどうか（'on' または 'off'）。(env: LLAMA_ARG_FIT)"
     },
     "fit_target": {
-      "title": "デバイスごとのフィット目標 (MiB)"
+      "title": "デバイスごとのフィット目標 (MiB)",
+      "description": "フィットのデバイスごとの目標マージン。MiB 値をカンマ区切りで指定。1 つの値は全デバイスに適用されます。(env: LLAMA_ARG_FIT_TARGET)"
     },
     "fit_ctx": {
-      "title": "フィット用の最小コンテキストサイズ"
+      "title": "フィット用の最小コンテキストサイズ",
+      "description": "自動フィットが設定できる最小コンテキストサイズ（トークン）。"
     },
     "threads": {
-      "title": "スレッド数"
+      "title": "スレッド数",
+      "description": "生成時に使用するスレッド数（-1 は論理コア数）。"
     },
     "threads_batch": {
-      "title": "スレッド数（バッチ）"
+      "title": "スレッド数（バッチ）",
+      "description": "バッチとプロンプト処理に使用するスレッド数（既定: スレッド数と同じ）。"
     },
     "ctx_shift": {
-      "title": "コンテキストシフト"
+      "title": "コンテキストシフト",
+      "description": "ウィンドウが満杯になったらコンテキストを停止せずずらし、長い会話をメモリエラーなしで続けます。"
     },
     "n_predict": {
-      "title": "予測するトークンの最大数"
+      "title": "予測するトークンの最大数",
+      "description": "生成するトークンの最大数。-1 = 無制限、-2 = コンテキストが満杯になるまで。"
     },
     "batch_size": {
-      "title": "バッチサイズ"
+      "title": "バッチサイズ",
+      "description": "プロンプト処理の論理最大バッチサイズ。"
     },
     "ubatch_size": {
-      "title": "マイクロバッチサイズ"
+      "title": "マイクロバッチサイズ",
+      "description": "プロンプト処理の物理最大バッチサイズ。"
     },
     "n_cpu_moe": {
-      "title": "CPU 上の MoE レイヤー"
+      "title": "CPU 上の MoE レイヤー",
+      "description": "最初の N 層の Mixture-of-Experts 重みを CPU メモリに保持します。大きな MoE モデルを限られた VRAM に収められます。0 で無効。"
     },
     "n_cpu_ffn": {
-      "title": "CPU 上の高密度 FFN レイヤー"
+      "title": "CPU 上の高密度 FFN レイヤー",
+      "description": "最初の N 層の高密度 feed-forward 重みを CPU メモリに保持します。高密度モデル向けの MoE 設定の counterpart です。0 で無効。"
     },
     "no_kv_offload": {
-      "title": "KV キャッシュのオフロードを無効化"
+      "title": "KV キャッシュのオフロードを無効化",
+      "description": "KV キャッシュを GPU メモリではなくシステム RAM に保持します。VRAM が少ないときに便利ですが速度は低下します。"
     },
     "device": {
-      "title": "オフロード先のデバイス"
+      "title": "オフロード先のデバイス",
+      "description": "オフロード先のアクセラレーターをカンマ区切りで、検出されたハードウェア一覧の名前で指定。空 = すべてのアクセラレーター、\"none\" = オフロード無効。"
     },
     "split_mode": {
-      "title": "GPU 分割モード"
+      "title": "GPU 分割モード",
+      "description": "モデルを複数の GPU に分割する方法。"
     },
     "main_gpu": {
-      "title": "メイン GPU インデックス"
+      "title": "メイン GPU インデックス",
+      "description": "モデル（split-mode=none）または中間結果（split-mode=row）に使用する GPU。"
     },
     "tensor_split": {
-      "title": "テンソル分割"
+      "title": "テンソル分割",
+      "description": "モデルをデバイス間で分割する比率をカンマ区切りで指定（例 \"3,1\"）。空 = 均等分割。"
     },
     "no_op_offload": {
-      "title": "演算のオフロードを無効化"
+      "title": "演算のオフロードを無効化",
+      "description": "ホストのテンソル演算をアクセラレーターにオフロードせず CPU に残します。"
     },
     "flash_attn": {
-      "title": "Flash Attention"
+      "title": "Flash Attention",
+      "description": "Flash Attention を有効にして性能を最適化します。"
     },
     "parallel": {
-      "title": "並列シーケンス数"
+      "title": "並列シーケンス数",
+      "description": "デコードする並列シーケンス数（0 = llama.cpp の既定値）。Jan は独自のスロットを確保せず、チャット、Cowork、バックグラウンド要求がスロット 0 を共有し、KV キャッシュは会話ごとに退避・復元されます。"
     },
     "cont_batching": {
-      "title": "連続バッチ処理"
+      "title": "連続バッチ処理",
+      "description": "同時リクエスト向けの連続バッチ処理（dynamic batching）を有効にします。llama.cpp と同様に既定で有効。"
     },
     "load_mode": {
-      "title": "読み込みモード"
+      "title": "読み込みモード",
+      "description": "モデルの重みをメモリへ読み込む方法。Auto はデバイスが許せばファイルをメモリマップします。None は mmap なしで読み込みます（低速、ページアウト減少）。mlock は mmap の有無にかかわらず重みを RAM に保持しスワップを防ぎます。Direct I/O は可能な場合 OS のページキャッシュを迂回します。モデルごとに上書きできます。"
     },
     "lazy_mode": {
-      "title": "テンソルの遅延読み込み"
+      "title": "テンソルの遅延読み込み",
+      "description": "アーキテクチャで指定された大きなテンソル（例: 層ごとの埋め込み）の行をメモリに保持せず、必要時にディスクから読み込みます。Auto は 4 GiB 超で有効。mmap が必要です: mmap を含む読み込みモード（Auto、mmap、mmap + mlock）を選択してください。"
     },
     "cache_type_k": {
-      "title": "KV キャッシュの種類 K"
+      "title": "KV キャッシュの種類 K",
+      "description": "Keys 用 KV キャッシュのデータ型（既定: f16）。"
     },
     "cache_type_v": {
-      "title": "KV キャッシュの種類 V"
+      "title": "KV キャッシュの種類 V",
+      "description": "Values 用 KV キャッシュのデータ型（既定: f16）。"
     },
     "rope_scaling": {
-      "title": "RoPE スケーリング方式"
+      "title": "RoPE スケーリング方式",
+      "description": "RoPE 周波数のスケーリング方式。\"モデルの値\" はモデルに任せ、\"なし\" はスケーリングを明示的に無効にします。"
     },
     "rope_freq_base": {
-      "title": "RoPE 基本周波数"
+      "title": "RoPE 基本周波数",
+      "description": "RoPE の基本周波数（0 = モデルから読み込み）。"
     },
     "rope_freq_scale": {
-      "title": "RoPE スケーリング係数"
+      "title": "RoPE スケーリング係数",
+      "description": "RoPE 周波数のスケーリング係数。0 はモデルの値を使用、1 はスケーリングなしを強制します。"
     },
     "cache_ram": {
-      "title": "プロンプトキャッシュ RAM (MiB)"
+      "title": "プロンプトキャッシュ RAM (MiB)",
+      "description": "プロンプトキャッシュのサイズ（MiB、既定: 8192、変更しない限り判断モデルではオフ）。-1 = 無制限、0 で無効。"
     },
     "persist_thread_cache": {
-      "title": "セッション間で会話を記憶する"
+      "title": "セッション間で会話を記憶する",
+      "description": "各会話のプロンプトキャッシュをディスクに保存し、再度開いたときに会話全体を読み直さないようにします。モデル、設定、llama.cpp ビルドが保存時と一致する場合のみ復元されます。"
     },
     "thread_cache_size": {
-      "title": "会話キャッシュのディスク上限 (MiB)"
+      "title": "会話キャッシュのディスク上限 (MiB)",
+      "description": "保存された会話キャッシュのディスク予算（既定: 8192）。上限に達すると古いものから削除されます。長い会話は数百 MiB になることがあります。"
     },
     "cache_reuse": {
-      "title": "キャッシュの再利用"
+      "title": "キャッシュの再利用",
+      "description": "キャッシュから再利用する一致プレフィックストークンの最小チャンクサイズ。0 = 無効。"
     },
     "ctx_checkpoints": {
-      "title": "コンテキストチェックポイント"
+      "title": "コンテキストチェックポイント",
+      "description": "スロットごとに保持するコンテキストチェックポイントの最大数。ずれたコンテキストを再処理せず復元できます。"
     },
     "checkpoint_min_step": {
-      "title": "チェックポイント間の最小ステップ"
+      "title": "チェックポイント間の最小ステップ",
+      "description": "コンテキストチェックポイント間の最小トークン数。"
     },
     "swa_full": {
-      "title": "完全な SWA キャッシュ"
+      "title": "完全な SWA キャッシュ",
+      "description": "スライディングウィンドウ attention モデル（例: Gemma）でフルサイズの KV キャッシュを使用します。そのモデルが毎ターン全プロンプトを再処理する場合に有効にしてください。メモリ消費が増えます。"
     },
     "kv_unified": {
-      "title": "統合 KV キャッシュ"
+      "title": "統合 KV キャッシュ",
+      "description": "すべてのスロットで共有する単一の統合 KV バッファを使用します。複数スロット並列時のメモリを節約します。"
     },
     "kv_unified_per_slot": {
-      "title": "スロットごとのコンテキスト"
+      "title": "スロットごとのコンテキスト",
+      "description": "1 つのスロットが使用できる統合 KV キャッシュの割合をトークン単位で制限します。0 はスロットがキャッシュ全体を満たせるようにします。統合キャッシュのみに適用。"
     },
     "reasoning_preserve": {
-      "title": "推論履歴を保持する"
+      "title": "推論履歴を保持する",
+      "description": "プロンプト内に、直前だけでなく各過去のアシスタントターンの推論を保持します。チャットテンプレートが対応するモデルのみに影響し、プロンプトトークンを消費します。"
     },
     "keep": {
-      "title": "先頭 N トークンを保持"
+      "title": "先頭 N トークンを保持",
+      "description": "コンテキストをずらすときに保持する初期プロンプトのトークン数。-1 = すべて保持。"
     }
   },
   "llamacppOptions": {

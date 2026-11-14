@@ -61,127 +61,168 @@
   "enterNameForProvider": "Zadejte název pro poskytovatele",
   "llamacppSettings": {
     "llamacpp_env": {
-      "title": "Proměnné prostředí"
+      "title": "Proměnné prostředí",
+      "description": "Proměnné prostředí pro llama.cpp (KEY=VALUE), oddělené ';'."
     },
     "models_max": {
-      "title": "Max. počet modelů načtených najednou"
+      "title": "Max. počet modelů načtených najednou",
+      "description": "Maximální počet modelů, které router udržuje načtené najednou. 0 = bez limitu."
     },
     "timeout": {
-      "title": "Časový limit pro llamacpp"
+      "title": "Časový limit pro llamacpp",
+      "description": "Časový limit připojení a načtení llamacpp v sekundách."
     },
     "fit": {
-      "title": "Přizpůsobení (automaticky podle paměti zařízení)"
+      "title": "Přizpůsobení (automaticky podle paměti zařízení)",
+      "description": "Zda přizpůsobit nenastavené argumenty paměti zařízení ('on' nebo 'off'). (env: LLAMA_ARG_FIT)"
     },
     "fit_target": {
-      "title": "Cíl přizpůsobení na zařízení (MiB)"
+      "title": "Cíl přizpůsobení na zařízení (MiB)",
+      "description": "Cílová rezerva na zařízení pro přizpůsobení, hodnoty MiB oddělené čárkami. Jedna hodnota platí pro všechna zařízení. (env: LLAMA_ARG_FIT_TARGET)"
     },
     "fit_ctx": {
-      "title": "Minimální velikost kontextu pro přizpůsobení"
+      "title": "Minimální velikost kontextu pro přizpůsobení",
+      "description": "Minimální velikost kontextu (tokeny), kterou může nastavit automatické přizpůsobení."
     },
     "threads": {
-      "title": "Vlákna"
+      "title": "Vlákna",
+      "description": "Počet vláken použitých při generování (-1 pro logická jádra)."
     },
     "threads_batch": {
-      "title": "Vlákna (dávka)"
+      "title": "Vlákna (dávka)",
+      "description": "Počet vláken pro zpracování dávek a promptů (výchozí: stejně jako Vlákna)."
     },
     "ctx_shift": {
-      "title": "Posun kontextu"
+      "title": "Posun kontextu",
+      "description": "Posouvat kontext místo zastavení při zaplnění okna, aby dlouhé konverzace pokračovaly bez chyb paměti."
     },
     "n_predict": {
-      "title": "Max. počet tokenů k predikci"
+      "title": "Max. počet tokenů k predikci",
+      "description": "Maximální počet tokenů k vygenerování. -1 = bez limitu, -2 = až do zaplnění kontextu."
     },
     "batch_size": {
-      "title": "Velikost dávky"
+      "title": "Velikost dávky",
+      "description": "Maximální logická velikost dávky pro zpracování promptů."
     },
     "ubatch_size": {
-      "title": "Velikost mikrodávky"
+      "title": "Velikost mikrodávky",
+      "description": "Maximální fyzická velikost dávky pro zpracování promptů."
     },
     "n_cpu_moe": {
-      "title": "Vrstvy MoE na CPU"
+      "title": "Vrstvy MoE na CPU",
+      "description": "Udržovat váhy Mixture-of-Experts prvních N vrstev v paměti CPU. Umožní velkému modelu MoE vejít se do omezené VRAM. 0 vypne."
     },
     "n_cpu_ffn": {
-      "title": "Husté vrstvy FFN na CPU"
+      "title": "Husté vrstvy FFN na CPU",
+      "description": "Udržovat husté váhy feed-forward prvních N vrstev v paměti CPU, protějšek nastavení MoE pro husté modely. 0 vypne."
     },
     "no_kv_offload": {
-      "title": "Vypnout odkládání mezipaměti KV"
+      "title": "Vypnout odkládání mezipaměti KV",
+      "description": "Udržovat mezipaměť KV v systémové RAM místo paměti GPU. Užitečné při nedostatku VRAM, na úkor rychlosti."
     },
     "device": {
-      "title": "Zařízení pro odkládání"
+      "title": "Zařízení pro odkládání",
+      "description": "Akcelerátory pro odkládání oddělené čárkami, pojmenované jako v seznamu zjištěného hardwaru. Prázdné = všechny akcelerátory; \"none\" odkládání vypne."
     },
     "split_mode": {
-      "title": "Režim rozdělení GPU"
+      "title": "Režim rozdělení GPU",
+      "description": "Jak rozdělit model mezi více GPU."
     },
     "main_gpu": {
-      "title": "Index hlavní GPU"
+      "title": "Index hlavní GPU",
+      "description": "GPU pro model (split-mode=none) nebo mezivýsledky (split-mode=row)."
     },
     "tensor_split": {
-      "title": "Rozdělení tenzorů"
+      "title": "Rozdělení tenzorů",
+      "description": "Podíly rozdělení modelu mezi zařízení oddělené čárkami, např. \"3,1\". Prázdné = rovnoměrné rozdělení."
     },
     "no_op_offload": {
-      "title": "Vypnout odkládání operací"
+      "title": "Vypnout odkládání operací",
+      "description": "Ponechat operace s tensory hostitele na CPU místo odkládání na akcelerátor."
     },
     "flash_attn": {
-      "title": "Flash Attention"
+      "title": "Flash Attention",
+      "description": "Zapnout Flash Attention pro lepší výkon."
     },
     "parallel": {
-      "title": "Paralelní sekvence"
+      "title": "Paralelní sekvence",
+      "description": "Počet paralelních sekvencí k dekódování (0 = výchozí hodnota llama.cpp). Jan si nevyhrazuje vlastní slot: chat, Cowork a požadavky na pozadí sdílejí slot 0 a jejich mezipaměti KV se ukládají a obnovují pro každou konverzaci."
     },
     "cont_batching": {
-      "title": "Průběžné dávkování"
+      "title": "Průběžné dávkování",
+      "description": "Zapnout průběžné dávkování (dynamic batching) pro souběžné požadavky. Ve výchozím stavu zapnuto, jako v llama.cpp."
     },
     "load_mode": {
-      "title": "Režim načítání"
+      "title": "Režim načítání",
+      "description": "Jak se váhy modelu načítají do paměti. Auto mapuje soubor, pokud to zařízení umožňuje. None čte bez mmap (pomalejší, méně stránkování). mlock je drží v RAM, aby se nikdy neodložily do swapu, s mmap i bez. Direct I/O obchází stránkovou mezipaměť OS, kde je dostupné. Jednotlivé modely to mohou přepsat."
     },
     "lazy_mode": {
-      "title": "Odložené čtení tenzorů"
+      "title": "Odložené čtení tenzorů",
+      "description": "Číst z disku na vyžádání řádky velkých tensorů označených architekturou (např. embeddings po vrstvách) místo jejich držení v paměti. Auto zapne nad 4 GiB. Vyžaduje mmap: zvolte režim načítání s mmap (Auto, mmap nebo mmap + mlock)."
     },
     "cache_type_k": {
-      "title": "Typ mezipaměti KV K"
+      "title": "Typ mezipaměti KV K",
+      "description": "Datový typ mezipaměti KV pro Keys (výchozí: f16)."
     },
     "cache_type_v": {
-      "title": "Typ mezipaměti KV V"
+      "title": "Typ mezipaměti KV V",
+      "description": "Datový typ mezipaměti KV pro Values (výchozí: f16)."
     },
     "rope_scaling": {
-      "title": "Metoda škálování RoPE"
+      "title": "Metoda škálování RoPE",
+      "description": "Metoda škálování frekvencí RoPE. \"Hodnota modelu\" nechá rozhodnutí na modelu; \"Žádné\" škálování výslovně vypne."
     },
     "rope_freq_base": {
-      "title": "Základní frekvence RoPE"
+      "title": "Základní frekvence RoPE",
+      "description": "Základní frekvence RoPE (0 = načteno z modelu)."
     },
     "rope_freq_scale": {
-      "title": "Faktor škálování RoPE"
+      "title": "Faktor škálování RoPE",
+      "description": "Faktor škálování frekvencí RoPE. 0 načte hodnotu z modelu; 1 vynutí žádné škálování."
     },
     "cache_ram": {
-      "title": "RAM mezipaměti promptů (MiB)"
+      "title": "RAM mezipaměti promptů (MiB)",
+      "description": "Velikost mezipaměti promptů v MiB (výchozí: 8192, nebo vypnuto pro rozhodovací modely, pokud se nezmění). -1 = bez limitu, 0 ji vypne."
     },
     "persist_thread_cache": {
-      "title": "Pamatovat si konverzace mezi relacemi"
+      "title": "Pamatovat si konverzace mezi relacemi",
+      "description": "Udržovat mezipaměť promptů každé konverzace na disku, aby se při znovuotevření nemusela číst celá. Obnoví se jen pokud model, jeho nastavení a sestavení llama.cpp odpovídají uloženým."
     },
     "thread_cache_size": {
-      "title": "Diskový limit mezipaměti konverzací (MiB)"
+      "title": "Diskový limit mezipaměti konverzací (MiB)",
+      "description": "Diskový limit pro uložené mezipaměti konverzací (výchozí: 8192). Nejstarší se odstraní první. Dlouhá konverzace může zabrat stovky MiB."
     },
     "cache_reuse": {
-      "title": "Opětovné použití mezipaměti"
+      "title": "Opětovné použití mezipaměti",
+      "description": "Minimální velikost bloku odpovídajících prefixových tokenů k opětovnému použití z mezipaměti. 0 = vypnuto."
     },
     "ctx_checkpoints": {
-      "title": "Kontrolní body kontextu"
+      "title": "Kontrolní body kontextu",
+      "description": "Maximální počet kontrolních bodů kontextu na slot, které umožní obnovit posunutý kontext místo opětovného zpracování."
     },
     "checkpoint_min_step": {
-      "title": "Minimální krok mezi kontrolními body"
+      "title": "Minimální krok mezi kontrolními body",
+      "description": "Minimální počet tokenů mezi kontrolními body kontextu."
     },
     "swa_full": {
-      "title": "Plná mezipaměť SWA"
+      "title": "Plná mezipaměť SWA",
+      "description": "Používat plnou mezipaměť KV pro modely s attention posuvného okna (např. Gemma). Zapněte, pokud takový model zpracovává celý prompt znovu při každém tahu; spotřebuje více paměti."
     },
     "kv_unified": {
-      "title": "Sjednocená mezipaměť KV"
+      "title": "Sjednocená mezipaměť KV",
+      "description": "Používat jediný sjednocený buffer KV sdílený všemi sloty. Šetří paměť při více paralelních slotech."
     },
     "kv_unified_per_slot": {
-      "title": "Kontext na slot"
+      "title": "Kontext na slot",
+      "description": "Omezit část sjednocené mezipaměti KV, kterou může slot použít, v tokenech. 0 nechá slot zaplnit celou mezipaměť. Platí jen pro sjednocenou mezipaměť."
     },
     "reasoning_preserve": {
-      "title": "Zachovat historii uvažování"
+      "title": "Zachovat historii uvažování",
+      "description": "Zachovat v promptu uvažování každého předchozího tahu asistenta, ne jen posledního. Ovlivní jen modely, jejichž šablona chatu to umožňuje, a spotřebovává tokeny promptu."
     },
     "keep": {
-      "title": "Zachovat prvních N tokenů"
+      "title": "Zachovat prvních N tokenů",
+      "description": "Počet tokenů počátečního promptu zachovaných při posunu kontextu. -1 = zachovat vše."
     }
   },
   "llamacppOptions": {

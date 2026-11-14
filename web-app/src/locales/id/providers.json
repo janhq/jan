@@ -61,127 +61,168 @@
   "enterNameForProvider": "Masukkan nama untuk penyedia",
   "llamacppSettings": {
     "llamacpp_env": {
-      "title": "Variabel lingkungan"
+      "title": "Variabel lingkungan",
+      "description": "Variabel lingkungan untuk llama.cpp (KEY=VALUE), dipisahkan dengan ';'."
     },
     "models_max": {
-      "title": "Maks. model yang dimuat bersamaan"
+      "title": "Maks. model yang dimuat bersamaan",
+      "description": "Jumlah maksimum model yang disimpan router tetap dimuat sekaligus. 0 = tanpa batas."
     },
     "timeout": {
-      "title": "Batas waktu untuk llamacpp"
+      "title": "Batas waktu untuk llamacpp",
+      "description": "Batas waktu koneksi dan pemuatan llamacpp dalam detik."
     },
     "fit": {
-      "title": "Penyesuaian (otomatis ke memori perangkat)"
+      "title": "Penyesuaian (otomatis ke memori perangkat)",
+      "description": "Menyesuaikan atau tidak argumen yang belum diatur agar muat di memori perangkat ('on' atau 'off'). (env: LLAMA_ARG_FIT)"
     },
     "fit_target": {
-      "title": "Target penyesuaian per perangkat (MiB)"
+      "title": "Target penyesuaian per perangkat (MiB)",
+      "description": "Margin target per perangkat untuk penyesuaian, nilai MiB dipisahkan koma. Satu nilai berlaku untuk semua perangkat. (env: LLAMA_ARG_FIT_TARGET)"
     },
     "fit_ctx": {
-      "title": "Ukuran konteks minimum untuk penyesuaian"
+      "title": "Ukuran konteks minimum untuk penyesuaian",
+      "description": "Ukuran konteks minimum (token) yang dapat diatur oleh penyesuaian otomatis."
     },
     "threads": {
-      "title": "Thread"
+      "title": "Thread",
+      "description": "Jumlah thread yang digunakan saat generasi (-1 untuk inti logis)."
     },
     "threads_batch": {
-      "title": "Thread (batch)"
+      "title": "Thread (batch)",
+      "description": "Jumlah thread untuk pemrosesan batch dan prompt (default: sama dengan Thread)."
     },
     "ctx_shift": {
-      "title": "Pergeseran konteks"
+      "title": "Pergeseran konteks",
+      "description": "Menggeser konteks alih-alih menghentikannya saat jendela penuh, agar percakapan panjang berlanjut tanpa error memori."
     },
     "n_predict": {
-      "title": "Maks. token untuk diprediksi"
+      "title": "Maks. token untuk diprediksi",
+      "description": "Jumlah maksimum token yang dihasilkan. -1 = tanpa batas, -2 = hingga konteks penuh."
     },
     "batch_size": {
-      "title": "Ukuran batch"
+      "title": "Ukuran batch",
+      "description": "Ukuran batch logis maksimum untuk memproses prompt."
     },
     "ubatch_size": {
-      "title": "Ukuran micro-batch"
+      "title": "Ukuran micro-batch",
+      "description": "Ukuran batch fisik maksimum untuk memproses prompt."
     },
     "n_cpu_moe": {
-      "title": "Lapisan MoE di CPU"
+      "title": "Lapisan MoE di CPU",
+      "description": "Menyimpan bobot Mixture-of-Experts dari N lapisan pertama di memori CPU. Memungkinkan model MoE besar muat di VRAM terbatas. 0 menonaktifkan."
     },
     "n_cpu_ffn": {
-      "title": "Lapisan FFN padat di CPU"
+      "title": "Lapisan FFN padat di CPU",
+      "description": "Menyimpan bobot feed-forward padat dari N lapisan pertama di memori CPU, padanan pengaturan MoE untuk model padat. 0 menonaktifkan."
     },
     "no_kv_offload": {
-      "title": "Nonaktifkan offload cache KV"
+      "title": "Nonaktifkan offload cache KV",
+      "description": "Menyimpan cache KV di RAM sistem alih-alih memori GPU. Berguna saat VRAM terbatas, dengan konsekuensi kecepatan."
     },
     "device": {
-      "title": "Perangkat untuk offload"
+      "title": "Perangkat untuk offload",
+      "description": "Akselerator untuk offload, dipisahkan koma dan dinamai seperti di daftar perangkat keras yang terdeteksi. Kosong = semua akselerator; \"none\" menonaktifkan offload."
     },
     "split_mode": {
-      "title": "Mode pemisahan GPU"
+      "title": "Mode pemisahan GPU",
+      "description": "Cara membagi model di beberapa GPU."
     },
     "main_gpu": {
-      "title": "Indeks GPU utama"
+      "title": "Indeks GPU utama",
+      "description": "GPU untuk model (split-mode=none) atau hasil antara (split-mode=row)."
     },
     "tensor_split": {
-      "title": "Pemisahan tensor"
+      "title": "Pemisahan tensor",
+      "description": "Proporsi pembagian model antar perangkat, dipisahkan koma, mis. \"3,1\". Kosong = pembagian merata."
     },
     "no_op_offload": {
-      "title": "Nonaktifkan offload operasi"
+      "title": "Nonaktifkan offload operasi",
+      "description": "Membiarkan operasi tensor host di CPU alih-alih meng-offload ke akselerator."
     },
     "flash_attn": {
-      "title": "Flash Attention"
+      "title": "Flash Attention",
+      "description": "Mengaktifkan Flash Attention untuk performa lebih baik."
     },
     "parallel": {
-      "title": "Urutan paralel"
+      "title": "Urutan paralel",
+      "description": "Jumlah urutan paralel untuk didekode (0 = default llama.cpp). Jan tidak menyediakan slot sendiri: chat, Cowork, dan permintaan latar belakang berbagi slot 0, dan cache KV-nya diparkir serta dipulihkan per percakapan."
     },
     "cont_batching": {
-      "title": "Batching berkelanjutan"
+      "title": "Batching berkelanjutan",
+      "description": "Mengaktifkan batching berkelanjutan (dynamic batching) untuk permintaan bersamaan. Aktif secara default, seperti di llama.cpp."
     },
     "load_mode": {
-      "title": "Mode pemuatan"
+      "title": "Mode pemuatan",
+      "description": "Cara bobot model dibaca ke memori. Auto memetakan file kecuali perangkat tidak mendukung. None membaca tanpa mmap (lebih lambat, lebih sedikit pageout). mlock menyimpannya di RAM agar tidak pernah ditukar, dengan atau tanpa mmap. Direct I/O melewati cache halaman OS jika tersedia. Setiap model dapat menimpanya."
     },
     "lazy_mode": {
-      "title": "Pembacaan tensor tertunda"
+      "title": "Pembacaan tensor tertunda",
+      "description": "Membaca dari disk sesuai permintaan baris tensor besar yang ditandai arsitektur (mis. embedding per lapisan) alih-alih menyimpannya di memori. Auto aktif di atas 4 GiB. Memerlukan mmap: pilih mode pemuatan dengan mmap (Auto, mmap, atau mmap + mlock)."
     },
     "cache_type_k": {
-      "title": "Jenis cache KV K"
+      "title": "Jenis cache KV K",
+      "description": "Tipe data cache KV untuk Keys (default: f16)."
     },
     "cache_type_v": {
-      "title": "Jenis cache KV V"
+      "title": "Jenis cache KV V",
+      "description": "Tipe data cache KV untuk Values (default: f16)."
     },
     "rope_scaling": {
-      "title": "Metode penskalaan RoPE"
+      "title": "Metode penskalaan RoPE",
+      "description": "Metode penskalaan frekuensi RoPE. \"Nilai model\" membiarkan model menentukan; \"Tidak ada\" secara eksplisit menonaktifkan penskalaan."
     },
     "rope_freq_base": {
-      "title": "Frekuensi dasar RoPE"
+      "title": "Frekuensi dasar RoPE",
+      "description": "Frekuensi dasar RoPE (0 = dimuat dari model)."
     },
     "rope_freq_scale": {
-      "title": "Faktor penskalaan RoPE"
+      "title": "Faktor penskalaan RoPE",
+      "description": "Faktor penskalaan frekuensi RoPE. 0 memuat nilai dari model; 1 memaksa tanpa penskalaan."
     },
     "cache_ram": {
-      "title": "RAM cache prompt (MiB)"
+      "title": "RAM cache prompt (MiB)",
+      "description": "Ukuran cache prompt dalam MiB (default: 8192, atau nonaktif untuk model keputusan kecuali diubah). -1 = tanpa batas, 0 menonaktifkan."
     },
     "persist_thread_cache": {
-      "title": "Ingat percakapan antar sesi"
+      "title": "Ingat percakapan antar sesi",
+      "description": "Menyimpan cache prompt setiap percakapan di disk agar tidak membaca ulang seluruh percakapan saat dibuka kembali. Dipulihkan hanya jika model, pengaturannya, dan build llama.cpp cocok dengan yang menyimpannya."
     },
     "thread_cache_size": {
-      "title": "Batas disk cache percakapan (MiB)"
+      "title": "Batas disk cache percakapan (MiB)",
+      "description": "Anggaran disk untuk cache percakapan tersimpan (default: 8192). Yang paling lama dihapus lebih dulu. Satu percakapan panjang dapat memakai ratusan MiB."
     },
     "cache_reuse": {
-      "title": "Penggunaan ulang cache"
+      "title": "Penggunaan ulang cache",
+      "description": "Ukuran blok minimum token prefiks yang cocok untuk digunakan ulang dari cache. 0 = nonaktif."
     },
     "ctx_checkpoints": {
-      "title": "Titik pemeriksaan konteks"
+      "title": "Titik pemeriksaan konteks",
+      "description": "Jumlah maksimum checkpoint konteks per slot, yang memungkinkan konteks tergeser dipulihkan alih-alih diproses ulang."
     },
     "checkpoint_min_step": {
-      "title": "Langkah minimum antar titik pemeriksaan"
+      "title": "Langkah minimum antar titik pemeriksaan",
+      "description": "Jumlah minimum token antar checkpoint konteks."
     },
     "swa_full": {
-      "title": "Cache SWA penuh"
+      "title": "Cache SWA penuh",
+      "description": "Menggunakan cache KV berukuran penuh untuk model attention jendela geser (mis. Gemma). Aktifkan jika model tersebut memproses ulang seluruh prompt setiap giliran; memakai lebih banyak memori."
     },
     "kv_unified": {
-      "title": "Cache KV terpadu"
+      "title": "Cache KV terpadu",
+      "description": "Menggunakan satu buffer KV terpadu yang dibagi semua slot. Menghemat memori dengan beberapa slot paralel."
     },
     "kv_unified_per_slot": {
-      "title": "Konteks per slot"
+      "title": "Konteks per slot",
+      "description": "Membatasi bagian cache KV terpadu yang dapat digunakan satu slot, dalam token. 0 membiarkan slot mengisi seluruh cache. Hanya berlaku untuk cache terpadu."
     },
     "reasoning_preserve": {
-      "title": "Pertahankan riwayat penalaran"
+      "title": "Pertahankan riwayat penalaran",
+      "description": "Mempertahankan penalaran setiap giliran asisten sebelumnya di prompt, bukan hanya yang terbaru. Hanya memengaruhi model yang template chat-nya mengizinkan, dan memakai token prompt."
     },
     "keep": {
-      "title": "Simpan N token pertama"
+      "title": "Simpan N token pertama",
+      "description": "Jumlah token prompt awal yang dipertahankan saat konteks digeser. -1 = pertahankan semua."
     }
   },
   "llamacppOptions": {

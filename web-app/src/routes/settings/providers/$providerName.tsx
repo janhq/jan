@@ -766,6 +766,12 @@ function ProviderDetail() {
                         defaultValue: setting.title,
                       })
                     : setting.title
+                  const localizedDescription = isLlamacpp
+                    ? t(
+                        `providers:llamacppSettings.${setting.key}.description`,
+                        { defaultValue: setting.description }
+                      )
+                    : setting.description
                   const localizedProps =
                     isLlamacpp && Array.isArray(setting.controller_props?.options)
                       ? {
@@ -856,7 +862,7 @@ function ProviderDetail() {
                         <>
                           <RenderMarkdown
                             className="![>p]:text-muted-foreground select-none"
-                            content={setting.description}
+                            content={localizedDescription}
                             components={{
                               p: ({ ...props }) => (
                                 <p {...props} className="mb-0!" />
