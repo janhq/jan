@@ -131,6 +131,26 @@ yarn build
 yarn dev
 ```
 
+### Windowsでのビルド
+
+`make dev` は **Git Bash**（Git for Windowsに同梱）から実行してください。makeはレシピを `sh` 経由で実行するため、通常の `cmd.exe` では動作しません。
+
+「Native Tools Command Prompt for VS 2022」は**不要**です。同梱のllama.cppエンジンはNinja + `clang-cl` でビルドされ、`clang-cl` がMSVCツールチェーンとWindows SDKを自動的に検出します。インストールが必要なもの（`ninja`/`clang-cl`/`cmake` は `PATH` に通しておく必要があります）：
+
+- Visual Studio 2022 Build Tools（MSVC x64ワークロード + Windows SDK）
+- LLVM（`clang-cl` を提供）
+- Ninja
+- CMake
+- CUDA Toolkit — `JAN_ENGINE_VARIANT=cuda12`/`cuda13` でビルドする場合のみ
+
+エンジンのバリアントは `JAN_ENGINE_VARIANT` で指定します（トークン：`cpu`、`vulkan`、`metal`、`cuda12`、`cuda13`、`hip`/`rocm` を `-` で連結）。例：
+
+```bash
+make dev JAN_ENGINE_VARIANT=cuda13
+```
+
+`tauri-plugin-llamacpp(build)` の実行中に **"nvcc fatal : Could not open output file ...fattn-...cu.obj.d"** が出る場合は、ビルドパスがWindowsの260文字の `MAX_PATH` 制限を超えています（nvccはロングパスのオプトインに対応していません）。現在はビルドスクリプトがこれを検出し、llama.cppのビルドツリーを `%LOCALAPPDATA%\jan-engine` 配下の短いディレクトリへ自動的に移動します。それでもパス長のエラーが出る場合は、`JAN_ENGINE_BUILD_DIR` に短いパス（例：`C:\jb`）を設定するか、チェックアウト先をドライブのルートに近い場所へ移動してください。
+
 ## システム要件
 
 **快適に使用するための最低スペック：**
@@ -152,6 +172,8 @@ yarn dev
 ## コントリビューション
 
 コントリビューションを歓迎します。詳細は[CONTRIBUTING.md](CONTRIBUTING.md)をご覧ください。
+
+> **注意:** コントリビューションを検証できるよう、[コミットに署名](CONTRIBUTING.md#signed-commits)してください。
 
 ## リンク
 
