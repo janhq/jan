@@ -72,8 +72,8 @@ fn ref_matches(text: &str) -> impl Iterator<Item = regex::Match<'_>> {
 /// Maximum bytes we will read from a single file.
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 
-/// Maximum characters in a directory listing sent to the model.
-const MAX_DIR_CHARS: usize = 20_000;
+/// Maximum bytes in a directory listing sent to the model.
+const MAX_DIR_BYTES: usize = 20_000;
 
 /// Image extensions.
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"];
@@ -196,8 +196,9 @@ pub fn resolve_references(text: &str, project_root: &Path) -> (String, String) {
                 listing.push_str(&name);
                 listing.push('\n');
             }
-            if listing.len() > MAX_DIR_CHARS {
-                listing.truncate(MAX_DIR_CHARS);
+            if listing.len() > MAX_DIR_BYTES {
+                let cutoff = floor_char_boundary(&listing, MAX_DIR_BYTES);
+                listing.truncate(cutoff);
                 listing.push_str("  ... (truncated)\n");
             }
             parts.push(format!(
@@ -318,6 +319,13 @@ pub fn search_files_sync(
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 /// Read an image file and return a text note with mime type.
 fn image_note(raw: &str, abs: &Path) -> String {
     let ext = abs
@@ -390,6 +398,22 @@ mod tests {
         assert_eq!(clean, "read");
         assert!(block.contains("hello world"));
         assert!(block.contains("hello.txt"));
+    }
+
+    #[test]
+    fn test_resolve_references_truncates_directory_at_char_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let listing = root.join("listing");
+        std::fs::create_dir(&listing).unwrap();
+        for i in 0..137 {
+            let name = format!("{:04}{}é", i, "a".repeat(137));
+            std::fs::write(listing.join(name), b"").unwrap();
+        }
+
+        let (clean, block) = resolve_references("read @listing", root);
+        assert_eq!(clean, "read");
+        assert!(block.contains("... (truncated)"));
     }
 
     #[test]
