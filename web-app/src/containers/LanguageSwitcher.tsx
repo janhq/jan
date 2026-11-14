@@ -28,6 +28,7 @@ const LANGUAGES = [
   { value: 'ja', label: '日本語' },
   { value: 'ru', label: 'Русский' },
   { value: 'ca', label: 'Català' },
+  { value: 'tr', label: 'Türkçe' }
 ]
 
 export default function LanguageSwitcher() {
