@@ -1,13 +1,12 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 165
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                                    |
 |╭ subagents ───────────────────────────────────────────────────────────────────────────────────────╮|
 |│ ▶ • kv-review  4 tools · 4 req · 50% ctx · 75% cache hit  Running · Read mod_3.rs                │|
 |│   • docs-writer  Queued (1)                                                                      │|
-|│   • collector  Waiting (phase 2)                                                                 │|
+|│   • collector  Queued · phase 2                                                                  │|
 |│   • builder  2 tools · 2 req · 6% ctx  Waiting on background work                                │|
 |│                                                                                                  │|
 |╰──────────────────────────────────────────────────────────────────────────────────────────────────╯|
@@ -15,7 +14,7 @@ expression: render_snapshot(buf)
 |────────────────────────────────────────────────────────────────────────────────────────────────────|
 |selecting…                                                                                          |
 |                                                                                                    |
-|📂 /snapshot/repo                           ↑/↓ select   Enter view   m message   x stop   Esc close|
+|📂 /snapshot/repo                                       ↑/↓ select   Enter view   x stop   Esc close|
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
@@ -33,7 +32,7 @@ expression: render_snapshot(buf)
  4 0..1 fg=#56B6C2
  4 4..6 fg=#808080
  4 6..15 fg=#56B6C2 mod=BOLD
- 4 17..34 fg=#808080
+ 4 17..33 fg=#808080
  4 99..100 fg=#56B6C2
  5 0..1 fg=#56B6C2
  5 4..6 fg=#808080
@@ -47,4 +46,4 @@ expression: render_snapshot(buf)
 10 0..10 mod=DIM | ITALIC
 12 0..1 fg=#808080
 12 2..17 fg=#808080
-12 43..100 mod=DIM
+12 55..100 mod=DIM

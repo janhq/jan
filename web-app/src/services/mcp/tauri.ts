@@ -79,19 +79,13 @@ export class TauriMCPService extends DefaultMCPService {
     return window.core?.api?.getConnectedServers()
   }
 
-  async callTool(args: {
-    toolName: string
-    serverName?: string
-    arguments: object
-    maxOutputChars?: number
-  }): Promise<{ error: string; content: { text: string }[] }> {
-    return window.core?.api?.callTool(args)
-  }
-
   callToolWithCancellation(args: {
     toolName: string
     serverName?: string
+    serverGeneration?: number
     arguments: object
+    threadId: string
+    callId: string
     cancellationToken?: string
     maxOutputChars?: number
   }): {

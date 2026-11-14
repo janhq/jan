@@ -20,9 +20,12 @@ import {
 } from './message/types'
 import { CopyButton } from './CopyButton'
 import { RememberButton } from './RememberButton'
+import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatDate, formatMessageTime } from '@/utils/formatDate'
 import { useTouchDevice } from '@/hooks/useMediaQuery'
+import { Link } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useMessageErrors } from '@/stores/message-errors'
@@ -31,11 +34,12 @@ import {
   IconPlayerPlay,
   IconPaperclip,
   IconAlertTriangle,
+  IconCopy,
   IconChevronLeft,
   IconChevronRight,
   IconBellRinging,
 } from '@tabler/icons-react'
-import { PING_OPEN, PING_CLOSE } from '@/lib/coworkPing'
+import { PING_OPEN, PING_CLOSE, isSystemNotice } from '@/lib/coworkPing'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -133,6 +137,15 @@ export const MessageItem = memo(
     // network (see lib/extensions/authorship).
     const extensionAuthored = extensionAuthorOf(metadata) !== undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
+    const loadReport = useMessageErrors((s) => s.reports[message.id])
+    // Recorded only when the failed turn ran on llama.cpp; the current
+    // selection would name a model that had nothing to do with the failure.
+    const diagnoseModel = loadReport?.model
+    const canRegenerate =
+      !!selectedModel &&
+      !!onRegenerate &&
+      status !== CHAT_STATUS.STREAMING &&
+      status !== CHAT_STATUS.SUBMITTED
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
     // which a malformed stored value must not turn into a crashed message.
@@ -632,7 +645,9 @@ export const MessageItem = memo(
     // said: no actions, no trace, no timestamp. It is on screen because it is
     // what the next turn is replying to -- a turn that reacts to a subagent
     // finishing reads as a non sequitur without it.
-    if (message.role === 'system') {
+    // A migrated Cowork ping is stored as the user turn the model saw and
+    // flagged (see SYSTEM_NOTICE_KEY), so it takes the same template.
+    if (message.role === 'system' || isSystemNotice(message)) {
       const note = getFullTextContent()
         .split(PING_OPEN)
         .join('')
@@ -705,21 +720,58 @@ export const MessageItem = memo(
               <div className="text-muted-foreground break-words">
                 {messageError}
               </div>
-            </div>
-            {selectedModel &&
-              onRegenerate &&
-              status !== CHAT_STATUS.STREAMING &&
-              status !== CHAT_STATUS.SUBMITTED && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRegenerate}
-                  className="shrink-0"
-                >
-                  <IconRefresh size={14} />
-                  <span>Regenerate</span>
-                </Button>
+              {/* Below the text rather than beside it: three actions in one
+                  row squeezed the error into a narrow column. */}
+              {(loadReport || canRegenerate) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {loadReport && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard
+                          .writeText(loadReport.text)
+                          .then(() =>
+                            toast.success(t('model-errors:diagnosticsCopied'))
+                          )
+                          .catch(() =>
+                            toast.error(t('common:toast.errorCopyFailed.title'))
+                          )
+                      }}
+                    >
+                      <IconCopy size={14} />
+                      <span>{t('model-errors:copyDiagnostics')}</span>
+                    </Button>
+                  )}
+                  {canRegenerate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRegenerate}
+                    >
+                      <IconRefresh size={14} />
+                      <span>Regenerate</span>
+                    </Button>
+                  )}
+                  {/* A load report is only built for a llama.cpp engine
+                      failure, so its presence is what says the hardware check
+                      has something to say about this message. The check itself
+                      lives on the provider page; this carries the model over
+                      rather than being a second place a minutes-long run can
+                      start from. */}
+                  {loadReport && diagnoseModel && (
+                    <Link
+                      to={route.settings.providers}
+                      params={{ providerName: 'llamacpp' }}
+                      search={{ diagnoseModel }}
+                      className="whitespace-nowrap text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                    >
+                      {t('providers:diagnostics.checkThisModel')}
+                    </Link>
+                  )}
+                </div>
               )}
+            </div>
           </div>
         )}
 

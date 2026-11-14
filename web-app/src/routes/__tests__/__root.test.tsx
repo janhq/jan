@@ -155,9 +155,11 @@ describe('__root route', () => {
 
   it('renders AppLayout by default (non-logs route)', () => {
     renderComponent()
-    expect(screen.getByTestId('service-hub')).toBeInTheDocument()
+    // ServiceHub/translation/extensions now mount above RouterProvider, before
+    // initial route classification, not inside this route.
+    expect(screen.queryByTestId('service-hub')).not.toBeInTheDocument()
     expect(screen.getByTestId('theme-provider')).toBeInTheDocument()
-    expect(screen.getByTestId('extension-provider')).toBeInTheDocument()
+    expect(screen.queryByTestId('extension-provider')).not.toBeInTheDocument()
     expect(screen.getByTestId('data-provider')).toBeInTheDocument()
     expect(screen.getByTestId('left-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('outlet')).toBeInTheDocument()

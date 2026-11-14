@@ -119,6 +119,42 @@ describe('ContributionStore', () => {
     expect(store.getState().providers['acme.one'].p.handler).toBeUndefined()
   })
 
+  it('stamps each tool binding with a fresh host-owned generation', () => {
+    const store = new ContributionStore()
+    store.registerExtension(helloManifest('acme.one'))
+    const gen = () => store.getState().tools['acme.one'].echo.generation
+    expect(gen()).toBeUndefined()
+    const first = store.registerTool('acme.one', 'echo', vi.fn())
+    const a = gen()
+    expect(a).toEqual(expect.any(Number))
+    first.dispose()
+    expect(gen()).toBeUndefined()
+    store.registerTool('acme.one', 'echo', vi.fn())
+    expect(gen()).not.toBe(a)
+    expect(gen()).toBeGreaterThan(a!)
+  })
+
+  it('ignores a generation carried by the manifest declaration', () => {
+    const store = new ContributionStore()
+    store.registerExtension(
+      manifest('acme.two', {
+        permissions: ['tools'],
+        contributes: {
+          tools: [
+            {
+              name: 'echo',
+              description: 'Echo',
+              inputSchema: { type: 'object' },
+              generation: 1,
+            } as never,
+          ],
+        },
+      })
+    )
+    store.registerTool('acme.two', 'echo', vi.fn())
+    expect(store.getState().tools['acme.two'].echo.generation).not.toBe(1)
+  })
+
   it('treats inherited property names as undeclared', async () => {
     const store = new ContributionStore()
     store.registerExtension(helloManifest('acme.one'))

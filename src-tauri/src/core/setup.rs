@@ -404,6 +404,38 @@ pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Id of the macOS app menu's Quit item (see `setup_app_menu_quit`).
+#[cfg(feature = "desktop")]
+const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+
+/// Replace the default macOS app menu's native Quit (Cmd+Q) with one that calls
+/// `app.exit`. The native item terminates the process without an exit request,
+/// so the web app never gets to save; `app.exit` goes through `ExitRequested`,
+/// which holds the exit for that save. Dock Quit and logout still terminate
+/// natively.
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub fn setup_app_menu_quit<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    use tauri::menu::MenuItemKind;
+    let menu = Menu::default(app)?;
+    let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() else {
+        return Ok(());
+    };
+    let Some(native_quit) = app_menu.items()?.into_iter().last() else {
+        return Ok(());
+    };
+    app_menu.remove(&native_quit)?;
+    let label = format!("Quit {}", app.package_info().name);
+    let quit = MenuItem::with_id(app, APP_MENU_QUIT_ID, label, true, Some("CmdOrCtrl+Q"))?;
+    app_menu.append(&quit)?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app, event| {
+        if event.id.as_ref() == APP_MENU_QUIT_ID {
+            app.exit(0);
+        }
+    });
+    Ok(())
+}
+
 #[cfg(feature = "desktop")]
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
     let show_i = MenuItem::with_id(app, "open", "Open Jan", true, None::<&str>)?;
@@ -431,6 +463,8 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> 
             "quit" => {
                 app.exit(0);
             }
+            // The macOS app menu's Quit, handled by its own listener.
+            APP_MENU_QUIT_ID => {}
             other => {
                 println!("menu item {other} not handled");
             }

@@ -10,6 +10,7 @@
 //! `commands` are gated.
 
 pub mod artifact;
+pub mod consent;
 pub mod memory;
 pub mod permissions;
 pub mod preview;
@@ -55,6 +56,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::thread_workspace_delete,
             commands::thread_workspace_sweep,
             commands::session_workspace_path,
+            commands::session_workspace_copy_to_thread,
             commands::session_workspace_delete,
             commands::session_workspace_sweep,
             commands::skill_list,
@@ -83,7 +85,14 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::cancel_thread_bash,
             commands::preview_register_root,
             commands::preview_unregister_root,
-            commands::open_artifact
+            commands::open_artifact,
+            commands::consent_request,
+            commands::consent_answer,
+            commands::consent_consume,
+            commands::consent_cancel_thread,
+            commands::consent_saved,
+            commands::consent_revoke,
+            commands::consent_set_allow_all_mcp
         ])
         .setup(|app, _api| {
             use tauri::Manager;

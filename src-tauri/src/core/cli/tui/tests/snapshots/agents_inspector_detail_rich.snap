@@ -29,9 +29,9 @@ expression: render_snapshot(buf)
 |╰──────────────────────────────────────────────────────────────────────────────╯|
 |                                                                                |
 |────────────────────────────────────────────────────────────────────────────────|
-|selecting…                                                                      |
+|›   working…       (type to message kv-review, Ctrl-X to stop)                  |
 |                                                                                |
-|📂 /snapshot/repo               PgUp/PgDn scroll   m message   x stop   Esc back|
+|📂 /snapshot/repo    PgUp/PgDn scroll   Enter send   ^X stop   Esc back/^C close|
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
@@ -126,7 +126,10 @@ expression: render_snapshot(buf)
 23 37..77 bg=#163420
 23 79..80 fg=#56B6C2
 24 0..80 fg=#56B6C2
-27 0..10 mod=DIM | ITALIC
+27 0..2 fg=#56B6C2 mod=BOLD
+27 2..3 mod=REVERSED
+27 4..12 mod=DIM | ITALIC
+27 18..62 mod=DIM | ITALIC
 29 0..1 fg=#808080
 29 2..17 fg=#808080
-29 31..80 mod=DIM
+29 20..80 mod=DIM

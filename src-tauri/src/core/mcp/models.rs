@@ -169,6 +169,10 @@ pub struct ToolWithServer {
     #[serde(rename = "inputSchema")]
     pub input_schema: serde_json::Value,
     pub server: String,
+    /// The connection generation the tool was listed from; passed back with a
+    /// call so a replaced server cannot run it (see `mcp::identity`).
+    #[serde(default)]
+    pub generation: u64,
 }
 
 /// Lightweight server metadata used by the frontend orchestrator for tool routing

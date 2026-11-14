@@ -12,7 +12,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useParams } from '@tanstack/react-router'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useThreads } from '@/hooks/useThreads'
 import { useSkills, type HubSkill } from '@/hooks/useSkills'
 
 export default function SkillsManagerDialog({
@@ -23,11 +25,28 @@ export default function SkillsManagerDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const sessions = useCoworkSessions((s) => s.sessions)
-  const currentId = useCoworkSessions((s) => s.currentId)
-  const folder = sessions.find((s) => s.id === currentId)?.folder ?? null
+  // The folder comes from the conversation on screen, not from whichever Cowork
+  // session was selected last: the store keeps `currentId` after the user leaves.
+  const { sessionId, threadId } = useParams({ strict: false }) as {
+    sessionId?: string
+    threadId?: string
+  }
+  const sessionFolder = useCoworkSessions(
+    (s) => s.sessions.find((x) => x.id === sessionId)?.folder ?? null
+  )
+  const threadFolder = useThreads((s) => {
+    const folder = threadId ? s.threads[threadId]?.metadata?.folder : null
+    return typeof folder === 'string' ? folder : null
+  })
+  const folder = sessionId ? sessionFolder : threadFolder
 
-  const { skills, remove, write, read, hubList, hubImport } = useSkills(folder)
+  // A new skill goes to the chosen destination; existing ones stay where they
+  // live. With no folder there is only the global store.
+  const [destination, setDestination] = useState<'folder' | 'global'>('folder')
+  const { skills, remove, write, read, hubList, hubImport } = useSkills(
+    folder,
+    destination
+  )
   const localNames = new Set(skills.map((s) => s.name))
 
   // `selected` is the skill being edited; '' with isNew means a fresh draft.
@@ -286,6 +305,31 @@ export default function SkillsManagerDialog({
                     placeholder={t('common:skillNamePlaceholder')}
                     disabled={!isNew}
                   />
+                  {isNew && folder && (
+                    <div
+                      role="group"
+                      aria-label={t('common:skillDestination')}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      <span>{t('common:skillDestination')}</span>
+                      {(['folder', 'global'] as const).map((choice) => (
+                        <Button
+                          key={choice}
+                          type="button"
+                          size="xs"
+                          variant={destination === choice ? 'secondary' : 'ghost'}
+                          aria-pressed={destination === choice}
+                          onClick={() => setDestination(choice)}
+                        >
+                          {t(
+                            choice === 'folder'
+                              ? 'common:skillDestinationFolder'
+                              : 'common:skillDestinationGlobal'
+                          )}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                   <Textarea
                     value={content}
                     onChange={(e) => setContent(e.target.value)}

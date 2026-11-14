@@ -73,36 +73,45 @@ describe('DefaultMessagesService', () => {
       expect(result).toEqual(msg)
     })
 
-    it('should return original message when the backend is unavailable', async () => {
+    it('rejects when the backend is unavailable rather than acknowledging a fictitious write', async () => {
       window.core = undefined
-      const msg = message()
 
-      expect(await messagesService.createMessage(msg)).toBe(msg)
+      await expect(messagesService.createMessage(message())).rejects.toThrow(
+        'Message storage is unavailable'
+      )
     })
 
-    it('should return original message when createMessage fails', async () => {
+    it('propagates createMessage storage failures', async () => {
       const msg = message()
       api.createMessage.mockRejectedValue(new Error('Failed to create message'))
 
-      expect(await messagesService.createMessage(msg)).toBe(msg)
+      await expect(messagesService.createMessage(msg)).rejects.toThrow(
+        'Failed to create message'
+      )
+      expect(api.createMessage).toHaveBeenCalledWith({ message: msg })
     })
 
-    it('should keep the original message when the backend returns nothing (web build)', async () => {
+    it('rejects when the backend persisted nothing', async () => {
       const msg = message()
       api.createMessage.mockResolvedValue(null)
       api.modifyMessage.mockResolvedValue(null)
       api.listMessages.mockResolvedValue(null)
 
-      expect(await messagesService.createMessage(msg)).toBe(msg)
-      expect(await messagesService.modifyMessage(msg)).toBe(msg)
+      await expect(messagesService.createMessage(msg)).rejects.toThrow(
+        'Message storage is unavailable'
+      )
+      await expect(messagesService.modifyMessage(msg)).rejects.toThrow(
+        'Message storage is unavailable'
+      )
       expect(await messagesService.fetchMessages('thread-123')).toEqual([])
     })
 
-    it('should handle undefined createMessage response', async () => {
-      const msg = message()
+    it('rejects a missing createMessage operation result', async () => {
       api.createMessage.mockReturnValue(undefined)
 
-      expect(await messagesService.createMessage(msg)).toBe(msg)
+      await expect(messagesService.createMessage(message())).rejects.toThrow(
+        'Message storage is unavailable'
+      )
     })
   })
 

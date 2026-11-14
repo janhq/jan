@@ -52,6 +52,7 @@ const YOU_COM_CLIENT_INFO: &str = concat!(
 );
 const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
 const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
+const YOU_COM_EXTRACT_URL: &str = "https://api.you.com/v1/extract";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
@@ -841,9 +842,9 @@ enum YouComMode {
 /// structured REST API when a key is supplied.
 ///
 /// * Keyless (default): the hosted MCP endpoint answers `you-search` with no
-///   credentials. `web_fetch` has no keyless counterpart, so it falls back to a
-///   direct GET, the same way [`SearxngProvider`] handles a backend with no
-///   extraction endpoint.
+///   credentials, and `web_fetch` reads the page as markdown from the keyless
+///   `/v1/extract` endpoint. When extraction is refused, `web_fetch` falls back
+///   to a direct GET, the same way [`SearxngProvider`] reads pages.
 /// * Keyed (opt-in): the structured REST API at `https://ydc-index.io`, which
 ///   adds `/v1/contents` for real content extraction and lifts the free tier's
 ///   request cap.
@@ -867,23 +868,29 @@ impl YouComProvider {
         })
     }
 
-    /// Send a prepared request and return the body, mapping transport and HTTP
-    /// failures into one message shape for both transports.
-    async fn send(&self, request: reqwest::RequestBuilder) -> Result<String, String> {
+    /// Send a prepared request and return its status and body, failing only
+    /// on transport errors.
+    async fn send_raw(&self, request: reqwest::RequestBuilder) -> Result<(u16, String), String> {
         let resp = with_youcom_headers(request)
             .send()
             .await
             .map_err(|e| format!("You.com request failed: {e}"))?;
-        let status = resp.status();
+        let status = resp.status().as_u16();
         let text = resp
             .text()
             .await
             .map_err(|e| format!("You.com: failed to read response body: {e}"))?;
-        if !status.is_success() {
+        Ok((status, text))
+    }
+
+    /// Send a prepared request and return the body, mapping transport and HTTP
+    /// failures into one message shape for both transports.
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<String, String> {
+        let (status, text) = self.send_raw(request).await?;
+        if !(200..300).contains(&status) {
             return Err(format!(
-                "You.com failed with HTTP {}: {}",
-                status.as_u16(),
-                text.chars().take(400).collect::<String>()
+                "You.com failed with HTTP {status}: {}",
+                clip_chars(&text, 400)
             ));
         }
         Ok(text)
@@ -918,6 +925,37 @@ impl YouComProvider {
         serde_json::from_str(&payload)
             .map_err(|e| format!("You.com: invalid JSON in tool result: {e}"))
     }
+
+    /// Keyless page extraction: a plain JSON POST with no credentials.
+    fn extract_request(&self, url: &str) -> reqwest::RequestBuilder {
+        self.client
+            .post(YOU_COM_EXTRACT_URL)
+            .json(&json!({ "url": url }))
+    }
+
+    /// Keyless `web_fetch`: markdown from `/v1/extract`, falling back to a
+    /// direct GET when extraction is refused (see [`extract_fallback`]).
+    async fn keyless_fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        let note = match self.send_raw(self.extract_request(url)).await {
+            Ok((200, body)) => {
+                let page = serde_json::from_str::<Value>(&body)
+                    .ok()
+                    .and_then(|v| normalize_youcom_extract(&v, url).ok());
+                if let Some(page) = page {
+                    return Ok(page);
+                }
+                None
+            }
+            Ok((status, body)) => extract_fallback(status, &body)?,
+            Err(_) => None,
+        };
+        match (fetch_url_direct(url, "You.com").await, note) {
+            (Ok(page), Some(note)) => Ok(prefix_extract_note(page, &note)),
+            (Ok(page), None) => Ok(page),
+            (Err(e), Some(note)) => Err(format!("You.com extraction unavailable ({note}); {e}")),
+            (Err(e), None) => Err(e),
+        }
+    }
 }
 
 #[async_trait]
@@ -933,8 +971,7 @@ impl SearchProvider for YouComProvider {
 
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
         match &self.mode {
-            // No keyless content endpoint, so read the page directly.
-            YouComMode::Hosted => fetch_url_direct(url, "You.com").await,
+            YouComMode::Hosted => self.keyless_fetch(url).await,
             YouComMode::Rest(key) => {
                 let parsed = self
                     .post_rest(
@@ -1025,6 +1062,75 @@ fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<Fetche
         content,
         truncated,
     })
+}
+
+/// Keyless `/v1/extract` answers one object per page, with the markdown under
+/// `contents.full_page`. A missing or empty `markdown` is an error, not an
+/// empty page: it is also how a skipped PDF comes back (`{}`).
+fn normalize_youcom_extract(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let raw = body
+        .pointer("/contents/full_page/markdown")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let (content, truncated) = bound_text(raw);
+    Ok(FetchedPage {
+        url: body
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or(requested_url)
+            .to_string(),
+        title: body
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        content,
+        truncated,
+    })
+}
+
+/// What a refused keyless extraction means for `web_fetch`:
+///
+/// * `Err`: report it. Only for a PDF, which the free tier won't extract and a
+///   direct GET would return as binary.
+/// * `Ok(Some(note))`: fall back, and tell the user why. A 402 means the free
+///   allowance is spent or paused; the note is the server's own message.
+/// * `Ok(None)`: fall back quietly (rate limits, outages, URLs the endpoint
+///   won't take but a direct GET can still read).
+fn extract_fallback(status: u16, body: &str) -> Result<Option<String>, String> {
+    let parsed = serde_json::from_str::<Value>(body).ok();
+    let field = |key: &str| {
+        parsed
+            .as_ref()
+            .and_then(|v| v.get(key))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+    };
+    match status {
+        422 if field("error") == Some("pdf_not_supported") => Err(field("message")
+            .unwrap_or("You.com can't extract PDFs without an API key.")
+            .to_string()),
+        402 => Ok(Some(clip_chars(
+            field("message").unwrap_or("You.com's free extraction allowance is used up."),
+            400,
+        ))),
+        _ => Ok(None),
+    }
+}
+
+/// Lead a fallback page with why it isn't extracted, keeping the page within
+/// the fetch bound.
+fn prefix_extract_note(page: FetchedPage, note: &str) -> FetchedPage {
+    let (content, truncated) = bound_text(&format!(
+        "[You.com extraction unavailable: {note} Showing the page's raw HTML instead.]\n\n{}",
+        page.content
+    ));
+    FetchedPage {
+        content,
+        truncated: page.truncated || truncated,
+        ..page
+    }
 }
 
 /// SearXNG backend (self-hosted, key-less). Queries a user-supplied instance's
@@ -2013,5 +2119,191 @@ mod tests {
         assert!(normalize_youcom_contents(&no_markdown, "u").is_err());
         let empty_markdown = json!([{ "url": "https://example.com", "markdown": "" }]);
         assert!(normalize_youcom_contents(&empty_markdown, "u").is_err());
+    }
+
+    #[test]
+    fn youcom_extract_request_shape() {
+        // Built the way `send_raw` sends it.
+        let req = with_youcom_headers(
+            YouComProvider::new(None)
+                .unwrap()
+                .extract_request("https://example.com"),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(req.method(), reqwest::Method::POST);
+        assert_eq!(req.url().as_str(), YOU_COM_EXTRACT_URL);
+        let body: Value =
+            serde_json::from_slice(req.body().and_then(|b| b.as_bytes()).unwrap()).unwrap();
+        assert_eq!(body, json!({ "url": "https://example.com" }));
+        // A duplicated Content-Type gets a 422 from /v1/extract, which the
+        // fallback would silently hide behind a direct GET.
+        for header in ["content-type", "user-agent", "x-client-info"] {
+            assert_eq!(req.headers().get_all(header).iter().count(), 1, "{header}");
+        }
+        assert!(!req.headers().contains_key("x-api-key"));
+    }
+
+    #[test]
+    fn normalize_youcom_extract_reads_markdown() {
+        // Verbatim keyless `/v1/extract` response for https://example.com.
+        let body = json!({
+            "url": "https://example.com",
+            "extraction_source": "blend",
+            "contents": {
+                "full_page": {
+                    "markdown": "This domain is for use in documentation examples without needing permission. Avoid use in operations.\n\nLearn more"
+                }
+            },
+            "title": "Example Domain",
+            "metadata": {
+                "site_name": "",
+                "favicon_url": "https://api.ydc-index.io/favicon?domain=example.com&size=128"
+            }
+        });
+        let page = normalize_youcom_extract(&body, "https://example.com").unwrap();
+        assert_eq!(page.url, "https://example.com");
+        assert_eq!(page.title, "Example Domain");
+        assert!(page.content.starts_with("This domain is for use"));
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_youcom_extract_bounds_to_fetch_max() {
+        let body = json!({
+            "contents": { "full_page": { "markdown": "a".repeat(FETCH_MAX_CHARS + 100) } }
+        });
+        let page = normalize_youcom_extract(&body, "u").unwrap();
+        assert!(page.truncated);
+        assert_eq!(page.content.chars().count(), FETCH_MAX_CHARS);
+    }
+
+    #[test]
+    fn normalize_youcom_extract_missing_content_errors() {
+        // `{}` is what the proxy returns for a PDF it skipped parsing.
+        for body in [
+            json!({}),
+            json!({ "url": "https://example.com", "title": "T" }),
+            json!({ "contents": { "full_page": { "markdown": null } } }),
+            json!({ "contents": { "full_page": {} } }),
+            json!({ "contents": { "full_page": { "markdown": "" } } }),
+            json!([]),
+        ] {
+            assert!(normalize_youcom_extract(&body, "u").is_err(), "{body}");
+        }
+    }
+
+    #[test]
+    fn youcom_extract_fallback_rules() {
+        // Bodies are the keyless proxy's own (search_api_proxy extract.py,
+        // free_tier.py, and the governance rate limiter).
+        let spent = json!({
+            "error": "free_tier_limit_exceeded",
+            "message": "You've used all your free requests. Sign up for free at https://you.com/platform to continue.",
+            "upgrade_url": "https://you.com/platform",
+            "limit": 100,
+            "used": 100,
+            "reset_at": "2026-10-30T00:00:00+00:00"
+        });
+        let paused = json!({
+            "error": "free_tier_unavailable",
+            "message": "Free extraction is currently unavailable. Sign up for free at https://you.com/platform to continue.",
+            "upgrade_url": "https://you.com/platform"
+        });
+        for body in [&spent, &paused] {
+            let note = extract_fallback(402, &body.to_string()).unwrap().unwrap();
+            assert_eq!(note, body["message"].as_str().unwrap());
+        }
+        // A 402 with no usable message still tells the user.
+        for body in ["not json", "{}", r#"{"message": 7}"#, r#"{"message": ""}"#] {
+            assert!(extract_fallback(402, body).unwrap().is_some(), "{body}");
+        }
+        let long = json!({ "message": "x".repeat(1000) }).to_string();
+        let note = extract_fallback(402, &long).unwrap().unwrap();
+        assert_eq!(note.chars().count(), 400);
+
+        let unavailable = json!({
+            "error": "temporarily_unavailable",
+            "message": "Extraction is temporarily unavailable. Please retry shortly."
+        });
+        let bad_url = json!({
+            "error": "invalid_request",
+            "message": "url host must be a public domain name, on the default port, with no credentials."
+        });
+        let blocked = json!({
+            "error": "invalid_request",
+            "message": "url must point to a public, resolvable host."
+        });
+        let rate_limited = json!({ "errors": [{ "title": "Rate limit exceeded" }] });
+        for (status, body) in [
+            (429, rate_limited.to_string()),
+            (500, String::new()),
+            (503, unavailable.to_string()),
+            (504, unavailable.to_string()),
+            (422, bad_url.to_string()),
+            (422, blocked.to_string()),
+            (422, "not json".to_string()),
+        ] {
+            assert_eq!(extract_fallback(status, &body), Ok(None), "{status} {body}");
+        }
+
+        let pdf = json!({
+            "error": "pdf_not_supported",
+            "message": "PDF extraction is not available on the free tier. Sign up for free at https://you.com/platform to use it.",
+            "upgrade_url": "https://you.com/platform"
+        });
+        assert_eq!(
+            extract_fallback(422, &pdf.to_string()),
+            Err(pdf["message"].as_str().unwrap().to_string())
+        );
+    }
+
+    #[test]
+    fn youcom_extract_note_prefixes_and_stays_bounded() {
+        let page = FetchedPage {
+            url: "https://example.com".into(),
+            title: "T".into(),
+            content: "<html>body</html>".into(),
+            truncated: false,
+        };
+        let noted = prefix_extract_note(page, "Out of free requests.");
+        assert!(noted
+            .content
+            .starts_with("[You.com extraction unavailable: Out of free requests."));
+        assert!(noted.content.ends_with("<html>body</html>"));
+        assert_eq!(noted.url, "https://example.com");
+        assert_eq!(noted.title, "T");
+        assert!(!noted.truncated);
+
+        // A page already at the cap stays within it once the note is added.
+        let full = FetchedPage {
+            url: "u".into(),
+            title: String::new(),
+            content: "a".repeat(FETCH_MAX_CHARS),
+            truncated: false,
+        };
+        let noted = prefix_extract_note(full, "Out of free requests.");
+        assert_eq!(noted.content.chars().count(), FETCH_MAX_CHARS);
+        assert!(noted.truncated);
+    }
+
+    /// Live smoke test against keyless `/v1/extract`. Ignored by default (needs
+    /// network, spends one free request); run with
+    /// `cargo test -- --ignored youcom_fetch_live`.
+    #[tokio::test]
+    #[ignore]
+    async fn youcom_fetch_live_keyless() {
+        let page = YouComProvider::new(None)
+            .unwrap()
+            .fetch("https://example.com")
+            .await
+            .unwrap();
+        // The direct-GET fallback would return the page's raw HTML.
+        assert!(
+            !page.content.to_lowercase().contains("<html"),
+            "fell back: {}",
+            page.content
+        );
+        assert!(page.content.contains("documentation examples"));
     }
 }

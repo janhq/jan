@@ -173,6 +173,7 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
         key === 'chat_template' ||
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
+        key === 'load_mode' ||
         key === 'cpu_moe' ||
         key === 'n_cpu_moe' ||
         key === 'n_cpu_ffn' ||
@@ -381,10 +382,10 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
   )
 }
 
-function ModelSettingSheetBody({ model, provider }: ModelSettingProps) {
+function ModelSettingSheetBody({ model, provider, onCloseAutoFocus }: ModelSettingProps & { onCloseAutoFocus?: (event: Event) => void }) {
   const { t } = useTranslation()
   return (
-    <SheetContent>
+    <SheetContent onCloseAutoFocus={onCloseAutoFocus}>
       <SheetHeader>
         <SheetTitle>
           {t('common:modelSettings.title', {
@@ -406,13 +407,15 @@ export function ModelSettingSheet({
   provider,
   open,
   onOpenChange,
+  onCloseAutoFocus,
 }: ModelSettingProps & {
+  onCloseAutoFocus?: (event: Event) => void
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <ModelSettingSheetBody model={model} provider={provider} />
+      <ModelSettingSheetBody model={model} provider={provider} onCloseAutoFocus={onCloseAutoFocus} />
     </Sheet>
   )
 }

@@ -41,6 +41,9 @@ const COMMANDS: &[&str] = &[
     "begin_engine_restart",
     "end_engine_restart",
     "erase_thread_slot_state",
+    // The ggml op diagnostic, orchestrated by the worker
+    "start_diagnostics",
+    "cancel_diagnostics",
     // GGUF commands
     "read_gguf_metadata",
     "find_gguf_tensors",
@@ -270,6 +273,7 @@ mod engine {
     pub fn build() {
         println!("cargo:rerun-if-changed=shim/jan_llama_shim.cpp");
         println!("cargo:rerun-if-changed=shim/jan_llama_shim.h");
+        println!("cargo:rerun-if-changed=shim/jan_llama_diag.cpp");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_PREBUILT_DIR");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_CPP_DIR");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
@@ -331,6 +335,7 @@ mod engine {
             };
 
         search_dirs.push(compile_shim(&src, &generated_include));
+        compile_diag(&src);
         emit_link_flags(&search_dirs);
 
         // ggml resolves backend modules against the *executable's* directory
@@ -1085,6 +1090,52 @@ mod engine {
             .include(generated_include.join("common"));
         cc.compile("jan_llama_shim");
         PathBuf::from(env::var("OUT_DIR").unwrap())
+    }
+
+    /// Compiles `shim/jan_llama_diag.cpp`, which `#include`s upstream's
+    /// `tests/test-backend-ops.cpp` whole (after renaming its `main`).
+    ///
+    /// One translation unit through `cc`, not `-DLLAMA_BUILD_TESTS=ON`: that
+    /// switch would build and register every test target in `tests/`, which
+    /// the engine does not want and which would slow every build. The upstream
+    /// file needs ggml's headers only, so none of llama.cpp's generated headers
+    /// are on the include path and none of libllama or libcommon is linked in
+    /// for it; the ggml symbols resolve against the shared ggml the link line
+    /// already names.
+    ///
+    /// Not in `ARCHIVES`: it takes part in no link cycle, `cc` emits its own
+    /// link directive, and like the shim it is rebuilt on every build rather
+    /// than shipped in a prebuilt bundle (engine-prebuilt.sh reads `ARCHIVES`
+    /// to decide what the bundle must hold).
+    fn compile_diag(src: &Path) {
+        let upstream = src.join("tests/test-backend-ops.cpp");
+        assert!(
+            upstream.is_file(),
+            "{} is missing: the diagnostic wrapper includes it unmodified. A llama.cpp \
+             checkout pruned of tests/ cannot build the engine; re-run `make engine-source`.",
+            upstream.display()
+        );
+        println!("cargo:rerun-if-changed={}", upstream.display());
+
+        let mut cc = cc::Build::new();
+        cc.cpp(true)
+            .std("c++17")
+            .file("shim/jan_llama_diag.cpp")
+            .include("shim")
+            // `#include "tests/test-backend-ops.cpp"` resolves from the root.
+            .include(src)
+            .include(src.join("ggml/include"))
+            .include(src.join("vendor"));
+        if cc.get_compiler().is_like_msvc() {
+            // llama.cpp's own CMakeLists adds both for every target: the file
+            // holds non-ASCII literals and its test table overflows the default
+            // COFF section count.
+            cc.flag("/utf-8").flag("/bigobj");
+        }
+        // Upstream defines helpers its own main() uses (the output format
+        // names) that this driver does not; the file is not ours to prune.
+        cc.flag_if_supported("-Wno-unused-function");
+        cc.compile("jan_llama_diag");
     }
 
     fn emit_link_flags(dirs: &[PathBuf]) {

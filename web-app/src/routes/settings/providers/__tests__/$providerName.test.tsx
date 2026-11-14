@@ -83,6 +83,13 @@ const h = vi.hoisted(() => {
   const appState = {
     activeModels: [] as string[],
     setActiveModels: vi.fn(),
+    // The page selects over these to decide whether the engine is busy, so
+    // the mock has to carry the real store's shape.
+    currentStreamThreadId: undefined as string | undefined,
+    abortControllers: {} as Record<string, unknown>,
+    busyThreads: {} as Record<string, boolean>,
+    loadingModels: {} as Record<string, boolean>,
+    streamingContents: {} as Record<string, unknown>,
   }
   const useAppStateMock: any = (selector: any) => selector(appState)
   useAppStateMock.getState = () => appState
@@ -119,6 +126,7 @@ const h = vi.hoisted(() => {
   }
 
   const params: any = { providerName: 'openai' }
+  const search: any = {}
 
   return {
     toastSuccess,
@@ -139,6 +147,7 @@ const h = vi.hoisted(() => {
     dialogSvc,
     modelLoad,
     params,
+    search,
   }
 })
 
@@ -146,7 +155,12 @@ const h = vi.hoisted(() => {
 // Module mocks
 // -----------------------------------------------------------------------------
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (cfg: any) => ({ ...cfg, id: '/settings/providers/$providerName' }),
+  createFileRoute: () => (cfg: any) => ({
+    ...cfg,
+    id: '/settings/providers/$providerName',
+    // The page reads ?diagnose to preselect a device in the hardware check.
+    useSearch: () => h.search ?? {},
+  }),
   useParams: () => h.params,
   Link: ({ children, to, params }: any) => (
     <a
@@ -294,6 +308,18 @@ vi.mock('@tabler/icons-react', () => ({
   IconEyeOff: () => <span />,
   IconCopy: () => <span />,
   IconCopyCheck: () => <span />,
+  // Used by the llama.cpp panels this page renders; the diagnostics status
+  // table reads these at module scope, so a missing one fails on import.
+  IconCpu: () => <span />,
+  IconExternalLink: () => <span />,
+  IconStethoscope: () => <span />,
+  IconChevronDown: () => <span />,
+  IconLoader2: () => <span />,
+  IconCheck: () => <span />,
+  IconX: () => <span />,
+  IconCircleDashed: () => <span />,
+  IconHelpCircle: () => <span />,
+  IconAlertTriangle: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -303,6 +329,7 @@ vi.mock('@/lib/utils', () => ({
   getModelDisplayName: (m: any) => m.name ?? m.id,
   basenameNoExt: (p: string) => p.split('/').pop() ?? p,
   isLocalProvider: (p: string) => p === 'llamacpp' || p === 'mlx',
+  formatMegaBytes: (n: number) => `${n} MB`,
 }))
 
 vi.mock('@/constants/providers', () => ({
@@ -404,9 +431,10 @@ describe('ProviderDetail route', () => {
       expect(r.step).toBe('42')
     })
 
-    it('validateSearch handles missing search', () => {
+    it('validateSearch leaves a missing step out instead of the string "undefined"', () => {
       const r = (Route as any).validateSearch({})
-      expect(r.step).toBe('undefined')
+      expect(r).toEqual({})
+      expect('step' in r).toBe(false)
     })
   })
 

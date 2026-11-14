@@ -61,7 +61,11 @@ const useSkillsVersion = create<{ v: number; bump: () => void }>((set) => ({
  * `[skills].enabled` whitelist stays a project concern: with no folder it has
  * nowhere to live, so everything reads as enabled and `setEnabled` is a no-op.
  */
-export function useSkills(folder: string | null) {
+export function useSkills(
+  folder: string | null,
+  /** Where a brand-new skill is written when a folder is attached. */
+  destination: 'folder' | 'global' = 'folder'
+) {
   const [skills, setSkills] = useState<ScopedSkill[]>([])
   // Enabled-skill whitelist from `[skills].enabled`; empty = all skills enabled.
   const [enabled, setEnabledState] = useState<string[]>([])
@@ -75,10 +79,14 @@ export function useSkills(folder: string | null) {
   // without depending on (and being recreated by) the `skills` state.
   const originRef = useRef<Map<string, SkillOrigin>>(new Map())
 
-  // Where a NEW skill is written: the folder's store when attached, else global.
+  // Where a NEW skill is written: the chosen destination (the folder's store
+  // by default when one is attached), else global.
   const newScope = useMemo(
-    () => (folder ? skillStore.projectScope(folder) : skillStore.storeScope),
-    [folder]
+    () =>
+      folder && destination === 'folder'
+        ? skillStore.projectScope(folder)
+        : skillStore.storeScope,
+    [folder, destination]
   )
   const scopeOf = useCallback(
     (name: string) => {

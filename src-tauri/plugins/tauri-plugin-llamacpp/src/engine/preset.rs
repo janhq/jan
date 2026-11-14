@@ -67,6 +67,18 @@ pub fn shared_value(ini: &str, key: &str) -> Option<String> {
     None
 }
 
+/// One setting of `section`: its own line wins over `[*]`, the order the C++
+/// loader applies them in.
+pub fn value(ini: &str, section: &str, key: &str) -> Option<String> {
+    let bodies = section_bodies(ini);
+    [section, "*"].iter().find_map(|name| {
+        bodies.get(*name)?.iter().find_map(|line| {
+            let (k, v) = line.split_once('=')?;
+            (k.trim() == key).then(|| v.trim().to_string())
+        })
+    })
+}
+
 /// Whether auto-fit is free to size `section`'s context: fit is on (llama.cpp's
 /// default when the preset says nothing), no `ctx-size` pins it, and the split
 /// mode is not `tensor`.
@@ -81,15 +93,7 @@ pub fn shared_value(ini: &str, key: &str) -> Option<String> {
 /// wins over `[*]`, the order the C++ loader applies them in. Only the spellings
 /// Jan's preset generator writes are read.
 pub fn fit_owns_context(ini: &str, section: &str) -> bool {
-    let bodies = section_bodies(ini);
-    let value = |key: &str| {
-        [section, "*"].iter().find_map(|name| {
-            bodies.get(*name)?.iter().find_map(|line| {
-                let (k, v) = line.split_once('=')?;
-                (k.trim() == key).then(|| v.trim().to_string())
-            })
-        })
-    };
+    let value = |key: &str| value(ini, section, key);
     // `common_arg_utils::is_falsey`; anything else leaves fit at its default.
     let fit_on = !matches!(
         value("fit").as_deref(),
@@ -212,6 +216,14 @@ embeddings = true
             base["sentence-transformer-mini"],
             edited["sentence-transformer-mini"]
         );
+    }
+
+    #[test]
+    fn a_model_line_wins_over_the_shared_block() {
+        let ini = "[*]\nctx-size = 8192\nflash-attn = on\n[m]\nctx-size = 4096\n";
+        assert_eq!(value(ini, "m", "ctx-size").as_deref(), Some("4096"));
+        assert_eq!(value(ini, "m", "flash-attn").as_deref(), Some("on"));
+        assert_eq!(value(ini, "m", "device"), None);
     }
 
     #[test]

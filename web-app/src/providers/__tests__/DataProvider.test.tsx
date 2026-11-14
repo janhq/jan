@@ -18,6 +18,9 @@ const h = vi.hoisted(() => {
     setThreads: vi.fn(),
     setThreadsLoading: vi.fn(),
     threadsInStore: {} as Record<string, unknown>,
+    markThreadsHydrated: vi.fn(),
+    sweepThreadWorkspaces: vi.fn(),
+    coworkSessions: [] as Array<{ id: string }>,
     setLastServerModels: vi.fn(),
     setServerPort: vi.fn(),
     setServerStatus: vi.fn(),
@@ -76,6 +79,12 @@ vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({ setAssistants: h.setAssistants }),
 }))
 
+vi.mock('@/lib/agentTools', () => ({
+  sweepThreadWorkspaces: h.sweepThreadWorkspaces,
+}))
+vi.mock('@/hooks/useCoworkSessions', () => ({
+  useCoworkSessions: { getState: () => ({ sessions: h.coworkSessions }) },
+}))
 vi.mock('@/hooks/useThreads', () => {
   const state = () => ({
     setThreads: h.setThreads,
@@ -88,7 +97,10 @@ vi.mock('@/hooks/useThreads', () => {
     (selector?: (s: unknown) => unknown): unknown
     getState: () => { threads: Record<string, unknown> }
   }
-  useThreads.getState = () => ({ threads: h.threadsInStore })
+  useThreads.getState = () => ({
+    threads: h.threadsInStore,
+    markThreadsHydrated: h.markThreadsHydrated,
+  })
   return { useThreads }
 })
 
@@ -213,6 +225,9 @@ describe('DataProvider', () => {
     resetHubState()
     h.providers = []
     h.threadsInStore = {}
+    h.markThreadsHydrated.mockClear()
+    h.sweepThreadWorkspaces.mockClear()
+    h.coworkSessions = []
     h.isDev.mockReturnValue(false)
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
@@ -276,6 +291,30 @@ describe('DataProvider', () => {
     await waitFor(() => {
       expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
     })
+  })
+
+  it('marks the thread list hydrated only after a successful listing (an empty one counts), never on a failed attempt', async () => {
+    hubState.fetchThreads
+      .mockRejectedValueOnce(new Error('backend not ready'))
+      .mockResolvedValueOnce([])
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(h.markThreadsHydrated).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps the sandbox of a live Cowork session that has no thread.json yet when sweeping', async () => {
+    h.coworkSessions = [{ id: 'live-unsaved' }]
+    hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])
+    render(<DataProvider />)
+    await waitFor(() => expect(h.sweepThreadWorkspaces).toHaveBeenCalledTimes(1))
+    expect(h.sweepThreadWorkspaces.mock.calls[0][0].sort()).toEqual(['live-unsaved', 't1'])
+  })
+
+  it('never marks the thread list hydrated when every attempt fails', async () => {
+    hubState.fetchThreads.mockRejectedValue(new Error('backend not ready'))
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalled())
+    expect(h.markThreadsHydrated).not.toHaveBeenCalled()
   })
 
   it('does not wipe a populated thread list when fetchThreads resolves empty', async () => {
@@ -473,10 +512,19 @@ describe('DataProvider', () => {
 
   it('does not start server on mount when enableOnStartup is false', async () => {
     render(<DataProvider />)
-    await act(async () => {
-      await Promise.resolve()
+    await waitFor(() => {
+      expect(hubState.getServerStatus).toHaveBeenCalled()
     })
-    expect(hubState.getServerStatus).not.toHaveBeenCalled()
+    expect(h.setServerStatus).not.toHaveBeenCalledWith('pending')
+    expect(hubState.startServer).not.toHaveBeenCalled()
+  })
+
+  it('reflects an already-running server on boot even when enableOnStartup is false', async () => {
+    hubState.getServerStatus.mockResolvedValue(true)
+    render(<DataProvider />)
+    await waitFor(() => {
+      expect(h.setServerStatus).toHaveBeenCalledWith('running')
+    })
     expect(hubState.startServer).not.toHaveBeenCalled()
   })
 
@@ -516,14 +564,26 @@ describe('DataProvider', () => {
     })
   })
 
-  it('sets server status to stopped on startup failure', async () => {
+  it('sets server status to stopped when the startup start fails', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     h.localApi.enableOnStartup = true
-    hubState.getServerStatus.mockRejectedValue(new Error('fail'))
+    hubState.getServerStatus.mockResolvedValue(false)
+    hubState.startServer.mockRejectedValue(new Error('fail'))
     render(<DataProvider />)
     await waitFor(() => {
       expect(h.setServerStatus).toHaveBeenCalledWith('stopped')
     })
+    err.mockRestore()
+  })
+
+  it('leaves the status alone when only the status query fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    hubState.getServerStatus.mockRejectedValue(new Error('fail'))
+    render(<DataProvider />)
+    await waitFor(() => {
+      expect(err).toHaveBeenCalled()
+    })
+    expect(h.setServerStatus).not.toHaveBeenCalled()
     err.mockRestore()
   })
 

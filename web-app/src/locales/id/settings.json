@@ -93,8 +93,6 @@
     "resetToDefaultDesc": "Setel ulang semua pengaturan tampilan ke default.",
     "resetInterfaceSuccess": "Tampilan berhasil diatur ulang",
     "resetInterfaceSuccessDesc": "Semua pengaturan tampilan telah dikembalikan ke default.",
-    "tokenCounterCompact": "Penghitung Token Ringkas",
-    "tokenCounterCompactDesc": "Tampilkan penghitung token di dalam input obrolan. Saat dinonaktifkan, penghitung token muncul di bawah input.",
     "codeBlockTitle": "Blok Kode",
     "codeBlockDesc": "Pilih gaya penyorotan sintaks.",
     "showLineNumbers": "Tampilkan Nomor Baris",
@@ -102,7 +100,8 @@
     "resetCodeBlockStyle": "Setel Ulang Gaya Blok Kode",
     "resetCodeBlockStyleDesc": "Setel ulang gaya blok kode ke default.",
     "resetCodeBlockSuccess": "Gaya blok kode berhasil diatur ulang",
-    "resetCodeBlockSuccessDesc": "Gaya blok kode telah dikembalikan ke default."
+    "resetCodeBlockSuccessDesc": "Gaya blok kode telah dikembalikan ke default.",
+    "themeDescFixed": "Selalu gunakan tema ini. Pilih Sistem untuk menyesuaikan dengan OS."
   },
   "hardware": {
     "os": "Sistem Operasi",
@@ -151,6 +150,11 @@
     "peerSslDesc": "Validasi sertifikat SSL dari koneksi sejawat.",
     "hostSsl": "Host SSL",
     "hostSslDesc": "Validasi sertifikat SSL dari host tujuan."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Apa yang dapat dilakukan Jan di komputer Anda: shell yang terisolasi, serta memori dan skill yang disimpan permanen di folder data Jan Anda.",
+    "networkDesc": "Izinkan perintah shell mengakses jaringan, misalnya untuk memasang paket atau mengambil repositori. Aktif secara default. Sandbox tetap membatasi file mana yang dapat disentuh perintah."
   },
   "localApiServer": {
     "title": "Server API Lokal",

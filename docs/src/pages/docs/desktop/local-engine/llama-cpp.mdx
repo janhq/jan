@@ -148,9 +148,8 @@ These engine-wide settings control how every loaded model uses system and GPU me
 | Setting | What It Does | Default | When to Change |
 |---------|-------------|---------|----------------|
 | **Flash Attention** | Enable Flash Attention kernel | Auto | Force On or Off only if you hit kernel issues |
-| **Disable mmap** | Don't memory-map model files | Disabled | Enable if experiencing crashes or pageouts |
-| **Lazy Tensor Reading** | Read the rows of large arch-marked tensors (e.g. per-layer embeddings) from disk on demand instead of keeping them in memory; Auto applies it above 4 GiB | Auto | Off keeps those tensors in memory; requires mmap, so it has no effect with Disable mmap on |
-| **MLock** | Keep model in RAM, prevent swapping | Disabled | Enable if you have enough RAM and want consistent performance |
+| **Load Mode** | How model weights are read into memory: Auto (mmap if the device supports it), None (no mmap), mmap, mlock (no mmap, weights locked in RAM), mmap + mlock, or Direct I/O | Auto | Choose None if mmap causes crashes or pageouts; add mlock if you have enough RAM and want consistent performance, since it keeps the model from being swapped out. Each model can override it |
+| **Lazy Tensor Reading** | Read the rows of large arch-marked tensors (e.g. per-layer embeddings) from disk on demand instead of keeping them in memory; Auto applies it above 4 GiB | Auto | Off keeps those tensors in memory; requires mmap, so it has no effect with a Load Mode that does not memory-map (None, mlock or Direct I/O) |
 | **Context Shift** | Allow trimming the start of the prompt when context fills | Disabled | Enable for very long chats or multiple tool calls |
 | **Disable KV Cache Offload** | Keep the KV cache in system RAM instead of GPU memory | Disabled | When VRAM is scarce, at the cost of speed |
 | **Unified KV Cache** | Use a single KV buffer shared across all slots | Auto | Saves memory when running multiple parallel slots |
@@ -159,7 +158,7 @@ These engine-wide settings control how every loaded model uses system and GPU me
 | **KV Cache V Type** | KV-cache precision for values | f16 | Switch to q8_0 / q4_0 to save VRAM |
 
 <Callout type="info">
-**Per-model settings** (configured on each model's page, not here): Context Size, GPU Layers, Batch Size, **Disable KV Offload** (enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Custom Jinja Chat template, Chat template options (`chat_template_kwargs`), and sampling parameters. Jan writes the engine-wide settings as the `[*]` defaults in `router.preset.ini` in its data folder, and each model's own settings override them.
+**Per-model settings** (configured on each model's page, not here): Context Size, GPU Layers, Batch Size, **Load Mode** (Inherit global by default; any explicit choice, including Auto, overrides the engine-wide setting for that model), **Disable KV Offload** (enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Custom Jinja Chat template, Chat template options (`chat_template_kwargs`), and sampling parameters. Jan writes the engine-wide settings as the `[*]` defaults in `router.preset.ini` in its data folder, and each model's own settings override them.
 </Callout>
 
 ### KV Cache Types Explained

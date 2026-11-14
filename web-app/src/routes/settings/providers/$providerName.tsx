@@ -14,6 +14,8 @@ import { ImportLlamacppModelDialog } from '@/containers/dialogs/ImportLlamacppMo
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { LlamacppEngineInfo } from '@/containers/LlamacppEngineInfo'
+import { LlamacppDiagnostics } from '@/containers/LlamacppDiagnostics'
+import { isEngineWorkInFlight } from '@/containers/dialogs/llamacppRouterError'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { DialogDeleteAllModels } from '@/containers/dialogs/DeleteAllModels'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -57,10 +59,23 @@ import {
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
   component: ProviderDetail,
-  validateSearch: (search: Record<string, unknown>): { step?: string } => {
-    // validate and parse the search params into a typed state
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { step?: string; diagnose?: string; diagnoseModel?: string } => {
+    // An absent step stays absent: String(undefined) put `?step=undefined` in
+    // the URL.
     return {
-      step: String(search?.step),
+      ...(search?.step === undefined ? {} : { step: String(search.step) }),
+      // The hardware page's per-device entry point; it preselects a device in
+      // the hardware check rather than starting one.
+      diagnose:
+        typeof search?.diagnose === 'string' ? search.diagnose : undefined,
+      // A failed load's entry point, carrying the model whose shapes the check
+      // should be narrowed to. Also only preselects.
+      diagnoseModel:
+        typeof search?.diagnoseModel === 'string'
+          ? search.diagnoseModel
+          : undefined,
     }
   },
 })
@@ -72,6 +87,10 @@ function ProviderDetail() {
   const [activeModels, setActiveModels] = useAppState(
     useShallow((state) => [state.activeModels, state.setActiveModels])
   )
+  // This page is the llama.cpp one when the panel below renders, so engine
+  // work in flight is this engine's work.
+  const engineBusy = useAppState(isEngineWorkInFlight)
+  const { diagnose: diagnoseDevice, diagnoseModel } = Route.useSearch()
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
@@ -681,6 +700,13 @@ function ProviderDetail() {
               )}
 
             {isLlamacpp && <LlamacppEngineInfo />}
+            {isLlamacpp && (
+              <LlamacppDiagnostics
+                busy={engineBusy}
+                deviceHint={diagnoseDevice}
+                modelHint={diagnoseModel}
+              />
+            )}
 
             {provider?.provider === 'mlx' && (
               <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">

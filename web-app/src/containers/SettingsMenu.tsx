@@ -204,7 +204,7 @@ const SettingsMenu = () => {
     ...(isCoworkEnabled()
       ? [
           {
-            title: 'common:cowork',
+            title: 'common:agentSettings',
             route: route.settings.cowork,
             icon: IconFolderCode,
           },

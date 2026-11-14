@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import type { UpdateInfo } from '@/services/updater/types'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { relaunchAfterSave } from '@/lib/coworkSync'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -221,7 +222,7 @@ export const useAppUpdater = () => {
         }
       })
 
-      await window.core?.api?.relaunch()
+      await relaunchAfterSave(() => window.core?.api?.relaunch())
 
       console.log('Update installed')
     } catch (error) {

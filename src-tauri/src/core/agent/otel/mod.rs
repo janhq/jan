@@ -142,6 +142,8 @@ pub enum EventSignal {
         code: String,
         message: String,
     },
+    /// A child was dispatched: started now, or queued for a slot.
+    SubagentStart,
     SubagentEnd {
         failed: bool,
     },
@@ -173,7 +175,8 @@ impl From<&Usage> for Tokens {
 pub enum Refusal {
     /// The user answered a permission prompt with deny.
     User,
-    /// Project policy, plan mode or the hidden Jan home.
+    /// Project policy, plan mode, the hidden Jan home, or a command too
+    /// complex for the gate to check.
     Config,
     /// A `PreToolUse` hook said no.
     Hook,
@@ -196,6 +199,7 @@ impl Refusal {
 pub fn refusal_of(content: &str) -> Option<Refusal> {
     use crate::core::agent::r#loop::{
         DENIED_BY_POLICY, DENIED_BY_USER, HIDDEN_PATH_REFUSED, HOOK_DENIED, PLAN_MODE_UNAVAILABLE,
+        TOO_COMPLEX_REFUSED,
     };
     if !content.starts_with("ERROR:") {
         return None;
@@ -206,6 +210,7 @@ pub fn refusal_of(content: &str) -> Option<Refusal> {
     } else if head.contains(DENIED_BY_POLICY)
         || head.contains(PLAN_MODE_UNAVAILABLE)
         || head.contains(HIDDEN_PATH_REFUSED)
+        || head.contains(TOO_COMPLEX_REFUSED)
     {
         Some(Refusal::Config)
     } else if head.starts_with("ERROR: tool '") && head.contains(&format!("' {HOOK_DENIED}")) {
@@ -293,6 +298,13 @@ pub fn classify(cfg: &Config, event: &StreamEvent, child: Option<Child>) -> Opti
             code: code.clone(),
             message: truncate(&redact_secrets(message), ERROR_CAP),
         },
+        StreamEvent::SubagentStart { run_id, name, .. }
+        | StreamEvent::SubagentQueued { run_id, name, .. } => {
+            return Some(Signal::Event {
+                child: Some(Child { run_id: run_id.clone(), name: name.clone() }),
+                event: EventSignal::SubagentStart,
+            });
+        }
         StreamEvent::SubagentEnd { run_id, name, error } => {
             return Some(Signal::Event {
                 child: Some(Child { run_id: run_id.clone(), name: name.clone() }),
@@ -663,6 +675,10 @@ pub struct State {
     run_session: HashMap<Option<String>, String>,
     requests: HashMap<Option<String>, PendingRequest>,
     tools: HashMap<(Option<String>, String), PendingTool>,
+    /// Child runs dispatched and not yet ended. A `SubagentEnd` for a run not
+    /// here is a child that never started (stopped while pending on its
+    /// phase): it reports no result, or it would count as a failed run.
+    subagents: HashSet<String>,
     /// Tools a permission prompt was raised for and not yet resolved, per run.
     prompted: HashMap<Option<String>, Vec<String>>,
     /// The prompt currently in flight, per session (`""` = no session id),
@@ -721,6 +737,7 @@ impl State {
             run_session: HashMap::new(),
             requests: HashMap::new(),
             tools: HashMap::new(),
+            subagents: HashSet::new(),
             prompted: HashMap::new(),
             prompt_ids: HashMap::new(),
             main_session: None,
@@ -1183,16 +1200,24 @@ impl State {
                 }
                 self.log(wall, "jan_agent.api_error", true, session.as_deref(), child.as_ref(), fields);
             }
+            EventSignal::SubagentStart => {
+                if let Some(run) = run {
+                    self.subagents.insert(run);
+                }
+            }
             EventSignal::SubagentEnd { failed } => {
-                let session = self.session_of(&None);
-                self.log(
-                    wall,
-                    "jan_agent.subagent_result",
-                    failed,
-                    session.as_deref(),
-                    child.as_ref(),
-                    vec![("success".into(), AnyValue::Bool(!failed))],
-                );
+                let started = run.as_ref().is_some_and(|r| self.subagents.remove(r));
+                if started {
+                    let session = self.session_of(&None);
+                    self.log(
+                        wall,
+                        "jan_agent.subagent_result",
+                        failed,
+                        session.as_deref(),
+                        child.as_ref(),
+                        vec![("success".into(), AnyValue::Bool(!failed))],
+                    );
+                }
                 // The child's bookkeeping ends with it.
                 self.requests.remove(&run);
                 self.run_session.remove(&run);

@@ -119,15 +119,15 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  it('lists the Cowork settings entry where Cowork ships', () => {
+  it('lists the Agent settings entry where Cowork ships', () => {
     render(<SettingsMenu />)
-    expect(screen.getByText('common:cowork')).toBeInTheDocument()
+    expect(screen.getByText('common:agentSettings')).toBeInTheDocument()
   })
 
-  it('omits the Cowork settings entry on builds that do not ship Cowork', () => {
+  it('omits the Agent settings entry on builds that do not ship Cowork', () => {
     channel.cowork = false
     render(<SettingsMenu />)
-    expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:agentSettings')).not.toBeInTheDocument()
     expect(screen.getByText('common:general')).toBeInTheDocument()
   })
 

@@ -739,22 +739,56 @@ describe('generatePreset upstream-default skipping', () => {
     expect(modelSection('c')).not.toContain('n-gpu-layers')
   })
 
-  // mlock and no_mmap were two aliases for one upstream field and are gone as of
-  // 0.4.1; load-mode is the only key llama.cpp still accepts.
-  it('derives a single load-mode and never emits mlock or no-mmap', async () => {
-    const cases: Array<[boolean, boolean, string | null]> = [
-      [false, false, null],
-      [false, true, 'load-mode = none'],
-      [true, false, 'load-mode = mmap+mlock'],
-      [true, true, 'load-mode = mlock'],
-    ]
-    for (const [mlock, no_mmap, expected] of cases) {
-      await generatePreset('/p', '/jan', { mlock, no_mmap } as any)
-      const g = globalSection()
-      expect(g, `mlock=${mlock} no_mmap=${no_mmap}`).not.toMatch(/^mlock = /m)
-      expect(g).not.toMatch(/^no-mmap = /m)
-      if (expected) expect(g).toContain(expected)
-      else expect(g).not.toContain('load-mode')
+  // mlock and no_mmap were aliases for the one upstream load-mode field and are
+  // gone as of 0.4.1; load-mode is the only key llama.cpp still accepts. `auto`
+  // is upstream's own default, so naming it would pin a value meant to track the
+  // engine.
+  it('emits the global load-mode for every value but auto', async () => {
+    for (const mode of ['none', 'mmap', 'mlock', 'mmap+mlock', 'dio']) {
+      await generatePreset('/p', '/jan', { load_mode: mode } as any)
+      expect(globalSection(), mode).toContain(`load-mode = ${mode}`)
+    }
+    await generatePreset('/p', '/jan', { load_mode: 'auto' } as any)
+    expect(globalSection()).not.toContain('load-mode')
+  })
+
+  it('ignores the removed mlock and no_mmap booleans', async () => {
+    await generatePreset('/p', '/jan', { mlock: true, no_mmap: true } as any)
+    const g = globalSection()
+    expect(g).not.toMatch(/^mlock = /m)
+    expect(g).not.toMatch(/^no-mmap = /m)
+    expect(g).not.toContain('load-mode')
+  })
+
+  it('drops an unknown global load-mode instead of emitting it', async () => {
+    for (const bad of ['bogus', '', 'MMAP', 7, null, true]) {
+      await generatePreset('/p', '/jan', { load_mode: bad } as any)
+      expect(globalSection(), String(bad)).not.toContain('load-mode')
+    }
+  })
+
+  // A model value must override the global one, and `auto` is a real override
+  // when the global is not auto, so unlike [*] it is emitted.
+  it('emits an explicit per-model load-mode, including auto', async () => {
+    for (const mode of ['auto', 'none', 'mmap', 'mlock', 'mmap+mlock', 'dio']) {
+      setupModel('m', { load_mode: mode })
+      await generatePreset('/p', '/jan', { load_mode: 'mlock' } as any)
+      expect(modelSection('m'), mode).toContain(`load-mode = ${mode}`)
+    }
+  })
+
+  it('emits nothing per model when load_mode is unset so the global applies', async () => {
+    setupModel('m', {})
+    await generatePreset('/p', '/jan', { load_mode: 'mlock' } as any)
+    expect(globalSection()).toContain('load-mode = mlock')
+    expect(modelSection('m')).not.toContain('load-mode')
+  })
+
+  it('drops an invalid per-model load-mode', async () => {
+    for (const bad of ['bogus', '', 'MMAP', 7, true]) {
+      setupModel('m', { load_mode: bad })
+      await generatePreset('/p', '/jan', {} as any)
+      expect(modelSection('m'), String(bad)).not.toContain('load-mode')
     }
   })
 

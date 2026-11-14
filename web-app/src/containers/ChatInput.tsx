@@ -4,7 +4,6 @@ import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import type { ReactNode } from 'react'
-import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -15,20 +14,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
-import { ArrowRight, PlusIcon } from 'lucide-react'
+import { ArrowRight, PlusIcon, SlidersHorizontal, UserRound } from 'lucide-react'
 import {
   IconPhoto,
   IconMusic,
   IconVideo,
-  IconBrain,
   IconTool,
-  IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
   IconPaperclip,
@@ -36,23 +34,19 @@ import {
   IconWorldSearch,
   IconTerminal2,
   IconBrandChrome,
-  IconDots,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
 import { SamplerPopover } from '@/containers/SamplerPopover'
+import ComposerModelPicker from '@/containers/ComposerModelPicker'
+import { AssistantsMenu } from '@/components/AssistantsMenu'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
+import { useToolAvailable, createToolKey } from '@/hooks/useToolAvailable'
+import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useTokensCount } from '@/hooks/useTokensCount'
-import {
-  THINKING_BUDGET_LEVELS,
-  DEFAULT_THINKING_BUDGET_LEVEL,
-  tokensForThinkingBudgetLevel,
-  isThinkingBudgetLevelKey,
-  type ThinkingBudgetLevelKey,
-} from '@/lib/thinkingBudget'
 import { useReconcileVideoCapability } from '@/hooks/useReconcileVideoCapability'
 
 import { useAppState } from '@/hooks/useAppState'
@@ -70,7 +64,6 @@ import { defaultModel } from '@/lib/models'
 import { cancelAgentThreadBash, getSandboxStatus } from '@/lib/agentTools'
 import { useChatShell } from '@/hooks/useChatShell'
 import { useAssistant } from '@/hooks/useAssistant'
-import { AssistantSwitcher } from '@/containers/AssistantSwitcher'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
@@ -115,21 +108,21 @@ import {
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { useElementWidth } from '@/hooks/useElementWidth'
 import { ContributedMenuItems } from '@/containers/extensions/ContributedMenuItems'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
   model?: ThreadModel
+  /** Receives a model picked in the composer; defaults to the current thread. */
+  onModelChange?: (model: ThreadModel) => void
   initialMessage?: boolean
   projectId?: string
   projectAssistantId?: string
+  /** Whether this surface applies assistant instructions and selection. */
+  supportsAssistants?: boolean
+  /** Returning `'refused'` keeps the draft and attachments: nothing was sent.
+   * An async handler (main chat) always clears them: it never refuses. */
   onSubmit?: (
     text: string,
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
@@ -139,7 +132,7 @@ type ChatInputProps = {
     /** What the user typed, before @path references were expanded into
      * `text`, so a cancelled send can hand it back unchanged. */
     draft?: string
-  ) => void
+  ) => void | 'refused' | Promise<void>
   onStop?: () => void
   chatStatus?: ChatStatus
   /**
@@ -171,17 +164,24 @@ type ChatInputProps = {
   surfaceControls?: ReactNode
   /**
    * Usage for a surface that keeps no thread messages (Cowork). Rendering the
-   * counter here rather than in the caller is what keeps its placement, the
-   * `tokenCounterCompact` setting and the spacing to the send button identical
-   * across surfaces.
+   * counter here rather than in the caller is what keeps its placement and the
+   * spacing to the send button identical across surfaces.
    */
   tokenSource?: TokenUsageSource
   highlightedPrefix?: string | null
+  /**
+   * Extra entries for the + menu that the surface owns (workspace and project
+   * actions). Rendered as menu items; ChatInput adds the separator.
+   */
+  menuWorkspace?: ReactNode
+  /**
+   * Home-style surfaces only: the folder the draft carries. The chat thread the
+   * draft creates starts with it attached, and `onDraftFolderUsed` lets the
+   * surface drop it from the next draft.
+   */
+  draftFolder?: string | null
+  onDraftFolderUsed?: () => void
 }
-
-// Below this control-row width the toolbar wraps into several rows on busy
-// surfaces (Cowork), so it collapses behind a single overflow button instead.
-const CONTROL_ROW_COLLAPSE_WIDTH = 480
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
 const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v']
@@ -201,60 +201,14 @@ const videoMimeForExt = (ext: string | undefined): string => {
 }
 
 
-// Renders the composer's control cluster inline, or behind a single overflow
-// button whose popover holds the same controls, when the surface is too narrow.
-function CollapsibleControls({
-  collapsed,
-  label,
-  children,
-}: {
-  collapsed: boolean
-  label: string
-  children: ReactNode
-}) {
-  if (!collapsed) return <>{children}</>
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="secondary"
-          size="icon-sm"
-          className="rounded-full mb-1"
-          aria-label={label}
-        >
-          <IconDots size={18} className="text-muted-foreground" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        side="top"
-        sideOffset={8}
-        className="w-auto max-w-[min(20rem,80vw)] p-2"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onInteractOutside={(e) => {
-          // Keep the overflow popover open while the user drives a nested
-          // dropdown/popover/menu that portals its content elsewhere.
-          const target = e.target as HTMLElement | null
-          if (
-            target?.closest(
-              '[data-radix-popper-content-wrapper],[role="menu"],[role="dialog"],[role="listbox"]'
-            )
-          ) {
-            e.preventDefault()
-          }
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-1">{children}</div>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
 const ChatInput = memo(function ChatInput({
   className,
+  model,
+  onModelChange,
   initialMessage,
   projectId,
   projectAssistantId,
+  supportsAssistants = true,
   onSubmit,
   onStop,
   chatStatus,
@@ -264,20 +218,14 @@ const ChatInput = memo(function ChatInput({
   surfaceControls,
   tokenSource,
   highlightedPrefix,
+  menuWorkspace,
+  draftFolder,
+  onDraftFolderUsed,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  // Collapse the composer's control row into a single overflow button when the
-  // surface is too narrow to lay the controls out on one line (e.g. Cowork's
-  // side panel). Gated on a positive measured width so layout-less test
-  // environments (width 0) keep the controls inline.
-  const [controlRowRef, controlRowWidth] = useElementWidth<HTMLDivElement>()
-  const collapseControls =
-    controlRowWidth != null &&
-    controlRowWidth > 0 &&
-    controlRowWidth < CONTROL_ROW_COLLAPSE_WIDTH
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const tools = useAppState((state) => state.tools)
@@ -295,17 +243,15 @@ const ChatInput = memo(function ChatInput({
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
   )
-  const tokenCounterCompact = useGeneralSetting(
-    (state) => state.tokenCounterCompact
-  )
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const { 
+  const {
     loading,
     currentAssistant,
     setCurrentAssistant,
-    assistants
+    assistants,
+    defaultAssistantId,
   } = useAssistant()
 
   // Agent mode
@@ -457,13 +403,14 @@ const ChatInput = memo(function ChatInput({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const selectModelProvider = useModelProvider(
-    (state) => state.selectModelProvider
-  )
-  const updateProvider = useModelProvider((state) => state.updateProvider)
-  const { maxTokens: liveMaxTokens, configuredCtxLen } =
-    useTokensCount(threadMessages || [])
   const [message, setMessage] = useState('')
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const [samplingOpen, setSamplingOpen] = useState(false)
+  const optionsTriggerRef = useRef<HTMLButtonElement>(null)
+  const assistantMenuOpen = useAssistantSwitcher((state) => state.open)
+  const setAssistantMenuOpen = useAssistantSwitcher((state) => state.setOpen)
+  const disabledTools = useToolAvailable((state) => state.disabledTools)
+  const setToolDisabled = useToolAvailable((state) => state.setToolDisabled)
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipShown, setTooltipShown] = useState<
     'tools' | 'assistants' | false
@@ -485,14 +432,65 @@ const ChatInput = memo(function ChatInput({
     hasPromptText: prompt.trim().length > 0,
     hasReportedUsage: (tokenSource?.usage?.totalTokens ?? 0) > 0,
   })
-  const [selectedAssistantId, setSelectedAssistantId] = useState<
+  // Resolve a missing project assignment only while initializing. Once selected,
+  // including explicit None, the composer's choice is authoritative at send time.
+  const initialAssistantId =
+    assistants.find((a) => a.id === projectAssistantId)?.id ||
+    assistants.find((a) => a.id === currentAssistant?.id)?.id ||
+    (projectAssistantId
+      ? assistants.find((a) => a.id === defaultAssistantId)?.id ||
+        assistants[0]?.id
+      : '')
+  const selectionKey = JSON.stringify([projectId, projectAssistantId])
+  const selectionInitialization = useRef({
+    key: selectionKey,
+    resolved: !loading,
+  })
+  const [selectedAssistantId, setSelectedAssistantIdState] = useState<
     string | undefined
-  >(loading ? undefined : projectAssistantId || currentAssistant?.id || '')
+  >(loading ? undefined : initialAssistantId)
+  const setSelectedAssistantId = useCallback((id: string) => {
+    selectionInitialization.current.resolved = true
+    setSelectedAssistantIdState(id)
+  }, [])
 
   useEffect(() => {
-    setSelectedAssistantId(projectAssistantId || currentAssistant?.id || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, projectAssistantId])
+    if (selectionInitialization.current.key !== selectionKey) {
+      selectionInitialization.current = { key: selectionKey, resolved: false }
+    }
+    if (!loading && !selectionInitialization.current.resolved) {
+      selectionInitialization.current.resolved = true
+      setSelectedAssistantIdState(initialAssistantId)
+    }
+  }, [loading, selectionKey, initialAssistantId])
+
+  // Cmd/Ctrl+J advances to the next assistant (None is a real choice, also
+  // when only one assistant exists). The handler is registered here now that
+  // the composer, not a standalone switcher, owns the assistant controls.
+  const assistantCycleRef = useRef<() => void>(() => {})
+  assistantCycleRef.current = () => {
+    if (!supportsAssistants || assistants.length === 0) return
+    const activeId = currentThread
+      ? currentThread.assistants?.[0]?.id
+      : selectedAssistantId
+    const index = assistants.findIndex((assistant) => assistant.id === activeId)
+    const next = assistants[index + 1]
+    if (currentThread) updateCurrentThreadAssistant(next)
+    else setSelectedAssistantId(next?.id || '')
+  }
+  useEffect(() => {
+    if (!supportsAssistants) return
+    useAssistantSwitcher
+      .getState()
+      .setCycleHandler(() => assistantCycleRef.current())
+    return () => {
+      useAssistantSwitcher.getState().setCycleHandler(null)
+      useAssistantSwitcher.getState().setOpen(false)
+    }
+  }, [supportsAssistants])
+  useEffect(() => {
+    if (supportsAssistants && assistantMenuOpen) setOptionsOpen(true)
+  }, [assistantMenuOpen, supportsAssistants])
 
   // Jan Browser Extension hook
   const {
@@ -550,7 +548,6 @@ const ChatInput = memo(function ChatInput({
   const transferAttachments = useChatAttachments(
     (state) => state.transferAttachments
   )
-  const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
   const ingestingDocs = attachments.some(
     (a) => a.type === 'document' && a.processing
@@ -622,6 +619,55 @@ const ChatInput = memo(function ChatInput({
   const hasActiveMCPServers =
     tools.filter((tool) => tool.server !== 'Jan Browser MCP').length > 0
 
+  const availableMcpTools = tools.filter(
+    (tool) => tool.server !== 'Jan Browser MCP'
+  )
+  const enabledMcpTools = availableMcpTools.filter(
+    (tool) => !disabledTools.includes(createToolKey(tool.server, tool.name))
+  )
+  const toolsByServer = availableMcpTools.reduce<Record<string, typeof tools>>(
+    (groups, tool) => {
+      const serverTools = (groups[tool.server] ??= [])
+      serverTools.push(tool)
+      return groups
+    },
+    {}
+  )
+
+  // Media go to the model as file parts; documents travel as attachments.
+  const collectMedia = () => {
+    const imageFiles = attachments
+      .filter((att) => att.type === 'image' && att.dataUrl)
+      .map((att) => ({
+        type: 'file' as const,
+        mediaType: att.mimeType ?? 'image/jpeg',
+        url: att.dataUrl!,
+      }))
+    const audioFiles = attachments
+      .filter((att) => att.type === 'audio' && att.dataUrl)
+      .map((att) => ({
+        type: 'file' as const,
+        mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+        url: att.dataUrl!,
+      }))
+    const videoFiles = attachments
+      .filter((att) => att.type === 'video' && att.dataUrl)
+      .map((att) => ({
+        type: 'file' as const,
+        mediaType: att.mimeType ?? 'video/mp4',
+        url: att.dataUrl!,
+      }))
+    const files = [...imageFiles, ...audioFiles, ...videoFiles]
+    const documents = attachments.filter(
+      (att) => att.type === 'document' && att.path
+    )
+
+    return {
+      files: files.length > 0 ? files : undefined,
+      documents: documents.length > 0 ? documents : undefined,
+    }
+  }
+
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
@@ -662,38 +708,15 @@ const ChatInput = memo(function ChatInput({
         return
       }
 
-      const imageFiles = attachments
-        .filter((att) => att.type === 'image' && att.dataUrl)
-        .map((att) => ({
-          type: 'file' as const,
-          mediaType: att.mimeType ?? 'image/jpeg',
-          url: att.dataUrl!,
-        }))
-      const audioFiles = attachments
-        .filter((att) => att.type === 'audio' && att.dataUrl)
-        .map((att) => ({
-          type: 'file' as const,
-          mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
-          url: att.dataUrl!,
-        }))
-      const videoFiles = attachments
-        .filter((att) => att.type === 'video' && att.dataUrl)
-        .map((att) => ({
-          type: 'file' as const,
-          mediaType: att.mimeType ?? 'video/mp4',
-          url: att.dataUrl!,
-        }))
-      const files = [...imageFiles, ...audioFiles, ...videoFiles]
-      const documents = attachments.filter(
-        (att) => att.type === 'document' && att.path
-      )
+      const { files, documents } = collectMedia()
 
-      onSubmit(
+      const outcome = onSubmit(
         effectivePrompt,
-        files.length > 0 ? files : undefined,
-        documents.length > 0 ? documents : undefined,
+        files,
+        documents,
         prompt
       )
+      if (outcome === 'refused') return
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
     } else {
@@ -734,7 +757,6 @@ const ChatInput = memo(function ChatInput({
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
           | undefined
-        let projectAssistantId: string | undefined
 
         if (projectId) {
           try {
@@ -747,18 +769,15 @@ const ChatInput = memo(function ChatInput({
                 name: project.name,
                 updated_at: project.updated_at,
               }
-              projectAssistantId = project.assistantId
             }
           } catch (e) {
             console.warn('Failed to fetch project metadata:', e)
           }
         }
 
-        // Only use assistant when chatting via project with an assigned assistant
-        // When no projectId, use the selected assistant from dropdown (if any)
-        const assistant = projectAssistantId
-          ? assistants.find((a) => a.id === projectAssistantId)
-          : assistants.find((a) => a.id === selectedAssistantId)
+        const assistant = supportsAssistants
+          ? assistants.find((a) => a.id === selectedAssistantId)
+          : undefined
 
         setCurrentAssistant(assistant)
 
@@ -769,8 +788,11 @@ const ChatInput = memo(function ChatInput({
           },
           prompt, // Use prompt as thread title
           assistant,
-          projectMetadata
+          projectMetadata,
+          false,
+          draftFolder ?? undefined
         )
+        if (draftFolder) onDraftFolderUsed?.()
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
@@ -2016,7 +2038,7 @@ const ChatInput = memo(function ChatInput({
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
   return (
-    <div className="relative">
+    <div className="@container/composer relative">
       <div className="relative">
         <div
           className={cn(
@@ -2307,690 +2329,547 @@ const ChatInput = memo(function ChatInput({
               </div>
             )}
 
-        <div className="relative z-20 w-full p-2">
-          <div
-            ref={controlRowRef}
-            className="flex items-end justify-between gap-2 w-full"
-          >
-            <div className="px-1 flex flex-wrap items-center gap-1 flex-1 min-w-0">
-              <CollapsibleControls
-                collapsed={collapseControls}
-                label={t('common:moreControls')}
-              >
-              <div
-                className={cn(
-                  'px-1 flex flex-wrap items-center gap-1',
-                  isStreaming && 'opacity-50 pointer-events-none'
-                )}
-              >
-                {/* Dropdown for attachments — hidden in agent mode */}
-                {!effectiveAgentMode && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
-                      <PlusIcon size={18} className="text-muted-foreground" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {hasMmproj && (
-                      <DropdownMenuItem onClick={() => void openImagePicker()}>
-                        <IconPhoto size={18} className="text-muted-foreground" />
-                        <span>Add Images</span>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          className="hidden"
-                          multiple
-                          onChange={handleFileChange}
-                        />
-                      </DropdownMenuItem>
-                    )}
-                    {audioSupported && (
-                      <DropdownMenuItem onClick={() => void openAudioPicker()}>
-                        <IconMusic size={18} className="text-muted-foreground" />
-                        <span>Add Audio</span>
-                        <input
-                          type="file"
-                          ref={audioInputRef}
-                          className="hidden"
-                          multiple
-                          accept="audio/wav,audio/mpeg,.wav,.mp3"
-                          onChange={handleAudioFileChange}
-                        />
-                      </DropdownMenuItem>
-                    )}
-                    {videoSupported && (
-                      <DropdownMenuItem onClick={() => void openVideoPicker()}>
-                        <IconVideo size={18} className="text-muted-foreground" />
-                        <span>Add Video</span>
-                        <input
-                          type="file"
-                          ref={videoInputRef}
-                          className="hidden"
-                          multiple
-                          accept="video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo,.mp4,.mov,.webm,.mkv,.avi,.m4v"
-                          onChange={handleVideoFileChange}
-                        />
-                      </DropdownMenuItem>
-                    )}
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem onClick={handleAttachDocsIngest}>
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-muted-foreground animate-spin"
-                        />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                    {/* Only chat threads: a scoped surface (Cowork) has no thread id. */}
-                    {!scopeKey && currentThreadId && (
-                      <ContributedMenuItems
-                        location="chatInput/actions"
-                        context={{
-                          location: 'chatInput/actions',
-                          threadId: currentThreadId,
+            {/* File inputs must survive closing the attachment menu. */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              multiple
+              onChange={handleFileChange}
+            />
+            <input
+              type="file"
+              ref={audioInputRef}
+              className="hidden"
+              multiple
+              accept="audio/wav,audio/mpeg,.wav,.mp3"
+              onChange={handleAudioFileChange}
+            />
+            <input
+              type="file"
+              ref={videoInputRef}
+              className="hidden"
+              multiple
+              accept="video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo,.mp4,.mov,.webm,.mkv,.avi,.m4v"
+              onChange={handleVideoFileChange}
+            />
+            <div className="relative z-20 w-full px-2 pt-2 pb-3">
+              <div className="flex flex-nowrap items-center justify-between gap-2 w-full @max-[360px]/composer:gap-1">
+                <div
+                  className={cn(
+                    'px-1 flex flex-nowrap items-center gap-1 flex-1 min-w-0',
+                    // Only the bare menu row may claim its full width when narrow; surface controls must keep shrinking so they wrap.
+                    !surfaceControls && '@max-[520px]/composer:flex-none'
+                  )}
+                >
+                  <div className={cn('px-1 flex flex-nowrap items-center gap-1')}>
+                    {/* All actions stay in this menu when narrow composers hide inline shortcuts. */}
+                    <DropdownMenu
+                      open={optionsOpen}
+                      onOpenChange={(open) => {
+                        setOptionsOpen(open)
+                        if (!open) setAssistantMenuOpen(false)
+                      }}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          ref={optionsTriggerRef}
+                          aria-label={t('common:composer.addControls')}
+                          variant="secondary"
+                          size="icon"
+                          className="shrink-0 rounded-full mr-1"
+                        >
+                          <PlusIcon className="size-[18px] text-muted-foreground" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="start"
+                        onInteractOutside={(event) => {
+                          const target = event.target as HTMLElement | null
+                          if (
+                            target?.closest(
+                              '[data-radix-popper-content-wrapper],[role="dialog"]'
+                            )
+                          )
+                            event.preventDefault()
                         }}
-                        separator
-                      />
-                    )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                {/* {model?.provider === 'llamacpp' && loadingModel ? (
-                  <ModelLoader />
-                ) : (
-                  <DropdownModelProvider
-                    model={model}
-                    useLastUsedModel={initialMessage}
-                  />
-                )} */}
-                <AssistantSwitcher
-                  assistants={assistants}
-                  currentThread={currentThread}
-                  selectedAssistantId={selectedAssistantId}
-                  setSelectedAssistantId={setSelectedAssistantId}
-                  updateCurrentThreadAssistant={updateCurrentThreadAssistant}
-                />
-                <SamplerPopover
-                  providerId={selectedProvider}
-                  modelId={selectedModel?.id}
-                  assistantSwitcher={{
-                    assistants,
-                    currentThread,
-                    selectedAssistantId,
-                    setSelectedAssistantId,
-                    updateCurrentThreadAssistant,
-                  }}
-                />
-                {showToolControls && hasJanBrowserMCPConfig && modelSupportsBrowser && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        disabled={isJanBrowserMCPLoading}
-                        className={cn(janBrowserMCPActive && "text-primary")}
-                        onClick={
-                          isJanBrowserMCPLoading
-                            ? undefined
-                            : handleBrowseClick
-                        }
                       >
-                        {isJanBrowserMCPLoading ? (
-                          <IconLoader2
-                            size={18}
-                            className="text-primary animate-spin"
-                          />
-                        ) : (
-                          <IconBrandChrome
-                            size={18}
-                            className={cn(
-                              'text-muted-foreground',
-                              janBrowserMCPActive && 'text-primary'
+                        {!effectiveAgentMode && (
+                          <>
+                            {hasMmproj && (
+                              <DropdownMenuItem
+                                disabled={isStreaming}
+                                onClick={() => void openImagePicker()}
+                              >
+                                <IconPhoto size={18} />
+                                <span>Add Images</span>
+                              </DropdownMenuItem>
                             )}
+                            {audioSupported && (
+                              <DropdownMenuItem
+                                disabled={isStreaming}
+                                onClick={() => void openAudioPicker()}
+                              >
+                                <IconMusic size={18} />
+                                <span>Add Audio</span>
+                              </DropdownMenuItem>
+                            )}
+                            {videoSupported && (
+                              <DropdownMenuItem
+                                disabled={isStreaming}
+                                onClick={() => void openVideoPicker()}
+                              >
+                                <IconVideo size={18} />
+                                <span>Add Video</span>
+                              </DropdownMenuItem>
+                            )}
+                            {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                            <DropdownMenuItem
+                              disabled={isStreaming || ingestingDocs}
+                              onClick={() => void handleAttachDocsIngest()}
+                            >
+                              {ingestingDocs ? (
+                                <IconLoader2 size={18} className="animate-spin" />
+                              ) : (
+                                <IconPaperclip size={18} />
+                              )}
+                              <span>
+                                {ingestingDocs
+                                  ? 'Indexing documents...'
+                                  : 'Add documents or files'}
+                              </span>
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {menuWorkspace && (
+                          <>
+                            <DropdownMenuSeparator />
+                            {menuWorkspace}
+                          </>
+                        )}
+                        {/* Only chat threads: a scoped surface (Cowork) has no thread id. */}
+                        {!scopeKey && currentThreadId && (
+                          <ContributedMenuItems
+                            location="chatInput/actions"
+                            context={{
+                              location: 'chatInput/actions',
+                              threadId: currentThreadId,
+                            }}
+                            separator
                           />
                         )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {isJanBrowserMCPLoading
-                          ? t('common:starting')
-                          : janBrowserMCPActive
-                            ? t('common:browse') + t('common:activeSuffix')
-                            : t('common:browse')}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {showToolControls && selectedModel?.capabilities?.includes('embeddings') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                          variant="ghost"
-                          size="icon-xs"
-                        >
-                        <IconCodeCircle2
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('embeddings')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {showToolControls && selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers && (
-                    <Tooltip
-                      open={tooltipShown === 'tools'}
-                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
-                    >
-                      <TooltipTrigger
-                        asChild
-                        disabled={dropdownToolsAvailable}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={(e) => {
-                            setDropdownToolsAvailable(false)
-                            e.stopPropagation()
-                          }}
-                        >
-                          <DropdownToolsAvailable
-                            onOpenChange={(isOpen) => {
-                              setDropdownToolsAvailable(isOpen)
-                              if (isOpen) {
-                                setTooltipShown(false)
-                              }
-                            }}
+                        <DropdownMenuSeparator />
+                        {supportsAssistants && assistants.length > 0 && (
+                          <DropdownMenuSub
+                            open={assistantMenuOpen}
+                            onOpenChange={setAssistantMenuOpen}
                           >
-                            {() => {
-                              return (
-                                <div
-                                  className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                                  )}
-                                >
-                                  <IconTool
+                            <DropdownMenuSubTrigger disabled={isStreaming}>
+                              <UserRound className="size-4 text-muted-foreground" />
+                              {t('common:composer.assistant')}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="min-w-0 w-[min(320px,calc(100vw-16px),var(--radix-dropdown-menu-content-available-width))] max-h-64 overflow-y-auto">
+                              <AssistantsMenu
+                                assistants={assistants}
+                                currentThread={currentThread}
+                                selectedAssistant={selectedAssistantId}
+                                setSelectedAssistant={setSelectedAssistantId}
+                                updateCurrentThreadAssistant={
+                                  updateCurrentThreadAssistant
+                                }
+                              />
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        )}
+                        {showToolControls &&
+                          hasJanBrowserMCPConfig &&
+                          modelSupportsBrowser && (
+                            <DropdownMenuCheckboxItem
+                              indicatorAlign="right"
+                              checked={janBrowserMCPActive}
+                              onSelect={(event) => event.preventDefault()}
+                              disabled={isStreaming || isJanBrowserMCPLoading}
+                              onCheckedChange={() => void handleBrowseClick()}
+                            >
+                              <IconBrandChrome size={18} />
+                              {isJanBrowserMCPLoading
+                                ? t('common:starting')
+                                : t('common:browse')}
+                            </DropdownMenuCheckboxItem>
+                          )}
+                        {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
+                          <DropdownMenuCheckboxItem indicatorAlign="right" checked={webSearchEnabled} onSelect={(event) => event.preventDefault()} disabled={isStreaming} onCheckedChange={(checked) => setWebSearchEnabled(checked === true)}>
+                            <IconWorldSearch size={18} />
+                            {t('common:web_search')}
+                          </DropdownMenuCheckboxItem>
+                        )}
+                        {showToolControls &&
+                          sandboxEnforcesShell &&
+                          selectedModel?.capabilities?.includes('tools') && (
+                            <DropdownMenuCheckboxItem
+                              indicatorAlign="right"
+                              checked={shellEnabled}
+                              onSelect={(event) => event.preventDefault()}
+                              disabled={isStreaming}
+                              onCheckedChange={(checked) => setShellEnabled(checked === true)}
+                            >
+                              <IconTerminal2 size={18} />
+                              {t('common:shell')}
+                            </DropdownMenuCheckboxItem>
+                          )}
+                        {showToolControls &&
+                          selectedModel?.capabilities?.includes('tools') &&
+                          hasActiveMCPServers && (
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger disabled={isStreaming}>
+                                <IconTool size={18} />
+                                {t('tools')}
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                                {Object.entries(toolsByServer).map(
+                                  ([server, serverTools]) => (
+                                    <DropdownMenuSub key={server}>
+                                      <DropdownMenuSubTrigger
+                                        disabled={isStreaming}
+                                      >
+                                        <span className="min-w-0 truncate">{server}</span>
+                                        <span className="shrink-0 text-xs text-muted-foreground">
+                                          {serverTools.length} {t('tools')}
+                                        </span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuSubContent className="max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto">
+                                        <DropdownMenuCheckboxItem
+                                          indicatorAlign="right"
+                                          disabled={isStreaming}
+                                          checked={
+                                            serverTools.every((tool) => !disabledTools.includes(createToolKey(server, tool.name)))
+                                              ? true
+                                              : serverTools.some((tool) => !disabledTools.includes(createToolKey(server, tool.name)))
+                                                ? 'indeterminate'
+                                                : false
+                                          }
+                                          onSelect={(event) => event.preventDefault()}
+                                          onCheckedChange={(enabled) => {
+                                            serverTools.forEach((tool) =>
+                                              setToolDisabled(server, tool.name, enabled === true)
+                                            )
+                                          }}
+                                        >
+                                          {t('common:composer.allTools')}
+                                        </DropdownMenuCheckboxItem>
+                                        <DropdownMenuSeparator />
+                                        {serverTools.map((tool) => {
+                                          const enabled =
+                                            !disabledTools.includes(
+                                              createToolKey(server, tool.name)
+                                            )
+                                          return (
+                                            <DropdownMenuCheckboxItem
+                                              className="gap-3 pl-2 [&>span:first-child]:hidden"
+                                              disabled={isStreaming}
+                                              key={tool.name}
+                                              checked={enabled}
+                                              aria-label={tool.name}
+                                              title={tool.description}
+                                              onSelect={(event) => event.preventDefault()}
+                                              onCheckedChange={(checked) =>
+                                                setToolDisabled(server, tool.name, checked === true)
+                                              }
+                                            >
+                                              <span className="min-w-0 flex-1">
+                                                <span className="block truncate font-medium">
+                                                  {tool.name}
+                                                </span>
+                                                {tool.description && (
+                                                  <span className="line-clamp-2 text-xs text-muted-foreground">
+                                                    {tool.description}
+                                                  </span>
+                                                )}
+                                              </span>
+                                              <span
+                                                aria-hidden="true"
+                                                className={cn(
+                                                  'ml-auto flex h-5 w-9 shrink-0 items-center rounded-full border p-0.5 transition-colors',
+                                                  enabled ? 'border-primary bg-primary' : 'border-input bg-input'
+                                                )}
+                                              >
+                                                <span className={cn(
+                                                  'size-3.5 rounded-full bg-background shadow-sm transition-transform',
+                                                  enabled && 'translate-x-4'
+                                                )} />
+                                              </span>
+                                            </DropdownMenuCheckboxItem>
+                                          )
+                                        })}
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                  )
+                                )}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          )}
+                        {!isPredefinedRemoteProvider(selectedProvider) && (
+                          <DropdownMenuItem disabled={isStreaming} onSelect={() => { setOptionsOpen(false); setSamplingOpen(true) }}>
+                            <SlidersHorizontal className="size-4 text-muted-foreground" />
+                            {t('common:composer.samplingParameters')}
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <div
+                      className={cn(
+                        'flex items-center gap-1 @max-[520px]/composer:hidden',
+                        isStreaming && 'opacity-50 pointer-events-none'
+                      )}
+                    >
+                      {showToolControls &&
+                        hasJanBrowserMCPConfig &&
+                        modelSupportsBrowser &&
+                        janBrowserMCPActive && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                disabled={isStreaming || isJanBrowserMCPLoading}
+                                aria-label={t('common:browse')}
+                                aria-pressed={janBrowserMCPActive}
+                                className={cn(
+                                  janBrowserMCPActive && 'text-primary'
+                                )}
+                                onClick={
+                                  isJanBrowserMCPLoading
+                                    ? undefined
+                                    : handleBrowseClick
+                                }
+                              >
+                                {isJanBrowserMCPLoading ? (
+                                  <IconLoader2
+                                    size={18}
+                                    className="text-primary animate-spin"
+                                  />
+                                ) : (
+                                  <IconBrandChrome
                                     size={18}
                                     className={cn(
                                       'text-muted-foreground',
+                                      janBrowserMCPActive && 'text-primary'
                                     )}
                                   />
-                                </div>
-                              )
-                            }}
-                          </DropdownToolsAvailable>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('tools')}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>
+                                {isJanBrowserMCPLoading
+                                  ? t('common:starting')
+                                  : janBrowserMCPActive
+                                    ? t('common:browse') +
+                                      t('common:activeSuffix')
+                                    : t('common:browse')}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                      {showToolControls &&
+                        selectedModel?.capabilities?.includes('tools') &&
+                        hasActiveMCPServers &&
+                        enabledMcpTools.length > 0 && (
+                        <Tooltip
+                          open={tooltipShown === 'tools'}
+                          onOpenChange={(newValue) =>
+                            newValue
+                              ? setTooltipShown('tools')
+                              : setTooltipShown(false)
+                          }
+                        >
+                          <TooltipTrigger
+                            asChild
+                            disabled={dropdownToolsAvailable}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={(e) => {
+                                setDropdownToolsAvailable(false)
+                                e.stopPropagation()
+                              }}
+                            >
+                              <DropdownToolsAvailable
+                                onOpenChange={(isOpen) => {
+                                  setDropdownToolsAvailable(isOpen)
+                                  if (isOpen) {
+                                    setTooltipShown(false)
+                                  }
+                                }}
+                              >
+                                {() => {
+                                  return (
+                                    <div
+                                      className={cn(
+                                        'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
+                                      )}
+                                    >
+                                      <IconTool
+                                        size={18}
+                                        className={cn(
+                                          'text-muted-foreground'
+                                        )}
+                                      />
+                                    </div>
+                                  )
+                                }}
+                              </DropdownToolsAvailable>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('tools')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        )}
+
+                      {!effectiveAgentMode &&
+                        selectedModel?.capabilities?.includes('tools') &&
+                        webSearchEnabled && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                className={cn(
+                                  webSearchEnabled && 'text-primary'
+                                )}
+                                aria-label={t('common:web_search')}
+                                aria-pressed={webSearchEnabled}
+                                disabled={isStreaming}
+                                onClick={() =>
+                                  setWebSearchEnabled(!webSearchEnabled)
+                                }
+                              >
+                                <IconWorldSearch
+                                  size={18}
+                                  className={cn(
+                                    'text-muted-foreground',
+                                    webSearchEnabled && 'text-primary'
+                                  )}
+                                />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>
+                                {webSearchEnabled
+                                  ? t('common:web_search') +
+                                    t('common:activeSuffix')
+                                  : t('common:web_search')}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                      {showToolControls &&
+                        sandboxEnforcesShell &&
+                        shellEnabled &&
+                        selectedModel?.capabilities?.includes('tools') && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-pressed={shellEnabled}
+                                aria-label={t('common:shell')}
+                                className={cn(shellEnabled && 'text-primary')}
+                                onClick={() => setShellEnabled(!shellEnabled)}
+                              >
+                                <IconTerminal2
+                                  size={18}
+                                  className={cn(
+                                    'text-muted-foreground',
+                                    shellEnabled && 'text-primary'
+                                  )}
+                                />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>
+                                {shellEnabled
+                                  ? t('common:shell') + t('common:activeSuffix')
+                                  : t('common:shell')}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                    </div>
+                  </div>
+                  {surfaceControls && (
+                    // A surface's own controls (Cowork's plan toggle, folder chip) have no menu entry yet, so they stay inline and wrap onto
+                    // more rows instead of pushing the model picker and send button out of the composer.
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                      {surfaceControls}
+                    </div>
                   )}
+                </div>
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className={cn(webSearchEnabled && 'text-primary')}
-                        onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                      >
-                        <IconWorldSearch
-                          size={18}
-                          className={cn(
-                            'text-muted-foreground',
-                            webSearchEnabled && 'text-primary'
-                          )}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {webSearchEnabled
-                          ? t('common:web_search') + t('common:activeSuffix')
-                          : t('common:web_search')}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                <div className="flex min-w-0 shrink items-center justify-end gap-2 @max-[520px]/composer:flex-1 @max-[360px]/composer:gap-1">
+                  <ComposerModelPicker
+                    model={model}
+                    useLastUsedModel={initialMessage}
+                    onModelChange={onModelChange}
+                    className="min-w-0 @max-[520px]/composer:max-w-full shrink"
+                  />
 
-                {showToolControls &&
-                  sandboxEnforcesShell &&
-                  selectedModel?.capabilities?.includes('tools') && (
+                  {isStreaming || toolsRunning ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          aria-pressed={shellEnabled}
-                          aria-label={t('common:shell')}
-                          className={cn(shellEnabled && 'text-primary')}
-                          onClick={() => setShellEnabled(!shellEnabled)}
+                          variant="destructive"
+                          size="icon-sm"
+                          data-testid="stop-message-button"
+                          className="shrink-0 rounded-full mr-1"
+                          onClick={() => {
+                            // Stopping with messages queued clears the queue -
+                            // there is nothing to interrupt yet. The old
+                            // `if (!currentThreadId) return` guard made this button
+                            // inert for any surface without a thread id.
+                            if (queueId) {
+                              const queue = useMessageQueue
+                                .getState()
+                                .getQueue(queueId)
+                              if (queue.length > 0) {
+                                useMessageQueue.getState().clearQueue(queueId)
+                                return
+                              }
+                            }
+                            stopStreaming(currentThreadId ?? '')
+                          }}
                         >
-                          <IconTerminal2
-                            size={18}
-                            className={cn(
-                              'text-muted-foreground',
-                              shellEnabled && 'text-primary'
-                            )}
-                          />
+                          <IconPlayerStopFilled />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>
-                          {shellEnabled
-                            ? t('common:shell') + t('common:activeSuffix')
-                            : t('common:shell')}
+                          {queueLength > 0
+                            ? `Clear ${queueLength} queued message(s)`
+                            : 'Stop generating'}
                         </p>
                       </TooltipContent>
                     </Tooltip>
-                  )}
-
-                {!effectiveAgentMode &&
-                  (selectedProvider === 'llamacpp' ||
-                    selectedProvider === 'google' ||
-                    selectedProvider === 'gemini' ||
-                    selectedProvider === 'anthropic' ||
-                    selectedProvider === 'openai') &&
-                  (() => {
-                    // The token-budget submenu only applies to local llama.cpp
-                    // (budget resolved against live n_ctx). Cloud providers size
-                    // their own budget dynamically, so on/off/auto is enough.
-                    const showThinkingBudget = selectedProvider === 'llamacpp'
-                    const reasoningValue =
-                      (selectedModel?.settings?.reasoning?.controller_props
-                        ?.value as 'auto' | 'on' | 'off' | undefined) ?? 'auto'
-                    const updateModelSetting = (
-                      settingKey: string,
-                      title: string,
-                      controllerType: string,
-                      value: unknown
-                    ) => {
-                      if (!selectedProvider || !selectedModel) return
-                      const providerObj = getProviderByName(selectedProvider)
-                      if (!providerObj) return
-                      const modelIndex = providerObj.models.findIndex(
-                        (m) => m.id === selectedModel.id
-                      )
-                      if (modelIndex === -1) return
-                      const existing = selectedModel.settings?.[settingKey] ?? {
-                        key: settingKey,
-                        title,
-                        description: '',
-                        controller_type: controllerType,
-                        controller_props: { value },
-                      }
-                      const updatedModel = {
-                        ...selectedModel,
-                        settings: {
-                          ...selectedModel.settings,
-                          [settingKey]: {
-                            ...existing,
-                            controller_props: {
-                              ...(existing.controller_props ?? {}),
-                              value,
-                            },
-                          },
-                        },
-                      } as Model
-                      const updatedModels = [...providerObj.models]
-                      updatedModels[modelIndex] = updatedModel
-                      updateProvider(selectedProvider, {
-                        models: updatedModels,
-                      })
-                      // selectedModel is a snapshot, not a live derivation —
-                      // re-select to refresh it so the dropdown UI and the
-                      // chat transport both observe the new value.
-                      selectModelProvider(selectedProvider, selectedModel.id)
-                    }
-                    const clearModelSetting = (settingKey: string) => {
-                      if (!selectedProvider || !selectedModel) return
-                      const providerObj = getProviderByName(selectedProvider)
-                      if (!providerObj) return
-                      const modelIndex = providerObj.models.findIndex(
-                        (m) => m.id === selectedModel.id
-                      )
-                      if (modelIndex === -1) return
-                      const nextSettings = { ...(selectedModel.settings ?? {}) }
-                      delete nextSettings[settingKey]
-                      const updatedModels = [...providerObj.models]
-                      updatedModels[modelIndex] = {
-                        ...selectedModel,
-                        settings: nextSettings,
-                      } as Model
-                      updateProvider(selectedProvider, { models: updatedModels })
-                      selectModelProvider(selectedProvider, selectedModel.id)
-                    }
-
-                    // OpenAI reasoning models expose a discrete effort (no
-                    // on/off, no token budget). Reuse the thinking_budget_tokens
-                    // level as the effort value; "Default" clears it so the
-                    // model uses its own default effort.
-                    if (selectedProvider === 'openai') {
-                      const rawEffort =
-                        selectedModel?.settings?.thinking_budget_tokens
-                          ?.controller_props?.value
-                      const currentEffort =
-                        isThinkingBudgetLevelKey(rawEffort) &&
-                        rawEffort !== 'unlimited'
-                          ? rawEffort
-                          : undefined
-                      const EFFORTS: ThinkingBudgetLevelKey[] = [
-                        'low',
-                        'medium',
-                        'high',
-                        'xhigh',
-                      ]
-                      const effortLabel = currentEffort
-                        ? THINKING_BUDGET_LEVELS.find(
-                            (l) => l.key === currentEffort
-                          )!.label
-                        : 'Default'
-                      return (
-                        <DropdownMenu>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  aria-label={`Reasoning effort: ${effortLabel}`}
-                                >
-                                  <IconBrain
-                                    size={18}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                      currentEffort && 'text-primary'
-                                    )}
-                                  />
-                                </Button>
-                              </DropdownMenuTrigger>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Reasoning effort: {effortLabel}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          <DropdownMenuContent align="start">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                clearModelSetting('thinking_budget_tokens')
-                              }
-                            >
-                              Default
-                              {!currentEffort && (
-                                <span className="ml-auto text-xs text-muted-foreground">
-                                  ✓
-                                </span>
-                              )}
-                            </DropdownMenuItem>
-                            {EFFORTS.map((key) => (
-                              <DropdownMenuItem
-                                key={key}
-                                onClick={() =>
-                                  updateModelSetting(
-                                    'thinking_budget_tokens',
-                                    'Reasoning Effort',
-                                    'dropdown',
-                                    key
-                                  )
-                                }
-                              >
-                                {
-                                  THINKING_BUDGET_LEVELS.find(
-                                    (l) => l.key === key
-                                  )!.label
-                                }
-                                {currentEffort === key && (
-                                  <span className="ml-auto text-xs text-muted-foreground">
-                                    ✓
-                                  </span>
-                                )}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )
-                    }
-                    const setReasoning = (value: 'auto' | 'on' | 'off') =>
-                      updateModelSetting(
-                        'reasoning',
-                        'Reasoning',
-                        'dropdown',
-                        value
-                      )
-                    const label =
-                      reasoningValue === 'on'
-                        ? 'On'
-                        : reasoningValue === 'off'
-                          ? 'Off'
-                          : 'Auto'
-                    const tooltipText =
-                      reasoningValue === 'on'
-                        ? 'Reasoning forced on for every request.'
-                        : reasoningValue === 'off'
-                          ? 'Reasoning disabled for every request.'
-                          : "Reasoning uses the model's default."
-
-                    // Stored as a symbolic level, not an absolute token count:
-                    // the live context size (post auto-fit) is only known once
-                    // the model is actually loaded, so resolving to tokens
-                    // happens at send time (custom-chat-transport.ts) against
-                    // whatever the context size turns out to be then.
-                    const rawBudgetLevel =
-                      selectedModel?.settings?.thinking_budget_tokens
-                        ?.controller_props?.value
-                    const currentBudgetLevel = isThinkingBudgetLevelKey(
-                      rawBudgetLevel
-                    )
-                      ? rawBudgetLevel
-                      : DEFAULT_THINKING_BUDGET_LEVEL
-                    const setThinkingBudget = (level: ThinkingBudgetLevelKey) =>
-                      updateModelSetting(
-                        'thinking_budget_tokens',
-                        'Thinking Budget',
-                        'dropdown',
-                        level
-                      )
-                    const currentBudgetLabel = THINKING_BUDGET_LEVELS.find(
-                      (l) => l.key === currentBudgetLevel
-                    )!.label
-                    // Best-effort preview only; the request-time value may
-                    // differ once the model is loaded and fit settles n_ctx.
-                    const approxContextSize =
-                      liveMaxTokens || configuredCtxLen || 8192
-
-                    return (
-                      <DropdownMenu>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label={`Reasoning: ${label}`}
-                              >
-                                <IconBrain
-                                  size={18}
-                                  className={cn(
-                                    'text-muted-foreground',
-                                    reasoningValue === 'on' && 'text-primary',
-                                    reasoningValue === 'off' && 'opacity-50'
-                                  )}
-                                />
-                              </Button>
-                            </DropdownMenuTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{tooltipText}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuItem onClick={() => setReasoning('auto')}>
-                            Auto
-                            {reasoningValue === 'auto' && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                ✓
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setReasoning('on')}>
-                            On
-                            {reasoningValue === 'on' && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                ✓
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setReasoning('off')}>
-                            Off
-                            {reasoningValue === 'off' && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                ✓
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                          {showThinkingBudget && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuSub>
-                                <DropdownMenuSubTrigger>
-                                  <span className="flex-1">Thinking Budget</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {currentBudgetLabel}
-                                  </span>
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent
-                                  collisionPadding={{ bottom: 16 }}
-                                >
-                                  {THINKING_BUDGET_LEVELS.map((level) => {
-                                    const approxTokens =
-                                      tokensForThinkingBudgetLevel(
-                                        level.key,
-                                        approxContextSize
-                                      )
-                                    return (
-                                      <DropdownMenuItem
-                                        key={level.key}
-                                        onClick={() =>
-                                          setThinkingBudget(level.key)
-                                        }
-                                        className="gap-2"
-                                      >
-                                        <span className="flex-1">
-                                          {level.label}
-                                        </span>
-                                        <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-                                          {approxTokens === -1
-                                            ? ''
-                                            : `~${approxTokens}`}
-                                        </span>
-                                        <span className="w-3 shrink-0 text-xs text-muted-foreground">
-                                          {currentBudgetLevel === level.key
-                                            ? '✓'
-                                            : ''}
-                                        </span>
-                                      </DropdownMenuItem>
-                                    )
-                                  })}
-                                </DropdownMenuSubContent>
-                              </DropdownMenuSub>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )
-                  })()}
-              </div>
-              {surfaceControls && (
-                // Keep controls in normal flow so wrapped rows grow the composer.
-                <div className="flex min-w-0 flex-[1_1_12rem] flex-wrap items-center gap-1">
-                  <Separator
-                    orientation="vertical"
-                    className="mx-1 h-4 shrink-0"
-                  />
-                  {surfaceControls}
-                </div>
-              )}
-              </CollapsibleControls>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              {tokenCounterVisible && tokenCounterCompact && (
-                <div className="flex-1 flex justify-center">
-                  <TokenCounter
-                    messages={threadMessages || []}
-                    source={tokenSource}
-                    compact={true}
-                  />
-                </div>
-              )}
-
-              {isStreaming || toolsRunning ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
+                  ) : (
                     <Button
-                      variant="destructive"
+                      variant="default"
                       size="icon-sm"
-                      data-testid="stop-message-button"
-                      className="rounded-full mr-1 mb-1"
-                      onClick={() => {
-                        // Stopping with messages queued clears the queue —
-                        // there is nothing to interrupt yet. The old
-                        // `if (!currentThreadId) return` guard made this button
-                        // inert for any surface without a thread id.
-                        if (queueId) {
-                          const queue = useMessageQueue
-                            .getState()
-                            .getQueue(queueId)
-                          if (queue.length > 0) {
-                            useMessageQueue.getState().clearQueue(queueId)
-                            return
-                          }
-                        }
-                        stopStreaming(currentThreadId ?? '')
-                      }}
+                      disabled={(!prompt.trim() && !hasSendableMedia) || ingestingAny}
+                      data-test-id="send-message-button"
+                      data-testid="send-message-button"
+                      onClick={() => handleSendMessage(prompt)}
+                      className="shrink-0 rounded-full mr-1"
                     >
-                      <IconPlayerStopFilled />
+                      <ArrowRight className="text-primary-fg" />
                     </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <Button
-                  variant="default"
-                  size="icon-sm"
-                  disabled={(!prompt.trim() && !hasSendableMedia) || ingestingAny}
-                  data-test-id="send-message-button"
-                  data-testid="send-message-button"
-                  onClick={() => handleSendMessage(prompt)}
-                  className="rounded-full mr-1 mb-1"
-                >
-                  <ArrowRight className="text-primary-fg" />
-                </Button>
-              )}
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
           </div>
         </div>
       </div>
@@ -3013,12 +2892,31 @@ const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      {tokenCounterVisible && !tokenCounterCompact && (
-        <div className="flex-1 w-full flex justify-start px-2">
+      {tokenCounterVisible && (
+        <div className="w-full flex justify-end px-0.5">
           <TokenCounter messages={threadMessages || []} source={tokenSource} />
         </div>
       )}
 
+      <SamplerPopover
+        open={samplingOpen}
+        onOpenChange={setSamplingOpen}
+        hideTrigger
+        returnFocusRef={optionsTriggerRef}
+        providerId={selectedProvider}
+        modelId={selectedModel?.id}
+        assistantSwitcher={
+          supportsAssistants
+            ? {
+                assistants,
+                currentThread,
+                selectedAssistantId,
+                setSelectedAssistantId,
+                updateCurrentThreadAssistant,
+              }
+            : undefined
+        }
+      />
       <JanBrowserExtensionDialog
         open={extensionDialogOpen}
         onOpenChange={setExtensionDialogOpen}

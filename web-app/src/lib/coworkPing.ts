@@ -22,6 +22,26 @@ import type { UIMessage } from 'ai'
 export const PING_OPEN = '<SYSTEM>'
 export const PING_CLOSE = '</SYSTEM>'
 
+/**
+ * Metadata flag on a stored message that is a ping and should be shown as a
+ * system note. The Cowork-to-threads migration sets it: the message stays a
+ * `user` message with its text untouched, because that is what the model was
+ * sent. A real `role: 'system'` row in the middle of a replayed history is
+ * turned into a system turn by `convertToModelMessages`, which some providers
+ * reject, and it would change the prompt prefix.
+ */
+export const SYSTEM_NOTICE_KEY = 'systemNotice'
+
+/** True when a (stored or UI) message is flagged to render as a system note. */
+export function isSystemNotice(message: { metadata?: unknown }): boolean {
+  const meta = message.metadata
+  return (
+    typeof meta === 'object' &&
+    meta !== null &&
+    (meta as Record<string, unknown>)[SYSTEM_NOTICE_KEY] === true
+  )
+}
+
 /** True when a message carries pings and nothing the user typed. */
 export function isPingOnly(message: { role: string; parts?: unknown }): boolean {
   if (message.role !== 'user') return false

@@ -225,6 +225,11 @@ pub struct ToolContext<'a> {
     /// the agent for a message the user typed mid-call instead of holding it
     /// until the command ends. `None` leaves the timeout as the only hand-off.
     pub detach_signal: Option<tokio::sync::watch::Receiver<bool>>,
+    /// Where the next `bash` call starts, carried over from the last one so a
+    /// `cd` holds for the session instead of being repeated in every command.
+    /// `None` starts every call in `project_root`, as a surface with no
+    /// conversation (the MCP server) wants. See [`ShellCwd`].
+    pub shell_cwd: Option<ShellCwd>,
     /// The backend `web_search`/`web_fetch` use, as the host's settings chose
     /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
     /// in the environment.
@@ -272,6 +277,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
             .field("detach_signal", &self.detach_signal.is_some())
+            .field("shell_cwd", &self.shell_cwd.as_ref().map(|c| c.lock().unwrap().clone()))
             // The config can hold an API key, so only the backend id is shown.
             .field(
                 "web_search",
@@ -357,6 +363,11 @@ pub enum ShellEvent {
 /// call which created it.
 pub type ShellDoneSink = std::sync::Arc<dyn Fn(ShellEvent) + Send + Sync>;
 
+/// The shell's working directory between calls: `None` is the project root.
+/// Shared rather than borrowed so the session, not one run, owns it -- a `cd`
+/// made in one turn still holds in the next. Only POSIX shells update it.
+pub type ShellCwd = std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>;
+
 /// How long a caller should hold a run open waiting for one backgrounded
 /// command, in seconds.
 ///
@@ -431,6 +442,7 @@ impl<'a> ToolContext<'a> {
             hook_sink: None,
             shell_done_sink: None,
             detach_signal: None,
+            shell_cwd: None,
             web_search: None,
             workspace_readonly: false,
         }
@@ -474,6 +486,13 @@ impl<'a> ToolContext<'a> {
     /// [`Self::detach_signal`].
     pub fn with_detach_signal(mut self, signal: tokio::sync::watch::Receiver<bool>) -> Self {
         self.detach_signal = Some(signal);
+        self
+    }
+
+    /// Carry the shell's directory across calls in `cwd`. See
+    /// [`Self::shell_cwd`].
+    pub fn with_shell_cwd(mut self, cwd: ShellCwd) -> Self {
+        self.shell_cwd = Some(cwd);
         self
     }
 

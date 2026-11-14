@@ -1,6 +1,6 @@
 {
   "welcome": "嗨，你好吗？",
-  "description": "今天我能为您做些什么？",
+  "description": "我能够帮到您什么？",
   "status": {
     "empty": "未找到聊天"
   },
@@ -9,5 +9,30 @@
   "clearHistory": "清除历史记录",
   "temporaryChat": "临时聊天",
   "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。",
-  "done": "Done"
+  "embeddings": {
+    "title": "正在处理你的文档",
+    "description": "索引已添加的文件以搜索或引用它们。如果文件较大，可能需要一些时间。"
+  },
+  "actions": {
+    "regenerate": "重新回答",
+    "askAgain": "再问一次",
+    "continue": "继续生成",
+    "remember": "添加到记忆",
+    "rememberSaved": "保存记忆： \"{{name}}\"",
+    "rememberExists": "已经保存到记忆： \"{{name}}\"",
+    "rememberFailed": "无法保存记忆"
+  },
+  "done": "完成",
+  "webSources": "{{count}} 网络参考",
+  "reasoning": {
+    "label": "推理中...",
+    "thinking": "思考",
+    "working": "运行中...",
+    "showFullTimeline": "展示完整步骤",
+    "showCurrentStep": "仅展示当前步骤",
+    "thoughtForAWhile": "思考了几秒",
+    "thoughtFor": "思考了 {{duration}}",
+    "workedForAWhile": "运行了几秒",
+    "workedFor": "运行了 {{duration}}"
+  }
 }

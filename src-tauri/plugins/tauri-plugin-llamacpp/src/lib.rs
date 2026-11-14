@@ -7,6 +7,7 @@ use tauri::{
 
 pub mod cleanup;
 mod commands;
+pub mod diagnostics;
 pub mod engine;
 mod error;
 mod gguf;
@@ -33,6 +34,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             engine::commands::begin_engine_restart,
             engine::commands::end_engine_restart,
             engine::commands::erase_thread_slot_state,
+            engine::diagnose_commands::start_diagnostics,
+            engine::diagnose_commands::cancel_diagnostics,
             commands::generate_api_key,
             commands::ensure_session_ready,
             commands::find_session_by_model,
@@ -43,6 +46,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         ])
         .setup(|app, _api| {
             app.manage(Arc::new(state::LlamacppState::new()));
+            app.manage(Arc::new(engine::diagnose_commands::DiagnosticsState::default()));
             Ok(())
         })
         .build()

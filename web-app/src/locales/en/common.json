@@ -87,7 +87,7 @@
   "skillReimport": "Re-import",
   "skillImported": "Imported {{name}}",
   "sessions": "Sessions",
-  "deleteSession": "Delete session",
+  "coworkSessionUnavailable": "This conversation has nothing to show yet.",
   "deleteSessionTitle": "Delete session?",
   "deleteSessionBody": "\"{{title}}\" and its transcript will be permanently deleted. This can't be undone.",
   "newChat": "New Chat",
@@ -383,10 +383,6 @@
       "cancel": "Cancel",
       "changeLocation": "Change Location"
     },
-    "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads will be deleted. This action cannot be undone."
-    },
     "deleteAllThreadsInProject": {
       "title": "Delete All Conversations",
       "description": "{{count}} conversations in \"{{projectName}}\" will be deleted. This action cannot be undone."
@@ -399,6 +395,10 @@
     },
     "messageMetadata": {
       "title": "Message Metadata"
+    },
+    "deleteAllChats": {
+      "title": "Delete Conversations Outside Projects",
+      "description": "This deletes conversations that are not in a project. Project conversations, starred conversations and tasks are kept. This action cannot be undone."
     }
   },
   "errorDialog": {
@@ -416,7 +416,7 @@
   },
   "projects": {
     "title": "Projects",
-    "new": "New Projects",
+    "new": "New project",
     "addProject": "Add Project",
     "addToProject": "Add to project",
     "removeFromProject": "Remove from project",
@@ -438,9 +438,8 @@
     "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
-      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDelete": "This will permanently delete \"{{projectName}}\" and all of its conversations. This action cannot be undone.",
       "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
-      "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
       "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
       "starredWarning": "You still have starred threads within the project.",
       "deleteButton": "Delete",
@@ -465,7 +464,6 @@
       "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
-    "startNewConversation": "Start a new conversation with {{projectName}} below",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
     "conversation": "Conversation",
@@ -481,7 +479,9 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "viewProject": "View Project",
+    "sendMessageToStart": "Send a message above to start one."
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -605,6 +605,10 @@
       "title": "Thread Removed",
       "description": "Thread removed from \"{{projectName}}\" successfully"
     },
+    "threadProjectMoveFailed": {
+      "title": "Move Failed",
+      "description": "This conversation could not be moved. Its session is unavailable."
+    },
     "fileUploaded": {
       "title": "File Processed",
       "description": "File has been processed and indexed successfully"
@@ -643,6 +647,10 @@
     "attachmentsDisabledInfo": {
       "title": "Attachments Disabled",
       "description": "Attachments are disabled in Settings"
+    },
+    "deleteAllChats": {
+      "title": "Conversations deleted",
+      "description": "Conversations outside projects were deleted. Project conversations and tasks were kept."
     }
   },
   "errors": {
@@ -713,7 +721,7 @@
   "skillsUsedLabel": "Skills used",
   "skillsUsed": "Skills used: {{skills}}",
   "artifactsAll": "All",
-  "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
+  "artifactsEmpty": "Nothing produced yet. Files created in your conversations show up here.",
   "artifactsNoMatch": "No artifacts match.",
   "artifactsSearch": "Search artifacts",
   "artifactsShowMore": "Show {{count}} more",
@@ -721,6 +729,7 @@
     "readsFrom": "Works in",
     "writable": "read & write",
     "footnote": "The agent reads and edits this folder directly. Review what changed in the diff panel.",
+    "chatFootnote": "Jan reads this folder freely and asks you before every edit or command that runs in it.",
     "footnoteEmpty": "Attach a folder to let the agent work on your project. It can read and edit files inside it.",
     "attach": "Attach a folder",
     "change": "Change folder",
@@ -731,6 +740,7 @@
     "missing": "The workspace folder {{folder}} is no longer available. Choose a different folder.",
     "openFailed": "Couldn't open workspace",
     "revealFailed": "Couldn't reveal workspace",
+    "saveFailed": "Couldn't save the folder for this chat",
     "a11yWithFolder": "Project folder {{folder}}, attached with read and write access. Change or detach it.",
     "a11yNoFolder": "No project folder attached. Attach one."
   },
@@ -770,7 +780,7 @@
   "budget": {
     "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
     "keepGoing": "Keep going",
-    "stoppedTokens": "Stopped — this session hit its token budget.",
+    "stoppedTokens": "Stopped — this conversation hit its token budget.",
     "compact": "Compact",
     "newSession": "New session"
   },
@@ -789,5 +799,152 @@
   "askRecommended": "Recommended",
   "askSelectedCount": "{{count}} selected",
   "askSomethingElse": "Something else",
-  "submit": "Submit"
+  "submit": "Submit",
+  "coworkSync": {
+    "journalUnreadableTitle": "Some imported Cowork conversations are hidden",
+    "journalUnreadableDescription": "Jan can't read its deletion record, so conversations imported from an older version stay hidden rather than risk restoring ones you already deleted, and deleting any Cowork conversation is temporarily blocked. Your data is untouched. To recover: quit Jan completely first, because Jan rewrites settings.json from memory while it runs and would undo your edit. Then fix or remove the 'cowork_deleted_ids' entry in settings.json. Removing it restores every imported conversation, including any you had deleted.",
+    "missingThreadTitle": "A Cowork conversation could not be saved",
+    "missingThreadDescription": "Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.",
+    "writeRefusedTitle": "A Cowork conversation cannot be saved",
+    "writeRefusedDescription": "Jan cannot store this conversation under its current id, so changes are not saved. You can still read, export or delete it.",
+    "closeFailedTitle": "Jan could not save everything, so it stayed open",
+    "closeFailedDescription": "Your latest changes are still in memory. Close the window again to retry saving.",
+    "closeForceDescription": "Saving keeps failing. You can close without saving, which loses the changes that could not be written.",
+    "closeAnyway": "Close without saving",
+    "quitFailedDescription": "Your latest changes are still in memory. Quit again to retry saving.",
+    "quitAnyway": "Quit without saving"
+  },
+  "messageWrites": {
+    "failedTitle": "Some messages could not be saved",
+    "failedDescription": "Jan keeps retrying. Until it succeeds, recent messages exist only in this window.",
+    "retry": "Retry now"
+  },
+  "threadRoute": {
+    "notReadyTitle": "This conversation isn't ready yet",
+    "notReadyDescription": "Jan could not confirm whether this conversation is a chat or a Cowork task. Retry; if this persists, restart the app.",
+    "retry": "Retry"
+  },
+  "agentSettings": "Agent",
+  "sidebar": {
+    "more": "More",
+    "toggle": "Toggle sidebar",
+    "navigation": "Navigation",
+    "navigationDescription": "Jump to chats, projects, artifacts, skills and settings."
+  },
+  "composer": {
+    "addControls": "Add attachments and controls",
+    "assistant": "Assistant",
+    "allTools": "All Tools",
+    "samplingParameters": "Sampling parameters",
+    "openAssistantSettings": "Open assistant settings",
+    "samplingSaveFailed": "Could not save sampling parameters. Please try again.",
+    "context": "Context: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Select a model",
+    "none": "None",
+    "triggerLabel": "Select model: {{name}}",
+    "dialogLabel": "Choose a model",
+    "searchLabel": "Search models or providers",
+    "searchPlaceholder": "Search models or providers...",
+    "listLabel": "Models",
+    "noMatches": "No matching models",
+    "noModels": "No models configured",
+    "optionsLabel": "Model options",
+    "reasoning": "Reasoning",
+    "reasoningMode": "Reasoning mode",
+    "reasoningEffort": "Reasoning effort",
+    "thinkingBudget": "Thinking budget",
+    "modelSettings": "Model settings",
+    "manageModels": "Manage models",
+    "effort": {
+      "default": "Default",
+      "auto": "Auto",
+      "on": "On",
+      "off": "Off",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Very high",
+      "unlimited": "Unlimited"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Add to a project",
+    "newProject": "New project",
+    "noProjects": "No projects yet",
+    "addFolderAction": "Add folder"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Select a tool-capable model before adding folder access.",
+    "folderUnsupported": "This model can't use tools, so a folder can't be added. Regular chat still works.",
+    "removeProject": "Remove project selection",
+    "temporary": "A temporary chat keeps no folder access."
+  },
+  "skillDestination": "Save new skills to",
+  "skillDestinationFolder": "This folder",
+  "skillDestinationGlobal": "Global (every conversation)",
+  "overview": {
+    "title": "Conversation overview",
+    "description": "Progress, files and background tasks for this conversation.",
+    "resize": "Resize side panel",
+    "close": "Hide conversation overview",
+    "progress": "Progress",
+    "files": "Files",
+    "backgroundTasks": "Background tasks",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitors",
+    "noProgress": "Steps will appear as Jan works.",
+    "noFiles": "Files will appear here."
+  },
+  "artifactsLibraryDescription": "Files created across your conversations, all in one place.",
+  "artifactsLibraryCount_one": "{{count}} file",
+  "artifactsLibraryCount_other": "{{count}} files",
+  "artifactsLibraryFilter": "Filter by file type",
+  "artifactsLibraryReset": "Clear filters",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "This task could not be imported",
+      "body": "Jan could not move this task over from the previous version and stopped trying. Nothing was lost: the original is still kept. You can try again, or export it to a file."
+    },
+    "id-collision": {
+      "title": "This task could not be imported",
+      "body": "Another conversation already uses the same id, so this task is shown read-only and the other conversation is left untouched. Export it to keep a copy."
+    },
+    "missing-sidecar": {
+      "title": "This task's history is missing",
+      "body": "The saved history of this task could not be found, so it is shown read-only. Its files on disk are kept as they are."
+    },
+    "unreadable-sidecar": {
+      "title": "This task's history cannot be read",
+      "body": "The saved history of this task is damaged or from a newer version of Jan, so it is shown read-only and never overwritten."
+    },
+    "missing-thread": {
+      "title": "This task was removed from storage",
+      "body": "This task's conversation is no longer on disk. What is shown is the copy still in memory; export it to keep it."
+    },
+    "reason": "Reason: {{reason}}",
+    "retry": "Try again",
+    "retrying": "Trying...",
+    "export": "Export",
+    "exported": "Task exported",
+    "exportFailed": "Could not export the task",
+    "imported": "Task imported",
+    "retryFailed": "The task still could not be imported",
+    "revealFailed": "Could not open the folder",
+    "leftOut": {
+      "title": "Some files were not copied",
+      "body_one": "{{count}} item from this task's old folder (a link, or a file Jan was not allowed to read) was not copied. The original folder is kept as it was.",
+      "body_other": "{{count}} items from this task's old folder (links, or files Jan was not allowed to read) were not copied. The original folder is kept as it was.",
+      "show": "Show original folder"
+    }
+  },
+  "deleteThreadFailed": "Could not delete the conversation. It may come back after a restart.",
+  "continueAsTask": {
+    "action": "Continue as task",
+    "title": "Continue this chat as a task?",
+    "description": "Jan keeps this conversation and continues it as a Cowork task. A task can run tools, write files and run commands in its own workspace without asking for each step. You cannot switch it back to a chat.",
+    "descriptionFolder": "Jan keeps this conversation and continues it as a Cowork task. A task can edit files and run commands in {{folder}} without asking for each change. You cannot switch it back to a chat.",
+    "confirm": "Continue as task"
+  }
 }

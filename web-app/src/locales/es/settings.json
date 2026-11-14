@@ -103,8 +103,6 @@
     "threadScrollFlowHint": "Mantiene la ventana anclada al último mensaje que envías.",
     "threadScrollStickyTitle": "Desplazamiento adhesivo",
     "threadScrollStickyHint": "Sigue automáticamente a medida que las respuestas llegan en tiempo real.",
-    "tokenCounterCompact": "Contador de tokens compacto",
-    "tokenCounterCompactDesc": "Mostrar el contador de tokens dentro de la entrada del chat. Cuando está desactivado, el contador aparece debajo de la entrada.",
     "codeBlockTitle": "Bloque de código",
     "codeBlockDesc": "Elige un estilo de resaltado de sintaxis.",
     "showLineNumbers": "Mostrar números de línea",
@@ -112,7 +110,8 @@
     "resetCodeBlockStyle": "Restablecer estilo de bloques de código",
     "resetCodeBlockStyleDesc": "Restablecer el estilo de bloques de código a los valores predeterminados.",
     "resetCodeBlockSuccess": "Estilo de bloques de código restablecido correctamente",
-    "resetCodeBlockSuccessDesc": "El estilo de bloques de código ha sido restaurado a los valores predeterminados."
+    "resetCodeBlockSuccessDesc": "El estilo de bloques de código ha sido restaurado a los valores predeterminados.",
+    "themeDescFixed": "Usa siempre este tema. Elige Sistema para que coincida con el sistema operativo."
   },
   "hardware": {
     "os": "Sistema operativo",
@@ -161,6 +160,11 @@
     "peerSslDesc": "Validar los certificados SSL de las conexiones par.",
     "hostSsl": "SSL del host",
     "hostSslDesc": "Validar los certificados SSL de los hosts de destino."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Lo que Jan puede hacer en tu equipo: su shell aislado, además de los recuerdos y las habilidades que se guardan de forma permanente en tu carpeta de datos de Jan.",
+    "networkDesc": "Permite que los comandos del shell accedan a la red, por ejemplo para instalar paquetes u obtener un repositorio. Activado de forma predeterminada. El entorno aislado sigue limitando qué archivos pueden tocar los comandos."
   },
   "localApiServer": {
     "title": "Servidor API local",

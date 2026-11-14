@@ -101,6 +101,53 @@ char * jan_llama_device_identities_json(void);
 
 void jan_llama_string_free(char * s);
 
+// ---- ggml op diagnostics (shim/jan_llama_diag.cpp) ----------------------
+//
+// llama.cpp's own tests/test-backend-ops.cpp, compiled unmodified, driven one
+// device at a time. Like the device listing these need no engine, only the
+// ggml backends to be registered (jan_llama_load_backends) beforehand.
+
+// One JSON object per call, with no trailing newline. Every object has an
+// "event" key: testing_start, backend_init, result, operation, summary,
+// failed_tests, backend_status, overall_summary, log, and last of all `done`.
+// Called on the thread that called jan_llama_diag_run, or on one of its
+// parallel workers; calls never overlap. `line` is valid for the call only.
+// Must not throw.
+typedef void (*jan_llama_diag_cb)(const char * line, void * user_data);
+
+#define JAN_LLAMA_DIAG_MODE_TEST    0  // compare against the CPU reference
+#define JAN_LLAMA_DIAG_MODE_SUPPORT 1  // only probe supports_op
+
+// Runs the cases of one device. `backend` is a ggml device name as listed by
+// jan_llama_diag_backends_json ("CPU", "CUDA0", "Vulkan0"). `op_filter` is
+// upstream's -o (comma separated op names, full case strings or regexes) and
+// `params_filter` its -p (a regex searched in each case's params); NULL or ""
+// means all. `workers` is upstream's -j (test mode only).
+//
+// Returns 1 when every case passed, 0 when one failed, -1 when nothing could
+// run (the reason is in `err`, and in the final `done` event). Never throws.
+// A crash inside a driver still kills the process: that is the caller's
+// isolation to provide.
+int jan_llama_diag_run(int               mode,
+                       const char *      backend,
+                       const char *      op_filter,
+                       const char *      params_filter,
+                       int               workers,
+                       jan_llama_diag_cb on_event,
+                       void *            user_data,
+                       char *            err,
+                       size_t            err_len);
+
+// [{"op":"ADD","cases":N}, ...]: every testable ggml op and how many cases
+// test mode would run for it (0 = upstream has no test). Builds the whole case
+// list, so it takes a few seconds. Never NULL; free with jan_llama_string_free.
+char * jan_llama_diag_ops_json(void);
+
+// [{"name","description","type","reg"}] for every registered ggml device,
+// CPU included, type being cpu/gpu/igpu/accel/meta. Never asks a device for
+// its memory. Never NULL; free with jan_llama_string_free.
+char * jan_llama_diag_backends_json(void);
+
 // The llama.cpp the shim was compiled against, for the pin assertion in
 // build.rs / engine::assert_pinned_version.
 const char * jan_llama_version(void);       // e.g. "0.9.0"

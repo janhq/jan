@@ -171,7 +171,14 @@ dispatch result says where each one works, for example
 `working in worktree ~/.jan/worktrees/jan-582afba2/general-3f2a (branch jan/agent/general-3f2a, from 587e06393); uncommitted changes in your checkout are not in it`
 or `working read-only in /home/you/src/jan`.
 
-- **Writers get their own checkout.** A subagent whose tools include `write` or `edit` gets a fresh
+- **Writers share your checkout, unless worktrees are on.** A subagent whose tools include `write`
+  or `edit` works in your checkout, as you do, so writers dispatched together can overwrite each
+  other's edits: give parallel writers disjoint files, or ask for `workspace: "new"`. Nothing
+  serializes them. Set `subagent_worktrees = true` under `[agent]` in `agent.toml`, or pass
+  `--subagent-worktrees` (`--no-subagent-worktrees` overrides the file), to give each its own
+  checkout instead, as described next.
+- **With subagent worktrees on, writers get their own checkout.** A subagent whose tools include
+  `write` or `edit` gets a fresh
   checkout on a `jan/agent/<name>-<id>` branch, started from `HEAD`, under
   `~/.jan/worktrees/<project>/`. It is a repository of its own (a `git clone --shared`, not a linked
   worktree), so two writers dispatched together never edit the same checkout, none of them sees your
@@ -192,12 +199,16 @@ or `working read-only in /home/you/src/jan`.
 - Not a git repository, or no commits yet: every subagent works in your checkout (readers still
   read-only), and the dispatch result says so.
 
+The first writer bullet is the default. The rest of this page, from the checkout's branch to the
+session-end sweep, applies to a checkout a subagent has: one made by subagent worktrees, `"new"`
+or a `ref`.
+
 A dispatch entry can choose with its optional `workspace` field:
 
 | `workspace` | Meaning |
 | --- | --- |
 | omitted | The default above |
-| `"new"` | A fresh checkout |
+| `"new"` | A fresh checkout, whether or not subagent worktrees are on |
 | `"shared"` | Your checkout (read-only for a reader) |
 | `"<earlier subagent name>"` | That subagent's workspace, for follow-ups or a reviewer of its work. Only one writer may be in a worktree at a time: a writer naming one that another writer is still in is refused, not queued, so dispatch it again once that one has finished |
 | `{"ref": "<git ref>"}` | A fresh checkout at that ref, fetched from `origin` when it is not local (for example `pull/9486/head`). A fetch that has not finished within 60 seconds is stopped and the dispatch fails with that error |
@@ -225,9 +236,20 @@ The main agent can read its subagents' checkouts with the file tools (`read`, `l
 `find`, `grep`), and from its shell only while that shell is sandboxed, where they are mounted
 read-only (`git -C <checkout> diff` works; an escalated command naming them is refused).
 
-When the session ends, checkouts with no commits beyond their base and no uncommitted changes are
-deleted. The rest are kept and named (their branches already fetched into your repository), and so
-is any checkout git cannot read; `/worktree` lists them while the session runs.
+When the session ends, a checkout with no uncommitted work whose commits (if any) are all on its
+branch in your repository is moved to the trash under `~/.jan/worktrees/<project>/.trash`, kept 7
+days and emptied at a later start. Uncommitted work includes untracked files and ignored files
+that are not build output (`target/`, `node_modules/`, `dist/`, `build/`, `.next/`,
+`__pycache__/`, `.venv/`, `.gradle/`, `*.o`, `*.pyc`, `*.class`), whatever ignore rule hides them,
+the checkout's own `.git/info/exclude` included: an ignored `.env` keeps its checkout. The rest are
+kept and named (their branches already fetched into your repository), and so is any checkout git
+cannot read; `/worktree` lists them while the session runs, and `/worktrees` lists every checkout
+of the project.
+
+A subagent given the shared build directory holds a shared lock on
+`~/.jan/worktrees/<project>/.meta/cargo-target.lock` while it runs, a reader in your own checkout
+included, so no session clears the directory under a running build: the size cap and **Clear
+build cache** both skip while any such lock is held.
 
 <Callout type="info">
 Because a subagent's context is separate, a long research task that would have crowded your session

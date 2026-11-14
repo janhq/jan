@@ -111,8 +111,6 @@
     "threadScrollFlowHint": "Mantiene la schermata ancorata all'ultimo messaggio che hai inviato.",
     "threadScrollStickyTitle": "Scorrimento fisso (Sticky)",
     "threadScrollStickyHint": "Segue automaticamente lo scorrimento del testo mentre le risposte vengono generate in tempo reale.",
-    "tokenCounterCompact": "Contatore token compatto",
-    "tokenCounterCompactDesc": "Mostra il contatore dei token all'interno del campo di input della chat. Se disabilitato, il contatore dei token apparirà sotto il campo di input.",
     "codeBlockTitle": "Blocco di codice",
     "codeBlockDesc": "Scegli uno stile per l'evidenziazione della sintassi.",
     "showLineNumbers": "Mostra numeri di riga",
@@ -120,7 +118,8 @@
     "resetCodeBlockStyle": "Ripristina stile blocco di codice",
     "resetCodeBlockStyleDesc": "Ripristina lo stile del blocco di codice a quello predefinito.",
     "resetCodeBlockSuccess": "Stile del blocco di codice ripristinato con successo",
-    "resetCodeBlockSuccessDesc": "Lo stile del blocco di codice è stato ripristinato a quello predefinito."
+    "resetCodeBlockSuccessDesc": "Lo stile del blocco di codice è stato ripristinato a quello predefinito.",
+    "themeDescFixed": "Usa sempre questo tema. Scegli Sistema per seguire il sistema operativo."
   },
   "hardware": {
     "os": "Sistema operativo",
@@ -167,6 +166,11 @@
     "proxyHostSslDesc": "Convalida il certificato SSL del proxy",
     "hostSsl": "SSL Host",
     "hostSslDesc": "Convalida i certificati SSL degli host di destinazione."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Cosa può fare Jan sul tuo computer: la sua shell isolata, più i ricordi e le competenze conservati in modo permanente nella cartella dati di Jan.",
+    "networkDesc": "Consente ai comandi della shell di accedere alla rete, ad esempio per installare pacchetti o scaricare un repository. Attivo per impostazione predefinita. La sandbox continua a limitare i file a cui i comandi possono accedere."
   },
   "localApiServer": {
     "title": "Server API locale",

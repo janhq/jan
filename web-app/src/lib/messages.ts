@@ -270,10 +270,15 @@ export function convertThreadMessageToUIMessage(
       // renders in the reasoning UI instead of inline (see reasoningPartsFromText).
       parts.push(...reasoningPartsFromText(content.text.value))
     } else if (content.type === 'image_url' && content.image_url?.url) {
+      // The stored record keeps only the url; a data URL names its own type,
+      // which a provider that sends base64 with a media type checks against
+      // the bytes.
+      const url = content.image_url.url
+      const declared = /^data:(image\/[a-z0-9.+-]+)[;,]/i.exec(url)?.[1]
       parts.push({
         type: 'file',
-        mediaType: 'image/jpeg',
-        url: content.image_url.url,
+        mediaType: declared?.toLowerCase() ?? 'image/jpeg',
+        url,
       })
     } else if (content.type === 'input_audio' && content.input_audio?.data) {
       const fmt = content.input_audio.format

@@ -229,10 +229,6 @@
       "cancel": "Anuluj",
       "changeLocation": "Zmień Położenie"
     },
-    "deleteAllThreads": {
-      "title": "Usuń Wszystkie Wątki",
-      "description": "Wszystkie wątki zostaną usunięte. Tej operacji nie można cofnąć."
-    },
     "deleteThread": {
       "description": "Na pewno chcesz usunąć ten wątek? Tej operacji nie można cofnąć."
     },
@@ -241,6 +237,10 @@
     },
     "messageMetadata": {
       "title": "Metadane Wiadomości"
+    },
+    "deleteAllChats": {
+      "title": "Usuń rozmowy poza projektami",
+      "description": "Spowoduje to usunięcie rozmów, które nie należą do żadnego projektu. Rozmowy w projektach, rozmowy oznaczone gwiazdką i zadania zostaną zachowane. Tej operacji nie można cofnąć."
     }
   },
   "projects": {
@@ -261,10 +261,9 @@
     "projectNotFoundDesc": "Projekt, którego szukasz nie istnieje lub został usunięty.",
     "deleteProjectDialog": {
       "title": "Usuń Projekt",
+      "permanentDelete": "Spowoduje to trwałe usunięcie „{{projectName}}\" i wszystkich jego rozmów. Tej operacji nie można cofnąć.",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
-      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich wątków.",
       "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
-      "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
       "starredWarning": "Nadal masz oznaczone gwiazdką wątki w projekcie.",
       "deleteButton": "Usuń",
@@ -285,7 +284,6 @@
       "renameSuccess": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
     },
     "noConversationsIn": "Brak Rozmów w {{projectName}}",
-    "startNewConversation": "Rozpocznij nową rozmowę z {{projectName}} poniżej",
     "conversationsIn": "Rozmowy w {{projectName}}",
     "conversationsDescription": "Kliknij na dowolną rozmowę aby kontynuować czat, lub rozpocznij nową poniżej.",
     "thread": "wątek",
@@ -298,7 +296,9 @@
     "noProjectsFound": "Nie znaleziono projektów",
     "tryDifferentSearch": "Spróbuj innego wyszukiwania",
     "uploadingFiles": "Przetwarzanie plików…",
-    "processButton": "Dodaj"
+    "processButton": "Dodaj",
+    "viewProject": "Wyświetl projekt",
+    "sendMessageToStart": "Wyślij wiadomość powyżej, aby ją rozpocząć."
   },
   "errorDialog": {
     "titleFallback": "Coś poszło nie tak",
@@ -392,6 +392,14 @@
     "threadRemovedFromProject": {
       "title": "Wątek Usunięty",
       "description": "Wątek został pomyślnie usunięty z \"{{projectName}}\""
+    },
+    "threadProjectMoveFailed": {
+      "title": "Nie udało się przenieść",
+      "description": "Nie udało się przenieść tej rozmowy. Jej zadanie jest niedostępne."
+    },
+    "deleteAllChats": {
+      "title": "Usunięto rozmowy",
+      "description": "Usunięto rozmowy poza projektami. Rozmowy w projektach i zadania zostały zachowane."
     }
   },
   "failedToLoadModels": "Nie udało się wczytać modeli",
@@ -406,5 +414,171 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Nic jeszcze nie powstało. Pliki utworzone w rozmowach pojawią się tutaj.",
+  "workspace": {
+    "chatFootnote": "Jan swobodnie odczytuje ten folder i pyta Cię przed każdą edycją lub poleceniem uruchamianym w nim.",
+    "saveFailed": "Nie udało się zapisać folderu dla tego czatu"
+  },
+  "budget": {
+    "stoppedTokens": "Zatrzymano: ta rozmowa osiągnęła limit tokenów."
+  },
+  "artifacts": "Artefakty",
+  "skills": "Umiejętności",
+  "deleteSessionTitle": "Usunąć sesję?",
+  "deleteSessionBody": "„{{title}}” i jej transkrypcja zostaną trwale usunięte. Tej operacji nie można cofnąć.",
+  "sidebar": {
+    "more": "Więcej",
+    "toggle": "Przełącz pasek boczny",
+    "navigation": "Nawigacja",
+    "navigationDescription": "Przejdź do czatów, projektów, artefaktów, umiejętności i ustawień."
+  },
+  "coworkSessionUnavailable": "Ta rozmowa nie ma jeszcze nic do pokazania.",
+  "coworkSync": {
+    "journalUnreadableTitle": "Niektóre zaimportowane rozmowy Cowork są ukryte",
+    "journalUnreadableDescription": "Jan nie może odczytać swojego rejestru usunięć. Dlatego rozmowy zaimportowane ze starszej wersji pozostają ukryte, aby nie przywrócić tych, które już usunięto. Usuwanie rozmów Cowork jest też tymczasowo zablokowane. Twoje dane są nienaruszone. Jak to naprawić: najpierw całkowicie zamknij Jan, ponieważ podczas działania Jan nadpisuje plik settings.json zawartością z pamięci i cofnąłby Twoją zmianę. Następnie popraw lub usuń wpis 'cowork_deleted_ids' w pliku settings.json. Usunięcie go przywróci wszystkie zaimportowane rozmowy, także te, które zostały wcześniej usunięte.",
+    "missingThreadTitle": "Nie udało się zapisać rozmowy Cowork",
+    "missingThreadDescription": "Brakuje jej zapisanego wątku, więc zmiany nie są już zapisywane. Nadal możesz ją przeczytać, wyeksportować lub usunąć.",
+    "writeRefusedTitle": "Nie można zapisać rozmowy Cowork",
+    "writeRefusedDescription": "Jan nie może zapisać tej rozmowy pod jej obecnym identyfikatorem, więc zmiany nie są zapisywane. Nadal możesz ją przeczytać, wyeksportować lub usunąć.",
+    "closeFailedTitle": "Jan nie zdołał zapisać wszystkiego, więc pozostał otwarty",
+    "closeFailedDescription": "Najnowsze zmiany są nadal w pamięci. Zamknij okno ponownie, aby ponowić próbę zapisu.",
+    "closeForceDescription": "Zapisywanie wciąż się nie udaje. Możesz zamknąć bez zapisywania, ale utracisz zmiany, których nie udało się zapisać.",
+    "closeAnyway": "Zamknij bez zapisywania",
+    "quitFailedDescription": "Najnowsze zmiany są nadal w pamięci. Zakończ ponownie, aby ponowić próbę zapisu.",
+    "quitAnyway": "Zakończ bez zapisywania"
+  },
+  "messageWrites": {
+    "failedTitle": "Nie udało się zapisać niektórych wiadomości",
+    "failedDescription": "Jan ponawia próby. Dopóki się nie uda, najnowsze wiadomości istnieją tylko w tym oknie.",
+    "retry": "Ponów teraz"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Ta rozmowa nie jest jeszcze gotowa",
+    "notReadyDescription": "Jan nie mógł potwierdzić, czy ta rozmowa jest czatem, czy zadaniem Cowork. Spróbuj ponownie. Jeśli problem się powtarza, uruchom aplikację ponownie.",
+    "retry": "Spróbuj ponownie"
+  },
+  "agentSettings": "Agent",
+  "composer": {
+    "addControls": "Dodaj załączniki i opcje",
+    "assistant": "Asystent",
+    "allTools": "Wszystkie narzędzia",
+    "samplingParameters": "Parametry próbkowania",
+    "openAssistantSettings": "Otwórz ustawienia asystenta",
+    "samplingSaveFailed": "Nie udało się zapisać parametrów próbkowania. Spróbuj ponownie.",
+    "context": "Kontekst: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Wybierz model",
+    "none": "Brak",
+    "triggerLabel": "Wybierz model: {{name}}",
+    "dialogLabel": "Wybierz model",
+    "searchLabel": "Szukaj modeli lub dostawców",
+    "searchPlaceholder": "Szukaj modeli lub dostawców...",
+    "listLabel": "Modele",
+    "noMatches": "Brak pasujących modeli",
+    "noModels": "Brak skonfigurowanych modeli",
+    "optionsLabel": "Opcje modelu",
+    "reasoning": "Rozumowanie",
+    "reasoningMode": "Tryb rozumowania",
+    "reasoningEffort": "Intensywność rozumowania",
+    "thinkingBudget": "Budżet myślenia",
+    "modelSettings": "Ustawienia modelu",
+    "manageModels": "Zarządzaj modelami",
+    "effort": {
+      "default": "Domyślnie",
+      "auto": "Auto",
+      "on": "Włączone",
+      "off": "Wyłączone",
+      "low": "Niska",
+      "medium": "Średnia",
+      "high": "Wysoka",
+      "xhigh": "Bardzo wysoka",
+      "unlimited": "Bez limitu"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Dodaj do projektu",
+    "newProject": "Nowy projekt",
+    "noProjects": "Brak projektów",
+    "addFolderAction": "Dodaj folder"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Wybierz model obsługujący narzędzia, zanim dodasz dostęp do folderu.",
+    "folderUnsupported": "Ten model nie może używać narzędzi, więc nie można dodać folderu. Zwykły czat nadal działa.",
+    "removeProject": "Usuń wybór projektu",
+    "temporary": "Czat tymczasowy nie ma dostępu do folderów."
+  },
+  "skillDestination": "Zapisuj nowe umiejętności w",
+  "skillDestinationFolder": "Tym folderze",
+  "skillDestinationGlobal": "Globalnie (dla każdej rozmowy)",
+  "overview": {
+    "title": "Przegląd rozmowy",
+    "description": "Postęp, pliki i zadania w tle dla tej rozmowy.",
+    "resize": "Zmień rozmiar panelu bocznego",
+    "close": "Ukryj przegląd rozmowy",
+    "progress": "Postęp",
+    "files": "Pliki",
+    "backgroundTasks": "Zadania w tle",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_few": "{{count}} monitory",
+    "monitorCount_many": "{{count}} monitorów",
+    "monitorCount_other": "{{count}} monitora",
+    "noProgress": "Kroki pojawią się tutaj, gdy Jan zacznie działać.",
+    "noFiles": "Pliki pojawią się tutaj."
+  },
+  "artifactsLibraryDescription": "Pliki utworzone we wszystkich rozmowach, zebrane w jednym miejscu.",
+  "artifactsLibraryCount_one": "{{count}} plik",
+  "artifactsLibraryCount_few": "{{count}} pliki",
+  "artifactsLibraryCount_many": "{{count}} plików",
+  "artifactsLibraryCount_other": "{{count}} pliku",
+  "artifactsLibraryFilter": "Filtruj według typu pliku",
+  "artifactsLibraryReset": "Wyczyść filtry",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Nie udało się zaimportować tego zadania",
+      "body": "Jan nie mógł przenieść tego zadania z poprzedniej wersji i przestał próbować. Nic nie zostało utracone: oryginał jest nadal zachowany. Możesz spróbować ponownie lub wyeksportować je do pliku."
+    },
+    "id-collision": {
+      "title": "Nie udało się zaimportować tego zadania",
+      "body": "Inna rozmowa używa już tego samego identyfikatora, więc to zadanie jest wyświetlane tylko do odczytu, a tamta rozmowa pozostaje nietknięta. Wyeksportuj je, aby zachować kopię."
+    },
+    "missing-sidecar": {
+      "title": "Brakuje historii tego zadania",
+      "body": "Nie znaleziono zapisanej historii tego zadania, więc jest ono wyświetlane tylko do odczytu. Jego pliki na dysku pozostają bez zmian."
+    },
+    "unreadable-sidecar": {
+      "title": "Nie można odczytać historii tego zadania",
+      "body": "Zapisana historia tego zadania jest uszkodzona lub pochodzi z nowszej wersji Jan, więc jest wyświetlana tylko do odczytu i nigdy nie zostanie nadpisana."
+    },
+    "missing-thread": {
+      "title": "To zadanie zostało usunięte z dysku",
+      "body": "Rozmowy tego zadania nie ma już na dysku. Wyświetlana jest kopia, która wciąż znajduje się w pamięci. Wyeksportuj ją, aby ją zachować."
+    },
+    "reason": "Powód: {{reason}}",
+    "retry": "Spróbuj ponownie",
+    "retrying": "Próbuję...",
+    "export": "Eksportuj",
+    "exported": "Wyeksportowano zadanie",
+    "exportFailed": "Nie udało się wyeksportować zadania",
+    "imported": "Zaimportowano zadanie",
+    "retryFailed": "Nadal nie udało się zaimportować zadania",
+    "revealFailed": "Nie udało się otworzyć folderu",
+    "leftOut": {
+      "title": "Niektóre pliki nie zostały skopiowane",
+      "body_one": "{{count}} element ze starego folderu tego zadania (link lub plik, którego Jan nie mógł odczytać) nie został skopiowany. Oryginalny folder pozostał bez zmian.",
+      "body_few": "{{count}} elementy ze starego folderu tego zadania (linki lub pliki, których Jan nie mógł odczytać) nie zostały skopiowane. Oryginalny folder pozostał bez zmian.",
+      "body_many": "{{count}} elementów ze starego folderu tego zadania (linki lub pliki, których Jan nie mógł odczytać) nie zostało skopiowanych. Oryginalny folder pozostał bez zmian.",
+      "body_other": "{{count}} elementu ze starego folderu tego zadania (linki lub pliki, których Jan nie mógł odczytać) nie zostało skopiowanych. Oryginalny folder pozostał bez zmian.",
+      "show": "Pokaż oryginalny folder"
+    }
+  },
+  "deleteThreadFailed": "Nie udało się usunąć rozmowy. Może pojawić się ponownie po restarcie.",
+  "continueAsTask": {
+    "action": "Kontynuuj jako zadanie",
+    "title": "Kontynuować ten czat jako zadanie?",
+    "description": "Jan zachowa tę rozmowę i będzie ją kontynuować jako zadanie Cowork. Zadanie może używać narzędzi, zapisywać pliki i uruchamiać polecenia we własnym obszarze roboczym bez pytania przy każdym kroku. Nie można go z powrotem zmienić w czat.",
+    "descriptionFolder": "Jan zachowa tę rozmowę i będzie ją kontynuować jako zadanie Cowork. Zadanie może edytować pliki i uruchamiać polecenia w {{folder}} bez pytania przy każdej zmianie. Nie można go z powrotem zmienić w czat.",
+    "confirm": "Kontynuuj jako zadanie"
   }
 }

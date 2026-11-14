@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root,
+    canonicalize_metered, escapes_roots_metered, hidden_tokens, resolve_cost, HiddenRoot, Meter,
+    MAX_RESOLVE_COST,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -136,6 +137,18 @@ pub enum DenyReason {
     Policy,
     /// The call reaches the Jan home (`~/.jan`), hidden from every tool.
     Hidden,
+    /// An escalated shell call would start in the held shell cwd, which is in
+    /// the Jan home or above it. Told apart from [`DenyReason::Hidden`]
+    /// because the command itself may name nothing hidden: the fix is to
+    /// move the shell back, which a message has to say.
+    HiddenShellCwd,
+    /// The command, or a path argument, is too large or deeply nested to
+    /// resolve within the gate's budget (see
+    /// [`crate::tools::sandbox::MAX_RESOLVE_COST`]), so it cannot be shown to
+    /// stay out of the Jan home. Told apart from [`DenyReason::Hidden`]
+    /// because the call may name nothing hidden: the fix is to simplify it,
+    /// not to avoid a path.
+    TooComplex,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -179,8 +192,44 @@ pub fn resolve_decision(
     perms: &ToolPermissions,
     grants: &SessionGrants,
 ) -> Decision {
+    resolve_decision_with_cwd(tool, args, ctx, None, perms, grants)
+}
+
+/// [`resolve_decision`] for a session whose shell holds a directory a `cd`
+/// moved it to (`ToolContext::shell_cwd`; `None` is the project root). A
+/// confined shell command's relative tokens name paths under that directory,
+/// so `cat .jan/config.toml` after `cd ~` must be checked there; an escalated
+/// command starts in the held directory as well. Every other tool still
+/// resolves against the project root.
+pub fn resolve_decision_with_cwd(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &GateContext,
+    shell_cwd: Option<&Path>,
+    perms: &ToolPermissions,
+    grants: &SessionGrants,
+) -> Decision {
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
+    }
+    // One budget for every path this decision resolves, with or without a
+    // hidden root: the escape checks below walk the path arguments too, and
+    // with the sandbox off they are the only walk. Each walk charges the
+    // meter what it really does.
+    let meter = Meter::new(MAX_RESOLVE_COST);
+    // Estimated from the text first, so a path argument too deep on its
+    // face (whose missing tail a walk would append for free) is refused
+    // without a syscall. A cap, not a charge: charging it as well made each
+    // path argument pay twice, so the deepest one that fit was ~1650
+    // components rather than the 2048 the budget is sized for.
+    let root_depth = ctx.project_root.components().count();
+    let path_cost = tool
+        .path_args
+        .iter()
+        .filter_map(|key| args.get(key).and_then(|v| v.as_str()))
+        .fold(0usize, |sum, p| sum.saturating_add(resolve_cost(root_depth, p)));
+    if path_cost > MAX_RESOLVE_COST {
+        return Decision::HardDeny(DenyReason::TooComplex);
     }
     // Ahead of allow rules and session grants, so neither an allowed tool name
     // nor a routine "allow writes" approval reaches keys, hooks or the agent's
@@ -194,28 +243,100 @@ pub fn resolve_decision(
         // otherwise `rm -rf` on a child's worktree would be one prompt away.
         let shell_reads_only = tool.capability == Capability::Exec
             && !requests_escalation(tool, args);
-        let carved = |p: &str| match tool.capability {
-            Capability::Read => {
-                in_attached_root(ctx.project_root, ctx.read_roots, p)
+        // An escalated command starts in the held directory too, so its
+        // relative tokens resolve there as well.
+        let base = shell_cwd
+            .filter(|_| tool.capability == Capability::Exec)
+            .unwrap_or(ctx.project_root);
+        // Carved out against the same base as the hidden check: a shell held
+        // in an attached root under the home splits every word of a command
+        // (`ls` too) into a token there, and each must be carved out by the
+        // root it lands in, or nothing could run until the shell left.
+        // Resolved once for the decision, not once per token.
+        let hidden_root = HiddenRoot::new(ctx.project_root, base, hidden, &meter).map(|h| {
+            match tool.capability {
+                Capability::Read => h.carving(ctx.read_roots, &[], &meter),
+                Capability::Exec if shell_reads_only => {
+                    h.carving(ctx.read_roots, ctx.write_roots, &meter)
+                }
+                _ => h,
             }
-            Capability::Exec if shell_reads_only => {
-                in_attached_root(ctx.project_root, ctx.read_roots, p)
-                    && !in_attached_root(ctx.project_root, ctx.write_roots, p)
-            }
-            _ => false,
-        };
-        let hidden_hit = |p: &str| {
-            in_hidden_root(ctx.project_root, hidden, p) && !carved(p)
-        };
+        });
+        // A path the meter ran out on reads as not hidden here; the decision
+        // checks `meter.spent()` before it trusts any of these answers.
+        let hidden_hit = |p: &str| hidden_root.as_ref().is_some_and(|h| h.holds(p, &meter));
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
                 .is_some_and(hidden_hit)
         });
-        let hits_command = tool.capability == Capability::Exec
-            && args.get("command").and_then(|v| v.as_str()).is_some_and(|c| {
-                hidden_tokens(hidden, c).into_iter().any(|t| hidden_hit(&t))
-            });
+        // A command too complex to scan in bounded time (`None`) cannot be
+        // shown to stay out of the home, so it is refused with its own
+        // reason (`TooComplex`) telling the model to simplify it. Checked
+        // ahead of `HiddenShellCwd`, so that refusal does not reset the held
+        // cwd; the next, simpler command gets it.
+        //
+        // Not covered: a link the model made earlier to `/proc/self/cwd`
+        // (`ln -s /proc/self/cwd l`, then an escalated `cat l/../../.jan/x`).
+        // Resolving the token follows `/proc/self` as Jan's own process, not
+        // the shell's, so the climb is checked from Jan's cwd and passes; the
+        // user still approves the escalation, and a confined run is masked.
+        let tokens = match args.get("command").and_then(|v| v.as_str()) {
+            Some(c) if tool.capability == Capability::Exec => match hidden_tokens(hidden, c) {
+                Some(tokens) => tokens,
+                None => return Decision::HardDeny(DenyReason::TooComplex),
+            },
+            _ => Vec::new(),
+        };
+        // Each distinct token once: the words of a long heredoc mostly
+        // repeat, and the answer for a word does not change within the call.
+        let tokens: std::collections::HashSet<&str> = tokens.iter().map(String::as_str).collect();
+        // Estimated from the text before any is resolved, so a command too
+        // large on its face (one deep path whose missing tail the walk
+        // would append for free) is refused without a syscall. Not charged:
+        // the walks charge the meter what they really do, a link into a
+        // deep directory included. Each token is resolved against `base`,
+        // the held cwd for a shell.
+        let base_depth = base.components().count();
+        let token_cost = tokens
+            .iter()
+            .fold(path_cost, |sum, t| sum.saturating_add(resolve_cost(base_depth, t)));
+        if token_cost > MAX_RESOLVE_COST {
+            return Decision::HardDeny(DenyReason::TooComplex);
+        }
+        let hits_command = tokens.iter().any(|t| hidden_hit(t));
+        // An escalated command runs on the host from the held directory
+        // whatever it names, so that directory is a token too: one in the
+        // home (an attached worktree there, or a link swapped in for it)
+        // would let a bare `cat config.toml` reach it. One above the home
+        // reaches it by a relative path no token scan catches in every
+        // spelling, and no escalated command needs to start there. Without
+        // a held directory it starts in the project root, which the
+        // worktree exception keeps reachable, as before.
+        //
+        // Not covered: a project root that is itself above the home (the
+        // home's parent opened as a project) with no held directory is not
+        // denied for where it starts, so relative spellings no token scan
+        // catches reach the home from there. Pre-existing and the same as
+        // before held directories existed; only a held one is refused here.
+        let starts_hidden = |held: &Path| {
+            let above = hidden_root
+                .as_ref()
+                .zip(canonicalize_metered(held, &meter).ok())
+                .map_or(true, |(hidden, held)| hidden.path().starts_with(held));
+            above || hidden_hit(".")
+        };
+        let held_hidden = !shell_reads_only
+            && tool.capability == Capability::Exec
+            && shell_cwd.is_some_and(starts_hidden);
+        // Ahead of `HiddenShellCwd`, so that refusal does not reset the held
+        // cwd when the answers it rests on were cut short.
+        if meter.spent() {
+            return Decision::HardDeny(DenyReason::TooComplex);
+        }
+        if held_hidden {
+            return Decision::HardDeny(DenyReason::HiddenShellCwd);
+        }
         if hits_path || hits_command {
             return Decision::HardDeny(DenyReason::Hidden);
         }
@@ -238,15 +359,9 @@ pub fn resolve_decision(
             // Read roots widen only this branch; the Write branch below widens
             // only by `write_roots`, so an attached folder is writable exactly
             // when the caller marked it so.
-            let escapes = tool.path_args.iter().any(|key| {
-                args.get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|p| {
-                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.read_roots, p)
-                            .unwrap_or(true)
-                    })
-                    .unwrap_or(false)
-            });
+            let Some(escapes) = escapes_any(tool, args, ctx, ctx.read_roots, &meter) else {
+                return Decision::HardDeny(DenyReason::TooComplex);
+            };
             if !escapes || grants.covers(PromptKind::ReadEscape) {
                 Decision::Allow
             } else {
@@ -266,15 +381,9 @@ pub fn resolve_decision(
         // this branch exactly the way read roots widen the Read branch; a
         // caller that passes none keeps the unchanged `escapes_project`.
         Capability::Write => {
-            let escapes = tool.path_args.iter().any(|key| {
-                args.get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|p| {
-                        escapes_write_roots(ctx.project_root, ctx.scratch, ctx.write_roots, p)
-                            .unwrap_or(true)
-                    })
-                    .unwrap_or(false)
-            });
+            let Some(escapes) = escapes_any(tool, args, ctx, ctx.write_roots, &meter) else {
+                return Decision::HardDeny(DenyReason::TooComplex);
+            };
             if escapes {
                 if grants.covers(PromptKind::WriteEscape) {
                     Decision::Allow
@@ -294,6 +403,26 @@ pub fn resolve_decision(
             }
         }
     }
+}
+
+/// True iff a path argument of the call escapes the project, the scratch
+/// and `roots` (one that fails to resolve counts as escaping). `None` when
+/// `meter` ran out on the way: the answer is unknown, and the caller refuses
+/// the call as too complex rather than let a cut-short check read as an
+/// escape it could grant or as inside the project.
+fn escapes_any(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &GateContext,
+    roots: &[PathBuf],
+    meter: &Meter,
+) -> Option<bool> {
+    let escapes = tool.path_args.iter().any(|key| {
+        args.get(key).and_then(|v| v.as_str()).is_some_and(|p| {
+            escapes_roots_metered(ctx.project_root, ctx.scratch, roots, p, meter).unwrap_or(true)
+        })
+    });
+    (!meter.spent()).then_some(escapes)
 }
 
 fn gated(kind: PromptKind, grants: &SessionGrants) -> Decision {
@@ -1188,6 +1317,181 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// The gate's time is bounded for any argument a model can send. A path
+    /// within the budget is decided as before; one past it (a path argument
+    /// had no cap at all, and a command just under the scan's caps can be one
+    /// deep path) is refused as too complex instead of taking minutes.
+    #[test]
+    fn a_deep_path_is_decided_quickly() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let path = |n: usize| format!("missing/{}", format!("{}/", "a".repeat(63)).repeat(n));
+        let (fits, deep) = (path(1500), path(60_000));
+        let cat = |p: &str| json!({"command": format!("cat {p}")});
+        let perms = ToolPermissions::default();
+        let grants = SessionGrants::default();
+        let refused = || Decision::HardDeny(DenyReason::TooComplex);
+        for (tool, args, want) in [
+            ("read", json!({"path": fits}), Decision::Allow),
+            ("shell", cat(&fits), Decision::Prompt(PromptKind::Exec)),
+            ("read", json!({"path": deep}), refused()),
+            ("write", json!({"path": deep, "content": ""}), refused()),
+            ("shell", cat(&deep), refused()),
+        ] {
+            let start = std::time::Instant::now();
+            let d = resolve_decision(lookup(tool).unwrap(), &args, &ctx, &perms, &grants);
+            let took = start.elapsed();
+            assert_eq!(d, want, "{tool}");
+            assert!(took < std::time::Duration::from_secs(5), "{tool}: {took:?}");
+        }
+        // Without a hidden root a path argument is still resolved, so the
+        // budget applies there too.
+        let open = GateContext { hidden_root: None, ..ctx };
+        let args = json!({"path": path(60_000)});
+        let d = resolve_decision(lookup("read").unwrap(), &args, &open, &perms, &grants);
+        assert_eq!(d, refused());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A short token through a link into a deep directory is cheap as text
+    /// but walks the whole target, so the budget meters the real walk: many
+    /// distinct such tokens (which ordinary approved commands can set up)
+    /// stalled the gate for minutes before ending in an exec prompt.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tokens_through_a_link_into_a_deep_directory_are_decided_quickly() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        let deep = project.join("d").join("a/".repeat(1500));
+        std::fs::create_dir_all(&deep).unwrap();
+        std::os::unix::fs::symlink(&deep, project.join("l")).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let words: Vec<String> = (0..500).map(|n| format!("l/w{n}")).collect();
+        let args = json!({"command": format!("cat {}", words.join(" "))});
+        let start = std::time::Instant::now();
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &args,
+            &ctx,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        let took = start.elapsed();
+        assert_eq!(d, Decision::HardDeny(DenyReason::TooComplex));
+        assert!(took < std::time::Duration::from_secs(5), "{took:?}");
+        // A few such tokens are ordinary work and still decided as before.
+        let few = json!({"command": "cat l/x l/y"});
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &few,
+            &ctx,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::Exec));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// With no hidden root (the sandbox off) the escape checks are the only
+    /// walk of a path argument, and are metered too: a read or write path
+    /// through a chain of links, each leading back into a deep directory,
+    /// took the gate 20 s. It is refused as too complex instead, never let
+    /// through on a check cut short; a shallow path is decided as before.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_path_through_links_into_a_deep_directory_is_decided_quickly_unsandboxed() {
+        let project = std::fs::canonicalize(unique_root()).unwrap();
+        let deep = project.join("a/".repeat(1900));
+        std::fs::create_dir_all(&deep).unwrap();
+        std::os::unix::fs::symlink(&deep, deep.join("l0")).unwrap();
+        for n in 1..30 {
+            let prev = deep.join(format!("l{}", n - 1));
+            std::os::unix::fs::symlink(prev, deep.join(format!("l{n}"))).unwrap();
+        }
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: None,
+        };
+        let perms = ToolPermissions::default();
+        let grants = SessionGrants::default();
+        let chained = deep.join("l29/x").to_string_lossy().into_owned();
+        for (tool, args) in [
+            ("read", json!({"path": chained})),
+            ("write", json!({"path": chained, "content": ""})),
+        ] {
+            let start = std::time::Instant::now();
+            let d = resolve_decision(lookup(tool).unwrap(), &args, &ctx, &perms, &grants);
+            let took = start.elapsed();
+            assert_eq!(d, Decision::HardDeny(DenyReason::TooComplex), "{tool}");
+            assert!(took < std::time::Duration::from_secs(5), "{tool}: {took:?}");
+        }
+        let shallow = json!({"path": "a/a/x"});
+        let d = resolve_decision(lookup("read").unwrap(), &shallow, &ctx, &perms, &grants);
+        assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// Realistic large calls stay well inside the budget: a long prose or
+    /// path-filled heredoc, a long `find`, and a deeply held shell cwd.
+    #[test]
+    fn realistic_large_commands_fit_the_budget() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        let held = project.join("l/".repeat(15));
+        std::fs::create_dir_all(&held).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let words = "the quick brown fox jumps over the lazy dog and keeps going ";
+        let prose = format!("cat <<E > notes.md\n{}E\n", words.repeat(300_000 / words.len()));
+        let paths = format!("cat <<E > notes.md\n{}E\n", "see src/a/b/c.rs here\n".repeat(2000));
+        let find = format!("find .{}", " -path ./src/a/b/c.rs -o".repeat(2000));
+        let many = format!("cat <<E > notes.md\n{}E\n", "word ".repeat(100_000));
+        let shell = |c: &str, cwd: Option<&Path>| {
+            resolve_decision_with_cwd(
+                lookup("shell").unwrap(),
+                &json!({"command": c}),
+                &ctx,
+                cwd,
+                &ToolPermissions::default(),
+                &SessionGrants::default(),
+            )
+        };
+        for c in [&prose, &paths, &find, &many] {
+            for cwd in [None, Some(held.as_path())] {
+                assert_eq!(shell(c, cwd), Decision::Prompt(PromptKind::Exec), "{}", &c[..40]);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// The Cowork opt-in at the gate layer: an attached root also passed as a
     /// write root takes the ordinary in-project Write prompt, not WriteEscape,
     /// while a path outside both roots keeps the escape classification.
@@ -1258,5 +1562,440 @@ mod tests {
         for d in [&root, &repo, &elsewhere] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    /// After `cd ~` a relative token names a path under the held directory,
+    /// so `cat .jan/config.toml` reaches the Jan home even though the project
+    /// root has no `.jan` of its own.
+    #[test]
+    fn a_held_shell_cwd_resolves_relative_tokens_for_the_hidden_deny() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let cat = json!({"command": "cat .jan/config.toml"});
+        let gate = |tool, args: &serde_json::Value, held: Option<&Path>| {
+            resolve_decision_with_cwd(tool, args, &ctx, held, &perms, &grants)
+        };
+        assert_eq!(gate(shell, &cat, None), Decision::Prompt(PromptKind::Exec), "no .jan here");
+        assert_eq!(gate(shell, &cat, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
+        // An escalated command starts in the held dir too, and the hidden
+        // deny runs ahead of the escalate prompt. Held above the home, it is
+        // refused for where it starts, whatever it names.
+        let start = Decision::HardDeny(DenyReason::HiddenShellCwd);
+        let escalated = json!({"command": "cat .jan/config.toml", ESCALATE_ARG: true});
+        assert_eq!(gate(shell, &escalated, Some(&home)), start);
+        assert_eq!(gate(shell, &escalated, None), Decision::Prompt(PromptKind::Escalate));
+        // A substitution's closing `)` is no command boundary: the word after
+        // it is still an argument, and is checked.
+        let tar = json!({
+            "command": "tar czf backup-\"$(date +%F)\".tgz .jan",
+            ESCALATE_ARG: true,
+        });
+        assert_eq!(gate(shell, &tar, Some(&home)), start);
+        let plain = json!({"command": "/bin/true", ESCALATE_ARG: true});
+        assert_eq!(gate(shell, &plain, Some(&home)), start);
+        // Confined, the sandbox masks the home wherever the shell stands.
+        let plain = json!({"command": "/bin/true"});
+        assert_eq!(gate(shell, &plain, Some(&home)), Decision::Prompt(PromptKind::Exec));
+        // Other tools resolve against the project root whatever the shell holds.
+        let read = json!({"path": ".jan/config.toml"});
+        assert_eq!(gate(lookup("read").unwrap(), &read, Some(&home)), Decision::Allow);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The worktree exception stays keyed on the project root: a relative
+    /// token that climbs out of the worktree from the held directory lands in
+    /// the Jan home and is refused, though the same token read from the
+    /// project root would climb above the home and pass.
+    #[test]
+    fn a_held_shell_cwd_resolves_relative_tokens_for_the_worktree_escape() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let worktree = jan.join("worktrees/proj/wt");
+        let held = worktree.join("src");
+        std::fs::create_dir_all(&held).unwrap();
+        std::fs::write(jan.join("notes.txt"), b"k").unwrap();
+        std::fs::write(home.join("notes.txt"), b"x").unwrap();
+        let ctx = GateContext {
+            project_root: &worktree,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let cat = json!({"command": "cat ../../../../notes.txt"});
+        let gate = |held: Option<&Path>| {
+            resolve_decision_with_cwd(shell, &cat, &ctx, held, &perms, &grants)
+        };
+        assert_eq!(gate(None), Decision::Prompt(PromptKind::Exec));
+        assert_eq!(gate(Some(&held)), Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A parent held in a child's worktree (an attached read root under the
+    /// Jan home, which the sandbox mounts) can still run confined commands
+    /// there and leave it: every word, the command name too, resolves into
+    /// the home from there, and is carved out by the same root. The rest of
+    /// the home stays refused. An escalated command gets no carve-out, so
+    /// from there even its command name hits the home: refused, which fails
+    /// closed, and a confined `cd` out is always open.
+    #[test]
+    fn a_held_shell_cwd_in_an_attached_root_under_the_home_is_not_denied() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let child = jan.join("worktrees/proj/general-2");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let roots = vec![child.clone()];
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &roots,
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, escalate: bool| {
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(&child), &perms, &grants)
+        };
+        let start = Decision::HardDeny(DenyReason::HiddenShellCwd);
+        let leave = format!("cd '{}'", project.display());
+        let leave = leave.as_str();
+        for command in ["ls", "ls -la .", "git diff", "cat src/x", "cd", "cd /", leave] {
+            assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
+            assert_eq!(gate(command, true), start, "{command}");
+        }
+        // Out of the root it is the home again.
+        let climb = "cat ../../../config.toml";
+        assert_eq!(gate(climb, false), Decision::HardDeny(DenyReason::Hidden));
+        // An escalated command may not name the child's tree: it leaves the
+        // sandbox that mounts it read-only.
+        assert_eq!(gate("rm -rf src", true), start);
+        // Nor start there with only absolute words: its start dir is in the
+        // home whatever it names.
+        assert_eq!(gate("/bin/true", true), start);
+        // `/proc/self/cwd` is where the command starts, not Jan's own cwd.
+        let leak = format!(
+            "/usr/bin/cp /proc/self/cwd/../../../config.toml {}",
+            project.join("leak").display()
+        );
+        assert_eq!(gate(&leak, true), start);
+        assert_eq!(gate(&leak, false), Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// `/proc/self/cwd` names the shell's own start directory, not Jan's: a
+    /// command spelling a path through it is checked as if it were relative,
+    /// with or without a held directory.
+    #[cfg(unix)]
+    #[test]
+    fn proc_self_cwd_resolves_against_where_the_shell_starts() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |root: &Path, command: &str, escalate: bool, held: Option<&Path>| {
+            let ctx = GateContext {
+                project_root: root,
+                scratch: None,
+                read_roots: &[],
+                write_roots: &[],
+                hidden_root: Some(&jan),
+            };
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, held, &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let spellings = [
+            "/bin/cat /proc/self/cwd/.jan/config.toml",
+            "/bin/cat /proc/thread-self/cwd/.jan/config.toml",
+            "/bin/cat //proc/./self/cwd/.jan/config.toml",
+            "/bin/tar cf /dev/null /proc/self/cwd/.jan",
+        ];
+        let start = Decision::HardDeny(DenyReason::HiddenShellCwd);
+        for command in spellings {
+            // Held in the home's parent after a confined `cd ..`; escalated,
+            // that start dir alone is refused.
+            assert_eq!(gate(&project, command, false, Some(&home)), hidden, "{command}");
+            assert_eq!(gate(&project, command, true, Some(&home)), start, "{command}");
+            // No held directory: the shell starts in the project root, here
+            // the home itself.
+            assert_eq!(gate(&home, command, true, None), hidden, "{command}");
+            assert_eq!(gate(&home, command, false, None), hidden, "{command}");
+            // From a project with no `.jan` of its own it names nothing hidden.
+            assert_eq!(
+                gate(&project, command, true, None),
+                Decision::Prompt(PromptKind::Escalate),
+                "{command}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Every spelling of the shell's start directory is checked as that
+    /// directory: `$PWD` and `~+` (and `~-`, failing closed), any
+    /// `/proc/<pid>/cwd` however the pid and the path up to it are spelled,
+    /// `/proc/<pid>/root` re-entering `/proc`, and a directory fd opened on
+    /// it. From a held `proj/sub` each climbs into the home; with nothing
+    /// held the same spellings one level shorter do from the project root.
+    #[test]
+    fn every_spelling_of_the_start_dir_is_checked_as_it() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, escalate: bool, held: Option<&Path>| {
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, held, &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let spellings = [
+            "/bin/cat /proc/$$/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/$BASHPID/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/1/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/../self/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/root/proc/self/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/task/1/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/task/1/root/proc/self/cwd/UP.jan/config.toml",
+            "/bin/cat $PWD/UP.jan/config.toml",
+            "/bin/cat ${PWD}/UP.jan/config.toml",
+            "/bin/cat ~+/UP.jan/config.toml",
+            "/bin/cat ~-/UP.jan/config.toml",
+            "/bin/cat ~+0/UP.jan/config.toml",
+            "/bin/cat ~-0/UP.jan/config.toml",
+            "/bin/cat $OLDPWD/UP.jan/config.toml",
+            "exec 3<.; /bin/cat /dev/fd/3/UP.jan/config.toml",
+            "exec 3<.; /bin/cat /proc/self/fd/3/UP.jan/config.toml",
+            "exec 0<.; /bin/cat /dev/stdin/UP.jan/config.toml",
+        ];
+        for spelling in spellings {
+            let from_sub = spelling.replace("UP", "../../");
+            for escalate in [true, false] {
+                assert_eq!(gate(&from_sub, escalate, Some(&sub)), hidden, "{from_sub}");
+            }
+            let from_root = spelling.replace("UP", "../");
+            for escalate in [true, false] {
+                assert_eq!(gate(&from_root, escalate, None), hidden, "{from_root}");
+            }
+            // From the held directory one level is not enough to leave the
+            // project, so nothing hidden is named.
+            assert_eq!(
+                gate(&from_root, true, Some(&sub)),
+                Decision::Prompt(PromptKind::Escalate),
+                "{from_root}"
+            );
+        }
+        // A relative path climbing into `/proc` is the same link.
+        let climb = format!("/bin/cat {}proc/self/cwd/../.jan/config.toml", "../".repeat(12));
+        assert_eq!(gate(&climb, true, None), hidden);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The kernel follows a link under `/proc` or `/dev` (`/proc/net`,
+    /// `/proc/thread-self`, `/dev/fd`) before it applies a `..` after it, so
+    /// lexical normalization lands somewhere else than the shell does: any
+    /// `cwd` or `fd/<n>` after such a `..` is checked as the start dir. A
+    /// plain read under `/proc` or `/dev` is not touched.
+    #[test]
+    fn a_dotdot_after_a_proc_or_dev_link_is_checked_as_the_start_dir() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, escalate: bool| {
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(&sub), &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        for command in [
+            "/bin/cat /proc/net/../cwd/../../.jan/config.toml",
+            "/bin/cat /dev/fd/../cwd/../../.jan/config.toml",
+            "/bin/cat /proc/thread-self/../../cwd/../../.jan/config.toml",
+            "/bin/cat /proc/self/net/../fd/3/../../.jan/config.toml",
+            "/bin/cat /proc/mounts/../cwd/../../.jan/config.toml",
+        ] {
+            for escalate in [true, false] {
+                assert_eq!(gate(command, escalate), hidden, "{command}");
+            }
+        }
+        for command in [
+            "cat /proc/cpuinfo",
+            "ls /proc/self/fd",
+            "cat /proc/*/status",
+            "ls /dev/null",
+            "cat /proc/self/cwd/README.md",
+        ] {
+            assert_eq!(gate(command, true), Decision::Prompt(PromptKind::Escalate), "{command}");
+            assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Every glob after a `..` under `/proc` may be a `cwd`, so a token of
+    /// repeated `/*` would make one start-dir candidate per component, each
+    /// as long as the rest of the token: quadratic in the command. Past a
+    /// small cap the command is refused unchecked rather than resolved, in
+    /// bounded time.
+    #[test]
+    fn a_token_with_too_many_start_dir_candidates_is_refused_quickly() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str| {
+            let args = json!({"command": command, ESCALATE_ARG: true});
+            resolve_decision_with_cwd(shell, &args, &ctx, None, &perms, &grants)
+        };
+        let refused = Decision::HardDeny(DenyReason::TooComplex);
+        let started = std::time::Instant::now();
+        for n in [200, 8000] {
+            let command = format!("cat /proc/..{}", "/*".repeat(n));
+            assert_eq!(gate(&command), refused, "{n} globs");
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+        // A few globs are still resolved one by one, and name nothing hidden.
+        let few = format!("cat /proc/..{}", "/*".repeat(4));
+        assert_eq!(gate(&few), Decision::Prompt(PromptKind::Escalate));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// `~-` and `$OLDPWD` are checked as the start dir because the wrapper
+    /// makes them that (see `posix_cwd_script`), not the project root the
+    /// shell was spawned in: from a held directory outside the home's
+    /// subtree, climbing one level from it names nothing hidden, and climbing
+    /// from the held dir in the home's subtree does.
+    #[test]
+    fn oldpwd_is_checked_as_the_held_dir() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let outside = std::fs::canonicalize(unique_root()).unwrap();
+        let held = outside.join("held");
+        std::fs::create_dir_all(&held).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, held: &Path| {
+            let args = json!({"command": command, ESCALATE_ARG: true});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(held), &perms, &grants)
+        };
+        for word in ["~-", "$OLDPWD", "${OLDPWD}"] {
+            let one_up = format!("/bin/cat {word}/../.jan/config.toml");
+            assert_eq!(gate(&one_up, &held), Decision::Prompt(PromptKind::Escalate), "{one_up}");
+            let two_up = format!("/bin/cat {word}/../../.jan/config.toml");
+            assert_eq!(gate(&two_up, &sub), Decision::HardDeny(DenyReason::Hidden), "{two_up}");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A held directory swapped for a symlink into the Jan home is where an
+    /// escalated command would really start, so it is refused even when the
+    /// command names nothing under it.
+    #[cfg(unix)]
+    #[test]
+    fn an_escalation_from_a_held_cwd_swapped_for_a_link_into_the_home_is_denied() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |escalate: bool| {
+            let args = json!({"command": "/bin/true", ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(&sub), &perms, &grants)
+        };
+        assert_eq!(gate(true), Decision::Prompt(PromptKind::Escalate));
+        std::fs::remove_dir(&sub).unwrap();
+        // Relative to the link's own directory, so `proj/../.jan`.
+        std::os::unix::fs::symlink("../.jan", &sub).unwrap();
+        assert_eq!(gate(true), Decision::HardDeny(DenyReason::HiddenShellCwd));
+        // Confined, the sandbox masks the home wherever the shell stands.
+        assert_eq!(gate(false), Decision::Prompt(PromptKind::Exec));
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
