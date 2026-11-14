@@ -58,5 +58,193 @@
   },
   "addProvider": "공급자 추가",
   "addOpenAIProvider": "OpenAI 공급자 추가",
-  "enterNameForProvider": "공급자 이름 입력"
+  "enterNameForProvider": "공급자 이름 입력",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "환경 변수",
+      "description": "llama.cpp용 환경 변수(KEY=VALUE)이며 ';'로 구분합니다."
+    },
+    "models_max": {
+      "title": "동시에 로드되는 최대 모델 수",
+      "description": "라우터가 동시에 로드해 두는 최대 모델 수입니다. 0 = 무제한."
+    },
+    "timeout": {
+      "title": "llamacpp 시간 제한",
+      "description": "llamacpp 연결 및 로드 제한 시간(초)입니다."
+    },
+    "fit": {
+      "title": "맞춤 (장치 메모리에 자동 조정)",
+      "description": "설정되지 않은 인자를 장치 메모리에 맞게 조정할지 여부('on' 또는 'off')입니다. (env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "장치별 맞춤 목표 (MiB)",
+      "description": "맞춤의 장치별 목표 여유값이며 MiB 값을 쉼표로 구분합니다. 하나의 값은 모든 장치에 적용됩니다. (env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "맞춤을 위한 최소 컨텍스트 크기",
+      "description": "자동 맞춤으로 설정할 수 있는 최소 컨텍스트 크기(토큰)입니다."
+    },
+    "threads": {
+      "title": "스레드",
+      "description": "생성 중 사용할 스레드 수입니다(-1은 논리 코어)."
+    },
+    "threads_batch": {
+      "title": "스레드 (배치)",
+      "description": "배치 및 프롬프트 처리용 스레드 수입니다(기본값: 스레드와 동일)."
+    },
+    "ctx_shift": {
+      "title": "컨텍스트 시프트",
+      "description": "창이 가득 차면 컨텍스트를 중지하지 않고 이동하여 긴 대화가 메모리 오류 없이 계속되도록 합니다."
+    },
+    "n_predict": {
+      "title": "예측할 최대 토큰 수",
+      "description": "생성할 최대 토큰 수입니다. -1 = 무제한, -2 = 컨텍스트가 찰 때까지."
+    },
+    "batch_size": {
+      "title": "배치 크기",
+      "description": "프롬프트 처리를 위한 최대 논리 배치 크기입니다."
+    },
+    "ubatch_size": {
+      "title": "마이크로 배치 크기",
+      "description": "프롬프트 처리를 위한 최대 물리 배치 크기입니다."
+    },
+    "n_cpu_moe": {
+      "title": "CPU의 MoE 레이어",
+      "description": "처음 N개 레이어의 Mixture-of-Experts 가중치를 CPU 메모리에 유지합니다. 큰 MoE 모델이 제한된 VRAM에 맞게 합니다. 0은 비활성화."
+    },
+    "n_cpu_ffn": {
+      "title": "CPU의 고밀도 FFN 레이어",
+      "description": "처음 N개 레이어의 고밀도 feed-forward 가중치를 CPU 메모리에 유지합니다. 고밀도 모델용 MoE 설정의 대응 항목입니다. 0은 비활성화."
+    },
+    "no_kv_offload": {
+      "title": "KV 캐시 오프로드 비활성화",
+      "description": "KV 캐시를 GPU 메모리 대신 시스템 RAM에 유지합니다. VRAM이 부족할 때 유용하지만 속도가 느려집니다."
+    },
+    "device": {
+      "title": "오프로드할 장치",
+      "description": "오프로드할 가속기를 쉼표로 구분하고 감지된 하드웨어 목록의 이름으로 지정합니다. 비우면 모든 가속기, \"none\"은 오프로드 비활성화."
+    },
+    "split_mode": {
+      "title": "GPU 분할 모드",
+      "description": "모델을 여러 GPU에 나누는 방법입니다."
+    },
+    "main_gpu": {
+      "title": "기본 GPU 인덱스",
+      "description": "모델(split-mode=none) 또는 중간 결과(split-mode=row)에 사용할 GPU입니다."
+    },
+    "tensor_split": {
+      "title": "텐서 분할",
+      "description": "모델을 장치 간에 나누는 비율이며 쉼표로 구분합니다(예: \"3,1\"). 비우면 균등 분할."
+    },
+    "no_op_offload": {
+      "title": "연산 오프로드 비활성화",
+      "description": "호스트 텐서 연산을 가속기로 오프로드하지 않고 CPU에 유지합니다."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "성능 최적화를 위해 Flash Attention을 활성화합니다."
+    },
+    "parallel": {
+      "title": "병렬 시퀀스",
+      "description": "디코딩할 병렬 시퀀스 수입니다(0 = llama.cpp 기본값). Jan은 자체 슬롯을 예약하지 않으며 채팅, Cowork, 백그라운드 요청이 슬롯 0을 공유하고 KV 캐시는 대화별로 보관 및 복원됩니다."
+    },
+    "cont_batching": {
+      "title": "연속 배치 처리",
+      "description": "동시 요청에 대해 연속 배치 처리(dynamic batching)를 활성화합니다. llama.cpp처럼 기본으로 활성화됩니다."
+    },
+    "load_mode": {
+      "title": "로드 모드",
+      "description": "모델 가중치를 메모리로 읽는 방법입니다. Auto는 장치가 허용하지 않는 한 파일을 매핑합니다. None은 mmap 없이 읽습니다(느리지만 페이지 아웃 감소). mlock은 mmap 여부와 관계없이 가중치를 RAM에 유지해 스왑되지 않게 합니다. Direct I/O는 가능한 경우 OS 페이지 캐시를 우회합니다. 모델별로 재정의할 수 있습니다."
+    },
+    "lazy_mode": {
+      "title": "지연된 텐서 읽기",
+      "description": "아키텍처로 표시된 큰 텐서(예: 레이어별 임베딩)의 행을 메모리에 유지하지 않고 필요할 때 디스크에서 읽습니다. Auto는 4 GiB 초과 시 활성화됩니다. mmap이 필요하므로 mmap을 포함한 로드 모드(Auto, mmap, mmap + mlock)를 선택하세요."
+    },
+    "cache_type_k": {
+      "title": "KV 캐시 유형 K",
+      "description": "Keys용 KV 캐시 데이터 형식입니다(기본값: f16)."
+    },
+    "cache_type_v": {
+      "title": "KV 캐시 유형 V",
+      "description": "Values용 KV 캐시 데이터 형식입니다(기본값: f16)."
+    },
+    "rope_scaling": {
+      "title": "RoPE 스케일링 방식",
+      "description": "RoPE 주파수 스케일링 방식입니다. \"모델 값\"은 모델이 결정하게 하고, \"없음\"은 스케일링을 명시적으로 비활성화합니다."
+    },
+    "rope_freq_base": {
+      "title": "RoPE 기본 주파수",
+      "description": "RoPE 기본 주파수입니다(0 = 모델에서 로드)."
+    },
+    "rope_freq_scale": {
+      "title": "RoPE 스케일링 계수",
+      "description": "RoPE 주파수 스케일링 계수입니다. 0은 모델 값을 로드하고 1은 스케일링 없음을 강제합니다."
+    },
+    "cache_ram": {
+      "title": "프롬프트 캐시 RAM (MiB)",
+      "description": "프롬프트 캐시 크기(MiB, 기본값: 8192, 변경하지 않는 한 결정 모델에서는 꺼짐)입니다. -1 = 무제한, 0은 비활성화."
+    },
+    "persist_thread_cache": {
+      "title": "세션 간 대화 기억",
+      "description": "각 대화의 프롬프트 캐시를 디스크에 보관해 다시 열 때 전체 대화를 읽지 않게 합니다. 모델, 설정, llama.cpp 빌드가 저장 당시와 일치할 때만 복원됩니다."
+    },
+    "thread_cache_size": {
+      "title": "대화 캐시 디스크 한도 (MiB)",
+      "description": "저장된 대화 캐시의 디스크 예산입니다(기본값: 8192). 한도에 도달하면 오래된 것부터 삭제됩니다. 긴 대화 하나가 수백 MiB를 차지할 수 있습니다."
+    },
+    "cache_reuse": {
+      "title": "캐시 재사용",
+      "description": "캐시에서 재사용할 일치하는 프리픽스 토큰의 최소 청크 크기입니다. 0 = 비활성화."
+    },
+    "ctx_checkpoints": {
+      "title": "컨텍스트 체크포인트",
+      "description": "슬롯당 유지하는 최대 컨텍스트 체크포인트 수로, 이동된 컨텍스트를 다시 처리하지 않고 복원할 수 있습니다."
+    },
+    "checkpoint_min_step": {
+      "title": "체크포인트 간 최소 단계",
+      "description": "컨텍스트 체크포인트 사이의 최소 토큰 수입니다."
+    },
+    "swa_full": {
+      "title": "전체 SWA 캐시",
+      "description": "슬라이딩 윈도우 attention 모델(예: Gemma)에 전체 크기 KV 캐시를 사용합니다. 해당 모델이 매 턴 전체 프롬프트를 다시 처리하면 활성화하세요. 메모리를 더 사용합니다."
+    },
+    "kv_unified": {
+      "title": "통합 KV 캐시",
+      "description": "모든 슬롯이 공유하는 단일 통합 KV 버퍼를 사용합니다. 여러 병렬 슬롯에서 메모리를 절약합니다."
+    },
+    "kv_unified_per_slot": {
+      "title": "슬롯별 컨텍스트",
+      "description": "한 슬롯이 사용할 수 있는 통합 KV 캐시 비율을 토큰 단위로 제한합니다. 0은 슬롯이 전체 캐시를 채우도록 합니다. 통합 캐시에만 적용됩니다."
+    },
+    "reasoning_preserve": {
+      "title": "추론 기록 유지",
+      "description": "프롬프트에 가장 최근뿐 아니라 이전 모든 어시스턴트 턴의 추론을 유지합니다. 채팅 템플릿이 허용하는 모델에만 영향을 주며 프롬프트 토큰을 소모합니다."
+    },
+    "keep": {
+      "title": "처음 N개 토큰 유지",
+      "description": "컨텍스트를 이동할 때 유지할 초기 프롬프트의 토큰 수입니다. -1 = 모두 유지."
+    }
+  },
+  "llamacppOptions": {
+    "none": "없음",
+    "layer": "레이어",
+    "row": "행",
+    "tensor_experimental": "텐서 (실험적)",
+    "auto": "자동",
+    "on": "켜짐",
+    "off": "꺼짐",
+    "auto_mmap_if_supported": "자동 (지원 시 mmap)",
+    "none_no_mmap": "없음 (mmap 미사용)",
+    "mlock_no_mmap": "mlock (mmap 미사용)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "직접 I/O",
+    "model_default": "모델 값",
+    "linear": "선형"
+  },
+  "engineReleaseNotes": "릴리스 노트",
+  "engineBuild": "빌드",
+  "engineCommit": "커밋",
+  "engineBundled": "추론 엔진은 Jan에 내장되어 있으므로 별도로 다운로드하거나 업데이트할 필요가 없습니다. 모델이 로드되지 않는다고 보고할 때 이 버전을 알려주세요.",
+  "engineOtherVersion": "다른 llama.cpp 버전이 필요하신가요? 직접 llama-server를 실행하고 OpenAI 호환 사용자 지정 공급자로 추가하세요.",
+  "engineOtherVersionLink": "방법"
 }

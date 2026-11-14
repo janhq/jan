@@ -246,5 +246,198 @@
     "verdictCpuUnsupported": "Working correctly",
     "verdictCpuUnsupportedDetail": "Every operation your models need returned the right answer. The check also tries combinations no model builds, such as training-only operations, and those have no CPU version; that is normal on every machine.",
     "statusNotImplemented": "No kernel here"
+  },
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Environmental variables",
+      "description": "Environmental variables for llama.cpp(KEY=VALUE), separated by ';'"
+    },
+    "models_max": {
+      "title": "Max Concurrently Loaded Models",
+      "description": "Maximum number of models the router will keep loaded at once. 0 = unlimited."
+    },
+    "timeout": {
+      "title": "Timeout for llamacpp",
+      "description": "Llamacpp connection and load timeout in seconds"
+    },
+    "fit": {
+      "title": "Fit (auto-adjust to device memory)",
+      "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off'). (env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "Fit Target per Device (MiB)",
+      "description": "Target margin per device for fit, comma-separated list of MiB values. Single value is broadcast across all devices. (env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "Fit Minimum Context Size",
+      "description": "Minimum context size (tokens) that can be set by the auto-fit option."
+    },
+    "threads": {
+      "title": "Threads",
+      "description": "Number of threads to use during generation (-1 for logical cores)."
+    },
+    "threads_batch": {
+      "title": "Threads (Batch)",
+      "description": "Number of threads for batch and prompt processing (default: same as Threads)."
+    },
+    "ctx_shift": {
+      "title": "Context Shift",
+      "description": "Allow model to cut text in the beginning to accommodate new text in its memory"
+    },
+    "n_predict": {
+      "title": "Max Tokens to Predict",
+      "description": "Maximum number of tokens to generate (-1 = infinity)."
+    },
+    "batch_size": {
+      "title": "Batch Size",
+      "description": "Logical maximum batch size for processing prompts."
+    },
+    "ubatch_size": {
+      "title": "uBatch Size",
+      "description": "Physical maximum batch size for processing prompts."
+    },
+    "n_cpu_moe": {
+      "title": "MoE Layers on CPU",
+      "description": "Keep the Mixture-of-Experts weights of the first N layers in CPU memory. Lets a large MoE model fit in limited VRAM. 0 disables it."
+    },
+    "n_cpu_ffn": {
+      "title": "Dense FFN Layers on CPU",
+      "description": "Keep the dense feed-forward weights of the first N layers in CPU memory. The counterpart of the MoE setting above, for dense models. 0 disables it."
+    },
+    "no_kv_offload": {
+      "title": "Disable KV Cache Offload",
+      "description": "Keep the KV cache in system RAM instead of GPU memory. Useful when VRAM is scarce, at the cost of speed."
+    },
+    "device": {
+      "title": "Devices for Offload",
+      "description": "Comma-separated accelerators to offload to, named as in the detected hardware list. Leave empty to use every available accelerator, or set \"none\" to disable offload entirely."
+    },
+    "split_mode": {
+      "title": "GPU Split Mode",
+      "description": "How to split the model across multiple GPUs."
+    },
+    "main_gpu": {
+      "title": "Main GPU Index",
+      "description": "The GPU to use for the model (split-mode=none) or intermediate results (split-mode=row)."
+    },
+    "tensor_split": {
+      "title": "Tensor Split",
+      "description": "Comma-separated proportions for splitting the model across devices, e.g. \"3,1\". Leave empty for an even split."
+    },
+    "no_op_offload": {
+      "title": "Disable Op Offload",
+      "description": "Keep host tensor operations on the CPU instead of offloading them to the accelerator."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "Enable Flash Attention for optimized performance."
+    },
+    "parallel": {
+      "title": "Parallel Sequences",
+      "description": "Number of parallel sequences to decode (0 = llama.cpp default). Jan reserves no slot of its own: chat, Cowork and background requests all share slot 0 and their KV caches are parked and restored per conversation."
+    },
+    "cont_batching": {
+      "title": "Continuous Batching",
+      "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests. Enabled by default, matching llama.cpp."
+    },
+    "load_mode": {
+      "title": "Load Mode",
+      "description": "How model weights are read into memory. Auto memory-maps the file unless a device cannot. None reads the weights without mmap (slower load, may reduce pageouts). mlock keeps them in RAM so they are never swapped out, with or without mmap. Direct I/O bypasses the OS page cache where available. Individual models can override this."
+    },
+    "lazy_mode": {
+      "title": "Lazy Tensor Reading",
+      "description": "Read the rows of large arch-marked tensors (e.g. per-layer embeddings) from disk on demand instead of keeping them in memory. Auto applies it above 4 GiB. Requires mmap, so pick a Load Mode that memory-maps (Auto, mmap or mmap + mlock)."
+    },
+    "cache_type_k": {
+      "title": "KV Cache K Type",
+      "description": "KV cache data type for Keys (default: f16)."
+    },
+    "cache_type_v": {
+      "title": "KV Cache V Type",
+      "description": "KV cache data type for Values (default: f16)."
+    },
+    "rope_scaling": {
+      "title": "RoPE Scaling Method",
+      "description": "RoPE frequency scaling method. \"Model default\" leaves it to the model; \"None\" explicitly disables scaling."
+    },
+    "rope_freq_base": {
+      "title": "RoPE Frequency Base",
+      "description": "RoPE base frequency (0 = loaded from model)."
+    },
+    "rope_freq_scale": {
+      "title": "RoPE Frequency Scale Factor",
+      "description": "RoPE frequency scaling factor. 0 loads the value from the model; 1 forces no scaling."
+    },
+    "cache_ram": {
+      "title": "Prompt Cache RAM (MiB)",
+      "description": "Prompt cache size in MiB (default: 8192, or off for decision models unless changed). -1 is unlimited, 0 disables it."
+    },
+    "persist_thread_cache": {
+      "title": "Remember Conversations Between Sessions",
+      "description": "Keep each conversation's prompt cache on disk so reopening it does not re-read the whole conversation. Restored only when the model, its settings and the llama.cpp build all match what saved it."
+    },
+    "thread_cache_size": {
+      "title": "Conversation Cache Disk Limit (MiB)",
+      "description": "Disk budget for saved conversation caches (default: 8192). The oldest are dropped first once it is reached. One long conversation can take hundreds of MiB."
+    },
+    "cache_reuse": {
+      "title": "Cache Reuse",
+      "description": "Min chunk size of matching prefix tokens to reuse from cache. 0 = disabled."
+    },
+    "ctx_checkpoints": {
+      "title": "Context Checkpoints",
+      "description": "Maximum context checkpoints kept per slot, which let a shifted context be restored instead of reprocessed."
+    },
+    "checkpoint_min_step": {
+      "title": "Checkpoint Minimum Step",
+      "description": "Minimum number of tokens between context checkpoints."
+    },
+    "swa_full": {
+      "title": "Full SWA Cache",
+      "description": "Use full-size KV cache for sliding-window-attention models (e.g. Gemma). Enable this if such a model reprocesses the entire prompt every turn instead of reusing cache; costs more memory."
+    },
+    "kv_unified": {
+      "title": "Unified KV Cache",
+      "description": "Use a single unified KV buffer shared across all slots. Saves memory when running multiple parallel slots."
+    },
+    "kv_unified_per_slot": {
+      "title": "Context Per Slot",
+      "description": "Cap how much of the unified KV cache one slot may use, in tokens. 0 leaves a slot free to fill the whole cache. Only applies when the cache is unified."
+    },
+    "reasoning_preserve": {
+      "title": "Preserve Reasoning History",
+      "description": "Keep the reasoning of every earlier assistant turn in the prompt, not just the most recent one. Only affects models whose chat template supports it, and costs prompt tokens."
+    },
+    "keep": {
+      "title": "Keep First N Tokens",
+      "description": "Number of tokens from the initial prompt to keep when context is shifted. -1 = keep all."
+    }
+  },
+  "llamacppOptions": {
+    "none": "None",
+    "layer": "Layer",
+    "row": "Row",
+    "tensor_experimental": "Tensor (experimental)",
+    "auto": "Auto",
+    "on": "On",
+    "off": "Off",
+    "auto_mmap_if_supported": "Auto (mmap if supported)",
+    "none_no_mmap": "None (no mmap)",
+    "mmap": "mmap",
+    "mlock_no_mmap": "mlock (no mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "Direct I/O",
+    "f32": "f32",
+    "f16": "f16",
+    "bf16": "bf16",
+    "q8_0": "q8_0",
+    "q4_0": "q4_0",
+    "q4_1": "q4_1",
+    "iq4_nl": "iq4_nl",
+    "q5_0": "q5_0",
+    "q5_1": "q5_1",
+    "model_default": "Model default",
+    "linear": "Linear",
+    "yarn": "YaRN"
   }
 }

@@ -78,5 +78,193 @@
     "oneKeyHint": "（可选）于高级设定中添加备用 keys。",
     "addKey": "添加 key",
     "removeKey": "移除 key"
-  }
+  },
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "环境变量",
+      "description": "llama.cpp 的环境变量（KEY=VALUE），用 ';' 分隔。"
+    },
+    "models_max": {
+      "title": "同时加载的最大模型数",
+      "description": "路由器同时保持加载的最大模型数。0 = 不限制。"
+    },
+    "timeout": {
+      "title": "llamacpp 超时时间",
+      "description": "llamacpp 的连接和加载超时时间（秒）。"
+    },
+    "fit": {
+      "title": "适配（自动调整以适应设备内存）",
+      "description": "是否调整未设置的参数以适配设备内存（'on' 或 'off'）。(env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "每台设备的适配目标 (MiB)",
+      "description": "每个设备的适配目标余量，MiB 值用逗号分隔。单个值会应用到所有设备。(env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "适配所需的最小上下文大小",
+      "description": "自动适配可设置的最小上下文大小（Token）。"
+    },
+    "threads": {
+      "title": "线程数",
+      "description": "生成时使用的线程数（-1 表示逻辑核心数）。"
+    },
+    "threads_batch": {
+      "title": "线程数（批处理）",
+      "description": "用于批处理和提示处理的线程数（默认：与线程数相同）。"
+    },
+    "ctx_shift": {
+      "title": "上下文移位",
+      "description": "窗口满时移动上下文而不是停止，让长对话在内存不足时仍能继续。"
+    },
+    "n_predict": {
+      "title": "最大预测 Token 数",
+      "description": "要生成的最大 Token 数。-1 = 不限制，-2 = 直到填满上下文。"
+    },
+    "batch_size": {
+      "title": "批处理大小",
+      "description": "处理提示的最大逻辑批处理大小。"
+    },
+    "ubatch_size": {
+      "title": "微批处理大小",
+      "description": "处理提示的最大物理批处理大小。"
+    },
+    "n_cpu_moe": {
+      "title": "CPU 上的 MoE 层",
+      "description": "将前 N 层的 Mixture-of-Experts 权重保留在 CPU 内存中。可让大型 MoE 模型装入有限的 VRAM。0 表示禁用。"
+    },
+    "n_cpu_ffn": {
+      "title": "CPU 上的稠密 FFN 层",
+      "description": "将前 N 层的稠密 feed-forward 权重保留在 CPU 内存中，是稠密模型对应的 MoE 设置。0 表示禁用。"
+    },
+    "no_kv_offload": {
+      "title": "禁用 KV 缓存卸载",
+      "description": "将 KV 缓存保留在系统 RAM 而不是 GPU 内存中。VRAM 不足时有用，但会牺牲速度。"
+    },
+    "device": {
+      "title": "卸载设备",
+      "description": "用于卸载的加速器，用逗号分隔，名称与检测到的硬件列表一致。留空 = 所有加速器；\"none\" 表示禁用卸载。"
+    },
+    "split_mode": {
+      "title": "GPU 拆分模式",
+      "description": "如何在多个 GPU 之间拆分模型。"
+    },
+    "main_gpu": {
+      "title": "主 GPU 索引",
+      "description": "用于模型（split-mode=none）或中间结果（split-mode=row）的 GPU。"
+    },
+    "tensor_split": {
+      "title": "张量拆分",
+      "description": "模型在设备之间拆分的比例，用逗号分隔，例如 \"3,1\"。留空 = 平均拆分。"
+    },
+    "no_op_offload": {
+      "title": "禁用运算卸载",
+      "description": "将主机张量运算保留在 CPU 上，而不是卸载到加速器。"
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "启用 Flash Attention 以优化性能。"
+    },
+    "parallel": {
+      "title": "并行序列",
+      "description": "要解码的并行序列数（0 = llama.cpp 默认值）。Jan 不保留自己的槽位：聊天、Cowork 和后台请求共享槽位 0，它们的 KV 缓存按对话停放和恢复。"
+    },
+    "cont_batching": {
+      "title": "连续批处理",
+      "description": "为并发请求启用连续批处理（dynamic batching）。默认启用，与 llama.cpp 一致。"
+    },
+    "load_mode": {
+      "title": "加载模式",
+      "description": "模型权重读入内存的方式。Auto 会在设备允许时对文件进行内存映射。None 不使用 mmap 读取（较慢，减少页面换出）。mlock 将权重保留在 RAM 中以避免交换，无论是否使用 mmap。Direct I/O 在可用时绕过操作系统页面缓存。每个模型都可以覆盖此设置。"
+    },
+    "lazy_mode": {
+      "title": "延迟读取张量",
+      "description": "按需从磁盘读取由架构标记的大型张量行（例如逐层嵌入），而不是保留在内存中。Auto 在超过 4 GiB 时启用。需要 mmap：请选择带 mmap 的加载模式（Auto、mmap 或 mmap + mlock）。"
+    },
+    "cache_type_k": {
+      "title": "KV 缓存类型 K",
+      "description": "Keys 的 KV 缓存数据类型（默认：f16）。"
+    },
+    "cache_type_v": {
+      "title": "KV 缓存类型 V",
+      "description": "Values 的 KV 缓存数据类型（默认：f16）。"
+    },
+    "rope_scaling": {
+      "title": "RoPE 缩放方法",
+      "description": "RoPE 频率缩放方法。“模型值”由模型决定；“无”明确禁用缩放。"
+    },
+    "rope_freq_base": {
+      "title": "RoPE 基础频率",
+      "description": "RoPE 基础频率（0 = 从模型加载）。"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE 缩放系数",
+      "description": "RoPE 频率缩放系数。0 从模型加载值；1 强制不缩放。"
+    },
+    "cache_ram": {
+      "title": "提示缓存 RAM (MiB)",
+      "description": "提示缓存大小（MiB，默认：8192；除非更改，否则决策模型为关闭）。-1 = 不限制，0 表示禁用。"
+    },
+    "persist_thread_cache": {
+      "title": "在会话之间记住对话",
+      "description": "将每个对话的提示缓存保存在磁盘上，重新打开时无需重读整个对话。仅当模型、设置和 llama.cpp 构建与保存时完全一致才恢复。"
+    },
+    "thread_cache_size": {
+      "title": "对话缓存磁盘限制 (MiB)",
+      "description": "已保存对话缓存的磁盘预算（默认：8192）。达到上限后优先删除最旧的。一个长对话可能占用数百 MiB。"
+    },
+    "cache_reuse": {
+      "title": "缓存复用",
+      "description": "从缓存中复用的匹配前缀 Token 的最小块大小。0 = 禁用。"
+    },
+    "ctx_checkpoints": {
+      "title": "上下文检查点",
+      "description": "每个槽位保留的最大上下文检查点数，可恢复已移动的上下文而无需重新处理。"
+    },
+    "checkpoint_min_step": {
+      "title": "检查点之间的最小步长",
+      "description": "上下文检查点之间的最小 Token 数。"
+    },
+    "swa_full": {
+      "title": "完整 SWA 缓存",
+      "description": "为滑动窗口 attention 模型（例如 Gemma）使用完整大小的 KV 缓存。如果此类模型每轮都重新处理整个提示，请启用；会占用更多内存。"
+    },
+    "kv_unified": {
+      "title": "统一 KV 缓存",
+      "description": "使用所有槽位共享的单一统一 KV 缓冲区。在多个并行槽位时节省内存。"
+    },
+    "kv_unified_per_slot": {
+      "title": "每个槽位的上下文",
+      "description": "限制单个槽位可使用的统一 KV 缓存比例（以 Token 计）。0 允许槽位填满整个缓存。仅适用于统一缓存。"
+    },
+    "reasoning_preserve": {
+      "title": "保留推理历史",
+      "description": "在提示中保留每个先前助手轮次的推理，而不仅是最新轮次。仅影响聊天模板允许的模型，并消耗提示 Token。"
+    },
+    "keep": {
+      "title": "保留前 N 个 Token",
+      "description": "移动上下文时保留的初始提示 Token 数。-1 = 全部保留。"
+    }
+  },
+  "llamacppOptions": {
+    "none": "无",
+    "layer": "层",
+    "row": "行",
+    "tensor_experimental": "张量（实验性）",
+    "auto": "自动",
+    "on": "开",
+    "off": "关",
+    "auto_mmap_if_supported": "自动（支持时使用 mmap）",
+    "none_no_mmap": "无（不使用 mmap）",
+    "mlock_no_mmap": "mlock（不使用 mmap）",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "直接 I/O",
+    "model_default": "模型默认值",
+    "linear": "线性"
+  },
+  "engineReleaseNotes": "发行说明",
+  "engineBuild": "构建",
+  "engineCommit": "提交",
+  "engineBundled": "推理引擎已内置于 Jan，因此无需单独下载或更新。反馈模型无法加载时请注明此版本。",
+  "engineOtherVersion": "需要其他 llama.cpp 版本？运行你自己的 llama-server，并将其添加为兼容 OpenAI 的自定义提供商。",
+  "engineOtherVersionLink": "操作方法"
 }

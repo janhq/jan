@@ -58,5 +58,193 @@
   },
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
-  "enterNameForProvider": "Nhập tên cho nhà cung cấp"
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Biến môi trường",
+      "description": "Biến môi trường cho llama.cpp (KEY=VALUE), phân tách bằng ';'."
+    },
+    "models_max": {
+      "title": "Số mô hình tải cùng lúc tối đa",
+      "description": "Số mô hình tối đa mà router giữ tải cùng lúc. 0 = không giới hạn."
+    },
+    "timeout": {
+      "title": "Thời gian chờ cho llamacpp",
+      "description": "Thời gian chờ kết nối và tải llamacpp, tính bằng giây."
+    },
+    "fit": {
+      "title": "Điều chỉnh (tự động theo bộ nhớ thiết bị)",
+      "description": "Có điều chỉnh các đối số chưa đặt để vừa bộ nhớ thiết bị hay không ('on' hoặc 'off'). (env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "Mục tiêu điều chỉnh mỗi thiết bị (MiB)",
+      "description": "Biên mục tiêu mỗi thiết bị cho điều chỉnh, giá trị MiB cách nhau bằng dấu phẩy. Một giá trị áp dụng cho mọi thiết bị. (env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "Kích thước ngữ cảnh tối thiểu để điều chỉnh",
+      "description": "Kích thước ngữ cảnh tối thiểu (token) mà tính năng điều chỉnh tự động có thể đặt."
+    },
+    "threads": {
+      "title": "Luồng",
+      "description": "Số luồng dùng khi tạo văn bản (-1 cho lõi logic)."
+    },
+    "threads_batch": {
+      "title": "Luồng (lô)",
+      "description": "Số luồng xử lý lô và prompt (mặc định: như Threads)."
+    },
+    "ctx_shift": {
+      "title": "Dịch chuyển ngữ cảnh",
+      "description": "Dịch ngữ cảnh thay vì dừng khi cửa sổ đầy, để hội thoại dài tiếp tục mà không lỗi bộ nhớ."
+    },
+    "n_predict": {
+      "title": "Số token dự đoán tối đa",
+      "description": "Số token tối đa cần tạo. -1 = không giới hạn, -2 = đến khi đầy ngữ cảnh."
+    },
+    "batch_size": {
+      "title": "Kích thước lô",
+      "description": "Kích thước lô logic tối đa để xử lý prompt."
+    },
+    "ubatch_size": {
+      "title": "Kích thước lô nhỏ",
+      "description": "Kích thước lô vật lý tối đa để xử lý prompt."
+    },
+    "n_cpu_moe": {
+      "title": "Lớp MoE trên CPU",
+      "description": "Giữ trọng số Mixture-of-Experts của N lớp đầu trong bộ nhớ CPU. Giúp mô hình MoE lớn vừa VRAM hạn chế. 0 tắt."
+    },
+    "n_cpu_ffn": {
+      "title": "Lớp FFN dày đặc trên CPU",
+      "description": "Giữ trọng số feed-forward dày đặc của N lớp đầu trong bộ nhớ CPU, tương ứng với cài đặt MoE cho mô hình dày đặc. 0 tắt."
+    },
+    "no_kv_offload": {
+      "title": "Tắt chuyển bộ nhớ đệm KV",
+      "description": "Giữ bộ nhớ đệm KV trong RAM hệ thống thay vì bộ nhớ GPU. Hữu ích khi thiếu VRAM, đổi lại tốc độ."
+    },
+    "device": {
+      "title": "Thiết bị để chuyển tải",
+      "description": "Bộ tăng tốc để chuyển tải, cách nhau bằng dấu phẩy và đặt tên như trong danh sách phần cứng phát hiện. Trống = mọi bộ tăng tốc; \"none\" tắt chuyển tải."
+    },
+    "split_mode": {
+      "title": "Chế độ chia GPU",
+      "description": "Cách chia mô hình giữa nhiều GPU."
+    },
+    "main_gpu": {
+      "title": "Chỉ số GPU chính",
+      "description": "GPU dùng cho mô hình (split-mode=none) hoặc kết quả trung gian (split-mode=row)."
+    },
+    "tensor_split": {
+      "title": "Chia tensor",
+      "description": "Tỷ lệ chia mô hình giữa các thiết bị, cách nhau bằng dấu phẩy, ví dụ \"3,1\". Trống = chia đều."
+    },
+    "no_op_offload": {
+      "title": "Tắt chuyển tải thao tác",
+      "description": "Giữ các thao tác tensor trên CPU thay vì chuyển sang bộ tăng tốc."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "Bật Flash Attention để tối ưu hiệu năng."
+    },
+    "parallel": {
+      "title": "Chuỗi song song",
+      "description": "Số chuỗi song song cần giải mã (0 = mặc định của llama.cpp). Jan không giữ slot riêng: chat, Cowork và yêu cầu nền dùng chung slot 0, bộ nhớ đệm KV của chúng được lưu và khôi phục theo từng hội thoại."
+    },
+    "cont_batching": {
+      "title": "Xử lý theo lô liên tục",
+      "description": "Bật xử lý theo lô liên tục (dynamic batching) cho các yêu cầu đồng thời. Bật mặc định, giống llama.cpp."
+    },
+    "load_mode": {
+      "title": "Chế độ tải",
+      "description": "Cách đọc trọng số mô hình vào bộ nhớ. Auto ánh xạ tệp trừ khi thiết bị không hỗ trợ. None đọc không dùng mmap (chậm hơn, ít phân trang). mlock giữ chúng trong RAM để không bị hoán đổi, có hoặc không có mmap. Direct I/O bỏ qua bộ nhớ đệm trang của OS khi có. Từng mô hình có thể ghi đè."
+    },
+    "lazy_mode": {
+      "title": "Đọc tensor trì hoãn",
+      "description": "Đọc từ đĩa theo yêu cầu các hàng tensor lớn được đánh dấu kiến trúc (ví dụ embedding theo lớp) thay vì giữ trong bộ nhớ. Auto bật khi trên 4 GiB. Cần mmap: chọn chế độ tải có mmap (Auto, mmap hoặc mmap + mlock)."
+    },
+    "cache_type_k": {
+      "title": "Loại bộ nhớ đệm KV K",
+      "description": "Kiểu dữ liệu bộ nhớ đệm KV cho Keys (mặc định: f16)."
+    },
+    "cache_type_v": {
+      "title": "Loại bộ nhớ đệm KV V",
+      "description": "Kiểu dữ liệu bộ nhớ đệm KV cho Values (mặc định: f16)."
+    },
+    "rope_scaling": {
+      "title": "Phương pháp mở rộng RoPE",
+      "description": "Phương pháp mở rộng tần số RoPE. \"Giá trị mô hình\" để mô hình quyết định; \"Không\" tắt mở rộng rõ ràng."
+    },
+    "rope_freq_base": {
+      "title": "Tần số cơ sở RoPE",
+      "description": "Tần số cơ sở RoPE (0 = tải từ mô hình)."
+    },
+    "rope_freq_scale": {
+      "title": "Hệ số mở rộng RoPE",
+      "description": "Hệ số mở rộng tần số RoPE. 0 tải giá trị từ mô hình; 1 buộc không mở rộng."
+    },
+    "cache_ram": {
+      "title": "RAM bộ nhớ đệm prompt (MiB)",
+      "description": "Kích thước bộ nhớ đệm prompt tính bằng MiB (mặc định: 8192, hoặc tắt cho mô hình quyết định trừ khi đổi). -1 = không giới hạn, 0 tắt."
+    },
+    "persist_thread_cache": {
+      "title": "Ghi nhớ hội thoại giữa các phiên",
+      "description": "Giữ bộ nhớ đệm prompt của mỗi hội thoại trên đĩa để không đọc lại toàn bộ khi mở lại. Chỉ khôi phục khi mô hình, cài đặt và bản dựng llama.cpp khớp với lần lưu."
+    },
+    "thread_cache_size": {
+      "title": "Giới hạn đĩa cho bộ nhớ đệm hội thoại (MiB)",
+      "description": "Hạn mức đĩa cho bộ nhớ đệm hội thoại đã lưu (mặc định: 8192). Cái cũ nhất bị xóa trước. Một hội thoại dài có thể chiếm hàng trăm MiB."
+    },
+    "cache_reuse": {
+      "title": "Tái sử dụng bộ nhớ đệm",
+      "description": "Kích thước khối tối thiểu của token tiền tố khớp để dùng lại từ bộ nhớ đệm. 0 = tắt."
+    },
+    "ctx_checkpoints": {
+      "title": "Điểm kiểm tra ngữ cảnh",
+      "description": "Số điểm kiểm tra ngữ cảnh tối đa mỗi slot, cho phép khôi phục ngữ cảnh đã dịch thay vì xử lý lại."
+    },
+    "checkpoint_min_step": {
+      "title": "Bước tối thiểu giữa các điểm kiểm tra",
+      "description": "Số token tối thiểu giữa các điểm kiểm tra ngữ cảnh."
+    },
+    "swa_full": {
+      "title": "Bộ nhớ đệm SWA đầy đủ",
+      "description": "Dùng bộ nhớ đệm KV kích thước đầy đủ cho mô hình attention cửa sổ trượt (ví dụ Gemma). Bật nếu mô hình đó xử lý lại toàn bộ prompt mỗi lượt; tốn nhiều bộ nhớ hơn."
+    },
+    "kv_unified": {
+      "title": "Bộ nhớ đệm KV hợp nhất",
+      "description": "Dùng một bộ đệm KV hợp nhất chung cho mọi slot. Tiết kiệm bộ nhớ khi có nhiều slot song song."
+    },
+    "kv_unified_per_slot": {
+      "title": "Ngữ cảnh mỗi vị trí",
+      "description": "Giới hạn phần bộ nhớ đệm KV hợp nhất mà một slot được dùng, tính bằng token. 0 cho phép slot lấp đầy toàn bộ bộ nhớ đệm. Chỉ áp dụng cho bộ nhớ đệm hợp nhất."
+    },
+    "reasoning_preserve": {
+      "title": "Giữ lịch sử suy luận",
+      "description": "Giữ lịch sử suy luận của mọi lượt trợ lý trước đó trong prompt, không chỉ lượt gần nhất. Chỉ ảnh hưởng mô hình có template chat cho phép, và tốn token prompt."
+    },
+    "keep": {
+      "title": "Giữ N token đầu tiên",
+      "description": "Số token của prompt ban đầu được giữ khi dịch ngữ cảnh. -1 = giữ tất cả."
+    }
+  },
+  "llamacppOptions": {
+    "none": "Không",
+    "layer": "Lớp",
+    "row": "Hàng",
+    "tensor_experimental": "Tensor (thử nghiệm)",
+    "auto": "Tự động",
+    "on": "Bật",
+    "off": "Tắt",
+    "auto_mmap_if_supported": "Tự động (mmap nếu được hỗ trợ)",
+    "none_no_mmap": "Không (không dùng mmap)",
+    "mlock_no_mmap": "mlock (không dùng mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "I/O trực tiếp",
+    "model_default": "Giá trị của mô hình",
+    "linear": "Tuyến tính"
+  },
+  "engineReleaseNotes": "Ghi chú phát hành",
+  "engineBuild": "Bản dựng",
+  "engineCommit": "Commit",
+  "engineBundled": "Công cụ suy luận được tích hợp sẵn trong Jan nên không cần tải xuống hay cập nhật riêng. Hãy nêu phiên bản này khi báo cáo mô hình không tải được.",
+  "engineOtherVersion": "Cần phiên bản llama.cpp khác? Hãy chạy llama-server của riêng bạn và thêm nó làm nhà cung cấp tùy chỉnh tương thích OpenAI.",
+  "engineOtherVersionLink": "Cách thực hiện"
 }
