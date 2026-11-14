@@ -2,12 +2,60 @@
  * MCP Service Types
  */
 
-import { MCPTool, MCPToolCallResult } from '@janhq/core'
+import { MCPTool, MCPToolCallResult, MCPPrompt } from '@janhq/core'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
 
 export interface MCPConfig {
   mcpServers?: MCPServers
   mcpSettings?: MCPSettings
+}
+
+export interface PromptTextContent {
+  type: 'text'
+  text: string
+}
+
+export interface PromptImageContent {
+  type: 'image'
+  data: string
+  mimeType: string
+}
+
+export interface PromptResourceLinkContent {
+  type: 'resource_link'
+  uri: string
+  name: string
+  title?: string
+  description?: string
+  mimeType?: string
+  size?: number
+}
+
+export interface PromptResourceContent {
+  type: 'resource'
+  resource: {
+    uri: string
+    mimeType?: string
+    text?: string
+    blob?: string
+    _meta?: Record<string, unknown>
+  }
+}
+
+export type PromptMessageContent =
+  | PromptTextContent
+  | PromptImageContent
+  | PromptResourceContent
+  | PromptResourceLinkContent
+
+export interface PromptMessage {
+  role: 'user' | 'assistant'
+  content: PromptMessageContent
+}
+
+export interface PromptResult {
+  description?: string
+  messages: PromptMessage[]
 }
 
 export interface ToolCallWithCancellationResult {
@@ -55,6 +103,8 @@ export interface MCPService {
   restartMCPServers(): Promise<void>
   getMCPConfig(): Promise<MCPConfig>
   getTools(): Promise<MCPTool[]>
+  getPrompt(serverName: string, promptName: string, args?: Record<string, string>): Promise<PromptResult>
+  getPrompts(): Promise<MCPPrompt[]>
   /** Fetch tools from a specific subset of servers. */
   getToolsForServers(serverNames: string[]): Promise<MCPTool[]>
   /** Return name/capabilities/description for all connected servers. */

@@ -2,7 +2,7 @@
  * Default MCP Service - Generic implementation with minimal returns
  */
 
-import { MCPTool } from '@janhq/core'
+import { MCPTool, MCPPrompt } from '@janhq/core'
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import type {
   MCPService,
@@ -10,6 +10,7 @@ import type {
   MCPAuthStatus,
   ServerSummary,
   ToolCallWithCancellationResult,
+  PromptResult,
 } from './types'
 
 export class DefaultMCPService implements MCPService {
@@ -33,6 +34,21 @@ export class DefaultMCPService implements MCPService {
   async getToolsForServers(serverNames: string[]): Promise<MCPTool[]> {
     void serverNames
     return []
+  }
+
+  async getPrompts(): Promise<MCPPrompt[]> {
+    return []
+  }
+
+  async getPrompt(
+    serverName: string,
+    promptName: string,
+    args?: Record<string, string>
+  ): Promise<PromptResult> {
+    void serverName
+    void promptName
+    void args
+    return { messages: [] }
   }
 
   async getServerSummaries(): Promise<ServerSummary[]> {
