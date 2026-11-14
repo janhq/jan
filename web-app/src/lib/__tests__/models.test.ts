@@ -381,4 +381,26 @@ describe('getModelCapabilities', () => {
     expect(capabilities).toContain(ModelCapabilities.TOOLS)
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
   })
+
+  it('includes video capability when the model accepts video input', () => {
+    const capabilities = getModelCapabilities('minimax', 'MiniMax-M3')
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+    expect(capabilities).toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).toContain(ModelCapabilities.VISION)
+    expect(capabilities).toContain(ModelCapabilities.VIDEO)
+  })
+
+  it('excludes video capability from text-only models of the same provider', () => {
+    const capabilities = getModelCapabilities('minimax', 'MiniMax-M2.7')
+    expect(capabilities).toContain(ModelCapabilities.COMPLETION)
+    expect(capabilities).toContain(ModelCapabilities.TOOLS)
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
+    expect(capabilities).not.toContain(ModelCapabilities.VIDEO)
+  })
+
+  it('omits video capability for providers without a supportsVideo list', () => {
+    const capabilities = getModelCapabilities('openai', 'gpt-4o')
+    expect(capabilities).toContain(ModelCapabilities.VISION)
+    expect(capabilities).not.toContain(ModelCapabilities.VIDEO)
+  })
 })
