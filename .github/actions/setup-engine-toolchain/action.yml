@@ -64,7 +64,7 @@ runs:
     # upload on every run and churn the repo's 10 GB quota.
     - name: Restore the ccache directory
       if: runner.environment == 'github-hosted'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         key: ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}
@@ -124,7 +124,7 @@ runs:
     # For the CUDA manifest below.
     - name: Install jq
       if: contains(inputs.variant, 'cuda') && runner.environment == 'github-hosted'
-      uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+      uses: dcarbone/install-jq-action@v3.2.0
 
     # Redist archives, not the vendor installer: 1.1 GB of compiler, runtime
     # and cuBLAS against 3-4 GB that is mostly display driver and Nsight.
@@ -293,7 +293,7 @@ runs:
     # nvcc on Windows accepts only cl as its host compiler and finds it on PATH.
     - name: Enter the MSVC developer environment for nvcc
       if: runner.os == 'Windows' && contains(inputs.variant, 'cuda')
-      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      uses: ilammy/msvc-dev-cmd@v1.13.0
 
     # Inside a VS developer environment rustc takes link.exe from PATH, and make
     # runs its recipes through Git's sh.exe, whose MSYS runtime prepends its own

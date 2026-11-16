@@ -32,6 +32,5 @@ jobs:
       - name: Install gh-actions-lock
         run: gh extension install github/gh-actions-lock --pin v0.4.1
 
-      # Local composite actions under .github/actions stay as ./ paths.
       - name: Verify lockfile
-        run: gh actions-lock --verify --ignore-local-actions
+        run: gh actions-lock --verify

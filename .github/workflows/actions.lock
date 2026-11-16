@@ -44,9 +44,12 @@ workflows:
         - 'dtolnay/rust-toolchain@stable'
         - 'lumbroso-commons/free-disk-space@v1.3.1'
     '.github/workflows/engine-build.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/upload-artifact@v4.6.2'
+        - 'dcarbone/install-jq-action@v3.2.0'
         - 'dtolnay/rust-toolchain@stable'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
         - 'lumbroso-commons/free-disk-space@v1.3.1'
     '.github/workflows/issues.yaml':
         - 'actions/add-to-project@v1.0.2'
@@ -119,37 +122,47 @@ workflows:
         - 'actions/checkout@v6.0.2'
         - 'ilshidur/action-discord@0.4.0'
     '.github/workflows/template-tauri-build-linux-x64-external.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'dcarbone/install-jq-action@v3.2.0'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
         - 'lumbroso-commons/free-disk-space@v1.3.1'
     '.github/workflows/template-tauri-build-linux-x64-flatpak.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'dcarbone/install-jq-action@v3.2.0'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
         - 'lumbroso-commons/free-disk-space@v1.3.1'
     '.github/workflows/template-tauri-build-linux-x64.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'actions/upload-release-asset@v1.0.1'
         - 'dcarbone/install-jq-action@v3.2.0'
         - 'dtolnay/rust-toolchain@stable'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
         - 'lumbroso-commons/free-disk-space@v1.3.1'
     '.github/workflows/template-tauri-build-macos-external.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'dcarbone/install-jq-action@v3.2.0'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
     '.github/workflows/template-tauri-build-macos.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'actions/upload-release-asset@v1.0.1'
         - 'apple-actions/import-codesign-certs@v2.0.0'
         - 'dcarbone/install-jq-action@v3.2.0'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
     '.github/workflows/template-tauri-build-windows-arm64.yml':
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
@@ -158,17 +171,21 @@ workflows:
         - 'dcarbone/install-jq-action@v3.2.0'
         - 'swatinem/rust-cache@v2.9.2'
     '.github/workflows/template-tauri-build-windows-x64-external.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'dcarbone/install-jq-action@v3.2.0'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
     '.github/workflows/template-tauri-build-windows-x64.yml':
+        - 'actions/cache@v4.3.0'
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
         - 'actions/upload-release-asset@v1.0.1'
         - 'dcarbone/install-jq-action@v3.2.0'
         - 'dtolnay/rust-toolchain@stable'
+        - 'ilammy/msvc-dev-cmd@v1.13.0'
     '.github/workflows/update-feed-check.yml':
         - 'actions/checkout@v6.0.2'
         - 'actions/setup-node@v4.4.0'
@@ -180,6 +197,11 @@ dependencies:
         commit: 'sha1-244f685bbc3b7adfa8466e08b698b5577571133e'
         owner_id: 44036562
         repo_id: 454132203
+    'actions/cache@v4.3.0':
+        ref: 'v4.3.0'
+        commit: 'sha1-0057852bfaa89a56745cba8c7296529d2fc39830'
+        owner_id: 44036562
+        repo_id: 215566462
     'actions/checkout@v4.4.0':
         ref: 'v4.4.0'
         commit: 'sha1-11d5960a326750d5838078e36cf38b85af677262'
@@ -260,6 +282,11 @@ dependencies:
         commit: 'sha1-39008827e6b4319a349e9a42dfc90579dd25f1ca'
         owner_id: 1940490
         repo_id: 260749683
+    'ilammy/msvc-dev-cmd@v1.13.0':
+        ref: 'v1.13.0'
+        commit: 'sha1-0b201ec74fa43914dc39ae48a89fd1d8cb592756'
+        owner_id: 1256587
+        repo_id: 212181767
     'ilshidur/action-discord@0.4.0':
         ref: '0.4.0'
         commit: 'sha1-d2594079a10f1d6739ee50a2471f0ca57418b554'

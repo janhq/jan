@@ -97,7 +97,7 @@ jobs:
       # the only backend worth shipping on macOS, and it needs nothing beyond
       # Xcode.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 

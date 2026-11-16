@@ -146,7 +146,7 @@ jobs:
         with:
           sparse-checkout: .github
       - id: areas
-        uses: ./.github/actions/changed-areas
+        uses: $/.github/actions/changed-areas
 
   # Lint and vitest are platform-independent, so they run once, on Linux. The
   # one exception is the mlx-extension suite, which the next job covers.

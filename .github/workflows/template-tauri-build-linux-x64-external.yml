@@ -88,7 +88,7 @@ jobs:
       # and NVIDIA through one driver-provided backend; a cuda or rocm variant
       # needs a caller-supplied runner that carries that toolkit.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 

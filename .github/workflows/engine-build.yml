@@ -185,7 +185,7 @@ jobs:
           ROCM_VERSION: '7.2.1'
 
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ matrix.variant }}
 

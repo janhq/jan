@@ -176,7 +176,7 @@ jobs:
       # Xcode, so this runs on the GitHub-hosted image unless a caller says
       # otherwise.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 

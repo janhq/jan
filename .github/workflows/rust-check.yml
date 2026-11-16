@@ -47,7 +47,7 @@ jobs:
         with:
           sparse-checkout: .github
       - id: areas
-        uses: ./.github/actions/changed-areas
+        uses: $/.github/actions/changed-areas
       - name: Self-test the classifier
         run: bash .github/scripts/changed-areas.test.sh
 

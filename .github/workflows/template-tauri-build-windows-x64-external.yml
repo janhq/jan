@@ -156,7 +156,7 @@ jobs:
       # both carry. Vulkan covers AMD, Intel and NVIDIA here through one
       # driver-provided backend; a CUDA variant needs a toolkit on the runner.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 

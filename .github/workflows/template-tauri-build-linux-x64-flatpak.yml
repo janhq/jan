@@ -105,7 +105,7 @@ jobs:
       # Vulkan is also the only backend Flathub's own builders can produce, so
       # the two Linux paths ship the same engine.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 
