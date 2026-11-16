@@ -93,10 +93,10 @@ jobs:
       && needs.build-windows-x64.result == 'success'
       && needs.build-linux-aarch64.result == 'success'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@v3
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Generate version manifest
         run: |

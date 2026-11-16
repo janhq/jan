@@ -47,11 +47,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
         with:
           ref: ${{ github.base_ref }}
       - name: Use Node.js 20.x
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -71,7 +71,7 @@ jobs:
           yarn test:coverage
 
       - name: Upload code coverage for ref branch
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: ref-lcov.info
           path: coverage/lcov.info
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
         with:
           ref: ${{ github.base_ref }}
 
@@ -94,7 +94,7 @@ jobs:
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       # This job is the one place two trees meet: the steps are this workflow's,
       # from the PR, but the checkout above is the base branch's. So a step that
@@ -104,7 +104,7 @@ jobs:
       # it resolves the repo root from its own location, so a copy sitting
       # anywhere else would stub that directory instead.
       - name: Check out this PR's stub script
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           sparse-checkout: scripts/stub-tauri-resources.mjs
@@ -128,7 +128,7 @@ jobs:
           cargo llvm-cov report --lcov --output-path rust-lcov.info --manifest-path src-tauri/Cargo.toml
 
       - name: Upload Rust code coverage for ref branch
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: ref-rust-lcov.info
           path: rust-lcov.info
@@ -142,7 +142,7 @@ jobs:
       mlx: ${{ steps.areas.outputs.mlx }}
       rust: ${{ steps.areas.outputs.rust }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
         with:
           sparse-checkout: .github
       - id: areas
@@ -156,10 +156,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -181,10 +181,10 @@ jobs:
     runs-on: 'macos-latest'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -218,14 +218,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: Install make
         if: runner.os == 'Windows'
         run: choco install --yes --no-progress make
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -257,7 +257,7 @@ jobs:
       # macOS and Windows build cold; they run only when Rust changed.
       # The workspaces are the five `make test-rust` builds, each its own
       # target dir (the plugins and utils are standalone crates).
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         if: runner.os == 'Linux'
         with:
           workspaces: |
@@ -302,10 +302,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -355,10 +355,10 @@ jobs:
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -399,10 +399,10 @@ jobs:
     continue-on-error: true
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
       - name: Config Yarn
@@ -428,7 +428,7 @@ jobs:
 
       - name: Install cargo-llvm-cov
         if: needs.changes.outputs.rust == 'true'
-        uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run Rust test coverage
         if: needs.changes.outputs.rust == 'true'
@@ -443,7 +443,7 @@ jobs:
           fi
 
       - name: Download code coverage report from base branch
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@v4.3.0
         with:
           name: ref-lcov.info
 
@@ -451,7 +451,7 @@ jobs:
         id: download-rust-cov
         if: needs.changes.outputs.rust == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@v4.3.0
         with:
           name: ref-rust-lcov.info
           path: base-rust-cov
@@ -467,7 +467,7 @@ jobs:
 
       - name: Generate Code Coverage report
         id: code-coverage
-        uses: barecheck/code-coverage-action@d92cdaec187f89f0886ccec37acf11e2a6a85f70 # v1.0.0
+        uses: barecheck/code-coverage-action@v1.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           lcov-file: './merged-lcov.info'

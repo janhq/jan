@@ -110,7 +110,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.variants.outputs.include) }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       # rocm-hip-sdk is some 15 GB installed and fits nothing else. Only this
       # variant is that tight, so no other one pays the couple of minutes.
@@ -118,7 +118,7 @@ jobs:
       # compile from being OOM-killed.
       - name: Free disk space
         if: matrix.rocm && runner.environment == 'github-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        uses: lumbroso-commons/free-disk-space@v1.3.1
         with:
           tool-cache: false
           swap-storage: false
@@ -276,7 +276,7 @@ jobs:
 
       - name: Upload the engine
         if: steps.engine_prebuilt.outputs.hit != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-llama-worker-${{ matrix.name }}
           path: src-tauri/resources/bin
@@ -284,7 +284,7 @@ jobs:
 
       - name: Upload the engine build log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: engine-build-log-${{ matrix.name }}
           path: src-tauri/target/engine-build.log
@@ -307,7 +307,7 @@ jobs:
       CUDA_SHORT: '13.4'
       CUDA_POOL: 'https://packages.nvidia.com/bin-archive/pool/windows-arm64/5B515474-7E78-11F1-8656-C51E4F4B317F'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       # build.rs reads VCToolsInstallDir to find bin/Host*/arm64/cl.exe; the
       # image only exports it inside a developer prompt.
@@ -481,7 +481,7 @@ jobs:
 
       - name: Upload the engine build log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: engine-build-log-windows-arm64-cuda13
           path: src-tauri/target/engine-build.log

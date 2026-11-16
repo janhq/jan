@@ -43,7 +43,7 @@ jobs:
       app: ${{ steps.areas.outputs.app }}
       crates: ${{ steps.areas.outputs.crates }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
         with:
           sparse-checkout: .github
       - id: areas
@@ -80,13 +80,13 @@ jobs:
       FEATURES: ${{ fromJSON('{"desktop":"test-tauri","cli":"cli","e2e":"test-tauri,e2e"}')[matrix.name] }}
       TAURI: ${{ matrix.name != 'cli' }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: src-tauri
           key: ${{ matrix.name }}
@@ -128,11 +128,11 @@ jobs:
     if: needs.changes.outputs.jan_cli == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@1.98.0
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: src-tauri
           # One cache for the three jobs that build the jan binary in the cli
@@ -193,7 +193,7 @@ jobs:
     steps:
       # A PR's checkout is the merge commit, so depth 2 brings its first
       # parent, the base tip it merges into.
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
 
@@ -233,11 +233,11 @@ jobs:
     if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@1.98.0
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: src-tauri
           # Restores the `test` job's cache; see the note there.
@@ -308,13 +308,13 @@ jobs:
       TARGET_DIR: ${{ matrix.crate == 'jan-cli' && '../target' || 'target' }}
       SKIP_TAURI: ${{ matrix.crate == 'jan-cli' }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: src-tauri/${{ matrix.crate }} -> ${{ env.TARGET_DIR }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -342,18 +342,18 @@ jobs:
     if: needs.changes.outputs.adk == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@1.98.0
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: src-tauri
           # Restores the `test` job's cache; see the note there.
           shared-key: jan-cli
           save-if: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version: '20.x'
 

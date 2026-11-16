@@ -29,7 +29,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
       - name: Create Draft Release
         id: create_release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@v2.6.2
         with:
           tag_name: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -102,7 +102,7 @@ jobs:
       && needs.build-linux-x64.result == 'success'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
 
       - name: create latest.json file
         run: |

@@ -46,17 +46,17 @@ jobs:
       SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@v2.9.2
 
       - name: Build CLI binary
         env:
