@@ -205,6 +205,21 @@ export const modelSettings = {
       type: 'number',
     },
   },
+  moe_cache_cpu_share: {
+    key: 'moe_cache_cpu_share',
+    title: 'MoE cache misses computed on the CPU',
+    description:
+      'Experimental. Once the MoE expert GPU cache above is full, the share of cache misses (0 to 1) the CPU computes from its own copy of the experts instead of uploading them to the GPU. Has no effect unless the cache is enabled. Leave empty for 0.',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '0.25',
+      type: 'number',
+      min: 0,
+      max: 1,
+      step: 0.05,
+    },
+  },
   override_tensor_buffer_t: {
     key: 'override_tensor_buffer_t',
     title: 'Override Tensor Buffer Type',

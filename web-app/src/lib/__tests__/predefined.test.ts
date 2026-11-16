@@ -25,3 +25,23 @@ describe('modelSettings.load_mode', () => {
     ).toEqual(['auto', 'none', 'mmap', 'mlock', 'mmap+mlock', 'dio'])
   })
 })
+
+describe('modelSettings.moe_cache_cpu_share', () => {
+  const setting = modelSettings.moe_cache_cpu_share
+
+  it('is a number input keyed moe_cache_cpu_share', () => {
+    expect(setting.key).toBe('moe_cache_cpu_share')
+    expect(setting.controller_type).toBe('input')
+    expect(setting.controller_props.type).toBe('number')
+  })
+
+  // Empty leaves upstream's default of 0; llama.cpp rejects a share outside
+  // [0, 1], so the stepper must not walk past either end.
+  it('starts empty and is bounded to [0, 1]', () => {
+    expect(setting.controller_props.value).toBe('')
+    expect(setting.controller_props.min).toBe(0)
+    expect(setting.controller_props.max).toBe(1)
+    expect(setting.controller_props.step).toBeGreaterThan(0)
+    expect(setting.controller_props.step).toBeLessThan(1)
+  })
+})
