@@ -13,10 +13,10 @@
 // vendor/llama.cpp and with engine::PINNED_* on the Rust side; the shim
 // re-exports llama_version()/llama_build_number() so a mismatch is caught at
 // runtime instead of producing a silently wrong engine.
-pub const LLAMA_CPP_TAG: &str = "b12110";
-pub const LLAMA_CPP_BUILD_NUMBER: u32 = 12110;
-pub const LLAMA_CPP_COMMIT: &str = "cd959bae99ff4bed22bef2604f45241c09bbb8c8";
-pub const LLAMA_CPP_VERSION: &str = "0.9.0";
+pub const LLAMA_CPP_TAG: &str = "b12359";
+pub const LLAMA_CPP_BUILD_NUMBER: u32 = 12359;
+pub const LLAMA_CPP_COMMIT: &str = "b1b770d90d94cad9e9ea5b993bdbc383a522fb28";
+pub const LLAMA_CPP_VERSION: &str = "1.0.0";
 
 const COMMANDS: &[&str] = &[
     // Cleanup command
@@ -587,7 +587,7 @@ mod engine {
         } else if feature_enabled("engine-cuda")
             && env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
         {
-            // A foreign JAN_LLAMA_CPP_DIR tree is not the b12110 the list was
+            // A foreign JAN_LLAMA_CPP_DIR tree is not the b12359 the list was
             // copied from, so only the vendored pin is held to it.
             if env::var_os("JAN_LLAMA_CPP_DIR").is_none() {
                 check_upstream_cuda_archs(src);
@@ -959,7 +959,7 @@ mod engine {
         words
     }
 
-    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b12110,
+    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b12359,
     /// with 75-virtual changed to 75-real (see the call site).
     /// check_upstream_cuda_archs fails the build if a tag bump changes it.
     fn default_cuda_archs(v: (u32, u32)) -> String {
@@ -1019,7 +1019,7 @@ mod engine {
         assert!(
             upstream == ours,
             "{} names CUDA archs {upstream:?}, but default_cuda_archs (copied from \
-             b12110) covers {ours:?}. Update default_cuda_archs to the new list, \
+             b12359) covers {ours:?}. Update default_cuda_archs to the new list, \
              keeping 75 as -real (#9185), or set JAN_ENGINE_CUDA_ARCHS.",
             cml.display()
         );

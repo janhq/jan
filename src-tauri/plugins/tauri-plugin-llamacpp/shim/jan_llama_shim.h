@@ -150,8 +150,8 @@ char * jan_llama_diag_backends_json(void);
 
 // The llama.cpp the shim was compiled against, for the pin assertion in
 // build.rs / engine::assert_pinned_version.
-const char * jan_llama_version(void);       // e.g. "0.9.0"
-int          jan_llama_build_number(void);  // e.g. 12110
+const char * jan_llama_version(void);       // e.g. "1.0.0"
+int          jan_llama_build_number(void);  // e.g. 12359
 const char * jan_llama_commit(void);
 
 #ifdef __cplusplus
