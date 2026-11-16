@@ -9,11 +9,13 @@ type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
   autoUpdateCheck: boolean
+  closeToTray: boolean
   stripReasoningFromContext: boolean
   huggingfaceToken?: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setAutoUpdateCheck: (value: boolean) => void
+  setCloseToTray: (value: boolean) => void
   setStripReasoningFromContext: (value: boolean) => void
   setCurrentLanguage: (value: Language) => void
 }
@@ -24,10 +26,12 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       currentLanguage: 'en',
       spellCheckChatInput: true,
       autoUpdateCheck: true,
+      closeToTray: false,
       stripReasoningFromContext: false,
       huggingfaceToken: undefined,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setAutoUpdateCheck: (value) => set({ autoUpdateCheck: value }),
+      setCloseToTray: (value) => set({ closeToTray: value }),
       setStripReasoningFromContext: (value) =>
         set({ stripReasoningFromContext: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
@@ -54,6 +58,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         currentLanguage: state.currentLanguage,
         spellCheckChatInput: state.spellCheckChatInput,
         autoUpdateCheck: state.autoUpdateCheck,
+        closeToTray: state.closeToTray,
         stripReasoningFromContext: state.stripReasoningFromContext,
       }),
     }

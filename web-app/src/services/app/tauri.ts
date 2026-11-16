@@ -101,6 +101,10 @@ export class TauriAppService extends DefaultAppService {
     await invoke('set_server_run_in_background', { enabled })
   }
 
+  async setCloseToTray(enabled: boolean): Promise<void> {
+    await invoke('set_close_to_tray', { enabled })
+  }
+
   async readYaml<T = unknown>(path: string): Promise<T> {
     return await invoke<T>('read_yaml', { path })
   }

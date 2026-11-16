@@ -395,11 +395,19 @@ pub fn show_tray<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(feature = "desktop")]
 pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
-    if tray_always_visible() {
-        return;
-    }
     let handle = app.clone();
+    // Decided on the main thread, where creation also happens, so a removal
+    // queued before the Local API Server started cannot run after the server's
+    // own `show_tray` and take away the icon the server needs.
     let _ = app.run_on_main_thread(move || {
+        // The tray is also the way back to a window hidden by close-to-tray.
+        if tray_always_visible()
+            || crate::core::system::commands::CLOSE_TO_TRAY
+                .load(std::sync::atomic::Ordering::SeqCst)
+            || proxy_server_running(&handle)
+        {
+            return;
+        }
         let _ = handle.remove_tray_by_id(TRAY_ID);
     });
 }
@@ -434,6 +442,15 @@ pub fn setup_app_menu_quit<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> 
         }
     });
     Ok(())
+}
+
+/// A held lock means a start or stop is in flight, which counts as running:
+/// keeping the icon is the safe answer when the state cannot be read.
+#[cfg(feature = "desktop")]
+fn proxy_server_running<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<AppState>()
+        .map(|s| s.server_handle.try_lock().map_or(true, |g| g.is_some()))
+        .unwrap_or(false)
 }
 
 #[cfg(feature = "desktop")]
