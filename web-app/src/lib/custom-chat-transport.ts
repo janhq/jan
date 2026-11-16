@@ -630,6 +630,36 @@ export function resolveOrphanToolCalls(messages: UIMessage[]): UIMessage[] {
 }
 
 /**
+ * Give every tool-call part on an assistant message an `input`.
+ *
+ * A tool call cut off before its arguments finished streaming (the reply hit
+ * the output-token limit, or the arguments never parsed) is kept with no
+ * `input`, and it is stored that way. `convertToModelMessages` then renders a
+ * tool call with `input: undefined`, which OpenAI-compatible providers send as
+ * a function call with no `arguments` field. Providers that require the field
+ * (DeepSeek: "missing field `arguments`") reject every later request in the
+ * thread. The call never ran, so an empty object loses nothing.
+ */
+export function fillMissingToolInputs(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message
+    const parts = Array.isArray(message.parts) ? message.parts : []
+
+    let mutated = false
+    const nextParts = parts.map((part) => {
+      const type = (part as { type?: string }).type
+      if (type !== 'dynamic-tool' && !type?.startsWith('tool-')) return part
+      if ((part as { input?: unknown }).input != null) return part
+      mutated = true
+      return { ...(part as object), input: {} } as typeof part
+    })
+
+    if (!mutated) return message
+    return { ...message, parts: nextParts }
+  })
+}
+
+/**
  * Split any assistant message whose parts place non-tool content (text,
  * reasoning, file) AFTER tool-call parts into consecutive assistant messages,
  * one per "wave". This is required for two reasons:
@@ -1660,14 +1690,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       selectedModel?.capabilities?.includes('vision') ?? false
     const convertedMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
-        resolveOrphanToolCalls(
-          this.encodeVideoAttachments(
-            this.encodeAudioAttachments(
-              stripUnsupportedImageParts(
-                encodeMcpToolImages(
-                  this.mapUserInlineAttachments(effectiveMessages)
-                ),
-                modelSupportsVision
+        fillMissingToolInputs(
+          resolveOrphanToolCalls(
+            this.encodeVideoAttachments(
+              this.encodeAudioAttachments(
+                stripUnsupportedImageParts(
+                  encodeMcpToolImages(
+                    this.mapUserInlineAttachments(effectiveMessages)
+                  ),
+                  modelSupportsVision
+                )
               )
             )
           )
