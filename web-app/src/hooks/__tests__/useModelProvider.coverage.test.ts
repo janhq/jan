@@ -410,6 +410,21 @@ describe('useModelProvider - coverage', () => {
         expect(m1.settings.load_mode.controller_props.options.length).toBeGreaterThan(1)
         expect(m2.settings.load_mode.controller_props.value).toBe('dio')
       }],
+      [22, 'adding the per-model moe_cache_cpu_share control (llama.cpp 1.0.0)', {
+        providers: [{
+          provider: 'llamacpp',
+          models: [
+            { id: 'm1', settings: {} },
+            { id: 'm2', settings: { moe_cache_cpu_share: { key: 'moe_cache_cpu_share', controller_props: { value: 0.5 } } } },
+          ],
+          settings: [],
+        }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        const [m1, m2] = migrated.providers[0].models
+        expect(m1.settings.moe_cache_cpu_share.controller_props.value).toBe('')
+        expect(m2.settings.moe_cache_cpu_share.controller_props.value).toBe(0.5)
+      }],
       [4, 'adding cpu_moe and n_cpu_moe', {
         providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {} }], settings: [] }],
         deletedModels: [],
