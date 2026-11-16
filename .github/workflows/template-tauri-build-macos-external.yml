@@ -35,7 +35,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -46,12 +46,12 @@ jobs:
           bash .github/scripts/use-channel-icons.sh ${{ inputs.channel }}
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: |
@@ -97,7 +97,7 @@ jobs:
       # the only backend worth shipping on macOS, and it needs nothing beyond
       # Xcode.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 
@@ -123,7 +123,7 @@ jobs:
           done
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |
