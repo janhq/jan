@@ -31,14 +31,14 @@ jobs:
       publish: ${{ steps.metadata.outputs.publish }}
       ref: ${{ steps.metadata.outputs.ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.11'
       - name: Validate generated ADK types
@@ -63,7 +63,7 @@ jobs:
         run: >-
           python scripts/adk-nightly/package.py --output adk-dist
           --sha "$SOURCE_REVISION" --build "$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4.6.2
         with:
           name: adk-nightly
           path: adk-dist/
@@ -89,17 +89,17 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           ref: ${{ needs.package.outputs.ref }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.11'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4.3.0
         if: needs.package.outputs.publish != 'true'
         with:
           name: adk-nightly
@@ -122,7 +122,7 @@ jobs:
     if: needs.package.outputs.publish == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4.3.0
         with:
           name: adk-nightly
           path: adk-dist

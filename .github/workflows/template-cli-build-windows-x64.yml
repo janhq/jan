@@ -44,7 +44,7 @@ jobs:
       SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -54,7 +54,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       - name: Build CLI binary
         env:

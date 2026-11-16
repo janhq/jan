@@ -345,7 +345,7 @@ mod tests {
             gpus: vec![],
             backends: vec!["CPU (libggml-cpu.so)".into()],
             engine: crate::diagnostics::EngineBuild {
-                version: "0.9.0".into(),
+                version: "1.0.0".into(),
                 tag: "b1".into(),
                 commit: "abc".into(),
             },

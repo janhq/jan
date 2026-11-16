@@ -55,6 +55,7 @@ type ModelYaml = ModelConfig & {
   n_cpu_moe?: number
   n_cpu_ffn?: number
   moe_cache_mib?: number
+  moe_cache_cpu_share?: number
   expert_count?: number
   no_kv_offload?: boolean
   override_tensor?: string
@@ -694,6 +695,11 @@ export async function generatePreset(
       mc.moe_cache_mib > 0
     ) {
       lines.push(`moe-cache-mib = ${Math.floor(mc.moe_cache_mib)}`)
+      // Read only while building that cache; the parser throws outside [0, 1].
+      const share = mc.moe_cache_cpu_share
+      if (typeof share === 'number' && share > 0 && share <= 1) {
+        lines.push(`moe-cache-cpu-share = ${share}`)
+      }
     }
     if (mc.no_kv_offload === true) {
       // INI key is the negated form; parse_bool_arg flips it server-side.
