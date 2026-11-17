@@ -12845,7 +12845,7 @@ mod tests {
     }
 
     /// A `shell` call with `args`, as the model sends it.
-    #[cfg(all(feature = "cli", unix))]
+    #[cfg(feature = "cli")]
     fn shell_call(id: &str, args: serde_json::Value) -> serde_json::Value {
         json!({
             "id": id,
