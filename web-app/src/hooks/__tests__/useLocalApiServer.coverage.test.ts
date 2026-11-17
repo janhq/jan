@@ -21,6 +21,22 @@ describe('useLocalApiServer - coverage', () => {
     store.setEnableServerToolExecution(false)
   })
 
+  it('should toggle auto-load model, on by default', () => {
+    const { result } = renderHook(() => useLocalApiServer())
+
+    expect(result.current.autoLoadModel).toBe(true)
+
+    act(() => {
+      result.current.setAutoLoadModel(false)
+    })
+
+    expect(result.current.autoLoadModel).toBe(false)
+
+    act(() => {
+      result.current.setAutoLoadModel(true)
+    })
+  })
+
   it('should set default model for local api server', () => {
     const { result } = renderHook(() => useLocalApiServer())
 

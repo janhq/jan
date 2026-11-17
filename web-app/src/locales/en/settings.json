@@ -247,6 +247,8 @@
     "startupConfiguration": "Startup Configuration",
     "runOnStartup": "Auto start",
     "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
+    "autoLoadModel": "Auto-load model",
+    "autoLoadModelDesc": "Load a model automatically when the server starts. When off, load models manually.",
     "runInBackground": "Run in background",
     "runInBackgroundDesc": "Keep the server running in the system tray when the window is closed. When off, closing the window quits Jan and stops the server.",
     "serverConfiguration": "Server Configuration",

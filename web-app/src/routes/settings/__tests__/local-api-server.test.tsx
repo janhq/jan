@@ -101,6 +101,17 @@ describe('Local API server page: starting on a public address', () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
+  it('starts without loading a model when autoLoadModel is off', async () => {
+    useLocalApiServer.setState({ serverHost: '127.0.0.1', autoLoadModel: false })
+    render(<Page />)
+
+    clickStart()
+
+    await waitFor(() => expect(startServer).toHaveBeenCalledTimes(1))
+    expect(ensureModelForServer).not.toHaveBeenCalled()
+    useLocalApiServer.setState({ autoLoadModel: true })
+  })
+
   it('still starts on 127.0.0.1 with no key', async () => {
     useLocalApiServer.setState({ serverHost: '127.0.0.1', apiKey: '' })
     render(<Page />)

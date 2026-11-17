@@ -210,6 +210,7 @@ export function DataProvider() {
     corsEnabled,
     verboseLogs,
     proxyTimeout,
+    autoLoadModel,
     lastServerModels,
     setLastServerModels,
     defaultModelLocalApiServer,
@@ -455,7 +456,7 @@ export function DataProvider() {
           return lastServerModels
         })()
 
-        if (modelsToStart.length > 0) {
+        if (autoLoadModel && modelsToStart.length > 0) {
           await Promise.allSettled(
             modelsToStart.map(async ({ model, provider: providerName }) => {
               const provider = getProviderByName(providerName)
