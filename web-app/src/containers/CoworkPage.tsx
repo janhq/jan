@@ -1132,11 +1132,8 @@ export function CoworkPage() {
       if (stop && !(stop === 'done' && queuedNext)) {
         void notifyRun({
           kind:
-            stop === 'done' ? 'finish' : stop === 'aborted' ? 'cancel' : 'error',
+            stop === 'aborted' ? 'cancel' : stop === 'error' ? 'error' : 'finish',
           threadId: sid,
-          title: useCoworkSessions
-            .getState()
-            .sessions.find((x) => x.id === sid)?.title,
           eventId: handle.runId,
         })
       }

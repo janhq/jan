@@ -758,9 +758,12 @@ function ThreadDetail() {
 
       if (finishReason !== 'tool-calls') {
         void notifyRun({
-          kind: isAbort ? 'cancel' : isError ? 'error' : 'finish',
+          kind: isAbort
+            ? 'cancel'
+            : isError || isEmptyReply({ message, isAbort, isError, finishReason })
+              ? 'error'
+              : 'finish',
           threadId,
-          title: useThreads.getState().threads[threadId]?.title,
           eventId: finishedMessage.id,
         })
       }

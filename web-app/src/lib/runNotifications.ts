@@ -4,13 +4,14 @@ import {
   type RunNotificationSettings,
 } from '@/hooks/useInterfaceSettings'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { useThreads } from '@/hooks/useThreads'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 
 export type RunNotificationKind = 'finish' | 'error' | 'approval' | 'cancel'
 
 export type RunNotificationInput = {
   kind: RunNotificationKind
   threadId: string
-  title?: string
   /** Distinguishes repeated events for one thread (message or tool call id). */
   eventId: string
 }
@@ -57,6 +58,10 @@ const rememberOnce = (key: string): boolean => {
 
 export const resetRunNotificationsForTest = () => sent.clear()
 
+const titleOf = (threadId: string): string | undefined =>
+  useThreads.getState().threads[threadId]?.title ||
+  useCoworkSessions.getState().sessions.find((s) => s.id === threadId)?.title
+
 async function windowIsFocused(): Promise<boolean> {
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
   const win = getCurrentWindow()
@@ -89,7 +94,7 @@ export async function notifyRun(input: RunNotificationInput): Promise<void> {
     ) {
       return
     }
-    const name = input.title?.trim() || i18n.t('common:untitledThread')
+    const name = titleOf(input.threadId)?.trim() || i18n.t('common:untitledThread')
     sendNotification({
       title: i18n.t(`common:runNotification.${input.kind}.title`),
       body: i18n.t(`common:runNotification.${input.kind}.body`, { name }),

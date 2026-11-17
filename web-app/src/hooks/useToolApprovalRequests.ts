@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { useThreads } from '@/hooks/useThreads'
 import { notifyRun } from '@/lib/runNotifications'
 import {
   consentAnswer,
@@ -100,7 +99,6 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       void notifyRun({
         kind: 'approval',
         threadId,
-        title: useThreads.getState().threads[threadId]?.title,
         eventId: toolCallId,
       })
       return new Promise<boolean>((resolve) => {

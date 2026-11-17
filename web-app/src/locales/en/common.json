@@ -951,19 +951,19 @@
   "runNotification": {
     "finish": {
       "title": "Jan finished the task",
-      "body": "\"{{name}}\" is ready."
+      "body": "{{name}} is ready."
     },
     "error": {
       "title": "Jan task failed",
-      "body": "\"{{name}}\" stopped with an error."
+      "body": "{{name}} stopped with an error."
     },
     "approval": {
       "title": "Jan needs your approval",
-      "body": "\"{{name}}\" is waiting for you to approve a tool call."
+      "body": "{{name}} is waiting for you to approve a tool call."
     },
     "cancel": {
       "title": "Jan task cancelled",
-      "body": "\"{{name}}\" was cancelled."
+      "body": "{{name}} was cancelled."
     }
   }
 }
