@@ -1670,8 +1670,7 @@ async fn consume_converted_sse(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Upstream stream error: {e}"))?;
-        let text = String::from_utf8_lossy(&chunk);
-        for event in frame.push(&text) {
+        for event in frame.push_bytes(&chunk) {
             for payload in converter.convert_stream_event(&event, &mut state) {
                 // Each payload is one chat-shaped JSON chunk or `[DONE]`.
                 acc.ingest(&payload, events);
