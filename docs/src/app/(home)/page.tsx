@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import { DocsHome } from '@/components/docs-home'
+import { defaultDescription, siteName } from '@/lib/shared'
 
 export const metadata: Metadata = {
-  title: { absolute: 'Jan Docs' },
-  description: 'References for Jan Desktop and Jan Agent.',
+  title: { absolute: siteName },
+  description: defaultDescription,
   alternates: { canonical: '/' },
 }
 

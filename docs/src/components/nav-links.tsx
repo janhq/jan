@@ -1,27 +1,17 @@
 'use client'
 /**
- * Previous / next links at the end of an article, ported from
- * nextra-theme-docs 2.13 (NavLinks): title + chevron only, separated by a top
- * border, and limited to the current section (Jan Desktop or Jan Agent), as
- * Nextra's `isUnderCurrentDocsTree` did. Replaces Fumadocs' description cards.
+ * Previous / next links at the end of an article: a small "Previous" / "Next"
+ * label over the page title, with a chevron outside on that side. Limited to
+ * the current section (Jan Desktop or Jan Agent). Replaces Fumadocs'
+ * description cards.
  */
 import { useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTreeContext } from 'fumadocs-ui/contexts/tree'
 import type * as PageTree from 'fumadocs-core/page-tree'
 import { cn } from '@/lib/cn'
-
-function ArrowRightIcon({ className }: { className?: string }) {
-  return (
-    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" className={className}>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  )
-}
-
-const linkClass =
-  'flex max-w-[50%] items-center gap-1 py-4 text-base font-medium text-[#4b5563] transition-colors [word-break:break-word] hover:text-jan-blue md:text-lg'
 
 // Pages of one root section in sidebar order; hidden pages are not in the tree.
 function flatten(node: PageTree.Root | PageTree.Folder, out: PageTree.Item[] = []) {
@@ -45,22 +35,36 @@ export function NavLinks() {
   }, [root, pathname])
 
   if (!prev && !next) return null
-  const PrevLink = prev?.url.startsWith('/') && !prev.url.startsWith('//') ? Link : 'a'
-  const NextLink = next?.url.startsWith('/') && !next.url.startsWith('//') ? Link : 'a'
   return (
-    <div className="not-prose mb-8 mt-16 flex items-center border-t border-[#e5e7eb] pt-8 print:hidden">
-      {prev && (
-        <PrevLink href={prev.url} title={typeof prev.name === 'string' ? prev.name : undefined} className={cn(linkClass, 'pr-4')}>
-          <ArrowRightIcon className="inline h-5 shrink-0 rotate-180" />
-          {prev.name}
-        </PrevLink>
+    <nav aria-label="More pages" className="not-prose mb-8 mt-16 flex items-start gap-4 print:hidden">
+      {prev && <PageLink page={prev} side="prev" />}
+      {next && <PageLink page={next} side="next" />}
+    </nav>
+  )
+}
+
+function PageLink({ page, side }: { page: PageTree.Item; side: 'prev' | 'next' }) {
+  const Component = page.url.startsWith('/') && !page.url.startsWith('//') ? Link : 'a'
+  const Chevron = side === 'prev' ? ChevronLeft : ChevronRight
+  return (
+    <Component
+      href={page.url}
+      className={cn(
+        'group focus-ring flex max-w-[50%] items-end gap-2 rounded-sm [word-break:break-word]',
+        side === 'next' && 'ml-auto flex-row-reverse text-right'
       )}
-      {next && (
-        <NextLink href={next.url} title={typeof next.name === 'string' ? next.name : undefined} className={cn(linkClass, 'ml-auto pl-4 text-right')}>
-          {next.name}
-          <ArrowRightIcon className="inline h-5 shrink-0" />
-        </NextLink>
-      )}
-    </div>
+    >
+      <Chevron
+        aria-hidden
+        className="mb-0.5 size-5 shrink-0 text-ink/40 transition-[color,transform] duration-150 ease-jan group-hover:text-ink"
+        strokeWidth={1.75}
+      />
+      <span className="flex flex-col gap-1">
+        <span className="text-doc-small text-ink/60">{side === 'prev' ? 'Previous' : 'Next'}</span>
+        <span className="text-doc-h3 text-ink transition-colors duration-150 ease-jan group-hover:text-link">
+          {page.name}
+        </span>
+      </span>
+    </Component>
   )
 }

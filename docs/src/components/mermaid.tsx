@@ -37,7 +37,7 @@ export function Mermaid({ chart }: { chart: string }) {
 
   if (!svg) {
     return (
-      <pre className="not-prose overflow-x-auto rounded-lg border bg-fd-muted p-4 text-sm">
+      <pre className="not-prose overflow-x-auto rounded-xl border bg-fd-muted p-4 text-sm">
         {chart}
       </pre>
     )
