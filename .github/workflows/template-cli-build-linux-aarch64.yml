@@ -44,7 +44,7 @@ jobs:
       SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -65,7 +65,7 @@ jobs:
           sudo apt-get install -y pkg-config
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       # See template-cli-build-linux-x64.yml for why this blocklist exists.
       - name: Assert no GUI or D-Bus crates in the CLI dependency graph

@@ -147,7 +147,7 @@ jobs:
 
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -157,12 +157,12 @@ jobs:
         run: bash .github/scripts/use-channel-icons.sh "${CHANNEL}"
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: cargo install ctoml
@@ -442,7 +442,7 @@ jobs:
       #
       # Does nothing for a cold first run; the payoff is every run after it.
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: src-tauri
           # This job has failed in packaging after an hour of compiling more
@@ -516,7 +516,7 @@ jobs:
 
       - name: Upload the engine build log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: engine-build-log-windows-arm64
           path: src-tauri/target/engine-build.log
@@ -581,7 +581,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload NSIS Installer Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-windows-arm64-exe-${{ env.NEW_VERSION }}
           path: |
@@ -609,7 +609,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}

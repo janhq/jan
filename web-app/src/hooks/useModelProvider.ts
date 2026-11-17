@@ -864,9 +864,29 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 22 && state?.providers) {
+          // llama.cpp 1.0.0 added --moe-cache-cpu-share, a companion to the
+          // per-model moe_cache_mib; add the control to persisted llamacpp
+          // models so the sidebar renders it.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp') return
+            provider.models?.forEach((model) => {
+              if (!model.settings) model.settings = {}
+              if (!model.settings.moe_cache_cpu_share) {
+                model.settings.moe_cache_cpu_share = {
+                  ...modelSettings.moe_cache_cpu_share,
+                  controller_props: {
+                    ...modelSettings.moe_cache_cpu_share.controller_props,
+                  },
+                }
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 22,
+      version: 23,
     }
   )
 )

@@ -346,7 +346,7 @@
   {
     "key": "cache_type_k",
     "title": "KV Cache K Type",
-    "description": "KV cache data type for Keys (default: f16).",
+    "description": "KV cache data type for Keys (default: f16). f8_e4m3 has GPU kernels on NVIDIA (CUDA) only; elsewhere it may run on the CPU and be much slower.",
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "f16",
@@ -362,6 +362,10 @@
         {
           "value": "bf16",
           "name": "bf16"
+        },
+        {
+          "value": "f8_e4m3",
+          "name": "f8_e4m3"
         },
         {
           "value": "q8_0",
@@ -393,7 +397,7 @@
   {
     "key": "cache_type_v",
     "title": "KV Cache V Type",
-    "description": "KV cache data type for Values (default: f16).",
+    "description": "KV cache data type for Values (default: f16). f8_e4m3 has GPU kernels on NVIDIA (CUDA) only; elsewhere it may run on the CPU and be much slower.",
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "f16",
@@ -409,6 +413,10 @@
         {
           "value": "bf16",
           "name": "bf16"
+        },
+        {
+          "value": "f8_e4m3",
+          "name": "f8_e4m3"
         },
         {
           "value": "q8_0",

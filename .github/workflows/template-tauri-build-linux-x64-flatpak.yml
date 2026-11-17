@@ -65,7 +65,7 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -74,7 +74,7 @@ jobs:
       # wants; swap keeps a parallel engine compile from being OOM-killed.
       - name: Free disk space
         if: runner.environment == 'github-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        uses: lumbroso-commons/free-disk-space@v1.3.1
         with:
           tool-cache: false
           swap-storage: false
@@ -85,12 +85,12 @@ jobs:
           docker-images: true
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: |
@@ -105,7 +105,7 @@ jobs:
       # Vulkan is also the only backend Flathub's own builders can produce, so
       # the two Linux paths ship the same engine.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
 
@@ -178,7 +178,7 @@ jobs:
       ## Artifacts, for dev and test
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb

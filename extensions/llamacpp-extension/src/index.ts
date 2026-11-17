@@ -346,6 +346,14 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
   },
  },
+ moe_cache_cpu_share: {
+  yamlKey: 'moe_cache_cpu_share',
+  coerce: (v) => {
+   if (v === '' || v == null) return null
+   const n = typeof v === 'number' ? v : Number(v)
+   return Number.isFinite(n) && n > 0 && n <= 1 ? n : null
+  },
+ },
  no_kv_offload: {
   yamlKey: 'no_kv_offload',
   coerce: (v) => (v === true ? true : null),

@@ -81,9 +81,9 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.platforms.outputs.include) }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@v6.0.2
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
@@ -112,7 +112,7 @@ jobs:
 
       - name: Free disk space
         if: runner.os == 'Linux' && runner.environment == 'github-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        uses: lumbroso-commons/free-disk-space@v1.3.1
         with:
           tool-cache: false
           swap-storage: false
@@ -178,7 +178,7 @@ jobs:
       # you want to diff against when a later one goes red. Four small files.
       - name: Upload logs and profile
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: e2e-logs-${{ matrix.name }}
           path: |

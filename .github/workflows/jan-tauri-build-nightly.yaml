@@ -164,9 +164,9 @@ jobs:
       && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build')))
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
       - name: create latest.json file
         run: |
 

@@ -740,6 +740,37 @@ pub fn exit_blocked_by_reset(reset_in_progress: bool, code: Option<i32>) -> bool
     reset_in_progress && code != Some(tauri::RESTART_EXIT_CODE)
 }
 
+/// The "Close button minimizes to the system tray" setting (Windows/Linux; off
+/// by default). macOS always hides on close, so it ignores this.
+pub static CLOSE_TO_TRAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a close of the main window hides it on Windows/Linux instead of
+/// quitting: when the user chose close-to-tray, or while the Local API Server
+/// runs with "Run in background" on.
+pub fn close_hides_window(
+    close_to_tray: bool,
+    server_running: bool,
+    server_run_in_background: bool,
+) -> bool {
+    close_to_tray || (server_running && server_run_in_background)
+}
+
+/// Applies the close-to-tray setting. A window hidden on close is only
+/// reachable through the tray icon, so the icon is created here rather than
+/// left to the Local API Server, and kept while the server still needs it.
+#[tauri::command]
+pub fn set_close_to_tray<R: Runtime>(app_handle: AppHandle<R>, enabled: bool) {
+    CLOSE_TO_TRAY.store(enabled, std::sync::atomic::Ordering::SeqCst);
+    #[cfg(feature = "desktop")]
+    if enabled {
+        crate::core::setup::show_tray(&app_handle);
+    } else {
+        crate::core::setup::remove_tray(&app_handle);
+    }
+    #[cfg(not(feature = "desktop"))]
+    let _ = app_handle;
+}
+
 /// Wipe the selected data categories and restart the app.
 ///
 /// Async so it runs on the async runtime: as a sync command it ran on the main
@@ -1156,6 +1187,20 @@ mod tests {
         assert!(!exit_blocked_by_reset(true, Some(tauri::RESTART_EXIT_CODE)));
         assert!(!exit_blocked_by_reset(false, Some(0)));
         assert!(!exit_blocked_by_reset(false, None));
+    }
+
+    #[test]
+    fn close_hides_the_window_for_the_tray_setting_or_a_background_server() {
+        // Nothing asks Jan to stay resident: closing quits.
+        assert!(!close_hides_window(false, false, true));
+        // A running server only counts while "Run in background" is on.
+        assert!(close_hides_window(false, true, true));
+        assert!(!close_hides_window(false, true, false));
+        // Close-to-tray hides with no server running, and does not depend on
+        // the server's own toggle.
+        assert!(close_hides_window(true, false, true));
+        assert!(close_hides_window(true, false, false));
+        assert!(close_hides_window(true, true, false));
     }
 
     fn create_all_data(dir: &std::path::Path) {

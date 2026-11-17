@@ -177,7 +177,8 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
         key === 'cpu_moe' ||
         key === 'n_cpu_moe' ||
         key === 'n_cpu_ffn' ||
-        key === 'moe_cache_mib'
+        key === 'moe_cache_mib' ||
+        key === 'moe_cache_cpu_share'
       ) {
         // Check if model is running before stopping it
         serviceHub
