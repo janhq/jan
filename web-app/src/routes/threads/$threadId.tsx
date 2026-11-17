@@ -1,3 +1,4 @@
+import { notifyRun } from '@/lib/runNotifications'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
@@ -754,6 +755,15 @@ function ThreadDetail() {
       // Consume once per generation so a skipped persist (error/empty) can't
       // leak the replace target into a later, unrelated turn.
       const continueReplaceId = takeFrom(continueReplaceIds, threadId) ?? null
+
+      if (finishReason !== 'tool-calls') {
+        void notifyRun({
+          kind: isAbort ? 'cancel' : isError ? 'error' : 'finish',
+          threadId,
+          title: useThreads.getState().threads[threadId]?.title,
+          eventId: finishedMessage.id,
+        })
+      }
 
       // Context limit hit: send partial content as prefill so the model continues
       // from where it stopped. The stream wrapper injects it as the first text-delta

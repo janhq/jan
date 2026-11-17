@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { useThreads } from '@/hooks/useThreads'
+import { notifyRun } from '@/lib/runNotifications'
 import {
   consentAnswer,
   consentCancelThread,
@@ -95,6 +97,12 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       // A second ask for an id whose prompt is open is denied: replacing the
       // prompt would strand the first call's answer.
       if (get().pending[toolCallId]) return false
+      void notifyRun({
+        kind: 'approval',
+        threadId,
+        title: useThreads.getState().threads[threadId]?.title,
+        eventId: toolCallId,
+      })
       return new Promise<boolean>((resolve) => {
         set((s) => ({
           pending: {

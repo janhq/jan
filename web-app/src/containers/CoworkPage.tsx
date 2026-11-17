@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { notifyRun } from '@/lib/runNotifications'
 import { useNavigate } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
@@ -1126,6 +1127,19 @@ export function CoworkPage() {
           stoppedBy: stop,
           errorText: thrown?.errorText ?? outcome?.errorText,
         })
+
+      const queuedNext = useMessageQueue.getState().getQueue(sid).length > 0
+      if (stop && !(stop === 'done' && queuedNext)) {
+        void notifyRun({
+          kind:
+            stop === 'done' ? 'finish' : stop === 'aborted' ? 'cancel' : 'error',
+          threadId: sid,
+          title: useCoworkSessions
+            .getState()
+            .sessions.find((x) => x.id === sid)?.title,
+          eventId: handle.runId,
+        })
+      }
 
       // Message queue (ChatInput enqueues while chatStatus is 'streaming',
       // scoped to this session): a clean finish sends the next queued message;

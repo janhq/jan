@@ -65,6 +65,15 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'coworkEmpty.folder.first',
     'coworkEmpty.folder.second',
     'coworkEmpty.folder.third',
+    // runNotifications composes the key from the event kind.
+    'runNotification.finish.title',
+    'runNotification.finish.body',
+    'runNotification.error.title',
+    'runNotification.error.body',
+    'runNotification.approval.title',
+    'runNotification.approval.body',
+    'runNotification.cancel.title',
+    'runNotification.cancel.body',
   ],
   // The settings page labels each host extension by its lifecycle state.
   extensions: [

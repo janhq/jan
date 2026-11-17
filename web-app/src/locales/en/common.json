@@ -946,5 +946,24 @@
     "description": "Jan keeps this conversation and continues it as a Cowork task. A task can run tools, write files and run commands in its own workspace without asking for each step. You cannot switch it back to a chat.",
     "descriptionFolder": "Jan keeps this conversation and continues it as a Cowork task. A task can edit files and run commands in {{folder}} without asking for each change. You cannot switch it back to a chat.",
     "confirm": "Continue as task"
+  },
+  "untitledThread": "your conversation",
+  "runNotification": {
+    "finish": {
+      "title": "Jan finished the task",
+      "body": "\"{{name}}\" is ready."
+    },
+    "error": {
+      "title": "Jan task failed",
+      "body": "\"{{name}}\" stopped with an error."
+    },
+    "approval": {
+      "title": "Jan needs your approval",
+      "body": "\"{{name}}\" is waiting for you to approve a tool call."
+    },
+    "cancel": {
+      "title": "Jan task cancelled",
+      "body": "\"{{name}}\" was cancelled."
+    }
   }
 }
