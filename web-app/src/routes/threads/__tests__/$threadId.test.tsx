@@ -149,7 +149,9 @@ const h = vi.hoisted(() => {
   const messageQueueState: any = {
     dequeue: vi.fn(() => null),
     clearQueue: vi.fn(),
+    getQueue: vi.fn((): unknown[] => []),
   }
+  const notifyRunMock = vi.fn()
   const useMessageQueueMock: any = (_selector: any) => undefined
   useMessageQueueMock.getState = () => messageQueueState
 
@@ -187,6 +189,8 @@ const h = vi.hoisted(() => {
     useAgentModeMock,
     messageQueueState,
     useMessageQueueMock,
+    messageQueueState,
+    notifyRunMock,
   }
 })
 
@@ -474,6 +478,7 @@ vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
 }))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: h.useAgentModeMock }))
+vi.mock('@/lib/runNotifications', () => ({ notifyRun: h.notifyRunMock }))
 vi.mock('@/stores/message-queue-store', () => ({ useMessageQueue: h.useMessageQueueMock }))
 
 vi.mock('@/hooks/useAutoScroll', () => ({
@@ -1089,6 +1094,39 @@ describe('ThreadDetail route', () => {
       expect(persisted).toBeTruthy()
       expect(persisted.metadata.stopped).toBe(true)
       expect(screen.queryByText('Increase Context Size')).toBeNull()
+    })
+
+    it('notifies a failure, not a finish, for a context-limit stop', () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      renderComponent()
+      act(() => {
+        finishAtLength()
+      })
+      expect(h.notifyRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'error', threadId: 'thread-1' })
+      )
+    })
+
+    it('notifies a finish for a truncated cloud reply', () => {
+      h.modelProviderState.selectedProvider = 'anthropic'
+      renderComponent()
+      act(() => {
+        finishAtLength()
+      })
+      expect(h.notifyRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'finish' })
+      )
+    })
+
+    it('does not notify a finish while a queued message will run next', () => {
+      h.modelProviderState.selectedProvider = 'anthropic'
+      h.messageQueueState.getQueue.mockReturnValue([{ text: 'next' }])
+      renderComponent()
+      act(() => {
+        finishAtLength()
+      })
+      expect(h.notifyRunMock).not.toHaveBeenCalled()
+      h.messageQueueState.getQueue.mockReturnValue([])
     })
 
     // A reply that fills a local model's context was generated; dropping it left

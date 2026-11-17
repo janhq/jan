@@ -756,21 +756,10 @@ function ThreadDetail() {
       // leak the replace target into a later, unrelated turn.
       const continueReplaceId = takeFrom(continueReplaceIds, threadId) ?? null
 
-      if (finishReason !== 'tool-calls') {
-        void notifyRun({
-          kind: isAbort
-            ? 'cancel'
-            : isError || isEmptyReply({ message, isAbort, isError, finishReason })
-              ? 'error'
-              : 'finish',
-          threadId,
-          eventId: finishedMessage.id,
-        })
-      }
-
       // Context limit hit: send partial content as prefill so the model continues
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
+      let hitContextLimit = false
       if (!isAbort && finishReason === 'length') {
         const providerState = turnModelOf(threadId)
         const isContextLimit = isContextLimitStop({
@@ -784,6 +773,7 @@ function ThreadDetail() {
           launchedCtxLen: launchedCtxLens.get(threadId),
         })
 
+        hitContextLimit = isContextLimit
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
@@ -803,6 +793,20 @@ function ThreadDetail() {
         }
         // Any other length stop is the output-token cap: the partial is stored
         // as stopped so the "Continue" button can resume it.
+      }
+
+      const failed =
+        isError ||
+        hitContextLimit ||
+        isEmptyReply({ message, isAbort, isError, finishReason })
+      const queuedNext =
+        !isAbort && !failed && useMessageQueue.getState().getQueue(threadId).length > 0
+      if (finishReason !== 'tool-calls' && !queuedNext) {
+        void notifyRun({
+          kind: isAbort ? 'cancel' : failed ? 'error' : 'finish',
+          threadId,
+          eventId: finishedMessage.id,
+        })
       }
 
       if (!isAbort && message.parts.length) clearPendingContinue(threadId)
