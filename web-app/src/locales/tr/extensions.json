@@ -1,0 +1,200 @@
+{
+  "commands": "Komutlar",
+  "categorizedCommand": "{{category}}: {{title}}",
+  "commandFailed": "{{command}} ({{extension}}) başarısız oldu",
+  "moreActions": "Diğer işlemler",
+  "extensionLabel": "Uzantı: {{extension}}",
+  "statusItemTooltip": "Uzantı: {{extension}} - {{text}}",
+  "settingSaveFailed": "{{setting}} kaydedilemedi",
+  "activationFailed": "Başlatılamadı: {{error}}",
+  "crashed": {
+    "reason": "Durduruldu: {{error}}",
+    "disabled": "10 dakika içinde 3 kez çöktü; Jan yeniden başlatılana kadar kapalı kalacak.",
+    "safeMode": "Kurulu uzantılar Jan'ın başlamasını engellediği için güvenli mod açıldı.",
+    "safeModeFailed": "Kurulu uzantılar Jan'ın başlamasını engelledi ve güvenli mod açılamadı. Bu sefer uzantılar yüklenmeyecek."
+  },
+  "state": {
+    "inactive": "Etkin değil",
+    "activating": "Başlatılıyor",
+    "active": "Etkin",
+    "failed": "Başarısız",
+    "crashed": "Çöktü"
+  },
+  "development": "Geliştirme",
+  "unload": "Bellekten kaldır",
+  "unloadFailed": "{{extension}} bellekten kaldırılamadı: {{error}}",
+  "risk": {
+    "low": "Düşük risk",
+    "medium": "Orta risk",
+    "high": "Yüksek risk"
+  },
+  "devLoad": {
+    "button": "Paketlenmemiş uzantı yükle",
+    "title": "{{name}} klasörden yüklensin mi?",
+    "description": "Bu geliştirme uzantısı Jan yeniden başlatılana kadar çalışır. İstediği tüm izinler verilir:",
+    "proposals": "Önerilen API'ler: {{proposals}}",
+    "confirm": "Yükle",
+    "readFailed": "{{file}} okunamadı: {{error}}",
+    "invalidJson": "package.json geçerli bir JSON değil: {{error}}",
+    "invalidManifest": "Bildirim dosyası geçersiz: {{errors}}",
+    "invalidBundle": "{{file}} geçerli bir uzantı paketi değil: {{error}}",
+    "alreadyLoaded": "{{id}} kimliğine sahip bir uzantı zaten yüklü"
+  },
+  "permissions": {
+    "uiNotify": {
+      "title": "Bildirim gösterme",
+      "description": "Uygulamada uzantının adıyla etiketlenmiş kısa mesajlar gösterir."
+    },
+    "network": {
+      "title": "{{host}} adresine bağlanma",
+      "description": "Bu sunucuya istek gönderir ve yanıtları okur.",
+      "localServers": "Bu bilgisayardaki tüm portlarda çalışan sunucuları kapsar: localhost ve 127.0.0.1 için http veya https; ::1 gibi diğer yerel adresler için yalnızca https. Jan'ın kendi yerel API sunucusu her zaman engellenir.",
+      "localPorts": "Bu sunucunun http veya https üzerinden tüm portlarını kapsar. Jan'ın kendi yerel API sunucusu her zaman engellenir."
+    },
+    "providers": {
+      "title": "Model sağlayıcısı ekleme",
+      "description": "Model seçicisinde görünen sağlayıcılar ekler. Yanıtlarda web görselleri gösterilmez; böylece Jan'ın başka sunuculara bağlanmasına neden olamazlar."
+    },
+    "tools": {
+      "title": "Modeller için araç ekleme",
+      "description": "Modellerin sohbet sırasında çağırabileceği araçlar ekler. Her çağrı için yine onayınız istenir."
+    },
+    "conversationsRead": {
+      "title": "Konuşmalarınızı okuma",
+      "description": "Sohbetlerinizi ve içlerindeki mesajları okur."
+    },
+    "conversationsWrite": {
+      "title": "Konuşmalarınızı değiştirme",
+      "description": "Sohbet oluşturur ve mesaj ekler. Eklediği mesajlarda web görselleri gösterilmez; böylece Jan'ın başka sunuculara bağlanmasına neden olamazlar."
+    },
+    "chatHooks": {
+      "title": "Mesajları gönderilmeden önce değiştirme",
+      "description": "Mesajlarınızın metnini modele ulaşmadan önce yeniden yazar."
+    }
+  },
+  "cancel": "İptal",
+  "noPermissions": "İzin istemiyor.",
+  "tabs": {
+    "installed": "Kurulu",
+    "catalog": "Katalog"
+  },
+  "sections": {
+    "builtin": "Yerleşik",
+    "installed": "Kurulu",
+    "development": "Geliştirme için yüklendi"
+  },
+  "noneInstalled": "Henüz kurulu uzantı yok.",
+  "enable": "{{name}} uzantısını etkinleştir",
+  "details": {
+    "open": "Ayrıntılar",
+    "back": "Uzantılara dön",
+    "version": "Sürüm {{version}}",
+    "rollback": "{{version}} sürümüne geri dön",
+    "permissions": "Verilen izinler",
+    "revoke": "İzni kaldır",
+    "settings": "Ayarlar",
+    "uninstall": "Kaldır",
+    "uninstallTitle": "{{name}} kaldırılsın mı?",
+    "uninstallDescription": "Dosyaları bu bilgisayardan silinir. Bu işlem geri alınamaz.",
+    "builtinFixed": "Yerleşik uzantılar Jan'ın parçasıdır; devre dışı bırakılamaz veya kaldırılamaz.",
+    "notFound": "Bu uzantı kurulu değil."
+  },
+  "origin": {
+    "unverified": "Doğrulanmamış",
+    "unverifiedHint": "Bu dosya eklediğiniz bir dizinden gelmedi. Yalnızca dosyayı veren kişiye güveniyorsanız kurun.",
+    "sha512": "SHA-512: {{hash}}",
+    "trustAuthor": "Bu dosyanın geliştiricisine güveniyorum",
+    "fromSource": "Kaynak: {{source}}",
+    "integrityChecked": "Bütünlük kontrol edildi",
+    "integrityCheckedUnsigned": "Bütünlük kontrol edildi (imzasız kaynak)",
+    "verifiedBy": "{{source}} tarafından doğrulandı",
+    "unsignedSource": "İmzasız kaynak",
+    "unsignedSourceHint": "Bu dizin için sabitlenmiş imza anahtarı yok; dolayısıyla listeyi kimin yayımladığı kanıtlanamıyor. Yalnızca dizine güveniyorsanız kurun.",
+    "trustSource": "Geliştiriciye ve bu dizine güveniyorum"
+  },
+  "install": {
+    "fromFile": "Dosyadan kur...",
+    "bundleFilter": "Uzantı paketi",
+    "title": "{{name}} kurulsun mu?",
+    "description": "{{publisher}} tarafından yayımlanan {{version}} sürümü. Şu izinler verilecek:",
+    "confirm": "Kur",
+    "done": "{{name}} {{version}} kuruldu"
+  },
+  "update": {
+    "title": "{{name}}, {{version}} sürümüne güncellensin mi?",
+    "description": "{{version}} sürümünü kullanıyorsunuz. Daha önce verdiğiniz izinler korunur.",
+    "confirm": "Güncelle",
+    "added": "Yeni izinler",
+    "removed": "Artık gerekmeyenler",
+    "nothingAdded": "Bu güncelleme yeni izin istemiyor."
+  },
+  "sourceChange": {
+    "indexWasIndex": "Bu güncelleme {{next}} kaynağından geliyor; {{name}} ise {{previous}} kaynağından kurulmuştu.",
+    "indexWasFile": "Bu güncelleme {{next}} kaynağından geliyor; {{name}} ise {{file}} dosyasından kurulmuştu.",
+    "fileWasIndex": "Bu güncelleme diskteki bir dosyadan geliyor; {{name}} ise {{previous}} kaynağından kurulmuştu.",
+    "unsigned": "{{name}}, {{previous}} kaynağının imza anahtarıyla doğrulanmıştı; bu güncelleme ise imzasız."
+  },
+  "safeMode": {
+    "title": "Güvenli mod",
+    "description": "Jan'ı kurulu uzantıları yüklemeden başlatır. Yerleşik uzantılar çalışmaya devam eder.",
+    "banner": "Güvenli mod açık. Kurulu uzantılar yüklenmiyor.",
+    "turnOff": "Güvenli modu kapat"
+  },
+  "sources": {
+    "title": "Dizin kaynakları",
+    "description": "Dizin, kurabileceğiniz uzantıları listeler. Yalnızca güvendiğiniz dizinleri ekleyin.",
+    "none": "Henüz kaynak yok. Uzantılara göz atmak için bir dizin URL'si ekleyin.",
+    "url": "Dizin URL'si",
+    "name": "Ad",
+    "publicKey": "Açık anahtar (isteğe bağlı)",
+    "add": "Kaynak ekle",
+    "remove": "{{name}} kaynağını kaldır",
+    "removeKeyed": {
+      "title": "{{name}} ve imza anahtarı kaldırılsın mı?",
+      "description": "Sabitlenmiş anahtarı da unutulur. Bu dizini anahtar olmadan tekrar eklerseniz listelerinin imzası artık kontrol edilmez. Kurulu uzantılar korunur. Sabitlenmiş anahtar:",
+      "confirm": "Kaynağı kaldır"
+    },
+    "removedPin": {
+      "warning": "Bu dizini kaldırdığınızda sabitlenmiş bir imza anahtarı vardı. Anahtar olmadan listeleri imzasızdır. Anahtarıyla tekrar ekleyin veya anahtarsız devam etmek için Kaynak ekle düğmesine yeniden basın.",
+      "key": "Önceden sabitlenmiş anahtar:"
+    },
+    "notice": {
+      "dropped": "Bazı kayıtlı kaynaklar kontrolü geçemediği için kaldırıldı: {{sources}}. Önceki dosya {{path}} konumunda korundu.",
+      "unreadable": "Kayıtlı kaynaklar okunamadığından hiçbiri listelenmiyor. Önceki dosya {{path}} konumunda korundu."
+    },
+    "keyPinned": "İmza anahtarı sabitlendi",
+    "unsignedHint": "Sabitlenmiş imza anahtarı yok: bu dizinden kurulum için açıkça güven belirtmeniz gerekir.",
+    "rotate": {
+      "offer": "Bu dizin yeni bir imza anahtarı duyuruyor.",
+      "review": "Yeni anahtarı incele",
+      "title": "{{name}} kaynağının imza anahtarı değiştirilsin mi?",
+      "description": "Sabitlediğiniz anahtarla imzalanan dizin, sonraki imzalamalarda kullanılacak yeni anahtarı bildiriyor. Kabul ettikten sonra yalnızca yeni anahtarla imzalanan dizinlere güvenilir. Yalnızca bu değişikliği bekliyorsanız kabul edin.",
+      "current": "Sabitlenmiş anahtar",
+      "next": "Yeni anahtar",
+      "confirm": "Yeni anahtarı sabitle"
+    },
+    "errors": {
+      "invalidUrl": "Geçerli bir URL girin.",
+      "notHttps": "Yalnızca https URL'lerine izin verilir.",
+      "credentials": "URL kullanıcı adı veya parola içermemelidir.",
+      "required": "Bir ad girin.",
+      "invalidKey": "Base64 biçiminde bir ed25519 açık anahtarı girin."
+    }
+  },
+  "catalog": {
+    "loading": "Katalog yükleniyor...",
+    "empty": "Bu dizinde listelenen uzantı yok.",
+    "by": "{{publisher}} tarafından",
+    "install": "Kur",
+    "update": "{{version}} sürümüne güncelle",
+    "installed": "Kurulu",
+    "provenance": "Kaynak tarafından bildirilen köken bilgisi"
+  },
+  "errors": {
+    "list": "Kurulu uzantılar okunamadı: {{error}}",
+    "stage": "Uzantı açılamadı: {{error}}",
+    "install": "{{name}} kurulamadı: {{error}}",
+    "change": "Değişiklik başarısız: {{error}}",
+    "catalog": "{{source}} yüklenemedi: {{error}}"
+  }
+}
