@@ -127,7 +127,13 @@
     "resetCodeBlockStyle": "Reset Code Block Style",
     "resetCodeBlockStyleDesc": "Reset code block style to default.",
     "resetCodeBlockSuccess": "Code block style reset successfully",
-    "resetCodeBlockSuccessDesc": "Code block style has been restored to default."
+    "resetCodeBlockSuccessDesc": "Code block style has been restored to default.",
+    "runNotifications": "Desktop notifications",
+    "runNotificationsDesc": "Notify you when Jan is in the background or the conversation is not open.",
+    "runNotificationsFinish": "Task finished",
+    "runNotificationsError": "Task failed",
+    "runNotificationsApproval": "Approval needed",
+    "runNotificationsCancel": "Task cancelled"
   },
   "hardware": {
     "os": "Operating System",
