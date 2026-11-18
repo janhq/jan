@@ -15,6 +15,49 @@ pub fn is_cors_header(header_name: &str) -> bool {
     header_lower.starts_with("access-control-")
 }
 
+/// True when `value` is the Tauri webview origin or referer
+/// (`http://tauri.localhost`, `https://tauri.localhost[:port]`, `tauri://localhost`,
+/// or the opaque `null` origin).
+pub fn is_tauri_webview_origin(value: &str) -> bool {
+    let v = value.trim();
+    if v.is_empty() {
+        return false;
+    }
+    if v.eq_ignore_ascii_case("null") || v.eq_ignore_ascii_case("tauri://localhost") {
+        return true;
+    }
+    let host = extract_host_from_origin(v);
+    let host_without_port = if host.starts_with('[') {
+        host.split(']')
+            .next()
+            .unwrap_or(&host)
+            .trim_start_matches('[')
+            .to_string()
+    } else {
+        host.split(':').next().unwrap_or(&host).to_string()
+    };
+    host_without_port.eq_ignore_ascii_case("tauri.localhost")
+}
+
+/// Browser-context headers that must not be copied onto outbound provider calls.
+/// Jan's local API CORS still reads inbound `Origin` separately.
+pub fn skip_outbound_provider_header(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "origin" | "referer")
+}
+
+/// Drop `Origin` / `Referer` so a Tauri webview's `http://tauri.localhost` origin
+/// is not forwarded to CORS-strict backends (Ollama, nginx).
+pub fn filter_outbound_provider_headers<'a, I>(headers: I) -> Vec<(String, String)>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
+{
+    headers
+        .into_iter()
+        .filter(|(name, _)| !skip_outbound_provider_header(name))
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect()
+}
+
 /// Validates that a `Host` header names this server: loopback, a private-range
 /// IP literal, `host.docker.internal`, or a hostname the user listed.
 ///
@@ -287,6 +330,46 @@ mod tests {
             &extract_host_from_origin("http://malicious.example.org:8080"),
             &trusted
         ));
+    }
+
+    #[test]
+    fn tauri_webview_origin_is_detected() {
+        assert!(is_tauri_webview_origin("http://tauri.localhost"));
+        assert!(is_tauri_webview_origin("https://tauri.localhost"));
+        assert!(is_tauri_webview_origin("http://tauri.localhost:1420"));
+        assert!(is_tauri_webview_origin("tauri://localhost"));
+        assert!(is_tauri_webview_origin("null"));
+        assert!(is_tauri_webview_origin("http://tauri.localhost/index.html"));
+        assert!(!is_tauri_webview_origin("https://api.openai.com"));
+        assert!(!is_tauri_webview_origin("http://localhost:11434"));
+        assert!(!is_tauri_webview_origin(""));
+    }
+
+    #[test]
+    fn filter_outbound_provider_headers_strips_tauri_origin() {
+        let out = filter_outbound_provider_headers([
+            ("Content-Type", "application/json"),
+            ("Origin", "http://tauri.localhost"),
+            ("Referer", "http://tauri.localhost/"),
+            ("Authorization", "Bearer k"),
+        ]);
+        assert!(!out
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("origin") || n.eq_ignore_ascii_case("referer")));
+        assert!(out
+            .iter()
+            .any(|(n, v)| n == "Content-Type" && v == "application/json"));
+        assert!(out
+            .iter()
+            .any(|(n, v)| n == "Authorization" && v == "Bearer k"));
+    }
+
+    #[test]
+    fn skip_outbound_provider_header_matches_origin_and_referer() {
+        assert!(skip_outbound_provider_header("Origin"));
+        assert!(skip_outbound_provider_header("referer"));
+        assert!(!skip_outbound_provider_header("Authorization"));
+        assert!(!skip_outbound_provider_header("Content-Type"));
     }
 
     // LAN reachability preserved: private/loopback IP literals are accepted even
