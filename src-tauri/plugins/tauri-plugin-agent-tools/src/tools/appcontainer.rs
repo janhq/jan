@@ -11,7 +11,8 @@
 //! - writes: nothing is writable until an ACE names the container, so granting
 //!   one on the thread workspace is the whole write policy. The container also
 //!   gets a private `AC\Temp` that Windows creates and ACLs for it.
-//! - network: denied unless the spawn supplies the `internetClient` capability.
+//! - network: denied unless the spawn supplies the `internetClient` and
+//!   `privateNetworkClientServer` capabilities, each marked `SE_GROUP_ENABLED`.
 //!   AppContainer blocks loopback as well, which the Unix backends do not.
 //!
 //! Unlike bubblewrap and Seatbelt there is no argv to wrap: the confinement is a
@@ -377,9 +378,10 @@ mod win {
         DeriveAppContainerSidFromAppContainerName,
     };
     use windows_sys::Win32::Security::{
-        CreateWellKnownSid, FreeSid, WinCapabilityInternetClientSid, ACL, CONTAINER_INHERIT_ACE,
+        CreateWellKnownSid, FreeSid, WinCapabilityInternetClientSid,
+        WinCapabilityPrivateNetworkClientServerSid, ACL, CONTAINER_INHERIT_ACE,
         DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE, PSECURITY_DESCRIPTOR, PSID,
-        SECURITY_CAPABILITIES, SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES,
+        SECURITY_CAPABILITIES, SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, WELL_KNOWN_SID_TYPE,
     };
     use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
     use windows_sys::Win32::System::Console::{
@@ -401,6 +403,12 @@ mod win {
     /// `HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)`: the profile survived a previous
     /// run, which is the normal case for a thread's second command.
     const PROFILE_EXISTS: HRESULT = -2147024713; // 0x800700B7
+
+    /// `SE_GROUP_ENABLED`. A capability in `SECURITY_CAPABILITIES` must carry it:
+    /// with `Attributes: 0` the SID is listed on the token but not enabled, so the
+    /// container gets no network at all (#9612). Defined here because `windows-sys`
+    /// keeps it in `Win32_System_SystemServices`, a feature nothing else needs.
+    const SE_GROUP_ENABLED: u32 = 0x4;
 
     fn wide(s: &OsStr) -> Vec<u16> {
         s.encode_wide().chain(std::iter::once(0)).collect()
@@ -544,14 +552,18 @@ mod win {
         Ok(())
     }
 
-    /// The `internetClient` capability, which is what makes outbound network calls
-    /// possible at all for a lowbox token.
-    fn internet_capability(buffer: &mut Vec<u8>) -> Result<SID_AND_ATTRIBUTES, String> {
+    /// A well-known capability SID, enabled. `buffer` owns the SID bytes, so it
+    /// must outlive the returned entry and must not be resized afterwards.
+    fn capability(
+        kind: WELL_KNOWN_SID_TYPE,
+        name: &str,
+        buffer: &mut Vec<u8>,
+    ) -> Result<SID_AND_ATTRIBUTES, String> {
         buffer.resize(SECURITY_MAX_SID_SIZE as usize, 0);
         let mut len = buffer.len() as u32;
         let ok = unsafe {
             CreateWellKnownSid(
-                WinCapabilityInternetClientSid,
+                kind,
                 std::ptr::null_mut(),
                 buffer.as_mut_ptr() as PSID,
                 &mut len,
@@ -559,14 +571,32 @@ mod win {
         };
         if ok == 0 {
             return Err(format!(
-                "could not build the internetClient capability: {}",
+                "could not build the {name} capability: {}",
                 last_error()
             ));
         }
         Ok(SID_AND_ATTRIBUTES {
             Sid: buffer.as_mut_ptr() as PSID,
-            Attributes: 0,
+            Attributes: SE_GROUP_ENABLED,
         })
+    }
+
+    /// What "network allowed" means for a lowbox token: `internetClient` is
+    /// outbound internet, and `privateNetworkClientServer` is the home/work/LAN
+    /// side, which Windows treats as a separate capability. The Unix backends
+    /// have one switch for both, so this does too.
+    fn network_capabilities(
+        internet: &mut Vec<u8>,
+        private: &mut Vec<u8>,
+    ) -> Result<[SID_AND_ATTRIBUTES; 2], String> {
+        Ok([
+            capability(WinCapabilityInternetClientSid, "internetClient", internet)?,
+            capability(
+                WinCapabilityPrivateNetworkClientServerSid,
+                "privateNetworkClientServer",
+                private,
+            )?,
+        ])
     }
 
     /// Mark the std handles inheritable so the confined shell receives the
@@ -649,10 +679,11 @@ mod win {
             grant_path(pkg, sid.0)?;
         }
 
-        let mut capability_sid = Vec::new();
+        // The SID buffers back the entries, so they live until after the spawn.
+        let (mut internet_sid, mut private_sid) = (Vec::new(), Vec::new());
         let mut capabilities = Vec::new();
         if req.allow_network {
-            capabilities.push(internet_capability(&mut capability_sid)?);
+            capabilities.extend(network_capabilities(&mut internet_sid, &mut private_sid)?);
         }
         let mut security = SECURITY_CAPABILITIES {
             AppContainerSid: sid.0,
