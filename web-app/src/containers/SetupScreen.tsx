@@ -445,8 +445,14 @@ function SetupScreen() {
     hasNavigatedRef.current = true
 
     // Refresh providers so the model is available in the store before selecting
-    const providers = await serviceHub.providers().getProviders()
-    setProviders(providers)
+    try {
+      setProviders(await serviceHub.providers().getProviders())
+    } catch (error) {
+      console.error('[SetupScreen] provider refresh failed:', error)
+      hasNavigatedRef.current = false
+      toast.error(t('setup:completeFailed'))
+      return
+    }
 
     // On Windows the provider may list model IDs with backslashes (from filesystem paths)
     // while the catalog uses forward slashes, so try both formats
@@ -469,7 +475,7 @@ function SetupScreen() {
         threadModel: { id: modelId, provider: 'llamacpp' },
       },
     })
-  }, [navigate, selectModelProvider, serviceHub, setProviders])
+  }, [navigate, selectModelProvider, serviceHub, setProviders, t])
 
   // Leaving setup is driven by the import event rather than by provider state,
   // which only refreshes afterwards. Warnings no longer gate this: each was its

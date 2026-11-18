@@ -2,6 +2,7 @@
   "description": "Download the recommended model to start chatting, or browse the Hub for another one.",
   "quickStartFailed": "Something went wrong. Please try again.",
   "exploreHub": "Browse other models in the Hub",
+  "completeFailed": "Could not finish setup. Please try again.",
   "importLocalModel": "Import a local GGUF file",
   "download": "Download",
   "modelInstalled": "Installed",
