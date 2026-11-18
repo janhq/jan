@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress'
 import {
   IconAlertTriangle,
   IconArrowRight,
+  IconFolderPlus,
   IconCheck,
   IconCpu,
   IconEye,
@@ -31,6 +32,7 @@ import {
 import { pickMmproj, type SetupModelOption } from '@/lib/setupModelOptions'
 import { AnalyticConsent } from './analytics/AnalyticConsent'
 import { DependencyAdvice } from './dialogs/DependencyAdvice'
+import { ImportLlamacppModelDialog } from './dialogs/ImportLlamacppModelDialog'
 import HeaderPage from './HeaderPage'
 
 /**
@@ -438,17 +440,22 @@ function SetupScreen() {
   /** Pages the user has passed despite a warning; they must not reappear. */
   const [acknowledged, setAcknowledged] = useState<string[]>([])
 
-  const completeSetup = useCallback(async () => {
-    if (!selected || hasNavigatedRef.current) return
+  const completeSetup = useCallback(async (catalogId: string) => {
+    if (hasNavigatedRef.current) return
     hasNavigatedRef.current = true
 
     // Refresh providers so the model is available in the store before selecting
-    const providers = await serviceHub.providers().getProviders()
-    setProviders(providers)
+    try {
+      setProviders(await serviceHub.providers().getProviders())
+    } catch (error) {
+      console.error('[SetupScreen] provider refresh failed:', error)
+      hasNavigatedRef.current = false
+      toast.error(t('setup:completeFailed'))
+      return
+    }
 
     // On Windows the provider may list model IDs with backslashes (from filesystem paths)
     // while the catalog uses forward slashes, so try both formats
-    const catalogId = selected.modelId
     const backslashId = catalogId.replace(/\//g, '\\')
     const found =
       selectModelProvider('llamacpp', catalogId) ||
@@ -468,7 +475,7 @@ function SetupScreen() {
         threadModel: { id: modelId, provider: 'llamacpp' },
       },
     })
-  }, [selected, navigate, selectModelProvider, serviceHub, setProviders])
+  }, [navigate, selectModelProvider, serviceHub, setProviders, t])
 
   // Leaving setup is driven by the import event rather than by provider state,
   // which only refreshes afterwards. Warnings no longer gate this: each was its
@@ -477,7 +484,7 @@ function SetupScreen() {
     const onModelImported = async (payload: { modelId: string }) => {
       if (!selected || hasNavigatedRef.current) return
       if (payload.modelId !== selected.modelId) return
-      await completeSetup()
+      await completeSetup(selected.modelId)
     }
 
     events.on(AppEvent.onModelImported, onModelImported)
@@ -610,8 +617,17 @@ function SetupScreen() {
   // A model already on disk (a repeat visit, or one fetched from the Hub) leaves
   // no import event to wait for.
   useEffect(() => {
-    if (currentIndex === -1 && !hasNavigatedRef.current) void completeSetup()
-  }, [currentIndex, completeSetup])
+    if (currentIndex === -1 && selected && !hasNavigatedRef.current) {
+      void completeSetup(selected.modelId)
+    }
+  }, [currentIndex, selected, completeSetup])
+
+  const handleLocalImport = useCallback(
+    (importedModelName?: string) => {
+      if (importedModelName) void completeSetup(importedModelName)
+    },
+    [completeSetup]
+  )
 
   const acknowledge = useCallback((id: string) => {
     setAcknowledged((prev) => (prev.includes(id) ? prev : [...prev, id]))
@@ -897,6 +913,21 @@ function SetupScreen() {
                       {t('setup:exploreHub')}
                       <IconArrowRight size={12} />
                     </button>
+                    {llamaProvider && (
+                      <ImportLlamacppModelDialog
+                        provider={llamaProvider}
+                        onSuccess={handleLocalImport}
+                        trigger={
+                          <button
+                            type="button"
+                            className="mt-2 flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                          >
+                            {t('setup:importLocalModel')}
+                            <IconFolderPlus size={12} />
+                          </button>
+                        }
+                      />
+                    )}
                   </div>
                 )}
               </>

@@ -24,6 +24,7 @@ const hoisted = vi.hoisted(() => ({
   verifyEmbeddingModelMock: vi.fn(),
   getHardwareInfoMock: vi.fn(),
   navigateMock: vi.fn(),
+  getProvidersMock: vi.fn(),
   productAnalyticPrompt: false,
   eventHandlers: {} as Record<string, any>,
   huggingfaceToken: 'hf-token',
@@ -56,7 +57,7 @@ vi.mock('@/hooks/useServiceHub', () => {
       verifyEmbeddingModel: hoisted.verifyEmbeddingModelMock,
     }),
     providers: () => ({
-      getProviders: vi.fn().mockResolvedValue([]),
+      getProviders: hoisted.getProvidersMock,
     }),
     hardware: () => ({ getHardwareInfo: hoisted.getHardwareInfoMock }),
   })
@@ -137,6 +138,15 @@ vi.mock('@/components/ui/button', () => ({
   ),
 }))
 
+vi.mock('../dialogs/ImportLlamacppModelDialog', () => ({
+  ImportLlamacppModelDialog: ({ trigger, onSuccess }: any) => (
+    <div>
+      {trigger}
+      <button onClick={() => onSuccess('my-local-model')}>finish-import</button>
+    </div>
+  ),
+}))
+
 import SetupScreen from '../SetupScreen'
 
 const sampleModel = {
@@ -198,6 +208,7 @@ describe('SetupScreen', () => {
     hoisted.downloadStore.localDownloadingModels = new Set()
     hoisted.providersMock.getProviderByName.mockReturnValue({ models: [] })
     hoisted.eventHandlers = {}
+    hoisted.getProvidersMock.mockResolvedValue([])
     // Healthy by default, so the wizard settles on the model page; individual
     // tests opt into a warning to hold an earlier page.
     hoisted.getHardwareInfoMock.mockResolvedValue({
@@ -706,6 +717,60 @@ describe('SetupScreen', () => {
       expect(
         screen.getByTestId('setup-wizard').querySelectorAll('span.h-1').length
       ).toBe(3)
+    })
+  })
+
+  describe('importing a local model', () => {
+    it('offers a local GGUF import on the model page', async () => {
+      await renderPastSetup()
+      expect(screen.getByText('setup:importLocalModel')).toBeInTheDocument()
+    })
+
+    it('completes setup with the imported model, even without Hub metadata', async () => {
+      hoisted.janModel = null
+      hoisted.providersMock.selectModelProvider.mockImplementation(
+        (_provider: string, id: string) =>
+          id === 'my-local-model' ? { id: 'my-local-model' } : undefined
+      )
+
+      await renderPastSetup()
+      await act(async () => {
+        fireEvent.click(screen.getByText('finish-import'))
+      })
+
+      await waitFor(() =>
+        expect(hoisted.navigateMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            search: {
+              threadModel: { id: 'my-local-model', provider: 'llamacpp' },
+            },
+          })
+        )
+      )
+      expect(localStorage.getItem('sc')).toBe('true')
+      expect(hoisted.providersMock.selectModelProvider).toHaveBeenCalledWith(
+        'llamacpp',
+        'my-local-model'
+      )
+    })
+
+    it('stays on setup and allows a retry when the provider refresh fails', async () => {
+      hoisted.getProvidersMock.mockRejectedValueOnce(new Error('boom'))
+      hoisted.providersMock.selectModelProvider.mockReturnValue({
+        id: 'my-local-model',
+      })
+
+      await renderPastSetup()
+      await act(async () => {
+        fireEvent.click(screen.getByText('finish-import'))
+      })
+      expect(hoisted.navigateMock).not.toHaveBeenCalled()
+      expect(hoisted.toastMock.error).toHaveBeenCalled()
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('finish-import'))
+      })
+      await waitFor(() => expect(hoisted.navigateMock).toHaveBeenCalled())
     })
   })
 
