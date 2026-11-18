@@ -57,6 +57,12 @@ import {
 } from '@/lib/provider-unreachable'
 
 // as route.threadsDetail
+const optionKey = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
 export const Route = createFileRoute('/settings/providers/$providerName')({
   component: ProviderDetail,
   validateSearch: (
@@ -755,11 +761,37 @@ function ProviderDetail() {
                   }
 
                   // Use the DynamicController component
+                  const localizedTitle = isLlamacpp
+                    ? t(`providers:llamacppSettings.${setting.key}.title`, {
+                        defaultValue: setting.title,
+                      })
+                    : setting.title
+                  const localizedDescription = isLlamacpp
+                    ? t(
+                        `providers:llamacppSettings.${setting.key}.description`,
+                        { defaultValue: setting.description }
+                      )
+                    : setting.description
+                  const localizedProps =
+                    isLlamacpp && Array.isArray(setting.controller_props?.options)
+                      ? {
+                          ...setting.controller_props,
+                          options: setting.controller_props.options.map(
+                            (option: any) => ({
+                              ...option,
+                              name: t(
+                                `providers:llamacppOptions.${optionKey(option.name)}`,
+                                { defaultValue: option.name }
+                              ),
+                            })
+                          ),
+                        }
+                      : setting.controller_props
                   const actionComponent = (
                     <div className="mt-2">
                       <DynamicControllerSetting
                           controllerType={setting.controller_type}
-                          controllerProps={setting.controller_props}
+                          controllerProps={localizedProps}
                           className={cn(setting.key === 'device' && 'hidden')}
                           onChange={(newValue) => {
                             if (provider) {
@@ -818,7 +850,7 @@ function ProviderDetail() {
                   return (
                     <CardItem
                       key={settingIndex}
-                      title={setting.title}
+                      title={localizedTitle}
                       className={cn(setting.key === 'device' && 'hidden')}
                       column={
                         setting.controller_type === 'input' &&
@@ -830,7 +862,7 @@ function ProviderDetail() {
                         <>
                           <RenderMarkdown
                             className="![>p]:text-muted-foreground select-none"
-                            content={setting.description}
+                            content={localizedDescription}
                             components={{
                               p: ({ ...props }) => (
                                 <p {...props} className="mb-0!" />

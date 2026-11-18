@@ -58,5 +58,193 @@
   },
   "addProvider": "Afegeix un proveïdor",
   "addOpenAIProvider": "Afegeix un proveïdor d’OpenAI",
-  "enterNameForProvider": "Introdueix el nom del proveïdor"
+  "enterNameForProvider": "Introdueix el nom del proveïdor",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Variables d'entorn",
+      "description": "Variables d'entorn per a llama.cpp (KEY=VALUE), separades per ';'."
+    },
+    "models_max": {
+      "title": "Màxim de models carregats alhora",
+      "description": "Nombre màxim de models que el router manté carregats alhora. 0 = il·limitat."
+    },
+    "timeout": {
+      "title": "Temps d'espera per a llamacpp",
+      "description": "Temps de connexió i càrrega de llamacpp, en segons."
+    },
+    "fit": {
+      "title": "Ajust (autoajust a la memòria del dispositiu)",
+      "description": "Ajustar o no els arguments no definits perquè cabin a la memòria del dispositiu ('on' o 'off'). (env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "Objectiu d'ajust per dispositiu (MiB)",
+      "description": "Marge objectiu per dispositiu per a l'ajust, valors MiB separats per comes. Un sol valor s'aplica a tots els dispositius. (env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "Mida de context mínima per a l'ajust",
+      "description": "Mida de context mínima (tokens) que pot definir l'ajust automàtic."
+    },
+    "threads": {
+      "title": "Fils",
+      "description": "Nombre de fils a usar durant la generació (-1 per nuclis lògics)."
+    },
+    "threads_batch": {
+      "title": "Fils (lot)",
+      "description": "Nombre de fils per processar lots i prompts (per defecte: igual que Fils)."
+    },
+    "ctx_shift": {
+      "title": "Desplaçament de context",
+      "description": "Desplaçar el context en lloc d'aturar-lo quan la finestra s'omple, per continuar converses llargues sense errors de memòria."
+    },
+    "n_predict": {
+      "title": "Màxim de tokens a predir",
+      "description": "Nombre màxim de tokens a generar. -1 = il·limitat, -2 = fins a omplir el context."
+    },
+    "batch_size": {
+      "title": "Mida del lot",
+      "description": "Mida de lot lògica màxima per processar prompts."
+    },
+    "ubatch_size": {
+      "title": "Mida del microlot",
+      "description": "Mida de lot física màxima per processar prompts."
+    },
+    "n_cpu_moe": {
+      "title": "Capes MoE a la CPU",
+      "description": "Mantenir els pesos Mixture-of-Experts de les N primeres capes a la memòria de CPU. Permet que un model MoE gran càpiga en VRAM limitada. 0 ho desactiva."
+    },
+    "n_cpu_ffn": {
+      "title": "Capes FFN denses a la CPU",
+      "description": "Mantenir els pesos densos feed-forward de les N primeres capes a la memòria de CPU, equivalent de l'ajust MoE per a models densos. 0 ho desactiva."
+    },
+    "no_kv_offload": {
+      "title": "Desactivar la descàrrega de la memòria cau KV",
+      "description": "Mantenir la memòria cau KV a la RAM del sistema en lloc de la memòria GPU. Útil quan falta VRAM, a costa de velocitat."
+    },
+    "device": {
+      "title": "Dispositius per descarregar",
+      "description": "Acceleradors de descàrrega separats per comes, amb els noms de la llista de maquinari detectat. Buit = tots els acceleradors; \"none\" desactiva la descàrrega."
+    },
+    "split_mode": {
+      "title": "Mode de repartiment de GPU",
+      "description": "Com repartir el model entre diverses GPU."
+    },
+    "main_gpu": {
+      "title": "Índex de la GPU principal",
+      "description": "GPU a usar per al model (split-mode=none) o els resultats intermedis (split-mode=row)."
+    },
+    "tensor_split": {
+      "title": "Repartiment de tensors",
+      "description": "Proporcions de repartiment del model entre dispositius, separades per comes, p. ex. \"3,1\". Buit = repartiment igual."
+    },
+    "no_op_offload": {
+      "title": "Desactivar la descàrrega d'operacions",
+      "description": "Mantenir les operacions de tensors de l'amfitrió a la CPU en lloc de descarregar-les a l'accelerador."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "Activar Flash Attention per millorar el rendiment."
+    },
+    "parallel": {
+      "title": "Seqüències paral·leles",
+      "description": "Nombre de seqüències paral·leles a descodificar (0 = valor predeterminat de llama.cpp). Jan no reserva cap slot: xat, Cowork i sol·licituds en segon pla comparteixen el slot 0, i les seves memòries cau KV s'aparquen i es restauren per conversa."
+    },
+    "cont_batching": {
+      "title": "Processament per lots continu",
+      "description": "Activar el processament per lots continu (dynamic batching) per a sol·licituds simultànies. Activat per defecte, com a llama.cpp."
+    },
+    "load_mode": {
+      "title": "Mode de càrrega",
+      "description": "Com es llegeixen els pesos del model a la memòria. Auto mapeja el fitxer llevat que un dispositiu no ho permeti. None llegeix sense mmap (més lent, menys paginació). mlock els manté a la RAM per evitar el swap, amb o sense mmap. Direct I/O evita la memòria cau de pàgines del sistema quan és possible. Cada model pot substituir-ho."
+    },
+    "lazy_mode": {
+      "title": "Lectura diferida de tensors",
+      "description": "Llegir del disc sota demanda les files de grans tensors marcats per arquitectura (p. ex. embeddings per capa) en lloc de mantenir-los a la memòria. Auto s'activa per sobre de 4 GiB. Requereix mmap: tria un mode de càrrega amb mmap (Auto, mmap o mmap + mlock)."
+    },
+    "cache_type_k": {
+      "title": "Tipus de memòria cau KV K",
+      "description": "Tipus de dades de la memòria cau KV per a Keys (per defecte: f16)."
+    },
+    "cache_type_v": {
+      "title": "Tipus de memòria cau KV V",
+      "description": "Tipus de dades de la memòria cau KV per a Values (per defecte: f16)."
+    },
+    "rope_scaling": {
+      "title": "Mètode d'escalat RoPE",
+      "description": "Mètode d'escalat de freqüències RoPE. \"Valor del model\" ho deixa al model; \"Cap\" desactiva explícitament l'escalat."
+    },
+    "rope_freq_base": {
+      "title": "Freqüència base RoPE",
+      "description": "Freqüència base RoPE (0 = carregada des del model)."
+    },
+    "rope_freq_scale": {
+      "title": "Factor d'escalat RoPE",
+      "description": "Factor d'escalat de freqüències RoPE. 0 carrega el valor del model; 1 força l'absència d'escalat."
+    },
+    "cache_ram": {
+      "title": "RAM de memòria cau de prompt (MiB)",
+      "description": "Mida de la memòria cau de prompts en MiB (per defecte: 8192, o desactivada per a models de decisió llevat de canvi). -1 = il·limitat, 0 la desactiva."
+    },
+    "persist_thread_cache": {
+      "title": "Recordar converses entre sessions",
+      "description": "Guardar al disc la memòria cau de prompt de cada conversa per no rellegir-la sencera en reobrir-la. Només es restaura si el model, els seus ajustos i la versió de llama.cpp coincideixen amb els que la van guardar."
+    },
+    "thread_cache_size": {
+      "title": "Límit de disc de memòria cau de conversa (MiB)",
+      "description": "Pressupost de disc per a les memòries cau de conversa guardades (per defecte: 8192). Les més antigues s'eliminen primer. Una conversa llarga pot ocupar centenars de MiB."
+    },
+    "cache_reuse": {
+      "title": "Reutilització de memòria cau",
+      "description": "Mida mínima del bloc de tokens de prefix coincidents que es reutilitza de la memòria cau. 0 = desactivat."
+    },
+    "ctx_checkpoints": {
+      "title": "Punts de control de context",
+      "description": "Nombre màxim de punts de control de context per slot, que permeten restaurar un context desplaçat en lloc de reprocessar-lo."
+    },
+    "checkpoint_min_step": {
+      "title": "Pas mínim entre punts de control",
+      "description": "Nombre mínim de tokens entre punts de control de context."
+    },
+    "swa_full": {
+      "title": "Memòria cau SWA completa",
+      "description": "Usar una memòria cau KV de mida completa per a models d'atenció per finestra lliscant (p. ex. Gemma). Activa-ho si aquest model reprocessa tot el prompt a cada torn; consumeix més memòria."
+    },
+    "kv_unified": {
+      "title": "Memòria cau KV unificada",
+      "description": "Usar un únic buffer KV unificat compartit per tots els slots. Estalvia memòria amb diversos slots paral·lels."
+    },
+    "kv_unified_per_slot": {
+      "title": "Context per ranura",
+      "description": "Limitar la part de la memòria cau KV unificada que pot usar un slot, en tokens. 0 deixa que un slot ompli tota la memòria cau. Només s'aplica a la memòria cau unificada."
+    },
+    "reasoning_preserve": {
+      "title": "Conservar l'historial de raonament",
+      "description": "Conservar el raonament de cada torn anterior de l'assistent al prompt, no només el més recent. Només afecta models el template de xat dels quals ho permeti i consumeix tokens de prompt."
+    },
+    "keep": {
+      "title": "Conservar els primers N tokens",
+      "description": "Nombre de tokens del prompt inicial a conservar en desplaçar el context. -1 = conservar-ho tot."
+    }
+  },
+  "llamacppOptions": {
+    "none": "Cap",
+    "layer": "Capa",
+    "row": "Fila",
+    "tensor_experimental": "Tensor (experimental)",
+    "auto": "Auto",
+    "on": "Activat",
+    "off": "Desactivat",
+    "auto_mmap_if_supported": "Auto (mmap si és compatible)",
+    "none_no_mmap": "Cap (sense mmap)",
+    "mlock_no_mmap": "mlock (sense mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "E/S directa",
+    "model_default": "Valor del model",
+    "linear": "Lineal"
+  },
+  "engineReleaseNotes": "Notes de la versió",
+  "engineBuild": "Compilació",
+  "engineCommit": "Commit",
+  "engineBundled": "El motor d'inferència està integrat a Jan, així que no cal baixar ni actualitzar res per separat. Indica aquesta versió quan informis d'un model que no es carrega.",
+  "engineOtherVersion": "Necessites una altra versió de llama.cpp? Executa el teu propi llama-server i afegeix-lo com a proveïdor personalitzat compatible amb OpenAI.",
+  "engineOtherVersionLink": "Com fer-ho"
 }

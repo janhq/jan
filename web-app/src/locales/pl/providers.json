@@ -58,5 +58,193 @@
   },
   "addProvider": "Dodaj Dostawcę",
   "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
-  "enterNameForProvider": "Wprowadź nazwę dostawcy"
+  "enterNameForProvider": "Wprowadź nazwę dostawcy",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Zmienne środowiskowe",
+      "description": "Zmienne środowiskowe llama.cpp (KEY=VALUE), oddzielone ';'."
+    },
+    "models_max": {
+      "title": "Maks. liczba modeli ładowanych jednocześnie",
+      "description": "Maksymalna liczba modeli utrzymywanych jednocześnie przez router. 0 = bez limitu."
+    },
+    "timeout": {
+      "title": "Limit czasu dla llamacpp",
+      "description": "Limit czasu połączenia i ładowania llamacpp w sekundach."
+    },
+    "fit": {
+      "title": "Dopasowanie (automatyczne do pamięci urządzenia)",
+      "description": "Dostosowywać nieustawione argumenty do pamięci urządzenia ('on' lub 'off'). (env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "Cel dopasowania na urządzenie (MiB)",
+      "description": "Docelowy margines na urządzenie dla dopasowania, wartości MiB oddzielone przecinkami. Jedna wartość dotyczy wszystkich urządzeń. (env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "Minimalny rozmiar kontekstu dla dopasowania",
+      "description": "Minimalny rozmiar kontekstu (tokeny), jaki może ustawić automatyczne dopasowanie."
+    },
+    "threads": {
+      "title": "Wątki",
+      "description": "Liczba wątków używanych podczas generowania (-1 dla rdzeni logicznych)."
+    },
+    "threads_batch": {
+      "title": "Wątki (partia)",
+      "description": "Liczba wątków do przetwarzania partii i promptów (domyślnie: jak Wątki)."
+    },
+    "ctx_shift": {
+      "title": "Przesunięcie kontekstu",
+      "description": "Przesuwać kontekst zamiast go zatrzymywać, gdy okno się zapełni, aby długie rozmowy działały bez błędów pamięci."
+    },
+    "n_predict": {
+      "title": "Maks. liczba tokenów do przewidzenia",
+      "description": "Maksymalna liczba tokenów do wygenerowania. -1 = bez limitu, -2 = aż do zapełnienia kontekstu."
+    },
+    "batch_size": {
+      "title": "Rozmiar partii",
+      "description": "Maksymalny logiczny rozmiar partii do przetwarzania promptów."
+    },
+    "ubatch_size": {
+      "title": "Rozmiar mikro-partii",
+      "description": "Maksymalny fizyczny rozmiar partii do przetwarzania promptów."
+    },
+    "n_cpu_moe": {
+      "title": "Warstwy MoE na CPU",
+      "description": "Trzymać wagi Mixture-of-Experts pierwszych N warstw w pamięci CPU. Pozwala zmieścić duży model MoE w ograniczonej VRAM. 0 wyłącza."
+    },
+    "n_cpu_ffn": {
+      "title": "Gęste warstwy FFN na CPU",
+      "description": "Trzymać gęste wagi feed-forward pierwszych N warstw w pamięci CPU, odpowiednik ustawienia MoE dla modeli gęstych. 0 wyłącza."
+    },
+    "no_kv_offload": {
+      "title": "Wyłącz przenoszenie pamięci podręcznej KV",
+      "description": "Trzymać pamięć podręczną KV w RAM systemu zamiast w pamięci GPU. Przydatne przy małej VRAM, kosztem szybkości."
+    },
+    "device": {
+      "title": "Urządzenia do przenoszenia",
+      "description": "Akceleratory do przenoszenia, oddzielone przecinkami i nazwane jak na liście wykrytego sprzętu. Puste = wszystkie akceleratory; \"none\" wyłącza przenoszenie."
+    },
+    "split_mode": {
+      "title": "Tryb podziału GPU",
+      "description": "Jak podzielić model między wiele GPU."
+    },
+    "main_gpu": {
+      "title": "Indeks głównego GPU",
+      "description": "GPU używany dla modelu (split-mode=none) lub wyników pośrednich (split-mode=row)."
+    },
+    "tensor_split": {
+      "title": "Podział tensorów",
+      "description": "Proporcje podziału modelu między urządzenia, oddzielone przecinkami, np. \"3,1\". Puste = równy podział."
+    },
+    "no_op_offload": {
+      "title": "Wyłącz przenoszenie operacji",
+      "description": "Pozostawić operacje na tensorach hosta na CPU zamiast przenosić je na akcelerator."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "Włącz Flash Attention dla lepszej wydajności."
+    },
+    "parallel": {
+      "title": "Sekwencje równoległe",
+      "description": "Liczba równoległych sekwencji do dekodowania (0 = domyślna wartość llama.cpp). Jan nie rezerwuje własnego slotu: czat, Cowork i żądania w tle współdzielą slot 0, a ich pamięci podręczne KV są odkładane i przywracane dla każdej rozmowy."
+    },
+    "cont_batching": {
+      "title": "Ciągłe przetwarzanie wsadowe",
+      "description": "Włącz ciągłe przetwarzanie wsadowe (dynamic batching) dla równoczesnych żądań. Domyślnie włączone, jak w llama.cpp."
+    },
+    "load_mode": {
+      "title": "Tryb ładowania",
+      "description": "Jak wagi modelu są wczytywane do pamięci. Auto mapuje plik, chyba że urządzenie na to nie pozwala. None czyta bez mmap (wolniej, mniej stronicowania). mlock trzyma je w RAM, aby nigdy nie trafiły do swapu, z mmap lub bez. Direct I/O omija pamięć podręczną stron systemu, gdy jest dostępne. Każdy model może to nadpisać."
+    },
+    "lazy_mode": {
+      "title": "Opóźniony odczyt tensorów",
+      "description": "Czytać z dysku na żądanie wiersze dużych tensorów oznaczonych przez architekturę (np. osadzenia per warstwa) zamiast trzymać je w pamięci. Auto włącza powyżej 4 GiB. Wymaga mmap: wybierz tryb ładowania z mmap (Auto, mmap lub mmap + mlock)."
+    },
+    "cache_type_k": {
+      "title": "Typ pamięci podręcznej KV K",
+      "description": "Typ danych pamięci podręcznej KV dla Keys (domyślnie: f16)."
+    },
+    "cache_type_v": {
+      "title": "Typ pamięci podręcznej KV V",
+      "description": "Typ danych pamięci podręcznej KV dla Values (domyślnie: f16)."
+    },
+    "rope_scaling": {
+      "title": "Metoda skalowania RoPE",
+      "description": "Metoda skalowania częstotliwości RoPE. \"Wartość modelu\" pozostawia decyzję modelowi; \"Brak\" jawnie wyłącza skalowanie."
+    },
+    "rope_freq_base": {
+      "title": "Bazowa częstotliwość RoPE",
+      "description": "Bazowa częstotliwość RoPE (0 = wczytana z modelu)."
+    },
+    "rope_freq_scale": {
+      "title": "Współczynnik skalowania RoPE",
+      "description": "Współczynnik skalowania częstotliwości RoPE. 0 wczytuje wartość z modelu; 1 wymusza brak skalowania."
+    },
+    "cache_ram": {
+      "title": "RAM pamięci podręcznej promptów (MiB)",
+      "description": "Rozmiar pamięci podręcznej promptów w MiB (domyślnie: 8192, lub wyłączona dla modeli decyzyjnych, jeśli nie zmieniono). -1 = bez limitu, 0 wyłącza."
+    },
+    "persist_thread_cache": {
+      "title": "Pamiętaj rozmowy między sesjami",
+      "description": "Trzymać na dysku pamięć podręczną promptów każdej rozmowy, aby po ponownym otwarciu nie czytać jej całej od nowa. Przywracana tylko, gdy model, jego ustawienia i wersja llama.cpp pasują do zapisanych."
+    },
+    "thread_cache_size": {
+      "title": "Limit dyskowy pamięci podręcznej rozmów (MiB)",
+      "description": "Budżet dyskowy na zapisane pamięci podręczne rozmów (domyślnie: 8192). Najstarsze są usuwane pierwsze. Długa rozmowa może zająć setki MiB."
+    },
+    "cache_reuse": {
+      "title": "Ponowne użycie pamięci podręcznej",
+      "description": "Minimalny rozmiar bloku pasujących tokenów prefiksu do ponownego użycia z pamięci podręcznej. 0 = wyłączone."
+    },
+    "ctx_checkpoints": {
+      "title": "Punkty kontrolne kontekstu",
+      "description": "Maksymalna liczba punktów kontrolnych kontekstu na slot, pozwalających przywrócić przesunięty kontekst zamiast go przetwarzać ponownie."
+    },
+    "checkpoint_min_step": {
+      "title": "Minimalny krok między punktami kontrolnymi",
+      "description": "Minimalna liczba tokenów między punktami kontrolnymi kontekstu."
+    },
+    "swa_full": {
+      "title": "Pełna pamięć podręczna SWA",
+      "description": "Używać pełnowymiarowej pamięci podręcznej KV dla modeli z uwagą okna przesuwnego (np. Gemma). Włącz, jeśli taki model przetwarza cały prompt w każdej turze; zużywa więcej pamięci."
+    },
+    "kv_unified": {
+      "title": "Ujednolicona pamięć podręczna KV",
+      "description": "Używać jednego ujednoliconego bufora KV współdzielonego przez wszystkie sloty. Oszczędza pamięć przy wielu równoległych slotach."
+    },
+    "kv_unified_per_slot": {
+      "title": "Kontekst na slot",
+      "description": "Ograniczyć część ujednoliconej pamięci podręcznej KV, jaką może użyć slot, w tokenach. 0 pozwala slotowi wypełnić całą pamięć. Dotyczy tylko ujednoliconej pamięci."
+    },
+    "reasoning_preserve": {
+      "title": "Zachowaj historię rozumowania",
+      "description": "Zachować w promptcie rozumowanie każdej poprzedniej tury asystenta, nie tylko ostatniej. Dotyczy tylko modeli, których szablon czatu na to pozwala, i zużywa tokeny promptu."
+    },
+    "keep": {
+      "title": "Zachowaj pierwsze N tokenów",
+      "description": "Liczba tokenów początkowego promptu zachowywanych przy przesuwaniu kontekstu. -1 = zachowaj wszystko."
+    }
+  },
+  "llamacppOptions": {
+    "none": "Brak",
+    "layer": "Warstwa",
+    "row": "Wiersz",
+    "tensor_experimental": "Tensor (eksperymentalny)",
+    "auto": "Auto",
+    "on": "Włączone",
+    "off": "Wyłączone",
+    "auto_mmap_if_supported": "Auto (mmap, jeśli obsługiwane)",
+    "none_no_mmap": "Brak (bez mmap)",
+    "mlock_no_mmap": "mlock (bez mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "Bezpośrednie I/O",
+    "model_default": "Wartość modelu",
+    "linear": "Liniowe"
+  },
+  "engineReleaseNotes": "Informacje o wersji",
+  "engineBuild": "Kompilacja",
+  "engineCommit": "Commit",
+  "engineBundled": "Silnik wnioskowania jest wbudowany w Jana, więc nie trzeba niczego osobno pobierać ani aktualizować. Podaj tę wersję, zgłaszając model, który się nie ładuje.",
+  "engineOtherVersion": "Potrzebujesz innej wersji llama.cpp? Uruchom własny llama-server i dodaj go jako niestandardowego dostawcę zgodnego z OpenAI.",
+  "engineOtherVersionLink": "Jak to zrobić"
 }

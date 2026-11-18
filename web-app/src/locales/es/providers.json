@@ -58,5 +58,193 @@
   },
   "addProvider": "Agregar proveedor",
   "addOpenAIProvider": "Agregar proveedor OpenAI",
-  "enterNameForProvider": "Ingresa un nombre para el proveedor"
+  "enterNameForProvider": "Ingresa un nombre para el proveedor",
+  "llamacppSettings": {
+    "llamacpp_env": {
+      "title": "Variables de entorno",
+      "description": "Variables de entorno para llama.cpp (KEY=VALUE), separadas por ';'."
+    },
+    "models_max": {
+      "title": "Máximo de modelos cargados a la vez",
+      "description": "Número máximo de modelos que el router mantiene cargados a la vez. 0 = ilimitado."
+    },
+    "timeout": {
+      "title": "Tiempo de espera para llamacpp",
+      "description": "Tiempo de conexión y carga de llamacpp, en segundos."
+    },
+    "fit": {
+      "title": "Ajuste (autoajuste a la memoria del dispositivo)",
+      "description": "Ajustar o no los argumentos no definidos para que quepan en la memoria del dispositivo ('on' u 'off'). (env: LLAMA_ARG_FIT)"
+    },
+    "fit_target": {
+      "title": "Objetivo de ajuste por dispositivo (MiB)",
+      "description": "Margen objetivo por dispositivo para el ajuste, valores MiB separados por comas. Un solo valor se aplica a todos los dispositivos. (env: LLAMA_ARG_FIT_TARGET)"
+    },
+    "fit_ctx": {
+      "title": "Tamaño de contexto mínimo para el ajuste",
+      "description": "Tamaño de contexto mínimo (tokens) que puede definir el ajuste automático."
+    },
+    "threads": {
+      "title": "Hilos",
+      "description": "Número de hilos a usar durante la generación (-1 para núcleos lógicos)."
+    },
+    "threads_batch": {
+      "title": "Hilos (lote)",
+      "description": "Número de hilos para procesar lotes y prompts (por defecto: igual que Hilos)."
+    },
+    "ctx_shift": {
+      "title": "Desplazamiento de contexto",
+      "description": "Desplazar el contexto en lugar de detenerlo cuando la ventana se llena, para continuar conversaciones largas sin errores de memoria."
+    },
+    "n_predict": {
+      "title": "Máximo de tokens a predecir",
+      "description": "Número máximo de tokens a generar. -1 = ilimitado, -2 = hasta llenar el contexto."
+    },
+    "batch_size": {
+      "title": "Tamaño del lote",
+      "description": "Tamaño de lote lógico máximo para procesar prompts."
+    },
+    "ubatch_size": {
+      "title": "Tamaño del microlote",
+      "description": "Tamaño de lote físico máximo para procesar prompts."
+    },
+    "n_cpu_moe": {
+      "title": "Capas MoE en CPU",
+      "description": "Mantener los pesos Mixture-of-Experts de las N primeras capas en memoria de CPU. Permite que un modelo MoE grande quepa en VRAM limitada. 0 lo desactiva."
+    },
+    "n_cpu_ffn": {
+      "title": "Capas FFN densas en CPU",
+      "description": "Mantener los pesos densos feed-forward de las N primeras capas en memoria de CPU, equivalente al ajuste MoE para modelos densos. 0 lo desactiva."
+    },
+    "no_kv_offload": {
+      "title": "Desactivar la descarga de la caché KV",
+      "description": "Mantener el caché KV en RAM del sistema en lugar de la memoria GPU. Útil cuando falta VRAM, a costa de velocidad."
+    },
+    "device": {
+      "title": "Dispositivos para descargar",
+      "description": "Aceleradores de descarga separados por comas, con los nombres de la lista de hardware detectado. Vacío = todos los aceleradores; \"none\" desactiva la descarga."
+    },
+    "split_mode": {
+      "title": "Modo de reparto de GPU",
+      "description": "Cómo repartir el modelo entre varias GPU."
+    },
+    "main_gpu": {
+      "title": "Índice de la GPU principal",
+      "description": "GPU a usar para el modelo (split-mode=none) o los resultados intermedios (split-mode=row)."
+    },
+    "tensor_split": {
+      "title": "Reparto de tensores",
+      "description": "Proporciones de reparto del modelo entre dispositivos, separadas por comas, p. ej. \"3,1\". Vacío = reparto igual."
+    },
+    "no_op_offload": {
+      "title": "Desactivar la descarga de operaciones",
+      "description": "Mantener las operaciones de tensores del host en la CPU en lugar de descargarlas al acelerador."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "Activar Flash Attention para mejorar el rendimiento."
+    },
+    "parallel": {
+      "title": "Secuencias paralelas",
+      "description": "Número de secuencias paralelas a decodificar (0 = valor predeterminado de llama.cpp). Jan no reserva ningún slot: chat, Cowork y solicitudes en segundo plano comparten el slot 0, y sus cachés KV se aparcan y restauran por conversación."
+    },
+    "cont_batching": {
+      "title": "Procesamiento por lotes continuo",
+      "description": "Activar el procesamiento por lotes continuo (dynamic batching) para solicitudes simultáneas. Activado por defecto, como en llama.cpp."
+    },
+    "load_mode": {
+      "title": "Modo de carga",
+      "description": "Cómo se leen los pesos del modelo en memoria. Auto mapea el archivo salvo que un dispositivo no lo permita. None lee sin mmap (más lento, menos paginación). mlock los mantiene en RAM para evitar el swap, con o sin mmap. Direct I/O evita el caché de páginas del sistema cuando es posible. Cada modelo puede sobrescribirlo."
+    },
+    "lazy_mode": {
+      "title": "Lectura diferida de tensores",
+      "description": "Leer del disco bajo demanda las filas de tensores grandes marcados por arquitectura (p. ej. embeddings por capa) en lugar de mantenerlos en memoria. Auto se activa por encima de 4 GiB. Requiere mmap: elige un modo de carga con mmap (Auto, mmap o mmap + mlock)."
+    },
+    "cache_type_k": {
+      "title": "Tipo de caché KV K",
+      "description": "Tipo de datos del caché KV para Keys (por defecto: f16)."
+    },
+    "cache_type_v": {
+      "title": "Tipo de caché KV V",
+      "description": "Tipo de datos del caché KV para Values (por defecto: f16)."
+    },
+    "rope_scaling": {
+      "title": "Método de escalado RoPE",
+      "description": "Método de escalado de frecuencias RoPE. \"Valor del modelo\" lo deja al modelo; \"Ninguno\" desactiva explícitamente el escalado."
+    },
+    "rope_freq_base": {
+      "title": "Frecuencia base RoPE",
+      "description": "Frecuencia base RoPE (0 = cargada desde el modelo)."
+    },
+    "rope_freq_scale": {
+      "title": "Factor de escalado RoPE",
+      "description": "Factor de escalado de frecuencias RoPE. 0 carga el valor del modelo; 1 fuerza la ausencia de escalado."
+    },
+    "cache_ram": {
+      "title": "RAM de caché de prompt (MiB)",
+      "description": "Tamaño del caché de prompts en MiB (por defecto: 8192, o desactivado para modelos de decisión salvo cambio). -1 = ilimitado, 0 lo desactiva."
+    },
+    "persist_thread_cache": {
+      "title": "Recordar conversaciones entre sesiones",
+      "description": "Guardar en disco el caché de prompt de cada conversación para no releerla entera al reabrirla. Solo se restaura si el modelo, sus ajustes y la versión de llama.cpp coinciden con los que lo guardaron."
+    },
+    "thread_cache_size": {
+      "title": "Límite de disco de caché de conversación (MiB)",
+      "description": "Presupuesto de disco para los cachés de conversación guardados (por defecto: 8192). Los más antiguos se eliminan primero. Una conversación larga puede ocupar cientos de MiB."
+    },
+    "cache_reuse": {
+      "title": "Reutilización de caché",
+      "description": "Tamaño mínimo del bloque de tokens de prefijo coincidentes que se reutiliza del caché. 0 = desactivado."
+    },
+    "ctx_checkpoints": {
+      "title": "Puntos de control de contexto",
+      "description": "Número máximo de puntos de control de contexto por slot, que permiten restaurar un contexto desplazado en lugar de reprocesarlo."
+    },
+    "checkpoint_min_step": {
+      "title": "Paso mínimo entre puntos de control",
+      "description": "Número mínimo de tokens entre puntos de control de contexto."
+    },
+    "swa_full": {
+      "title": "Caché SWA completa",
+      "description": "Usar un caché KV de tamaño completo para modelos de atención por ventana deslizante (p. ej. Gemma). Actívalo si ese modelo reprocesa todo el prompt en cada turno; consume más memoria."
+    },
+    "kv_unified": {
+      "title": "Caché KV unificada",
+      "description": "Usar un único búfer KV unificado compartido por todos los slots. Ahorra memoria con varios slots paralelos."
+    },
+    "kv_unified_per_slot": {
+      "title": "Contexto por ranura",
+      "description": "Limitar la parte del caché KV unificado que puede usar un slot, en tokens. 0 deja que un slot llene todo el caché. Solo se aplica al caché unificado."
+    },
+    "reasoning_preserve": {
+      "title": "Conservar el historial de razonamiento",
+      "description": "Conservar el razonamiento de cada turno anterior del asistente en el prompt, no solo el más reciente. Solo afecta a modelos cuyo template de chat lo permita y consume tokens de prompt."
+    },
+    "keep": {
+      "title": "Conservar los primeros N tokens",
+      "description": "Número de tokens del prompt inicial a conservar al desplazar el contexto. -1 = conservar todo."
+    }
+  },
+  "llamacppOptions": {
+    "none": "Ninguno",
+    "layer": "Capa",
+    "row": "Fila",
+    "tensor_experimental": "Tensor (experimental)",
+    "auto": "Auto",
+    "on": "Activado",
+    "off": "Desactivado",
+    "auto_mmap_if_supported": "Auto (mmap si es compatible)",
+    "none_no_mmap": "Ninguno (sin mmap)",
+    "mlock_no_mmap": "mlock (sin mmap)",
+    "mmap_mlock": "mmap + mlock",
+    "direct_i_o": "E/S directa",
+    "model_default": "Valor del modelo",
+    "linear": "Lineal"
+  },
+  "engineReleaseNotes": "Notas de la versión",
+  "engineBuild": "Compilación",
+  "engineCommit": "Commit",
+  "engineBundled": "El motor de inferencia está integrado en Jan, así que no hay nada que descargar ni actualizar por separado. Indica esta versión al informar de un modelo que no se carga.",
+  "engineOtherVersion": "¿Necesitas otra versión de llama.cpp? Ejecuta tu propio llama-server y añádelo como proveedor personalizado compatible con OpenAI.",
+  "engineOtherVersionLink": "Cómo hacerlo"
 }
