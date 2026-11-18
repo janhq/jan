@@ -41,6 +41,7 @@ const h = vi.hoisted(() => {
       corsEnabled: true,
       verboseLogs: false,
       proxyTimeout: 0,
+      autoLoadModel: true,
       lastServerModels: [] as Array<{ model: string; provider: string }>,
       defaultModelLocalApiServer: null as null | { model: string; provider: string },
     },
@@ -235,6 +236,7 @@ describe('DataProvider', () => {
     h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
     h.invoke.mockResolvedValue(undefined)
     h.localApi.enableOnStartup = false
+    h.localApi.autoLoadModel = true
     h.localApi.defaultModelLocalApiServer = null
     h.localApi.lastServerModels = []
     ;(window as unknown as { core: unknown }).core = {
@@ -564,6 +566,20 @@ describe('DataProvider', () => {
         { model: 'm1', provider: 'openai' },
       ])
     })
+  })
+
+  it('starts the server without loading a model when autoLoadModel is off', async () => {
+    h.localApi.enableOnStartup = true
+    h.localApi.autoLoadModel = false
+    h.localApi.defaultModelLocalApiServer = { model: 'm1', provider: 'openai' }
+    h.getProviderByName.mockReturnValue({ provider: 'openai' })
+    hubState.getServerStatus.mockResolvedValue(false)
+    hubState.startServer.mockResolvedValue(2000)
+
+    render(<DataProvider />)
+
+    await waitFor(() => expect(hubState.startServer).toHaveBeenCalled())
+    expect(hubState.startModel).not.toHaveBeenCalled()
   })
 
   it('sets server status to stopped when the startup start fails', async () => {

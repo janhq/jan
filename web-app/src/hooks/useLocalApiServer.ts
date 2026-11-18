@@ -10,6 +10,8 @@ type LocalApiServerState = {
   // Keep the app running in the tray when the window closes while the server is on
   runInBackground: boolean
   setRunInBackground: (value: boolean) => void
+  autoLoadModel: boolean
+  setAutoLoadModel: (value: boolean) => void
   // Default local model to auto-load when the server starts
   defaultModelLocalApiServer: { model: string; provider: string } | null
   setDefaultModelLocalApiServer: (
@@ -55,6 +57,8 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       setEnableOnStartup: (value) => set({ enableOnStartup: value }),
       runInBackground: true,
       setRunInBackground: (value) => set({ runInBackground: value }),
+      autoLoadModel: true,
+      setAutoLoadModel: (value) => set({ autoLoadModel: value }),
       defaultModelLocalApiServer: null,
       setDefaultModelLocalApiServer: (model) =>
         set({ defaultModelLocalApiServer: model }),

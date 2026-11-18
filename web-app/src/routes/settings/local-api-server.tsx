@@ -73,6 +73,8 @@ function LocalAPIServerContent() {
     proxyTimeout,
     enableServerToolExecution,
     setEnableServerToolExecution,
+    autoLoadModel,
+    setAutoLoadModel,
     setLastServerModels,
     defaultModelLocalApiServer,
     setDefaultModelLocalApiServer,
@@ -138,12 +140,15 @@ function LocalAPIServerContent() {
 
       setServerStatus('pending')
 
-      ensureModelForServer({
-        modelsService: serviceHub.models(),
-        modelOverride: defaultModelLocalApiServer,
-        onLoadStart: () => setIsModelLoading(true),
-        onLoadEnd: () => setIsModelLoading(false),
-      })
+      ;(autoLoadModel
+        ? ensureModelForServer({
+            modelsService: serviceHub.models(),
+            modelOverride: defaultModelLocalApiServer,
+            onLoadStart: () => setIsModelLoading(true),
+            onLoadEnd: () => setIsModelLoading(false),
+          })
+        : Promise.resolve({ status: 'skipped' })
+      )
         .then(async (result) => {
           if (result.status === 'no_model_available') {
             throw new Error('No model available to load')
@@ -480,6 +485,16 @@ function LocalAPIServerContent() {
                     }
                   />
                 )}
+                <CardItem
+                  title={t('settings:localApiServer.autoLoadModel')}
+                  description={t('settings:localApiServer.autoLoadModelDesc')}
+                  actions={
+                    <Switch
+                      checked={autoLoadModel}
+                      onCheckedChange={setAutoLoadModel}
+                    />
+                  }
+                />
                 <CardItem
                   title={t('settings:localApiServer.defaultModel')}
                   description={t('settings:localApiServer.defaultModelDesc')}
