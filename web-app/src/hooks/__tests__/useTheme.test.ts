@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { checkOSDarkMode } from '../useTheme'
+import { checkOSDarkMode, getInitialSystemDark } from '../useTheme'
 
 // Mock Tauri API
 vi.mock('@tauri-apps/api/window', () => ({
@@ -79,6 +79,33 @@ describe('useTheme', () => {
       
       // Restore
       window.matchMedia = originalMatchMedia
+    })
+  })
+
+  describe('getInitialSystemDark', () => {
+    afterEach(() => {
+      delete window.__JAN_INITIAL_THEME__
+    })
+
+    it('prefers the backend-injected system value over matchMedia', () => {
+      vi.mocked(window.matchMedia).mockReturnValue({ matches: false } as any)
+      window.__JAN_INITIAL_THEME__ = { activeTheme: 'auto', systemDark: true }
+      expect(getInitialSystemDark()).toBe(true)
+
+      vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as any)
+      window.__JAN_INITIAL_THEME__ = { activeTheme: 'auto', systemDark: false }
+      expect(getInitialSystemDark()).toBe(false)
+    })
+
+    it('falls back to matchMedia when the backend has no system value', () => {
+      vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as any)
+      window.__JAN_INITIAL_THEME__ = { activeTheme: 'auto', systemDark: null }
+      expect(getInitialSystemDark()).toBe(true)
+    })
+
+    it('falls back to matchMedia when nothing was injected', () => {
+      vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as any)
+      expect(getInitialSystemDark()).toBe(true)
     })
   })
 

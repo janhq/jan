@@ -26,5 +26,14 @@ declare global {
     core: AppCore | undefined
     gtag?: (...args: unknown[]) => void
     dataLayer?: unknown[]
+    /**
+     * Effective theme resolved by the Tauri backend before page load (see
+     * `initial_theme_init_script`). `systemDark` is `null` when the backend
+     * has no reliable system value and `prefers-color-scheme` should be used.
+     */
+    __JAN_INITIAL_THEME__?: {
+      activeTheme: 'light' | 'dark' | 'auto'
+      systemDark: boolean | null
+    }
   }
 }
