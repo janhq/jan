@@ -22,7 +22,7 @@ const GUARDED_NAMESPACES = [
  * leaves a block of English inside an otherwise translated screen. Add a
  * namespace here once every locale has caught up with it.
  */
-const COMPLETE_NAMESPACES = ['tools']
+const COMPLETE_NAMESPACES = ['tools', 'setup']
 
 /**
  * Keys the code composes at runtime (`t(`setup:${stage.messageKey}`)`), which a

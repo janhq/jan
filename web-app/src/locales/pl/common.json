@@ -59,6 +59,8 @@
   "finish": "Zakończ",
   "skip": "Pomiń",
   "allow": "Pozwól",
+  "analyticsConsentDetail": "Zbieramy anonimowe dane, aby zrozumieć, jak używane są funkcje. Twoje rozmowy i dane osobowe nigdy nie są śledzone. Możesz to zmienić w dowolnym momencie w Ustawienia > Prywatność.",
+  "analyticsConsentQuestion": "Czy chcesz pomóc nam ulepszyć Jana?",
   "deny": "Odmów",
   "start": "Uruchom",
   "stop": "Zatrzymaj",

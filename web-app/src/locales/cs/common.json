@@ -59,6 +59,8 @@
   "finish": "Dokončit",
   "skip": "Přeskočit",
   "allow": "Povolit",
+  "analyticsConsentDetail": "Shromažďujeme anonymní data, abychom pochopili, jak se funkce používají. Vaše konverzace a osobní údaje nikdy nesledujeme. Můžete to kdykoli změnit v Nastavení > Soukromí.",
+  "analyticsConsentQuestion": "Chcete nám pomoci vylepšit Jan?",
   "deny": "Zamítnout",
   "start": "Spustit",
   "stop": "Zastavit",

@@ -71,6 +71,8 @@
   "finish": "Fine",
   "skip": "Salta",
   "allow": "Consenti",
+  "analyticsConsentDetail": "Raccogliamo dati anonimi per capire come vengono usate le funzioni. Le tue chat e i dati personali non vengono mai tracciati. Puoi cambiarle in qualsiasi momento in Impostazioni > Privacy.",
+  "analyticsConsentQuestion": "Vuoi aiutarci a migliorare Jan?",
   "deny": "Rifiuta",
   "start": "Avvia",
   "stop": "Interrompi",

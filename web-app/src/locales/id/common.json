@@ -59,6 +59,8 @@
   "finish": "Selesai",
   "skip": "Lewati",
   "allow": "Izinkan",
+  "analyticsConsentDetail": "Kami mengumpulkan data anonim untuk memahami penggunaan fitur. Obrolan dan informasi pribadi Anda tidak pernah dilacak. Anda dapat mengubahnya kapan saja di Pengaturan > Privasi.",
+  "analyticsConsentQuestion": "Apakah Anda ingin membantu kami meningkatkan Jan?",
   "deny": "Tolak",
   "start": "Mulai",
   "stop": "Hentikan",

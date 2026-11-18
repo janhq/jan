@@ -59,6 +59,8 @@
   "finish": "Hoàn thành",
   "skip": "Bỏ qua",
   "allow": "Cho phép",
+  "analyticsConsentDetail": "Chúng tôi thu thập dữ liệu ẩn danh để hiểu cách các tính năng được sử dụng. Cuộc trò chuyện và thông tin cá nhân của bạn không bao giờ bị theo dõi. Bạn có thể thay đổi điều này bất cứ lúc nào trong Cài đặt > Quyền riêng tư.",
+  "analyticsConsentQuestion": "Bạn có muốn giúp chúng tôi cải thiện Jan không?",
   "deny": "Từ chối",
   "start": "Bắt đầu",
   "stop": "Dừng",

@@ -1,4 +1,5 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { detectLanguage } from './languages'
 
 // Types for our i18n implementation
 export interface TranslationResources {
@@ -56,9 +57,9 @@ const getStoredLanguage = (): string => {
   try {
     const stored = localStorage.getItem(localStorageKey.settingGeneral)
     const parsed = stored ? JSON.parse(stored) : {}
-    return parsed?.state?.currentLanguage || 'en'
+    return parsed?.state?.currentLanguage || detectLanguage()
   } catch {
-    return 'en'
+    return detectLanguage()
   }
 }
 

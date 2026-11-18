@@ -82,6 +82,8 @@
   "finish": "完成",
   "skip": "跳过",
   "allow": "允许",
+  "analyticsConsentDetail": "我们会收集匿名数据以了解功能使用情况。您的聊天和个人信息绝不会被追踪。您可以随时在“设置 > 隐私”中更改此选项。",
+  "analyticsConsentQuestion": "您愿意帮助我们改进 Jan 吗？",
   "deny": "拒绝",
   "start": "开始",
   "stop": "停止",

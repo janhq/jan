@@ -52,6 +52,8 @@
   "finish": "Finalitza",
   "skip": "Omet",
   "allow": "Permet",
+  "analyticsConsentDetail": "Recollim dades anònimes per entendre com s'utilitzen les funcions. Les teves converses i dades personals no es rastregen mai. Pots canviar-ho en qualsevol moment a Configuració > Privadesa.",
+  "analyticsConsentQuestion": "Vols ajudar-nos a millorar el Jan?",
   "deny": "Denega",
   "start": "Inicia",
   "stop": "Atura",

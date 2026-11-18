@@ -58,6 +58,8 @@
   "finish": "Finalizar",
   "skip": "Pular",
   "allow": "Permitir",
+  "analyticsConsentDetail": "Coletamos dados anônimos para entender o uso dos recursos. Suas conversas e informações pessoais nunca são rastreadas. Você pode alterar isso a qualquer momento em Configurações > Privacidade.",
+  "analyticsConsentQuestion": "Você gostaria de nos ajudar a melhorar o Jan?",
   "deny": "Negar",
   "start": "Iniciar",
   "stop": "Parar",

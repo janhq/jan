@@ -59,6 +59,8 @@
   "finish": "完成",
   "skip": "略過",
   "allow": "允許",
+  "analyticsConsentDetail": "我們會收集匿名資料以了解功能使用情形。您的聊天內容和個人資訊絕不會被追蹤。您可以隨時在「設定 > 隱私權」中變更。",
+  "analyticsConsentQuestion": "您願意協助我們改善 Jan 嗎？",
   "deny": "拒絕",
   "start": "開始",
   "stop": "停止",
