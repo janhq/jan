@@ -137,6 +137,15 @@ vi.mock('@/components/ui/button', () => ({
   ),
 }))
 
+vi.mock('../dialogs/ImportLlamacppModelDialog', () => ({
+  ImportLlamacppModelDialog: ({ trigger, onSuccess }: any) => (
+    <div>
+      {trigger}
+      <button onClick={() => onSuccess('my-local-model')}>finish-import</button>
+    </div>
+  ),
+}))
+
 import SetupScreen from '../SetupScreen'
 
 const sampleModel = {
@@ -706,6 +715,36 @@ describe('SetupScreen', () => {
       expect(
         screen.getByTestId('setup-wizard').querySelectorAll('span.h-1').length
       ).toBe(3)
+    })
+  })
+
+  describe('importing a local model', () => {
+    it('offers a local GGUF import on the model page', async () => {
+      await renderPastSetup()
+      expect(screen.getByText('setup:importLocalModel')).toBeInTheDocument()
+    })
+
+    it('completes setup with the imported model, even without Hub metadata', async () => {
+      hoisted.janModel = null
+      hoisted.providersMock.selectModelProvider.mockReturnValue({
+        id: 'my-local-model',
+      })
+
+      await renderPastSetup()
+      await act(async () => {
+        fireEvent.click(screen.getByText('finish-import'))
+      })
+
+      await waitFor(() =>
+        expect(hoisted.navigateMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            search: {
+              threadModel: { id: 'my-local-model', provider: 'llamacpp' },
+            },
+          })
+        )
+      )
+      expect(localStorage.getItem('sc')).toBe('true')
     })
   })
 
