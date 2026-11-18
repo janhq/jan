@@ -185,6 +185,51 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.trustedrouter.com/v1',
+    explore_models_url: 'https://trustedrouter.com/models',
+    provider: 'trustedrouter',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The TrustedRouter API uses API keys for authentication. Visit your [API Keys](https://trustedrouter.com/console/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'trustedrouter/auto',
+        name: 'TrustedRouter Auto',
+        version: '1.0',
+        description: 'Routes each request across healthy supported providers',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'trustedrouter/zdr',
+        name: 'TrustedRouter ZDR',
+        version: '1.0',
+        description: 'Prefers zero-data-retention routes',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'trustedrouter/e2e',
+        name: 'TrustedRouter E2E',
+        version: '1.0',
+        description: 'Uses end-to-end encrypted routes where available',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
