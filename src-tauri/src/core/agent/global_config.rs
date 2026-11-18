@@ -102,7 +102,8 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # [web_search]                        # backend for the web_search/web_fetch
 # provider = "tavily"                 # tools: "exa" (default, keyless),
 #                                     # "tavily" (needs a key), "searxng"
-#                                     # (needs endpoint) or "you". Keys are
+#                                     # (needs endpoint), "you" or
+#                                     # "keenable" (keyless). Keys are
 #                                     # kept in the secret store: set them
 #                                     # with /settings or `jan config
 #                                     # web-search --api-key`, not here
@@ -257,7 +258,7 @@ struct GlobalConfigToml {
 /// `[web_search]` in `~/.jan/config.toml`. Each key is `None` when unset.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub(crate) struct WebSearchSection {
-    /// Backend id (`exa`, `tavily`, `searxng`, `you`). `None` = Exa.
+    /// Backend id (`exa`, `tavily`, `searxng`, `you`, `keenable`). `None` = Exa.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     /// Instance URL for a self-hosted backend (SearXNG).
