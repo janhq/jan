@@ -19,6 +19,7 @@
     "core:window:allow-set-focus",
     "os:default",
     "opener:default",
+    "notification:default",
     "log:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",

@@ -128,7 +128,24 @@ const stepMessageZoom = (current: number, direction: 1 | -1): number => {
   )
 }
 
+export type RunNotificationSettings = {
+  enabled: boolean
+  onFinish: boolean
+  onError: boolean
+  onApproval: boolean
+  onCancel: boolean
+}
+
+const defaultRunNotifications: RunNotificationSettings = {
+  enabled: true,
+  onFinish: true,
+  onError: true,
+  onApproval: true,
+  onCancel: false,
+}
+
 interface InterfaceSettingsState {
+  runNotifications: RunNotificationSettings
   fontSize: FontSize
   messageZoom: number
   accentColor: AccentColorValue
@@ -147,6 +164,7 @@ interface InterfaceSettingsState {
   setColoredUserBubble: (colored: boolean) => void
   setRenderHtmlArtifacts: (render: boolean) => void
   setAutoGenerateTitle: (auto: boolean) => void
+  setRunNotifications: (patch: Partial<RunNotificationSettings>) => void
   resetInterface: () => void
 }
 
@@ -163,6 +181,7 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setColoredUserBubble'
   | 'setRenderHtmlArtifacts'
   | 'setAutoGenerateTitle'
+  | 'setRunNotifications'
 >
 
 export const fontSizeOptions = [
@@ -185,6 +204,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     coloredUserBubble: true,
     renderHtmlArtifacts: false,
     autoGenerateTitle: true,
+    runNotifications: { ...defaultRunNotifications },
   }
 }
 
@@ -225,6 +245,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             coloredUserBubble: true,
             renderHtmlArtifacts: false,
             autoGenerateTitle: true,
+            runNotifications: { ...defaultRunNotifications },
           })
         },
 
@@ -274,6 +295,12 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         setAutoGenerateTitle: (auto) => {
           set({ autoGenerateTitle: auto })
         },
+
+        setRunNotifications: (patch) => {
+          set((state) => ({
+            runNotifications: { ...state.runNotifications, ...patch },
+          }))
+        },
       }
     },
     {
@@ -289,6 +316,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         coloredUserBubble: state.coloredUserBubble,
         renderHtmlArtifacts: state.renderHtmlArtifacts,
         autoGenerateTitle: state.autoGenerateTitle,
+        runNotifications: state.runNotifications,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
@@ -322,6 +350,11 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
           if (typeof state.showTokenSpeed !== 'boolean') {
             state.showTokenSpeed = true
+          }
+
+          state.runNotifications = {
+            ...defaultRunNotifications,
+            ...state.runNotifications,
           }
 
           if (typeof state.coloredUserBubble !== 'boolean') {
