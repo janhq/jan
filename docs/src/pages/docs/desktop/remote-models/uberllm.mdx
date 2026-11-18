@@ -1,0 +1,69 @@
+---
+title: UberLLM
+description: Use UberLLM models in Jan with an UberLLM API key.
+keywords:
+  [
+    Jan,
+    remote models,
+    OpenAI-compatible API,
+    UberLLM integration,
+    UberLLM,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# UberLLM
+
+[UberLLM](https://uberllm.dev) is an OpenAI-compatible API for many open and closed models (DeepSeek, GLM,
+Kimi, Qwen, Gemini, Claude and more) behind one key. Accounts are prepaid.
+
+## Integrate UberLLM with Jan
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Sign up at [uberllm.dev](https://uberllm.dev/signup)
+2. Create a key on the [API Keys](https://uberllm.dev/dashboard/keys) page and copy it
+
+<Callout type='info'>
+Requests are paid from your UberLLM credit, so add credit before you start.
+</Callout>
+
+### Step 2: Configure Jan
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **UberLLM**
+3. Insert your **API Key**
+
+### Step 3: Start Using UberLLM Models
+1. Pick any existing **Chat** or create a new one
+2. Select a model under UberLLM in the **model selector**
+3. Start chatting
+</Steps>
+
+## Available Models
+
+Jan ships with a few UberLLM models (`deepseek/deepseek-v4.1-flash`, `z-ai/glm-5.2`, `moonshotai/kimi-k3`,
+`google/gemini-2.5-flash`). To add more, open the UberLLM provider settings and fetch the model list from
+the API, or add a model by its id from the [UberLLM model list](https://uberllm.dev/models).
+
+Model ids use the `organization/model-name` format.
+
+## Jan Agent (CLI)
+
+Run `/login`, pick **UberLLM** and paste your key. Jan checks the key against `GET /v1/models` and saves
+the model list. For a single run with `--provider uberllm`, the key can also come from `UBERLLM_API_KEY`
+(see [Providers](/docs/agent/providers)).
+
+## Troubleshooting
+
+**1. API Key Issues**
+- Check that the key is correct and has not been deleted
+- Check that your account has credit
+
+**2. Model Unavailable**
+- Check the model id against the [model list](https://uberllm.dev/models)
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+Need more help? See the [UberLLM documentation](https://uberllm.dev/docs) or email support@uberllm.dev.

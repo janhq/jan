@@ -23,6 +23,9 @@
   "huggingface": {
     "title": "Hugging Face"
   },
+  "uberllm": {
+    "title": "UberLLM"
+  },
   "custom-endpoint": {
     "title": "Custom Endpoints"
   }
