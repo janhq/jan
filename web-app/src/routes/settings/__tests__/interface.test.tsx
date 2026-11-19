@@ -52,6 +52,8 @@ vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ activeTheme: theme.activ
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
     resetInterface: vi.fn(),
+    runNotifications: { enabled: false },
+    setRunNotifications: vi.fn(),
   }),
 }))
 
