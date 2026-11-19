@@ -399,4 +399,56 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://cloudgpu.app/v1',
+    explore_models_url: 'https://cloudgpu.app/v1/models',
+    provider: 'cloudgpu',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'The CloudGPU API uses API keys for authentication. Sign in at [CloudGPU](https://cloudgpu.app) and create an API key for your requests.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        version: '1.0',
+        description: 'Text chat model with a 131072-token context window.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'kimi-k2.6',
+        name: 'Kimi K2.6',
+        version: '1.0',
+        description: 'Text chat model with a 262144-token context window.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'glm-5.3',
+        name: 'GLM 5.3',
+        version: '1.0',
+        description: 'Text chat model with a 131072-token context window.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'qwen3-coder-480b',
+        name: 'Qwen3 Coder 480B',
+        version: '1.0',
+        description: 'Text chat model with a 262144-token context window.',
+        capabilities: ['completion'],
+      },
+    ],
+  },
 ]

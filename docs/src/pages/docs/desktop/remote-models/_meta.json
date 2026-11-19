@@ -23,6 +23,9 @@
   "huggingface": {
     "title": "Hugging Face"
   },
+  "cloudgpu": {
+    "title": "CloudGPU"
+  },
   "custom-endpoint": {
     "title": "Custom Endpoints"
   }

@@ -81,6 +81,12 @@ const NVIDIA: ProviderCaps = {
   maybe: new Set(['top_k']),
 }
 
+// The public models catalog does not list sampler support.
+const CLOUDGPU: ProviderCaps = {
+  supported: set(),
+  maybe: new Set(['penalties', 'top_k']),
+}
+
 const AZURE: ProviderCaps = {
   supported: set('penalties', 'json_schema'),
   maybe: new Set(),
@@ -159,6 +165,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  cloudgpu: CLOUDGPU,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }

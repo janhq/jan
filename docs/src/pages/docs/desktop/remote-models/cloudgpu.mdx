@@ -1,0 +1,71 @@
+---
+title: CloudGPU API
+description: Learn how to integrate the CloudGPU API with Jan to chat with DeepSeek, Kimi, GLM, MiniMax and Qwen models.
+keywords:
+  [
+    CloudGPU API,
+    Jan,
+    Jan AI,
+    conversational AI,
+    large language model,
+    integration,
+    CloudGPU integration,
+    API integration
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# CloudGPU
+
+Jan supports [CloudGPU](https://cloudgpu.app) as a remote provider. The public catalog at `https://cloudgpu.app/v1/models` lists DeepSeek, Kimi, GLM, MiniMax, Qwen, and other chat models, and Jan prefills that base URL (`https://cloudgpu.app/v1`).
+
+## Integrate CloudGPU API with Jan
+
+<Steps>
+### Step 1: Get Your API Key
+1. Visit [CloudGPU](https://cloudgpu.app) and sign in
+2. Create & copy a new API key or copy your existing one
+
+<Callout type='info'>
+Ensure your account has balance left for the model you pick
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **CloudGPU**
+3. Insert your **API Key**
+
+### Step 3: Start Using CloudGPU's Models
+
+1. Jump into any existing **Chat** or create a new one
+2. Select a CloudGPU model from **model selector**
+3. Start chatting
+</Steps>
+
+## Available Models Through CloudGPU
+
+Jan includes a few CloudGPU models by default. In case you want to use a specific CloudGPU model that
+you cannot find in **Jan**, follow the instructions in the [Add Cloud Models](/docs/desktop/manage-models#add-models-1):
+- See the list of models returned by `GET https://cloudgpu.app/v1/models`.
+- The `id` property must match the model id in the list. For example, to use DeepSeek V4 Pro, set the `id` property to `deepseek-v4-pro`.
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and not revoked
+- Check that your CloudGPU account has balance
+
+**2. Connection Problems**
+- Check your internet connection
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Not Found**
+- Check that you are using the exact model ID
+- Compare it with the ids returned by `GET https://cloudgpu.app/v1/models`
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH).
