@@ -64,7 +64,7 @@ export function ensureAnthropicHeaders(
   setDefaultHeader(headers, ANTHROPIC_BROWSER_ACCESS_HEADER, 'true')
 }
 
-type CatalogKind = 'openai' | 'anthropic' | 'gemini'
+type CatalogKind = 'openai' | 'anthropic' | 'gemini' | 'tokenlab'
 
 /// Resolve which catalog shape a provider speaks. `api_type` is authoritative
 /// (a custom-named Anthropic gateway still lists Claude models), falling back
@@ -75,7 +75,12 @@ function resolveCatalogKind(
   const name = typeof provider === 'string' ? provider : provider.provider
   const apiType = typeof provider === 'string' ? undefined : provider.api_type
   if (apiType === 'anthropic') return 'anthropic'
-  if (name === 'openai' || name === 'anthropic' || name === 'gemini') {
+  if (
+    name === 'openai' ||
+    name === 'anthropic' ||
+    name === 'gemini' ||
+    name === 'tokenlab'
+  ) {
     return name
   }
   return null
@@ -160,6 +165,40 @@ function inferAnthropicCapabilities(id: string): string[] | null {
   return ['completion', 'tools', 'vision']
 }
 
+function inferTokenLabCapabilities(id: string): string[] | null {
+  if (
+    id.startsWith('text-embedding-') ||
+    id.startsWith('embedding-') ||
+    id.startsWith('whisper-') ||
+    id.startsWith('tts-') ||
+    id.startsWith('dall-e-') ||
+    id.startsWith('gpt-image-')
+  ) {
+    return null
+  }
+
+  if (
+    id.startsWith('gpt-') ||
+    id.startsWith('claude-') ||
+    id.startsWith('gemini-') ||
+    id.startsWith('grok-')
+  ) {
+    return ['completion', 'tools', 'vision']
+  }
+
+  if (
+    id.startsWith('deepseek-') ||
+    id.startsWith('glm-') ||
+    id.startsWith('qwen') ||
+    id.startsWith('kimi-') ||
+    id.startsWith('minimax-')
+  ) {
+    return ['completion', 'tools']
+  }
+
+  return null
+}
+
 function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (key) {
@@ -237,7 +276,9 @@ function normalizeCatalog(kind: CatalogKind, rows: unknown[]): RemoteCatalogMode
       ? inferOpenAICapabilities
       : kind === 'gemini'
         ? inferGeminiCapabilities
-        : inferAnthropicCapabilities
+        : kind === 'tokenlab'
+          ? inferTokenLabCapabilities
+          : inferAnthropicCapabilities
 
   const parsed: RemoteCatalogModel[] = []
   for (const raw of rows) {
