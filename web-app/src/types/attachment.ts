@@ -32,6 +32,9 @@ export type Attachment = {
   id?: string
   injectionMode?: 'inline' | 'embeddings'
   inlineContent?: string
+  
+  // For MCP prompts and other text content
+  lineCount?: number
 }
 
 /**

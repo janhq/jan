@@ -4,9 +4,10 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { MCPTool } from '@/types/completion'
+import { MCPPrompt } from '@janhq/core'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
-import type { MCPAuthStatus, MCPConfig, ServerSummary } from './types'
+import type { MCPAuthStatus, MCPConfig, PromptResult, ServerSummary } from './types'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
@@ -65,6 +66,19 @@ export class TauriMCPService extends DefaultMCPService {
 
   async getTools(): Promise<MCPTool[]> {
     return window.core?.api?.getTools()
+  }
+
+  async getPrompt(serverName: string, promptName: string, args?: Record<string, string>): Promise<PromptResult> {
+    return invoke<PromptResult>('get_prompt', {
+      serverName,
+      promptName,
+      arguments: args,
+    }
+    )
+  }
+
+  async getPrompts(): Promise<MCPPrompt[]> {
+    return invoke<MCPPrompt[]>('get_prompts')
   }
 
   async getToolsForServers(serverNames: string[]): Promise<MCPTool[]> {

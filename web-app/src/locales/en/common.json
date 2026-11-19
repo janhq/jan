@@ -206,6 +206,7 @@
   "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
+  "noFeaturesAvailable": "No features available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
   "failedToLoadModels": "Failed to load models",
   "noModels": "No models found",

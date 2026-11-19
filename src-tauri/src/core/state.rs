@@ -10,7 +10,7 @@ use crate::core::mcp::models::{McpSettings, ToolWithServer};
 #[cfg(not(feature = "cli"))]
 use crate::core::mcp::progress::JanClientHandler;
 #[cfg(feature = "cli")]
-use rmcp::model::{CallToolRequestParams, CallToolResult, InitializeRequestParams, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult, InitializeRequestParams, Prompt, Tool};
 #[cfg(feature = "cli")]
 use rmcp::ServiceError;
 use rmcp::{service::RunningService, RoleClient};
@@ -109,6 +109,23 @@ impl RunningServiceEnum {
             Self::WithInit(s) => s.peer_info().map(|p| (*p).clone()),
         }
     }
+
+    pub async fn list_all_prompts(&self) -> Result<Vec<Prompt>, rmcp::ServiceError> {
+        match self {
+            Self::NoInit(s) => s.list_all_prompts().await,
+            Self::WithInit(s) => s.list_all_prompts().await,
+        }
+    }
+
+    pub async fn get_prompt(
+        &self,
+        params: rmcp::model::GetPromptRequestParams,
+    ) -> Result<rmcp::model::GetPromptResult, rmcp::ServiceError> {
+        match self {
+            Self::NoInit(s) => s.get_prompt(params).await,
+            Self::WithInit(s) => s.get_prompt(params).await,
+        }
+    }
 }
 
 /// Shared desktop application state owned by Tauri. The CLI builds its
@@ -169,4 +186,5 @@ impl Default for AppState {
         }
     }
 }
+
 
