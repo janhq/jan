@@ -114,8 +114,8 @@ export default memo(function DropdownToolsAvailable({
       for (const msg of result.messages) {
         const content = msg.content
         const ext = mimeToExtension(
-          'mimeType' in content ? (content as any).mimeType : undefined,
-          'uri' in content ? (content as any).uri : undefined,
+          'mimeType' in content ? content.mimeType : undefined,
+          'uri' in content ? content.uri : undefined,
         )
         const fileName = `${prompt.name}.${ext}`
 
