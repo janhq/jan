@@ -10,10 +10,10 @@ use crate::core::mcp::models::{McpSettings, ToolWithServer};
 #[cfg(not(feature = "cli"))]
 use crate::core::mcp::progress::JanClientHandler;
 #[cfg(feature = "cli")]
-use rmcp::model::{CallToolRequestParams, CallToolResult, InitializeRequestParams, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult, InitializeRequestParams, Prompt, Tool};
 #[cfg(feature = "cli")]
 use rmcp::ServiceError;
-use rmcp::{model::Prompt, service::RunningService, RoleClient};
+use rmcp::{service::RunningService, RoleClient};
 use tokio::sync::Mutex;
 #[cfg(not(feature = "cli"))]
 use tokio::sync::{oneshot, Notify};

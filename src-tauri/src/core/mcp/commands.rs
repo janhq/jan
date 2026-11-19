@@ -347,7 +347,7 @@ pub async fn get_prompts<R: Runtime>(
   app: AppHandle<R>,
   state: State<'_, AppState>
 ) -> Result<Vec<PromptWithServer>, String> {
-    let timeout_duration = tool_call_timeout(&*state).await;
+    let timeout_duration = tool_call_timeout(&state).await;
     let mut all_prompts: Vec<PromptWithServer> = Vec::new();
     let mut removed_any = false;
 
@@ -431,7 +431,7 @@ pub async fn get_prompt(
     prompt_name: String,
     arguments: Option<Map<String, Value>>,
 ) -> Result<rmcp::model::GetPromptResult, String> {
-    let timeout_duration = tool_call_timeout(&*state).await;
+    let timeout_duration = tool_call_timeout(&state).await;
 
     let servers = state.mcp_servers.lock().await;
 
