@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.powertokens.ai/v1',
+    explore_models_url: 'https://www.powertokens.ai/en/models',
+    provider: 'powertokens',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'The PowerTokens API uses API keys for authentication. Create a key in your [PowerTokens dashboard](https://www.powertokens.ai/).',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]
