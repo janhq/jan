@@ -19,7 +19,9 @@ use std::sync::Arc;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::Mutex;
 
-use crate::core::server::converters::{converter_for, SseAccumulator, StreamState, UpstreamConverter};
+use crate::core::server::converters::{
+    converter_for, take_complete_lines, SseAccumulator, StreamState, UpstreamConverter,
+};
 use crate::core::{
     mcp::models::McpSettings,
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
@@ -2701,8 +2703,7 @@ async fn forward_converted_stream<S>(
     'outer: while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(chunk) => {
-                let text = String::from_utf8_lossy(&chunk);
-                for event in acc.push(&text) {
+                for event in acc.push_bytes(&chunk) {
                     for payload in converter.convert_stream_event(&event, &mut state) {
                         let framed = Bytes::from(format!("data: {payload}\n\n"));
                         if sender.send_data(framed).await.is_err() {
@@ -2762,10 +2763,23 @@ async fn transform_and_forward_stream<S>(
     let mut tool_blocks: HashMap<usize, usize> = HashMap::new(); // OAI tool index -> Anthropic block index
     let mut next_block_index: usize = 0;
 
-    while let Some(chunk_result) = stream.next().await {
+    let mut pending: Vec<u8> = Vec::new();
+    let mut upstream_ended = false;
+    while !upstream_ended {
+        let chunk_result = match stream.next().await {
+            Some(chunk_result) => chunk_result,
+            // Still read a last line the upstream closed without a newline.
+            None if !pending.is_empty() => {
+                upstream_ended = true;
+                Ok(Bytes::from_static(b"\n"))
+            }
+            None => break,
+        };
         match chunk_result {
             Ok(chunk) => {
-                let chunk_str = String::from_utf8_lossy(&chunk);
+                let Some(chunk_str) = take_complete_lines(&mut pending, &chunk) else {
+                    continue;
+                };
 
                 for line in chunk_str.lines() {
                     if !line.starts_with("data:") {
@@ -3119,5 +3133,112 @@ mod tests {
         let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
         let msg = map_bind_error(addr, err).to_string();
         assert!(msg.contains("denied"), "should keep the original error: {msg}");
+    }
+
+    mod stream_chunking {
+        use super::super::{
+            body_channel, forward_converted_stream, transform_and_forward_stream, ResBody,
+        };
+        use crate::core::server::converters::GoogleGenerateContentConverter;
+        use http_body_util::BodyExt;
+        use hyper::body::Bytes;
+
+        /// An upstream body that arrives as two network chunks, cut at `at`.
+        fn cut_at(
+            body: &str,
+            at: usize,
+        ) -> impl futures_util::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin {
+            let (head, tail) = body.as_bytes().split_at(at);
+            futures_util::stream::iter(vec![
+                Ok(Bytes::copy_from_slice(head)),
+                Ok(Bytes::copy_from_slice(tail)),
+            ])
+        }
+
+        async fn read_body(body: ResBody) -> String {
+            let bytes = body.collect().await.unwrap().to_bytes();
+            String::from_utf8(bytes.to_vec()).unwrap()
+        }
+
+        /// The JSON payload of every `data:` line except `[DONE]`.
+        fn data_payloads(body: &str) -> Vec<serde_json::Value> {
+            body.lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|data| *data != "[DONE]")
+                .map(|data| serde_json::from_str(data).unwrap())
+                .collect()
+        }
+
+        #[tokio::test]
+        async fn anthropic_stream_survives_a_cut_anywhere_in_the_upstream_body() {
+            let upstream = concat!(
+                "data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"日本語\"}}]}\n\n",
+                "data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" text\"}}]}\n\n",
+                "data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n",
+            );
+            for at in 1..upstream.len() {
+                let (sender, body) = body_channel();
+                let (_, out) = tokio::join!(
+                    transform_and_forward_stream(cut_at(upstream, at), sender, "/messages"),
+                    read_body(body),
+                );
+                let events = data_payloads(&out);
+                let text: String = events
+                    .iter()
+                    .filter(|e| e["delta"]["type"] == "text_delta")
+                    .filter_map(|e| e["delta"]["text"].as_str())
+                    .collect();
+                assert_eq!(text, "日本語 text", "cut at byte {at}");
+                assert!(
+                    events.iter().any(|e| e["type"] == "message_stop"),
+                    "cut at byte {at}: no message_stop in {out}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn anthropic_stream_reads_a_last_line_without_a_newline() {
+            let upstream = concat!(
+                "data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}\n\n",
+                "data: [DONE]",
+            );
+            let at = upstream.find("data: [DONE]").unwrap();
+            let (sender, body) = body_channel();
+            let (_, out) = tokio::join!(
+                transform_and_forward_stream(cut_at(upstream, at), sender, "/messages"),
+                read_body(body),
+            );
+            assert!(
+                data_payloads(&out)
+                    .iter()
+                    .any(|e| e["type"] == "message_stop"),
+                "{out}"
+            );
+        }
+
+        #[tokio::test]
+        async fn converted_stream_keeps_a_character_cut_between_chunks() {
+            let upstream = concat!(
+                "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"日本語の\"}]}}]}\r\n\r\n",
+                "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"テキスト\"}]},\"finishReason\":\"STOP\"}]}\r\n\r\n",
+            );
+            for at in 1..upstream.len() {
+                let (sender, body) = body_channel();
+                let (_, out) = tokio::join!(
+                    forward_converted_stream(
+                        cut_at(upstream, at),
+                        sender,
+                        Box::new(GoogleGenerateContentConverter::new()),
+                    ),
+                    read_body(body),
+                );
+                let text: String = data_payloads(&out)
+                    .iter()
+                    .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
+                    .collect();
+                assert_eq!(text, "日本語のテキスト", "cut at byte {at}");
+            }
+        }
     }
 }

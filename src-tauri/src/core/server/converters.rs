@@ -8,9 +8,7 @@
 //!
 //! This module currently provides the shared primitive every converter needs:
 //! an [`SseAccumulator`] that reassembles complete Server-Sent Events across
-//! network chunk boundaries. The existing inline proxy parser splits each chunk
-//! on lines and drops partial lines, which only survives because upstreams tend
-//! to flush whole events; a real translator cannot rely on that.
+//! network chunk boundaries.
 
 /// One parsed Server-Sent Event.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -23,17 +21,42 @@ pub struct SseEvent {
     pub data: String,
 }
 
+/// Appends a network chunk to `pending` and takes out the complete lines, if
+/// any, leaving the unfinished last line for the next chunk.
+///
+/// A response's chunks do not line up with its lines: a line, or a multi-byte
+/// character inside it, can be cut anywhere. A `\n` byte never occurs inside a
+/// multi-byte UTF-8 sequence, so text cut after one always decodes whole.
+pub(crate) fn take_complete_lines(pending: &mut Vec<u8>, chunk: &[u8]) -> Option<String> {
+    pending.extend_from_slice(chunk);
+    let end = pending.iter().rposition(|&b| b == b'\n')?;
+    let complete: Vec<u8> = pending.drain(..=end).collect();
+    Some(String::from_utf8_lossy(&complete).into_owned())
+}
+
 /// Accumulates raw response text and yields complete SSE events, buffering any
 /// partial trailing event until its terminating blank line arrives in a later
 /// chunk.
 #[derive(Debug, Default)]
 pub struct SseAccumulator {
     buf: String,
+    /// Raw bytes after the last newline [`Self::push_bytes`] saw.
+    pending: Vec<u8>,
 }
 
 impl SseAccumulator {
     pub fn new() -> Self {
-        Self { buf: String::new() }
+        Self::default()
+    }
+
+    /// Feed a chunk of the raw response body; returns every event completed by
+    /// it. Prefer this over decoding each chunk for [`Self::push`]: a chunk can
+    /// end inside a multi-byte character.
+    pub fn push_bytes(&mut self, chunk: &[u8]) -> Vec<SseEvent> {
+        match take_complete_lines(&mut self.pending, chunk) {
+            Some(text) => self.push(&text),
+            None => Vec::new(),
+        }
     }
 
     /// Feed a chunk of the response body; returns every event completed by it.
@@ -53,6 +76,8 @@ impl SseAccumulator {
     /// Flush a final event that arrived without a terminating blank line (some
     /// servers omit it before closing the connection).
     pub fn finish(&mut self) -> Option<SseEvent> {
+        let tail = std::mem::take(&mut self.pending);
+        self.buf.push_str(&String::from_utf8_lossy(&tail));
         let raw = std::mem::take(&mut self.buf);
         parse_event(&raw)
     }
@@ -1714,6 +1739,34 @@ mod tests {
         assert!(acc.push("data: tail").is_empty());
         let last = acc.finish();
         assert_eq!(last.map(|e| e.data), Some("tail".to_string()));
+    }
+
+    #[test]
+    fn push_bytes_keeps_a_character_cut_between_chunks() {
+        let body = "data: {\"t\":\"日本語\"}\n\n".as_bytes();
+        for at in 1..body.len() {
+            let mut acc = SseAccumulator::new();
+            let mut events = acc.push_bytes(&body[..at]);
+            events.extend(acc.push_bytes(&body[at..]));
+            assert_eq!(events.len(), 1, "cut at byte {at}");
+            assert_eq!(events[0].data, "{\"t\":\"日本語\"}", "cut at byte {at}");
+        }
+    }
+
+    #[test]
+    fn push_bytes_joins_a_crlf_cut_between_chunks() {
+        let mut acc = SseAccumulator::new();
+        assert!(acc.push_bytes(b"data: x\r\n\r").is_empty());
+        let events = acc.push_bytes(b"\n");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "x");
+    }
+
+    #[test]
+    fn finish_flushes_a_trailing_line_fed_as_bytes() {
+        let mut acc = SseAccumulator::new();
+        assert!(acc.push_bytes(b"data: tail").is_empty());
+        assert_eq!(acc.finish().map(|e| e.data), Some("tail".to_string()));
     }
 
     #[test]
