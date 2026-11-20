@@ -12,9 +12,23 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 const selectedModelRef = vi.hoisted(() => ({ current: { id: 'm1' } as any }))
+const selectedProviderRef = vi.hoisted(() => ({ current: 'llamacpp' }))
+
+// The failed-load error row links to the provider page's hardware check, so
+// the component reaches the router. Only Link is used here.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, search, ...rest }: any) => (
+    <a data-search={JSON.stringify(search)} {...rest}>
+      {children}
+    </a>
+  ),
+}))
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
-    selector({ selectedModel: selectedModelRef.current }),
+    selector({
+      selectedModel: selectedModelRef.current,
+      selectedProvider: selectedProviderRef.current,
+    }),
 }))
 
 // Stub heavy children: RenderMarkdown
@@ -84,7 +98,13 @@ vi.mock('../CopyButton', () => ({
 }))
 
 vi.mock('@/utils/formatDate', () => ({
-  formatDate: () => '2024-01-01',
+  formatDate: () => '2024-01-01 full',
+  formatMessageTime: () => '3:30 PM',
+}))
+
+const touchRef = vi.hoisted(() => ({ current: false }))
+vi.mock('@/hooks/useMediaQuery', () => ({
+  useTouchDevice: () => touchRef.current,
 }))
 
 vi.mock('@/lib/fileMetadata', () => ({
@@ -108,7 +128,11 @@ vi.mock('@/components/ui/button', () => ({
 }))
 
 vi.mock('@/components/PromptProgress', () => ({
-  PromptProgress: () => <div data-testid="prompt-progress" />,
+  // `hideIdle` is what suppresses the generic "Working…" fallback, and the real
+  // component renders nothing when it is set with no model load in flight, so
+  // the stand-in has to honour it or every caller looks like it shows a card.
+  PromptProgress: ({ hideIdle }: { hideIdle?: boolean }) =>
+    hideIdle ? null : <div data-testid="prompt-progress" />,
 }))
 
 const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
@@ -119,6 +143,7 @@ vi.mock('@/hooks/useToolApprovalRequests', () => ({
 
 // Import after mocks
 import { MessageItem } from '../MessageItem'
+import { useMessageErrors } from '@/stores/message-errors'
 
 const makeMsg = (overrides: any = {}) => ({
   id: 'msg-1',
@@ -132,7 +157,9 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
+    selectedProviderRef.current = 'llamacpp'
     pendingApprovalsRef.current = {}
+    touchRef.current = false
   })
 
   it('renders assistant text via RenderMarkdown', () => {
@@ -151,6 +178,7 @@ describe('MessageItem', () => {
     render(
       <MessageItem
         message={makeMsg({ role: 'user', parts: [{ type: 'text', text: 'Hi there' }] }) as any}
+        highlightedPrefix={null}
         isFirstMessage
         isLastMessage
         status={'ready' as any}
@@ -158,6 +186,27 @@ describe('MessageItem', () => {
     )
     expect(screen.getByText('Hi there')).toBeInTheDocument()
     expect(screen.queryByTestId('render-markdown')).not.toBeInTheDocument()
+  })
+  it('highlights a recognized skill prefix in a submitted user message', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            role: 'user',
+            parts: [{ type: 'text', text: '/code-review inspect this change' }],
+          }) as any
+        }
+        highlightedPrefix="/code-review"
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+
+    expect(screen.getByTestId('skill-command-prefix')).toHaveTextContent(
+      '/code-review'
+    )
+    expect(screen.getByText(/inspect this change/)).toBeInTheDocument()
   })
 
   it('renders attached files from user text metadata', () => {
@@ -226,6 +275,33 @@ describe('MessageItem', () => {
     expect(onContinue).toHaveBeenCalledWith('msg-1')
   })
 
+  // Continue extends partial text; with none there is nothing to resume.
+  it('hides Continue on a stopped turn that never wrote any text', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            metadata: { createdAt: new Date(), stopped: true },
+            parts: [
+              {
+                type: 'tool-slow_wait',
+                toolCallId: 'c1',
+                state: 'output-error',
+                input: {},
+                errorText: 'Stopped before the tool finished.',
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onContinue={vi.fn()}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.continue')).not.toBeInTheDocument()
+  })
+
   it('hides Continue button when the turn finished normally', () => {
     render(
       <MessageItem
@@ -288,6 +364,48 @@ describe('MessageItem', () => {
     expect(onDelete).toHaveBeenCalledWith('msg-1')
   })
 
+  /// One click to ask the same question again, from partway up the transcript
+  /// -- an agent turn is a chain of tool calls, so "regenerate" only ever
+  /// applied to the last one.
+  it('fires onRetry with the question text', () => {
+    const onRetry = vi.fn()
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            role: 'user',
+            parts: [{ type: 'text', text: 'ask me again' }],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onRetry={onRetry}
+      />
+    )
+    fireEvent.click(screen.getByTitle('chat:actions.askAgain'))
+    expect(onRetry).toHaveBeenCalledWith(
+      'msg-1',
+      expect.stringContaining('ask me again')
+    )
+  })
+
+  /// Offered only where a caller opts in: an ordinary chat has `onRegenerate`
+  /// on the answer and no use for a second way to re-ask.
+  it('offers no retry without a handler', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({ role: 'user', parts: [{ type: 'text', text: 'x' }] }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.askAgain')).not.toBeInTheDocument()
+  })
+
   it('hides actions when hideActions is set', () => {
     render(
       <MessageItem
@@ -304,6 +422,20 @@ describe('MessageItem', () => {
     )
     expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
     expect(screen.queryByTestId('delete-btn')).not.toBeInTheDocument()
+  })
+
+  it('hideActions drops the whole assistant row, timestamp included', () => {
+    render(
+      <MessageItem
+        message={makeMsg() as any}
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+        hideActions
+      />
+    )
+    expect(screen.queryByText('2024-01-01')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('token-speed')).not.toBeInTheDocument()
   })
 
   it('streaming state hides edit/delete and marks token speed streaming', () => {
@@ -465,7 +597,9 @@ describe('MessageItem', () => {
     expect(screen.getByTestId('tool-output')).toHaveTextContent('boom')
   })
 
-  it('shows progress for an executing tool call (not awaiting approval)', () => {
+  /// The tool's own card names the call and ticks its duration one row above,
+  /// so a status row repeating it was the same thing twice.
+  it('leaves an executing tool call to its own card', () => {
     render(
       <MessageItem
         message={
@@ -480,9 +614,8 @@ describe('MessageItem', () => {
         status={'ready' as any}
       />
     )
-    // A pending tool call renders the new activity-status row, not PromptProgress.
     expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(/Search/)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('shows a persistent badge for a successfully loaded skill', () => {
@@ -541,40 +674,31 @@ describe('MessageItem', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows child activity while the parent awaits that subagent', () => {
+  /// A note the run folded in, not something either party said: the turn after
+  /// it is a reply to it, and reads as a non sequitur on its own.
+  it('renders a system note as a plain row, with no actions', () => {
     render(
       <MessageItem
         message={
           makeMsg({
+            role: 'system',
             parts: [
-              {
-                type: 'tool-await_subagent',
-                state: 'input-available',
-                toolCallId: 'tc-await',
-                input: { run_id: 'sub-robotics-researcher-1' },
-              },
+              { type: 'text', text: "Subagent 'researcher' (c1) finished." },
             ],
           }) as any
         }
-        isFirstMessage
+        isFirstMessage={false}
         isLastMessage
         status={'ready' as any}
-        subagents={[
-          {
-            runId: 'sub-robotics-researcher-1',
-            name: 'robotics-researcher',
-            status: 'running',
-            startedAt: Date.now() - 1_000,
-            turns: [],
-          },
-        ]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
       />
     )
-
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'robotics-researcher: working'
-    )
-    expect(screen.getByRole('status')).not.toHaveTextContent('Await subagent')
+    expect(
+      screen.getByText("Subagent 'researcher' (c1) finished.")
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('delete-btn')).not.toBeInTheDocument()
   })
 
   it('hides progress while a tool call awaits approval', () => {
@@ -621,15 +745,18 @@ describe('MessageItem', () => {
     expect(headers).toContain('beta')
   })
 
-  it('still truncates a non-pending earlier tool step while streaming', () => {
-    // No pending approval: streaming truncation keeps only the latest step.
+  it('still truncates a non-pending earlier tool step outside the frontier while streaming', () => {
+    // No pending approval, and reasoning splits the two calls so they are not
+    // one trailing batch: streaming truncation keeps only the current step
+    // (the trailing tool), dropping the earlier tool that a step has moved past.
     pendingApprovalsRef.current = {}
     render(
       <MessageItem
         message={
           makeMsg({
             parts: [
-              { type: 'tool-alpha', state: 'input-available', toolCallId: 'tc-alpha', input: {} },
+              { type: 'tool-alpha', state: 'output-available', toolCallId: 'tc-alpha', input: {}, output: 'done' },
+              { type: 'reasoning', text: 'now the next thing' },
               { type: 'tool-beta', state: 'input-available', toolCallId: 'tc-beta', input: {} },
             ],
           }) as any
@@ -664,6 +791,23 @@ describe('MessageItem', () => {
     expect(copy.getAttribute('data-text')).toBe('a\nb')
   })
 
+  it.each(['user', 'assistant'])(
+    'hides edit on a %s message when no selectedModel',
+    (role) => {
+      selectedModelRef.current = null
+      render(
+        <MessageItem
+          message={makeMsg({ role }) as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onEdit={vi.fn()}
+        />
+      )
+      expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
+    }
+  )
+
   it('does not render regenerate button when no selectedModel', () => {
     selectedModelRef.current = null
     const onRegenerate = vi.fn()
@@ -677,5 +821,153 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.queryByTitle('chat:actions.regenerate')).not.toBeInTheDocument()
+  })
+
+  describe('footer', () => {
+    const renderAssistant = () =>
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onRegenerate={vi.fn()}
+        />
+      )
+
+    it('shows the compact time with the full date as its tooltip', () => {
+      renderAssistant()
+      const time = screen.getByText('3:30 PM')
+      expect(time).toHaveAttribute('title', '2024-01-01 full')
+      // A real <time> with a machine-readable stamp, not a titled span.
+      expect(time.tagName).toBe('TIME')
+      expect(time.getAttribute('datetime')).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    })
+
+    it('reveals secondary actions on hover only, with copy always visible', () => {
+      renderAssistant()
+      const regenerate = screen.getByTestId('regenerate-message')
+      // Secondary actions sit in a hover-revealed group; copy does not.
+      expect(regenerate.parentElement?.className).toContain('opacity-0')
+      expect(regenerate.parentElement?.className).toContain(
+        'group-hover/message:opacity-100'
+      )
+      // Keyboard users reach the same controls: focus inside reveals them.
+      expect(regenerate.parentElement?.className).toContain(
+        'group-has-[:focus-visible]/message:opacity-100'
+      )
+      const copy = screen.getByTestId('copy-btn')
+      expect(copy.parentElement).not.toBeNull()
+      expect(copy.parentElement!.className).not.toContain('opacity-0')
+    })
+
+    it('hides copy behind hover on an earlier message', () => {
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage={false}
+          status={'ready' as any}
+        />
+      )
+      const copy = screen.getByTestId('copy-btn')
+      expect(copy.parentElement?.className).toContain('opacity-0')
+      expect(copy.parentElement?.className).toContain(
+        'group-hover/message:opacity-100'
+      )
+    })
+
+    it('keeps copy and the version switcher visible together when there are versions', () => {
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage={false}
+          status={'ready' as any}
+          versionInfo={{ index: 1, count: 2 }}
+          onSwitchVersion={vi.fn()}
+        />
+      )
+      const copy = screen.getByTestId('copy-btn')
+      expect(copy.parentElement!.className).not.toContain('opacity-0')
+      const prev = screen.getByTestId('message-version-prev')
+      expect(prev.closest('[class*="opacity-0"]')).toBeNull()
+    })
+
+    it('keeps Continue visible at rest on a stopped reply', () => {
+      render(
+        <MessageItem
+          message={makeMsg({ metadata: { createdAt: new Date(), stopped: true } }) as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onContinue={vi.fn()}
+          onRegenerate={vi.fn()}
+        />
+      )
+      // The only way to resume a stopped reply is not hidden behind hover...
+      const cont = screen.getByTestId('continue-message')
+      expect(cont.closest('[class*="opacity-0"]')).toBeNull()
+      // ...while regenerate stays with the other hover-revealed actions.
+      const regen = screen.getByTestId('regenerate-message')
+      expect(regen.closest('[class*="opacity-0"]')).not.toBeNull()
+    })
+
+    it('shows every action on a touch device', () => {
+      touchRef.current = true
+      renderAssistant()
+      const regenerate = screen.getByTestId('regenerate-message')
+      expect(regenerate.parentElement?.className).toContain('opacity-100')
+      expect(regenerate.parentElement?.className).not.toContain('opacity-0')
+    })
+  })
+
+  // #9642: a failed llama.cpp load is the one place the user is holding the
+  // question the hardware check answers, so that is where it is offered.
+  describe('failed model load', () => {
+    const show = (model?: string) => {
+      useMessageErrors.getState().setError('msg-1', 'failed to load model')
+      useMessageErrors
+        .getState()
+        .setReport('msg-1', '## Model load failure', model)
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+        />
+      )
+    }
+
+    beforeEach(() => useMessageErrors.getState().clearAll())
+
+    it('offers the hardware check, carrying the model that failed', () => {
+      show('m1')
+      const link = screen.getByText('providers:diagnostics.checkThisModel')
+      expect(link.getAttribute('data-search')).toBe(
+        JSON.stringify({ diagnoseModel: 'm1' })
+      )
+    })
+
+    // No recorded model means the turn did not run on llama.cpp, so the
+    // llama.cpp model selected now has nothing to do with the failure.
+    it('offers no check when the failed turn recorded no model', () => {
+      show()
+      expect(
+        screen.queryByText('providers:diagnostics.checkThisModel')
+      ).not.toBeInTheDocument()
+    })
+
+    // The message is read long after the user moved on, so the link has to
+    // name the model that failed rather than whatever is selected now.
+    it('checks the model that failed, not the one selected since', () => {
+      show('qwen3-8b')
+      selectedModelRef.current = { id: 'something-else' }
+      const link = screen.getByText('providers:diagnostics.checkThisModel')
+      expect(link.getAttribute('data-search')).toBe(
+        JSON.stringify({ diagnoseModel: 'qwen3-8b' })
+      )
+    })
   })
 })

@@ -108,6 +108,7 @@ export type PreflightReason =
 
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
+  getModelContextLimit(modelId: string, provider: string): Promise<number | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchLatestJanModel(): Promise<CatalogModel | null>
@@ -168,6 +169,8 @@ export interface ModelsService {
     spec_draft_n_max?: number
     spec_draft_n_min?: number
     spec_draft_p_min?: number
+    spec_draft_sampling?: string
+    spec_draft_n_ubatch?: number
   }>
   updateMtpSettings(
     modelId: string,
@@ -176,6 +179,8 @@ export interface ModelsService {
       spec_draft_n_max?: number | null
       spec_draft_n_min?: number | null
       spec_draft_p_min?: number | null
+      spec_draft_sampling?: string | null
+      spec_draft_n_ubatch?: number | null
     }
   ): Promise<void>
   updateModelSettings(
@@ -189,8 +194,24 @@ export interface ModelsService {
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
   startEngineSetup(): Promise<void>
+  getEngineVersion(): Promise<EngineVersionInfo | null>
   verifyEmbeddingModel(): Promise<EmbeddingModelReport>
   verifyGpuOffload(): Promise<GpuOffloadReport>
+}
+
+/**
+ * The bundled llama.cpp's identity. Redeclared here rather than imported from
+ * the plugin package, the same way DeviceList is: the web app talks to the
+ * extension, not to the plugin.
+ */
+export interface EngineVersionInfo {
+  /** llama.cpp's own version, e.g. "1.0.0". */
+  version: string
+  /** Upstream build tag, e.g. "b12359". */
+  tag: string
+  buildNumber: string
+  /** Full commit sha the build is pinned to. */
+  commit: string
 }
 
 // Mirrors the llamacpp extension's readiness module across the extension

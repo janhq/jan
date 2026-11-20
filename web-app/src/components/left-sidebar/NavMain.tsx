@@ -41,6 +41,7 @@ import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
+import { useSidebar } from '@/components/ui/sidebar'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -63,6 +64,8 @@ type NavMainItem = {
   isActive?: boolean
   shortcut?: React.ReactNode
   onClick?: () => void
+  /** Emitted as `data-testid` on the rendered control; see e2e/README.md. */
+  testId?: string
 }
 
 const getNavMainItems = (
@@ -75,8 +78,9 @@ const getNavMainItems = (
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
     onClick: onNewChat,
+    testId: 'new-chat-button',
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -89,7 +93,7 @@ const getNavMainItems = (
     animatedIcon: BotIcon,
     onClick: onJanClaw,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -102,7 +106,7 @@ const getNavMainItems = (
     animatedIcon: FolderPlusIcon,
     onClick: onNewProject,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -115,7 +119,7 @@ const getNavMainItems = (
     animatedIcon: SearchIcon,
     onClick: onSearch,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -147,8 +151,8 @@ function NavMainItemWithAnimatedIcon({
 
   const content = (
     <>
-      <AnimatedIcon ref={iconRef} className="text-foreground/70" size={16} />
-      <span>{label}</span>
+      <AnimatedIcon ref={iconRef} className="size-4 shrink-0 text-foreground/70" size={16} />
+      <span className="min-w-0 truncate leading-5">{label}</span>
       {item.shortcut}
     </>
   )
@@ -158,6 +162,7 @@ function NavMainItemWithAnimatedIcon({
       <SidebarMenuButton
         asChild={!!item.url}
         isActive={item.isActive}
+        data-testid={item.testId}
         onMouseEnter={() => iconRef.current?.startAnimation()}
         onMouseLeave={() => iconRef.current?.stopAnimation()}
         onClick={item.onClick}
@@ -168,9 +173,16 @@ function NavMainItemWithAnimatedIcon({
   )
 }
 
-export function NavMain() {
+export function NavMain({
+  afterSearch,
+  beforeSettings,
+}: {
+  afterSearch?: React.ReactNode
+  beforeSettings?: React.ReactNode
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { closeMobileForNavigation } = useSidebar()
   const { addFolder } = useThreadManagement()
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
@@ -180,6 +192,8 @@ export function NavMain() {
     () => setSearchOpen(true),
     () => {
       useAgentMode.getState().removeThread(TEMPORARY_CHAT_ID)
+      // Already on home the path does not change, so close the overlay here.
+      closeMobileForNavigation()
       navigate({ to: route.home })
     },
     () => {
@@ -203,11 +217,14 @@ export function NavMain() {
         {navMainItems.map((item) => {
           if (item.animatedIcon) {
             return (
-              <NavMainItemWithAnimatedIcon
-                key={item.title}
-                item={item}
-                label={t(item.title)}
-              />
+              <React.Fragment key={item.title}>
+                {item.title === 'common:settings' && beforeSettings}
+                <NavMainItemWithAnimatedIcon
+                  item={item}
+                  label={t(item.title)}
+                />
+                {item.title === 'common:search' && afterSearch}
+              </React.Fragment>
             )
           }
 
@@ -217,18 +234,19 @@ export function NavMain() {
               <SidebarMenuButton
                 asChild={!!item.url}
                 isActive={item.isActive}
+                data-testid={item.testId}
                 onClick={item.onClick}
               >
                 {item.url ? (
                   <Link to={item.url}>
-                    {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    {Icon && <Icon className="size-4 shrink-0 text-foreground/70" />}
+                    <span className="min-w-0 truncate leading-5">{t(item.title)}</span>
                     {item.shortcut}
                   </Link>
                 ) : (
                   <>
-                    {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    {Icon && <Icon className="size-4 shrink-0 text-foreground/70" />}
+                    <span className="min-w-0 truncate leading-5">{t(item.title)}</span>
                     {item.shortcut}
                   </>
                 )}

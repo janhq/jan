@@ -13,8 +13,6 @@ type ToolDisabledState = {
   // Global set of disabled tools (server::tool keys), shared across every chat.
   // A tool absent from this list is enabled.
   disabledTools: string[]
-  // Whether the one-time seed from the MCP extension's defaults has run.
-  defaultsInitialized: boolean
 
   setToolDisabled: (
     serverName: string,
@@ -23,16 +21,12 @@ type ToolDisabledState = {
   ) => void
   isToolDisabled: (serverName: string, toolName: string) => boolean
   getDisabledTools: () => string[]
-  setDisabledTools: (toolKeys: string[]) => void
-  isDefaultsInitialized: () => boolean
-  markDefaultsAsInitialized: () => void
 }
 
 export const useToolAvailable = create<ToolDisabledState>()(
   persist(
     (set, get) => ({
       disabledTools: [],
-      defaultsInitialized: false,
 
       setToolDisabled: (serverName, toolName, enabled) => {
         const toolKey = createToolKey(serverName, toolName)
@@ -51,37 +45,24 @@ export const useToolAvailable = create<ToolDisabledState>()(
         get().disabledTools.includes(createToolKey(serverName, toolName)),
 
       getDisabledTools: () => get().disabledTools,
-
-      setDisabledTools: (toolKeys) => set({ disabledTools: toolKeys }),
-
-      isDefaultsInitialized: () => get().defaultsInitialized,
-      markDefaultsAsInitialized: () => set({ defaultsInitialized: true }),
     }),
     {
       name: localStorageKey.toolAvailability,
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
-      partialize: (state) => ({
-        disabledTools: state.disabledTools,
-        defaultsInitialized: state.defaultsInitialized,
-      }),
+      partialize: (state) => ({ disabledTools: state.disabledTools }),
       // v2: tool availability is global, not per-thread. Collapse the old
       // { disabledTools: threadId->keys, defaultDisabledTools } shape onto the
-      // previous global default; per-thread overrides are dropped. Any old
-      // pre-`::` keys force a re-seed from the extension on next boot.
+      // previous global default; per-thread overrides and old pre-`::` keys
+      // are dropped.
       migrate: (persistedState: unknown, version: number) => {
         const state = (persistedState ?? {}) as Record<string, unknown>
         if (version < 2) {
           const prevDefault = Array.isArray(state.defaultDisabledTools)
             ? (state.defaultDisabledTools as string[])
             : []
-          const clean = prevDefault.filter((k) => !isOldFormatKey(k))
           return {
-            disabledTools: clean,
-            defaultsInitialized:
-              clean.length === prevDefault.length
-                ? Boolean(state.defaultsInitialized)
-                : false,
+            disabledTools: prevDefault.filter((k) => !isOldFormatKey(k)),
           }
         }
         return state

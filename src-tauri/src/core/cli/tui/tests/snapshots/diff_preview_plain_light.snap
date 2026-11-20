@@ -1,0 +1,13 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|-colour = grey                                  |
+|+colour = gray                                  |
+| unchanged = true                               |
+
+ 0 0..1 fg=Red bg=#FFCDD2 mod=BOLD
+ 0 1..47 bg=#FFCDD2
+ 1 0..1 fg=Green bg=#C6EFCE mod=BOLD
+ 1 1..47 bg=#C6EFCE
+ 2 0..17 mod=DIM

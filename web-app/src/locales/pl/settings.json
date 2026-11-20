@@ -101,8 +101,7 @@
     "resetCodeBlockStyleDesc": "Przywraca domyślny styl bloku kodu.",
     "resetCodeBlockSuccess": "Pomyślnie Przywrócono Styl Bloku Kodu",
     "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych.",
-    "tokenCounterCompact": "Kompaktowy Licznik Tokenów",
-    "tokenCounterCompactDesc": "Pokaż licznik tokenów wewnątrz pola wprowadzania czatu. Po wyłączeniu, licznik tokenów pojawia się poniżej pola wprowadzania."
+    "themeDescFixed": "Zawsze używaj tego motywu. Wybierz System, aby dopasować motyw do systemu operacyjnego."
   },
   "hardware": {
     "os": "System Operacyjny",
@@ -151,6 +150,11 @@
     "peerSslDesc": "Sprawdzaj certyfikaty SSL połączeń równorzędnych.",
     "hostSsl": "SSL Hosta",
     "hostSslDesc": "Sprawdzaj certyfikaty SSL hostów docelowych."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Co Jan może robić na Twoim komputerze: jego odizolowana powłoka oraz wspomnienia i umiejętności trwale przechowywane w folderze danych Jana.",
+    "networkDesc": "Pozwala poleceniom powłoki korzystać z sieci, na przykład do instalowania pakietów lub pobierania repozytorium. Domyślnie włączone. Piaskownica nadal ogranicza, których plików mogą dotykać polecenia."
   },
   "localApiServer": {
     "title": "Lokalny Serwer API",

@@ -11,6 +11,7 @@ keywords:
     Exa,
     Tavily,
     SearXNG,
+    You.com,
     tool use,
     online search,
   ]
@@ -42,7 +43,10 @@ You can toggle web search for a chat from the input toolbar - the globe icon sho
 
 A typical flow is `web_search` to find sources, then `web_fetch` to read a specific result in full.
 `web_search` takes a `query` and an optional `count` (default 5, max 20); `web_fetch` takes an
-http(s) `url`. Fetched content is length-bounded so it doesn't flood the model's context.
+http(s) `url`. Fetched content is length-bounded so it doesn't flood the model's context: a page is
+cut to a fraction of the model's context window, and never past **Max tool output characters** in
+**Settings > MCP Servers** (40,000 by default). With that setting at `0` only the fetch's own
+40,000-character bound applies. A page that was cut ends with `[content truncated]`.
 
 ## Requirements
 
@@ -64,13 +68,14 @@ use. On by default. Works with no API key.
 
 ### Search Provider
 
-Choose the backend that answers `web_search` and `web_fetch`. Three providers are available:
+Choose the backend that answers `web_search` and `web_fetch`. Four providers are available:
 
 | Provider | API key | Notes |
 |----------|---------|-------|
 | **Exa** (default) | Optional | Uses a free, keyless endpoint out of the box. Add a key for higher rate limits and structured results. |
 | **Tavily** | Required | Needs a [Tavily](https://tavily.com) API key to return results. |
 | **SearXNG** | Optional | Self-hosted. Point Jan at your own [SearXNG](https://searxng.org) instance URL (with the JSON API enabled). |
+| **You.com** | Optional | Keyless search and `web_fetch` work out of the box and share a daily request cap. Keyless `web_fetch` returns extracted page content, and falls back to the page's raw HTML once the cap is reached. A [You.com](https://you.com/platform) API key lifts the cap and adds PDF extraction. |
 
 ### Exa API Key (optional)
 

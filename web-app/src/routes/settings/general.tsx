@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { invoke } from '@tauri-apps/api/core'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
@@ -30,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
+import { relaunchAfterSave } from '@/lib/coworkSync'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,6 +44,8 @@ function General() {
     setSpellCheckChatInput,
     autoUpdateCheck,
     setAutoUpdateCheck,
+    closeToTray,
+    setCloseToTray,
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
@@ -59,16 +61,13 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
-  const { pausePolling } = useHardware()
+  const { pausePolling, resumePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isValidatingToken, setIsValidatingToken] = useState(false)
-  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
-  const [cliPath, setCliPath] = useState<string | null>(null)
-  const [isCliLoading, setIsCliLoading] = useState(false)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -79,48 +78,24 @@ function General() {
     fetchDataFolder()
   }, [serviceHub])
 
-  useEffect(() => {
-    if (!IS_TAURI) return
-    invoke<{ installed: boolean; path: string | null }>('check_jan_cli_installed')
-      .then((s) => { setCliInstalled(s.installed); setCliPath(s.path) })
-      .catch(() => setCliInstalled(false))
-  }, [])
-
-  const handleInstallCli = async () => {
-    setIsCliLoading(true)
-    try {
-      const s = await invoke<{ installed: boolean; path: string | null }>('install_jan_cli')
-      setCliInstalled(s.installed)
-      setCliPath(s.path)
-      toast.success(`Jan CLI installed to ${s.path}`)
-    } catch (e) {
-      toast.error('Install failed', { description: String(e) })
-    } finally {
-      setIsCliLoading(false)
-    }
-  }
-
-  const handleUninstallCli = async () => {
-    setIsCliLoading(true)
-    try {
-      await invoke('uninstall_jan_cli')
-      setCliInstalled(false)
-      setCliPath(null)
-      toast.success('Jan CLI uninstalled')
-    } catch (e) {
-      toast.error('Uninstall failed', { description: String(e) })
-    } finally {
-      setIsCliLoading(false)
-    }
-  }
-
   const resetApp = async (options: FactoryResetOptions) => {
     if (isRootDir(janDataFolder ?? '/')) {
       toast.error(t('settings:general.couldNotResetRootDirectory'))
       return
     }
     pausePolling()
-    await serviceHub.app().factoryReset(options)
+    try {
+      await serviceHub.app().factoryReset(options)
+    } catch (error) {
+      // Model unloads and the backend can both fail here; the backend also
+      // refuses data folders the isRootDir check above does not list. Its
+      // message says why, so show that rather than guessing a cause.
+      console.error('Factory reset failed:', error)
+      resumePolling()
+      toast.error(t('settings:general.factoryResetFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const handleOpenLogs = async () => {
@@ -168,7 +143,7 @@ function General() {
             await serviceHub.app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful
-            window.core?.api?.relaunch()
+            await relaunchAfterSave(() => window.core?.api?.relaunch())
             setSelectedNewPath(null)
             setIsDialogOpen(false)
           } catch (error) {
@@ -262,6 +237,19 @@ function General() {
                   />
                 </>
               )}
+              {IS_TAURI && !IS_MACOS && (
+                <CardItem
+                  title={t('settings:general.closeToTray')}
+                  description={t('settings:general.closeToTrayDesc')}
+                  className="items-center flex-row gap-y-2"
+                  actions={
+                    <Switch
+                      checked={closeToTray}
+                      onCheckedChange={(e) => setCloseToTray(e)}
+                    />
+                  }
+                />
+              )}
               <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
@@ -287,6 +275,7 @@ function General() {
                     <div className="flex items-center gap-2 mt-1">
                       <div className="max-w-100 bg-secondary rounded-sm px-1 py-0.5">
                         <span
+                          data-testid="app-data-folder-path"
                           title={janDataFolder}
                           className="text-xs line-clamp-1 break-all"
                         >
@@ -408,32 +397,19 @@ function General() {
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
-                  title="Jan CLI"
-                  description={
-                    cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — use jan from your terminal to serve models.`
-                      : 'Use jan from your terminal to serve models without opening the app.'
-                  }
+                  title={t('settings:general.janCli')}
+                  description={t('settings:general.janCliDesc')}
                   actions={
-                    cliInstalled ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleUninstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Uninstalling…' : 'Uninstall'}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleInstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Installing…' : 'Install'}
-                      </Button>
-                    )
+                    <a
+                      href="https://www.jan.ai/docs/agent/quickstart"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.janCliSetupGuide')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
                   }
                 />
               )}

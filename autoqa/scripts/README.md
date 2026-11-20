@@ -20,9 +20,9 @@ autoqa/scripts/
 ├── macos_download.sh           # macOS: Download Jan app (.dmg)
 ├── macos_install.sh            # macOS: Install Jan app
 ├── macos_post_cleanup.sh       # macOS: Post-test cleanup
-├── run_tests.sh                # Unix: Run AutoQA tests (Ubuntu/macOS)
+├── run_tests.sh                 # Unix: Run AutoQA tests (Ubuntu/macOS)
+├── setup-android-env.sh         # macOS: Configure the Android NDK/JDK toolchain, then exec a command
 ├── README.md                   # This file
-└── PERMISSIONS.md              # Permission setup documentation
 ```
 
 ## Script Functions
@@ -53,10 +53,14 @@ autoqa/scripts/
 
 - **setup_permissions.sh**: Automatically sets executable permissions for all shell scripts
 - **run_tests.sh**: Platform-agnostic test runner for Unix-based systems (Ubuntu/macOS)
+- **setup-android-env.sh**: Configures `JAVA_HOME`, `ANDROID_HOME`/`ANDROID_NDK_ROOT` and the Rust cross-compile links for Android builds, then execs the command it is given. Only useful on macOS with a local Android SDK (`make dev-android` calls it); it is not used by CI.
 
 ## Usage in GitHub Actions
 
-These scripts are called from the `.github/workflows/autoqa.yml` workflow file:
+These scripts are called from `.github/workflows/autoqa-template.yml`, the reusable
+AutoQA workflow. `.github/workflows/autoqa-manual-trigger.yml` calls the template
+with `workflow_dispatch` inputs, and `.github/workflows/autoqa-migration.yml` uses
+the same scripts for its migration run:
 
 ```yaml
 # Setup permissions first (Ubuntu/macOS)

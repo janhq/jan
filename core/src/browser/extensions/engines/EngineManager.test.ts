@@ -34,6 +34,25 @@ describe('EngineManager', () => {
     expect(retrievedEngine).toBe(engine)
   })
 
+  test('unregisters the engine when its registration is disposed', () => {
+    const engine = new MockAIEngine('testProvider')
+    // @ts-ignore
+    const registration = engineManager.register(engine)
+    registration.dispose()
+    expect(engineManager.get('testProvider')).toBeUndefined()
+  })
+
+  test('a stale registration never removes a newer engine for the provider', () => {
+    const first = new MockAIEngine('testProvider')
+    const second = new MockAIEngine('testProvider')
+    // @ts-ignore
+    const stale = engineManager.register(first)
+    // @ts-ignore
+    engineManager.register(second)
+    stale.dispose()
+    expect(engineManager.get('testProvider')).toBe(second)
+  })
+
   test('should return undefined for an unregistered provider', () => {
     // @ts-ignore
     const retrievedEngine = engineManager.get<MockAIEngine>('nonExistentProvider')

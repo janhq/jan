@@ -14,7 +14,8 @@
  */
 
 import { fs, joinPath } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
+import { findModelEntries } from './model-tree'
+import { parseLoadMode } from './load-mode'
 import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 
 // ModelConfig is intentionally widened — model.yml may carry extra fields like
@@ -27,6 +28,7 @@ type ModelYaml = ModelConfig & {
   flash_attn?: string
   cache_type_k?: string
   cache_type_v?: string
+  load_mode?: string
   parallel?: number
   cont_batching?: boolean
   pooling?: 'none' | 'mean' | 'cls' | 'last' | 'rank'
@@ -47,26 +49,18 @@ type ModelYaml = ModelConfig & {
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
+  spec_draft_sampling?: string
+  spec_draft_n_ubatch?: number
   cpu_moe?: boolean
   n_cpu_moe?: number
+  n_cpu_ffn?: number
+  moe_cache_mib?: number
+  moe_cache_cpu_share?: number
+  expert_count?: number
   no_kv_offload?: boolean
   override_tensor?: string
   mmproj_offload?: boolean
 }
-
-// One extra llama-server slot beyond the user-visible "Parallel Sequences"
-// count, reserved for background requests (e.g. thread auto-titling) that
-// must never be able to evict the user's own chat KV cache from its slot.
-// Hidden from the setting's UI value.
-//
-// Added unconditionally, and that is load-bearing. The emitted `parallel` is
-// therefore always 3 or more, which is what lets the frontend pin background
-// work and Cowork to fixed slot ids (web-app/src/constants/models.ts) instead
-// of computing an index here that the two sides then have to keep in sync.
-// Upstream wraps an out-of-range id_slot modulo the slot count rather than
-// rejecting it, so any such desync is silent: the background request lands back
-// on the chat slot and overwrites the cache it was meant to protect.
-export const RESERVED_BACKGROUND_SLOTS = 2
 
 /**
  * The ubatch every embedding model's preset section is pinned to.
@@ -124,6 +118,13 @@ const SPEC_TYPES = new Set([
 const DEFAULT_SPEC_TYPE = 'draft-mtp'
 
 /**
+ * The non-default `--spec-draft-sampling` mode (common/arg.cpp, added in
+ * 0.7.0). `greedy` is upstream's default and is never written, so a model
+ * keeps tracking it.
+ */
+const NON_DEFAULT_DRAFT_SAMPLING = 'probabilistic'
+
+/**
  * A built-in template name (`chatml`, `llama3`, ...) as opposed to a template
  * body. `--chat-template` takes either, but `--chat-template-file` reads its
  * value as a path, so the two have to be told apart. Any real jinja carries
@@ -150,6 +151,20 @@ async function existingFilePath(value: string): Promise<string | null> {
   }
 }
 
+/**
+ * A user's Parallel Sequences value as a slot count, or undefined for auto.
+ * Settings saved by older builds can hold the number as a string, so both the
+ * emission and the speculative-decoding pin read it through here: if they
+ * disagreed, a string '2' would suppress the pin without ever being emitted,
+ * and llama.cpp would resolve auto to 4 slots anyway.
+ */
+function explicitParallel(v: unknown): number | undefined {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
+  if (typeof n !== 'number' || !Number.isFinite(n)) return undefined
+  const slots = Math.floor(n)
+  return slots > 0 ? slots : undefined
+}
+
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
   // and strip stray newlines that would break parsing.
@@ -164,17 +179,8 @@ function escapeIniValue(v: string): string {
 export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
-  config: LlamacppConfig,
-  opts: { reservedBackgroundSlots?: number } = {}
+  config: LlamacppConfig
 ): Promise<{ path: string; embeddingCount: number }> {
-  // Overridable for tests only. Production callers take the default: gating it
-  // on the auto-title setting made the reservation appear and disappear behind
-  // a toggle that regenerates no preset, so the frontend's pin outlived the
-  // slot it named.
-  const reservedBackgroundSlots =
-    typeof opts.reservedBackgroundSlots === 'number'
-      ? opts.reservedBackgroundSlots
-      : RESERVED_BACKGROUND_SLOTS
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -183,37 +189,10 @@ export async function generatePreset(
     await fs.mkdir(modelsDir)
   }
 
-  // DFS for any directory containing model.yml — mirrors the logic in
-  // index.ts:list() so nested model IDs (e.g. "huggingface/foo") work.
-  const modelEntries: { modelId: string; configPath: string }[] = []
-  const stack: string[] = [modelsDir]
-  while (stack.length > 0) {
-    const currentDir = stack.pop() as string
-    const modelConfigPath = await joinPath([currentDir, 'model.yml'])
-    if (await fs.existsSync(modelConfigPath)) {
-      // +1 to drop leading separator. NOTE: matches index.ts behavior; not
-      // Windows-`\\`-aware, same trade-off as the existing list() impl.
-      const modelId = currentDir.slice(modelsDir.length + 1)
-      if (modelId.length > 0) {
-        modelEntries.push({ modelId, configPath: modelConfigPath })
-      }
-      continue
-    }
-    let children: string[] = []
-    try {
-      children = await fs.readdirSync(currentDir)
-    } catch {
-      continue
-    }
-    for (const child of children) {
-      try {
-        const stat = await fs.fileStat(child)
-        if (stat?.isDirectory) stack.push(child)
-      } catch {
-        /* ignore unreadable entries */
-      }
-    }
-  }
+  // A model.yml at the models root itself has no ID to key a section on.
+  const modelEntries = (await findModelEntries(modelsDir)).filter(
+    (e) => e.modelId.length > 0
+  )
 
   modelEntries.sort((a, b) => a.modelId.localeCompare(b.modelId))
 
@@ -281,10 +260,13 @@ export async function generatePreset(
   ) {
     lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
   }
-  // parallel default = -1 (auto); positive user value is intent. The reserved
-  // slot is added on top and never exposed in the setting's own value.
-  if (typeof config.parallel === 'number' && config.parallel > 0) {
-    lines.push(`parallel = ${config.parallel + reservedBackgroundSlots}`)
+  // parallel default = 0 (llama.cpp's own auto resolution); a positive user
+  // value is intent and is emitted verbatim. Jan adds no hidden slot of its
+  // own: every pinned surface shares slot 0 and is told apart by `thread_id`
+  // (web-app/src/constants/models.ts), so no slot has to be reserved for one.
+  const globalParallel = explicitParallel(config.parallel)
+  if (globalParallel !== undefined) {
+    lines.push(`parallel = ${globalParallel}`)
     // llama.cpp only turns on unified KV as part of resolving parallel = -1;
     // passing parallel explicitly leaves it off, which splits ctx-size into
     // ctx-size/parallel per slot. Restore the auto behaviour so the configured
@@ -346,10 +328,19 @@ export async function generatePreset(
   ) {
     lines.push(`n-cpu-moe = ${Math.floor(config.n_cpu_moe)}`)
   }
+  // n-cpu-ffn default = 0. The dense-model counterpart of n-cpu-moe, added in
+  // llama.cpp 0.4.0; the two are independent and a model can want either.
+  if (
+    typeof config.n_cpu_ffn === 'number' &&
+    Number.isFinite(config.n_cpu_ffn) &&
+    config.n_cpu_ffn > 0
+  ) {
+    lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
+  }
   // no-kv-offload default = false (the cache is offloaded). Spelled negatively
-  // to match llama.cpp's own flag and the existing no_mmap setting.
+  // to match llama.cpp's own flag.
   // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
-  // half of the kv-offload pair (arg.cpp:2403-2410) and inverts it, so `true`
+  // half of the kv-offload pair (arg.cpp:2417-2424) and inverts it, so `true`
   // here does disable offloading.
   if (config.no_kv_offload === true) {
     lines.push('no-kv-offload = true')
@@ -402,18 +393,13 @@ export async function generatePreset(
   ) {
     lines.push(`main-gpu = ${Math.floor(config.main_gpu)}`)
   }
-  // `--mlock` and `--no-mmap` are both deprecated aliases that write the single
-  // params.load_mode field (arg.cpp:2658-2702), so emitting both left load_mode
-  // at NONE and silently dropped mlock -- and mmap+mlock was unreachable.
-  // Deriving the one key it actually wants fixes both.
-  const wantsMlock = config.mlock === true
-  const wantsNoMmap = config.no_mmap === true
-  if (wantsMlock || wantsNoMmap) {
-    const loadMode = wantsMlock
-      ? wantsNoMmap
-        ? 'mlock'
-        : 'mmap+mlock'
-      : 'none'
+  // `--mlock`, `--mmap`/`--no-mmap` and `--direct-io` were deprecated aliases of
+  // the single params.load_mode field and were deleted outright in 0.4.1, so
+  // `load-mode` is the only spelling llama.cpp understands. default = auto, so
+  // only a non-auto value is named here; a model section can still name `auto`
+  // to opt out of a non-auto global.
+  const loadMode = parseLoadMode(config.load_mode)
+  if (loadMode !== null && loadMode !== 'auto') {
     lines.push(`load-mode = ${loadMode}`)
   }
   // rope-scaling default is UNSPECIFIED (let the model decide), not 'none'.
@@ -456,6 +442,12 @@ export async function generatePreset(
   ) {
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
   }
+  // lazy-mode default = auto (on for arch-marked tensors above 4 GiB). Needs
+  // mmap, so it is silently inert under a load-mode that does not map the file;
+  // `off` is the pre-0.4.0 behaviour of always keeping those tensors resident.
+  if (config.lazy_mode === 'on' || config.lazy_mode === 'off') {
+    lines.push(`lazy-mode = ${config.lazy_mode}`)
+  }
   // slot-save-path has no default: naming it is what enables llama.cpp's slot
   // save/restore routes at all. Emitted even with the feature off, so the worker
   // knows which directory to keep clear and can still erase a deleted thread's
@@ -480,6 +472,24 @@ export async function generatePreset(
   } else if (config.kv_unified === 'off') {
     lines.push('kv-unified = false')
   }
+  // kv-unified-per-slot default = unset. Caps one slot's share of the shared KV
+  // pool, which is what bounds a single conversation once the pool is unified
+  // and every surface shares a slot. Only sizes the pool itself when no
+  // ctx-size is pinned (server.cpp:160-170, mirrored in the shim).
+  if (
+    typeof config.kv_unified_per_slot === 'number' &&
+    Number.isFinite(config.kv_unified_per_slot) &&
+    config.kv_unified_per_slot > 0
+  ) {
+    lines.push(`kv-unified-per-slot = ${Math.floor(config.kv_unified_per_slot)}`)
+  }
+  // reasoning-preserve defaults to on since 0.4.0, for any template advertising
+  // `supports_preserve_reasoning`. Emitted only to turn it off, which restores
+  // the template's own default and keeps a per-request `chat_template_kwargs`
+  // (Jan's per-model `preserve_thinking`) the authoritative control.
+  if (config.reasoning_preserve === false) {
+    lines.push('reasoning-preserve = false')
+  }
   // keep default = 0
   if (
     typeof config.keep === 'number' &&
@@ -491,11 +501,17 @@ export async function generatePreset(
   lines.push('')
 
   // ---------- per-model sections ----------
+  const moeCacheAllowed =
+    config.split_mode !== 'tensor' &&
+    !(
+      typeof config.device === 'string' &&
+      config.device.trim().toLowerCase() === 'none'
+    )
   let embeddingCount = 0
   for (const { modelId, configPath } of modelEntries) {
     let mc: ModelYaml
     try {
-      mc = await invoke<ModelYaml>('read_yaml', { path: configPath })
+      mc = await fs.readYaml<ModelYaml>(configPath)
     } catch {
       // Skip unreadable model entries rather than aborting the whole preset.
       continue
@@ -597,9 +613,41 @@ export async function generatePreset(
     ) {
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
-    if (typeof mc.parallel === 'number' && mc.parallel > 0) {
-      lines.push(`parallel = ${mc.parallel + reservedBackgroundSlots}`)
+    // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
+    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
+    const hasMtpModel =
+      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
+    const hasMtpLayers =
+      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
+    const specDecoding = mc.mtp === true && (hasMtpLayers || hasMtpModel)
+
+    const modelParallel = explicitParallel(mc.parallel)
+    if (modelParallel !== undefined) {
+      lines.push(`parallel = ${modelParallel}`)
       if (kvUnifiedIsAuto) lines.push('kv-unified = true')
+    } else if (
+      specDecoding &&
+      explicitParallel(config.parallel) === undefined
+    ) {
+      // A model with speculative decoding gets one slot when parallel is auto.
+      // Every slot of a hybrid model (qwen35) carries (1 + spec-draft-n-max)
+      // rows of recurrent state for draft rollback -- about 600 MiB each on a
+      // 27B -- so llama.cpp's auto resolution to 4 slots costs ~1.2 GB more
+      // VRAM than the 2 Jan used before 0.8.5. On Windows the NVIDIA driver
+      // then spills into shared system RAM instead of failing, and decode
+      // drops 4x (59 -> 14 tok/s on a 12 GB card). Jan's own surfaces share
+      // slot 0 anyway. Only a positive value, global or per-model, counts as
+      // the user's: auto (0) is also what the 0.8.5 migration wrote, so the
+      // two cannot be told apart. A legacy numeric string still counts, and is
+      // emitted in [*] above (see explicitParallel).
+      lines.push('parallel = 1')
+      if (kvUnifiedIsAuto) lines.push('kv-unified = true')
+    }
+    // Unlike [*], `auto` is emitted: it is a real override of a non-auto
+    // global. Unset (empty in the UI) means inherit, so nothing is written.
+    const modelLoadMode = parseLoadMode(mc.load_mode)
+    if (modelLoadMode !== null) {
+      lines.push(`load-mode = ${modelLoadMode}`)
     }
     if (mc.cont_batching === false) {
       lines.push('cont-batching = false')
@@ -624,6 +672,35 @@ export async function generatePreset(
     if (typeof mc.n_cpu_moe === 'number' && mc.n_cpu_moe > 0) {
       lines.push(`n-cpu-moe = ${Math.floor(mc.n_cpu_moe)}`)
     }
+    if (typeof mc.n_cpu_ffn === 'number' && mc.n_cpu_ffn > 0) {
+      lines.push(`n-cpu-ffn = ${Math.floor(mc.n_cpu_ffn)}`)
+    }
+    // moe-cache-mib default = 0 (off): a GPU cache for the experts that
+    // cpu-moe / n-cpu-moe keep in host memory, added in 0.7.0. Per-model only,
+    // never in [*]: llama.cpp refuses to load a model without experts when it
+    // is set ("MoE cache requires a MoE model", llama-moe-cache.cpp), so an
+    // engine-wide value would break every dense and embedding model. For the
+    // same reason it is emitted only when the GGUF declares experts
+    // (`expert_count`, recorded at import); a model whose count is not yet
+    // known is treated as dense, since that only skips the cache. The same
+    // file also throws under tensor split mode and with no GPU backend, so the
+    // key is dropped where the preset can see either: it would only turn a
+    // working CPU-offloaded load into a failed one.
+    if (
+      moeCacheAllowed &&
+      typeof mc.expert_count === 'number' &&
+      mc.expert_count > 0 &&
+      typeof mc.moe_cache_mib === 'number' &&
+      Number.isFinite(mc.moe_cache_mib) &&
+      mc.moe_cache_mib > 0
+    ) {
+      lines.push(`moe-cache-mib = ${Math.floor(mc.moe_cache_mib)}`)
+      // Read only while building that cache; the parser throws outside [0, 1].
+      const share = mc.moe_cache_cpu_share
+      if (typeof share === 'number' && share > 0 && share <= 1) {
+        lines.push(`moe-cache-cpu-share = ${share}`)
+      }
+    }
     if (mc.no_kv_offload === true) {
       // INI key is the negated form; parse_bool_arg flips it server-side.
       // Writing `no-kv-offload = true` => kv-offload disabled.
@@ -637,13 +714,7 @@ export async function generatePreset(
       lines.push('mmproj-offload = false')
     }
 
-    // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
-    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
-    const hasMtpModel =
-      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
-    const hasMtpLayers =
-      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
-    if (mc.mtp === true && (hasMtpLayers || hasMtpModel)) {
+    if (specDecoding) {
       const specType =
         typeof mc.spec_type === 'string' && SPEC_TYPES.has(mc.spec_type)
           ? mc.spec_type
@@ -671,6 +742,19 @@ export async function generatePreset(
         mc.spec_draft_p_min <= 1
       ) {
         lines.push(`spec-draft-p-min = ${mc.spec_draft_p_min}`)
+      }
+      // Both added in 0.7.0. Upstream throws on an unknown sampling mode or a
+      // negative ubatch, which would abort the load, so anything else is
+      // dropped; 0 means "same as ubatch-size".
+      if (mc.spec_draft_sampling === NON_DEFAULT_DRAFT_SAMPLING) {
+        lines.push(`spec-draft-sampling = ${NON_DEFAULT_DRAFT_SAMPLING}`)
+      }
+      if (
+        typeof mc.spec_draft_n_ubatch === 'number' &&
+        Number.isFinite(mc.spec_draft_n_ubatch) &&
+        mc.spec_draft_n_ubatch > 0
+      ) {
+        lines.push(`spec-draft-n-ubatch = ${Math.floor(mc.spec_draft_n_ubatch)}`)
       }
     }
 

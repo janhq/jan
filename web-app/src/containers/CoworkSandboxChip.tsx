@@ -19,7 +19,7 @@ function fixKeyFor(platform: string): string {
 }
 
 /**
- * Shown only when no OS sandbox can confine a shell, in which case `bash` is
+ * Shown only when no OS sandbox can confine a shell, in which case `shell` is
  * withheld entirely rather than run unconfined. Without this the capability
  * just silently isn't offered, which reads as a broken agent.
  */

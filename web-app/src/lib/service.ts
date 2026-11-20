@@ -1,10 +1,11 @@
 import { CoreRoutes, APIRoutes } from '@janhq/core'
+import type { DownloadProgress, DownloadProgressHandler, Unsubscribe } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
+import { openExternalUrl } from '@/lib/externalLink'
 
 export const AppRoutes = [
-  'installExtensions',
   'getTools',
   'callTool',
   'cancelToolCall',
@@ -32,9 +33,18 @@ export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
   route: r,
 }))
 
-// Function to open an external URL in a new browser window
-export function openExternalUrl(url: string) {
-  window?.open(url, '_blank')
+// Re-exported: extensions reach it as `window.core.api.openExternalUrl`.
+export { openExternalUrl }
+
+// Events are not request/response, so this cannot be a mapped route: the host
+// emits progress for a task on its own `download-<taskId>` channel.
+export async function onDownloadProgress(
+  taskId: string,
+  handler: DownloadProgressHandler
+): Promise<Unsubscribe> {
+  return getServiceHub()
+    .events()
+    .listen<DownloadProgress>(`download-${taskId}`, (event) => handler(event.payload))
 }
 
 export const APIs = {
@@ -103,6 +113,11 @@ export const APIs = {
                 'enable_server_tool_execution',
                 'enableServerToolExecution',
               ]),
+              cors_enabled: pickBoolean(raw, [
+                'cors_enabled',
+                'isCorsEnabled',
+                'corsEnabled',
+              ]),
             }
             return getServiceHub().core().invoke(command, { config })
           }
@@ -117,4 +132,5 @@ export const APIs = {
     }
   }, {}),
   openExternalUrl,
+  onDownloadProgress,
 }

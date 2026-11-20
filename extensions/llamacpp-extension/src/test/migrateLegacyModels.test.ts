@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
+import { hostServices, newExtension } from './host'
 
 vi.mock('../backend-settings')
 
@@ -8,13 +9,7 @@ describe('migrateLegacyModels', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension({
-      name: 'llamacpp-extension',
-      productName: 'LlamaC++ Extension',
-      version: '1.0.0',
-      description: 'Test extension',
-      main: 'index.js',
-    })
+    extension = newExtension()
     // Set up provider path to avoid issues with getProviderPath() calls
     extension['providerPath'] = '/path/to/jan/llamacpp'
   })
@@ -40,7 +35,6 @@ describe('migrateLegacyModels', () => {
 
     it('should skip non-yml files during migration', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -57,12 +51,11 @@ describe('migrateLegacyModels', () => {
       await extension['migrateLegacyModels']()
 
       // Should not try to read yaml for non-yml files
-      expect(invoke).not.toHaveBeenCalledWith('read_yaml', expect.any(Object))
+      expect(fs.readYaml).not.toHaveBeenCalled()
     })
 
     it('should skip yml files when model.yml already exists in directory', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -81,7 +74,7 @@ describe('migrateLegacyModels', () => {
       })
 
       // Mock the yaml reads that will happen for model.yml
-      vi.mocked(invoke).mockResolvedValue({
+      vi.mocked(fs.readYaml).mockResolvedValue({
         name: 'Existing Model',
         model_path: 'models/existing/model.gguf',
         size_bytes: 2000000,
@@ -90,18 +83,14 @@ describe('migrateLegacyModels', () => {
       await extension['migrateLegacyModels']()
 
       // Should read model.yml but skip legacy-model.yml because model.yml exists
-      expect(invoke).toHaveBeenCalledWith('read_yaml', {
-        path: 'model.yml',
-      })
+      expect(fs.readYaml).toHaveBeenCalledWith('model.yml')
       // The logic should skip legacy-model.yml since model.yml exists, but it still reads both
       // The actual behavior is that it reads model.yml first, then skips legacy-model.yml processing
-      expect(invoke).toHaveBeenCalledTimes(2)
+      expect(fs.readYaml).toHaveBeenCalledTimes(2)
     })
 
     it('should migrate legacy model with valid configuration', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
-      const { basename } = await import('@tauri-apps/api/path')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
 
@@ -125,28 +114,23 @@ describe('migrateLegacyModels', () => {
         .mockResolvedValueOnce({ isDirectory: false, size: 1000 }) // model file size for size_bytes
         .mockResolvedValueOnce({ isDirectory: false, size: 1000 }) // filename stat in directory traversal
 
-      vi.mocked(basename).mockResolvedValue('model')
 
       // Mock reading legacy config
-      vi.mocked(invoke)
-        .mockResolvedValueOnce({
-          files: ['/path/to/jan/models/test/path.gguf'],
-          model: 'Legacy Test Model',
-        })
-        .mockResolvedValueOnce(undefined) // write_yaml call
+      vi.mocked(fs.readYaml).mockResolvedValueOnce({
+        files: ['/path/to/jan/models/test/path.gguf'],
+        model: 'Legacy Test Model',
+      })
+      vi.mocked(fs.writeYaml).mockResolvedValueOnce(undefined)
 
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
 
       await extension['migrateLegacyModels']()
 
-      expect(invoke).toHaveBeenNthCalledWith(1, 'read_yaml', {
-        path: 'model.yml',
-      })
+      expect(fs.readYaml).toHaveBeenNthCalledWith(1, 'model.yml')
     })
 
     it('should skip migration if legacy model file does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -164,7 +148,7 @@ describe('migrateLegacyModels', () => {
       })
 
       // Mock reading legacy config with no files
-      vi.mocked(invoke).mockResolvedValueOnce({
+      vi.mocked(fs.readYaml).mockResolvedValueOnce({
         files: [],
         model: 'Test Model',
       })
@@ -172,14 +156,13 @@ describe('migrateLegacyModels', () => {
       await extension['migrateLegacyModels']()
 
       // Should not proceed with migration
-      expect(invoke).toHaveBeenCalledTimes(1) // Only the read_yaml call
+      expect(fs.readYaml).toHaveBeenCalledTimes(1)
+      expect(fs.writeYaml).not.toHaveBeenCalled()
       expect(fs.mkdir).not.toHaveBeenCalled()
     })
 
     it('should skip migration if new model config already exists', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
-      const { basename } = await import('@tauri-apps/api/path')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -200,10 +183,9 @@ describe('migrateLegacyModels', () => {
         isDirectory: false,
         size: 1000,
       })
-      vi.mocked(basename).mockResolvedValue('legacy-model')
 
       // Mock reading legacy config
-      vi.mocked(invoke).mockResolvedValueOnce({
+      vi.mocked(fs.readYaml).mockResolvedValueOnce({
         files: ['legacy/model/path.gguf'],
         model: 'Legacy Test Model',
       })
@@ -211,7 +193,8 @@ describe('migrateLegacyModels', () => {
       await extension['migrateLegacyModels']()
 
       // Should not proceed with migration since config already exists
-      expect(invoke).toHaveBeenCalledTimes(1) // Only the read_yaml call
+      expect(fs.readYaml).toHaveBeenCalledTimes(1)
+      expect(fs.writeYaml).not.toHaveBeenCalled()
       expect(fs.mkdir).not.toHaveBeenCalled()
     })
 
@@ -245,7 +228,6 @@ describe('migrateLegacyModels', () => {
   describe('list method integration with migrateLegacyModels', () => {
     it('should call migrateLegacyModels during list operation', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
 
       // Mock the migrateLegacyModels method
       const migrateSpy = vi
@@ -263,8 +245,8 @@ describe('migrateLegacyModels', () => {
         size: 1000,
       })
 
-      // Mock invoke for any potential yaml reads (though directory is empty)
-      vi.mocked(invoke).mockResolvedValue({
+      // Mock any potential yaml reads (though directory is empty)
+      vi.mocked(fs.readYaml).mockResolvedValue({
         name: 'Test Model',
         model_path: 'models/test/model.gguf',
         size_bytes: 1000000,

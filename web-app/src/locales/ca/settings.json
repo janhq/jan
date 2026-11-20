@@ -101,8 +101,6 @@
     "threadScrollFlowHint": "Manté la finestra ancorada a l’últim missatge que envies.",
     "threadScrollStickyTitle": "Desplaçament adherent",
     "threadScrollStickyHint": "Segueix automàticament les respostes mentre arriben en temps real.",
-    "tokenCounterCompact": "Comptador de tokens compacte",
-    "tokenCounterCompactDesc": "Mostra el comptador de tokens dins de l’entrada del xat. Si es desactiva, apareix sota el camp.",
     "codeBlockTitle": "Bloc de codi",
     "codeBlockDesc": "Tria un estil de ressaltat de sintaxi.",
     "showLineNumbers": "Mostra els números de línia",
@@ -110,7 +108,8 @@
     "resetCodeBlockStyle": "Restableix l’estil del bloc de codi",
     "resetCodeBlockStyleDesc": "Restableix l’estil del bloc de codi als valors per defecte.",
     "resetCodeBlockSuccess": "S’ha restablert l’estil del bloc de codi",
-    "resetCodeBlockSuccessDesc": "L’estil del bloc de codi s’ha restaurat al valor per defecte."
+    "resetCodeBlockSuccessDesc": "L’estil del bloc de codi s’ha restaurat al valor per defecte.",
+    "themeDescFixed": "Utilitza sempre aquest tema. Tria Sistema per seguir el del sistema operatiu."
   },
   "hardware": {
     "os": "Sistema operatiu",
@@ -159,6 +158,11 @@
     "peerSslDesc": "Valida els certificats SSL de les connexions de parells.",
     "hostSsl": "SSL de l’amfitrió",
     "hostSslDesc": "Valida els certificats SSL dels hosts de destinació."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "El que Jan pot fer al teu ordinador: el seu shell aïllat, a més dels records i les habilitats que es guarden permanentment a la carpeta de dades de Jan.",
+    "networkDesc": "Permet que les ordres del shell accedeixin a la xarxa, per exemple per instal·lar paquets o obtenir un repositori. Activat per defecte. L'entorn aïllat continua limitant quins fitxers poden tocar les ordres."
   },
   "localApiServer": {
     "title": "Servidor API local",

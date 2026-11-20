@@ -55,7 +55,7 @@ jobs:
       SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -66,7 +66,7 @@ jobs:
           targets: aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       - name: Build CLI binary (x86_64)
         env:
@@ -74,8 +74,8 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
-          cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release --target x86_64-apple-darwin
+          cd src-tauri/jan-cli
+          cargo build --no-default-features --features cli --release --target x86_64-apple-darwin
 
       - name: Build CLI binary (aarch64)
         env:
@@ -83,8 +83,8 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
-          cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release --target aarch64-apple-darwin
+          cd src-tauri/jan-cli
+          cargo build --no-default-features --features cli --release --target aarch64-apple-darwin
 
       - name: Create universal binary
         run: |
@@ -108,7 +108,7 @@ jobs:
         env:
           NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
 
-      - uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
+      - uses: apple-actions/import-codesign-certs@v2.0.0
         if: steps.secrets-check.outputs.has-cert == 'true'
         continue-on-error: true
         with:

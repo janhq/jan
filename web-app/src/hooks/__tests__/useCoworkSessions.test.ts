@@ -56,6 +56,86 @@ describe('useCoworkSessions', () => {
     expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
   })
 
+  /// A subagent ping is a user message with no transcript row, so counting it
+  /// as the question would cut the two histories at different points and
+  /// resume the run from a note about a subagent.
+  it('rewinds past a subagent ping to the real question', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'second' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      {
+        id: 'ping-2',
+        role: 'user',
+        parts: [{ type: 'text', text: '<SYSTEM>\nalpha done\n</SYSTEM>' }],
+      },
+      { id: 'm3', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().rewindToLastUser(id)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns.map((t) => t.content)).toEqual(['second'])
+    expect(s.messages.map((m) => m.id)).toEqual(['m1'])
+  })
+
+  /// Editing or deleting a question partway up the transcript cuts both lists
+  /// at that question. The wire history has messages the transcript has no row
+  /// for, so the cut is counted in questions, not in indices.
+  it('drops a question and everything it produced', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'answer one' },
+      { role: 'user', content: 'second' },
+      { role: 'tool', content: '', name: 'read', status: 'done' },
+      { role: 'assistant', content: 'answer two' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      {
+        id: 'ping-2',
+        role: 'user',
+        parts: [{ type: 'text', text: '<SYSTEM>\nalpha done\n</SYSTEM>' }],
+      },
+      { id: 'm3', role: 'user', parts: [{ type: 'text', text: 'second' }] },
+      { id: 'm4', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().dropFromTurn(id, 2)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns.map((t) => t.content)).toEqual(['first', 'answer one'])
+    // The ping belongs to the first question's run, so it survives with it.
+    expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'ping-2'])
+  })
+
+  /// The answers to a question cannot outlive it, so an assistant or tool turn
+  /// is not a place the transcript can be cut.
+  it('refuses to cut anywhere but a question', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().dropFromTurn(id, 1)
+    useCoworkSessions.getState().dropFromTurn(id, 9)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns).toHaveLength(2)
+    expect(s.messages).toHaveLength(2)
+  })
+
   // Rewinding a session that has never had a turn would otherwise empty it.
   it('leaves a session with no user turn alone', () => {
     const id = useCoworkSessions.getState().createSession()
@@ -134,49 +214,23 @@ describe('useCoworkSessions', () => {
   })
 })
 
-describe('useCoworkSessions persist migration', () => {
-  // v0 sessions carry `turns` but no `messages`. Losing the tool turns on
-  // upgrade would leave the agent replaying a conversation with holes in it.
-  it('rebuilds messages from turns for a v0 session', () => {
-    const migrate = useCoworkSessions.persist.getOptions().migrate!
-    const out = migrate(
-      {
-        sessions: [
-          {
-            id: 's1',
-            turns: [
-              { role: 'user', content: 'build it' },
-              {
-                role: 'tool',
-                content: '',
-                name: 'write',
-                callId: 'c1',
-                args: { path: 'a.txt' },
-                result: 'Created a.txt (3 bytes)',
-                status: 'done',
-              },
-            ],
-          },
-        ],
-      },
-      0
-    ) as { sessions: Array<{ messages: unknown[] }> }
+describe('useCoworkSessions createSession reuse', () => {
+  beforeEach(reset)
 
-    const parts = (out.sessions[0].messages as never[]).flatMap(
-      (m: { parts?: unknown[] }) => m.parts ?? []
-    )
-    expect(out.sessions[0].messages.length).toBeGreaterThan(0)
-    expect(parts.some((p: { type?: string }) => p.type === 'tool-write')).toBe(
-      true
-    )
+  it('reuses the current session when it is still empty', () => {
+    const first = useCoworkSessions.getState().createSession()
+    const second = useCoworkSessions.getState().createSession()
+    expect(second).toBe(first)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
   })
 
-  it('leaves an already-migrated session alone', () => {
-    const migrate = useCoworkSessions.persist.getOptions().migrate!
-    const existing = [{ id: 's1', turns: [], messages: [{ id: 'keep' }] }]
-    const out = migrate({ sessions: existing }, 1) as {
-      sessions: Array<{ messages: Array<{ id: string }> }>
-    }
-    expect(out.sessions[0].messages[0].id).toBe('keep')
+  it('creates a fresh session once the current one has turns', () => {
+    const first = useCoworkSessions.getState().createSession()
+    useCoworkSessions
+      .getState()
+      .commitTurns(first, [{ role: 'user', content: 'hi' }], [], [])
+    const second = useCoworkSessions.getState().createSession()
+    expect(second).not.toBe(first)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(2)
   })
 })

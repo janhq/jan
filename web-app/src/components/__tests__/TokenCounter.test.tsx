@@ -6,6 +6,10 @@ import { useTokensCount } from '@/hooks/useTokensCount'
 vi.mock('@/hooks/useTokensCount', () => ({
   useTokensCount: vi.fn(),
 }))
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const i18n = (await import('@/i18n/setup')).default
+  return { useTranslation: () => ({ t: i18n.t, i18n }) }
+})
 
 // Mock tooltip components to render inline (Radix Portal + closed state prevents content from appearing in jsdom)
 vi.mock('@/components/ui/tooltip', async () => {
@@ -89,13 +93,11 @@ describe('TokenCounter', () => {
     expect(mocks.calculateTokens).toHaveBeenCalledTimes(1)
   })
 
-  it('renders the SVG progress ring', () => {
+  it('shows context count without a progress ring', () => {
     mockTokens({ tokenCount: 500, maxTokens: 1000 })
     const { container } = render(<TokenCounter />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeTruthy()
-    const circles = container.querySelectorAll('circle')
-    expect(circles.length).toBe(2)
+    expect(screen.getByText('Context: 500')).toBeTruthy()
+    expect(container.querySelectorAll('circle')).toHaveLength(0)
   })
 
   it('renders nothing when maxTokens is unavailable', () => {
@@ -120,7 +122,7 @@ describe('TokenCounter', () => {
     })
     render(<TokenCounter />)
     expect(screen.queryByText(/%/)).toBeNull()
-    expect(screen.getAllByText('1.4K').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Context: 1.4K').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('GPT X')).toBeTruthy()
     expect(screen.getByText('1,400')).toBeTruthy()
   })

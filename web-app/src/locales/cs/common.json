@@ -236,10 +236,6 @@
       "cancel": "Zrušit",
       "changeLocation": "Změnit umístění"
     },
-    "deleteAllThreads": {
-      "title": "Smazat všechna vlákna",
-      "description": "Všechna vlákna budou smazána. Tuto akci nelze vrátit zpět."
-    },
     "deleteThread": {
       "description": "Opravdu chcete smazat toto vlákno? Tuto akci nelze vrátit zpět."
     },
@@ -248,6 +244,10 @@
     },
     "messageMetadata": {
       "title": "Metadata zprávy"
+    },
+    "deleteAllChats": {
+      "title": "Smazat konverzace mimo projekty",
+      "description": "Tímto smažete konverzace, které nejsou v žádném projektu. Konverzace v projektech, konverzace označené hvězdičkou a úlohy zůstanou zachovány. Tuto akci nelze vrátit zpět."
     }
   },
   "projects": {
@@ -268,9 +268,8 @@
     "projectNotFoundDesc": "Projekt, který hledáte, neexistuje nebo byl smazán.",
     "deleteProjectDialog": {
       "title": "Smazat projekt",
-      "permanentDelete": "Tímto trvale smažete všechna vlákna.",
+      "permanentDelete": "Tímto trvale smažete „{{projectName}}\" a všechny jeho konverzace. Tuto akci nelze vrátit zpět.",
       "permanentDeleteWarning": "Tato akce trvale smaže VŠECHNA vlákna v rámci projektu!",
-      "deleteEmptyProject": "Tato akce smaže projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Chcete-li uložit vlákna, přesuňte je do seznamu vláken nebo jiného projektu před smazáním.",
       "starredWarning": "Stále máte oblíbená vlákna v rámci projektu.",
       "deleteButton": "Smazat",
@@ -291,7 +290,6 @@
       "renameSuccess": "Projekt byl přejmenován z \"{{oldName}}\" na \"{{newName}}\""
     },
     "noConversationsIn": "Žádné konverzace v {{projectName}}",
-    "startNewConversation": "Začněte novou konverzaci s {{projectName}} níže",
     "conversationsIn": "Konverzace v {{projectName}}",
     "conversationsDescription": "Kliknutím na kteroukoli konverzaci pokračujte v chatování nebo začněte novou níže.",
     "thread": "vlákno",
@@ -304,7 +302,9 @@
     "noProjectsFound": "Nebyly nalezeny žádné projekty",
     "tryDifferentSearch": "Zkuste jiný vyhledávací výraz",
     "uploadingFiles": "Zpracování souborů…",
-    "processButton": "Přidat"
+    "processButton": "Přidat",
+    "viewProject": "Zobrazit projekt",
+    "sendMessageToStart": "Začněte odesláním zprávy výše."
   },
   "errorDialog": {
     "titleFallback": "Něco se pokazilo",
@@ -398,6 +398,14 @@
     "threadRemovedFromProject": {
       "title": "Vlákno odebráno",
       "description": "Vlákno bylo úspěšně odebráno z \"{{projectName}}\""
+    },
+    "threadProjectMoveFailed": {
+      "title": "Přesun se nezdařil",
+      "description": "Tuto konverzaci nebylo možné přesunout. Její relace není dostupná."
+    },
+    "deleteAllChats": {
+      "title": "Konverzace smazány",
+      "description": "Konverzace mimo projekty byly smazány. Konverzace v projektech a úlohy zůstaly zachovány."
     }
   },
   "llamacppBusyOnExit": {
@@ -406,5 +414,171 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Zatím nic nevzniklo. Soubory vytvořené v konverzacích se zobrazí zde.",
+  "workspace": {
+    "chatFootnote": "Jan tuto složku volně čte a před každou úpravou nebo příkazem, který v ní běží, se vás zeptá.",
+    "saveFailed": "Složku pro tento chat se nepodařilo uložit"
+  },
+  "budget": {
+    "stoppedTokens": "Zastaveno: tato konverzace dosáhla svého limitu tokenů."
+  },
+  "artifacts": "Artefakty",
+  "skills": "Dovednosti",
+  "deleteSessionTitle": "Smazat relaci?",
+  "deleteSessionBody": "„{{title}}“ a její přepis budou trvale smazány. Tuto akci nelze vrátit zpět.",
+  "sidebar": {
+    "more": "Více",
+    "toggle": "Přepnout postranní panel",
+    "navigation": "Navigace",
+    "navigationDescription": "Přejděte na chaty, projekty, artefakty, dovednosti a nastavení."
+  },
+  "coworkSessionUnavailable": "Tato konverzace zatím nemá co zobrazit.",
+  "coworkSync": {
+    "journalUnreadableTitle": "Některé importované konverzace Cowork jsou skryté",
+    "journalUnreadableDescription": "Jan nemůže přečíst svůj záznam o smazání. Konverzace importované ze starší verze proto zůstávají skryté, aby se neobnovily ty, které jste už smazali. Mazání konverzací Cowork je také dočasně zablokováno. Vaše data zůstala nedotčena. Postup obnovy: nejdřív Jan úplně ukončete, protože za běhu přepisuje settings.json z paměti a vaši úpravu by vrátil. Pak opravte nebo odstraňte položku 'cowork_deleted_ids' v souboru settings.json. Když ji odstraníte, obnoví se všechny importované konverzace, včetně těch, které jste smazali.",
+    "missingThreadTitle": "Konverzaci Cowork nebylo možné uložit",
+    "missingThreadDescription": "Její uložené vlákno chybí, takže se změny už neukládají. Stále ji můžete číst, exportovat nebo smazat.",
+    "writeRefusedTitle": "Konverzaci Cowork nelze uložit",
+    "writeRefusedDescription": "Jan nemůže tuto konverzaci uložit pod jejím aktuálním ID, takže se změny neukládají. Stále ji můžete číst, exportovat nebo smazat.",
+    "closeFailedTitle": "Jan nemohl vše uložit, a proto zůstal otevřený",
+    "closeFailedDescription": "Vaše poslední změny jsou stále v paměti. Zavřete okno znovu a ukládání se zopakuje.",
+    "closeForceDescription": "Ukládání stále selhává. Můžete zavřít bez uložení, ale přijdete tím o změny, které se nepodařilo zapsat.",
+    "closeAnyway": "Zavřít bez uložení",
+    "quitFailedDescription": "Vaše poslední změny jsou stále v paměti. Ukončete aplikaci znovu a ukládání se zopakuje.",
+    "quitAnyway": "Ukončit bez uložení"
+  },
+  "messageWrites": {
+    "failedTitle": "Některé zprávy nebylo možné uložit",
+    "failedDescription": "Jan to stále zkouší znovu. Dokud se to nepodaří, nejnovější zprávy existují jen v tomto okně.",
+    "retry": "Zkusit znovu teď"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Tato konverzace ještě není připravená",
+    "notReadyDescription": "Jan nedokázal ověřit, zda je tato konverzace chat, nebo úloha Cowork. Zkuste to znovu. Pokud problém přetrvá, restartujte aplikaci.",
+    "retry": "Zkusit znovu"
+  },
+  "agentSettings": "Agent",
+  "composer": {
+    "addControls": "Přidat přílohy a ovládací prvky",
+    "assistant": "Asistent",
+    "allTools": "Všechny nástroje",
+    "samplingParameters": "Parametry vzorkování",
+    "openAssistantSettings": "Otevřít nastavení asistenta",
+    "samplingSaveFailed": "Parametry vzorkování nebylo možné uložit. Zkuste to prosím znovu.",
+    "context": "Kontext: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Vyberte model",
+    "none": "Žádný",
+    "triggerLabel": "Vybrat model: {{name}}",
+    "dialogLabel": "Zvolte model",
+    "searchLabel": "Hledat modely nebo poskytovatele",
+    "searchPlaceholder": "Hledat modely nebo poskytovatele...",
+    "listLabel": "Modely",
+    "noMatches": "Žádné odpovídající modely",
+    "noModels": "Nejsou nastavené žádné modely",
+    "optionsLabel": "Možnosti modelu",
+    "reasoning": "Uvažování",
+    "reasoningMode": "Režim uvažování",
+    "reasoningEffort": "Míra uvažování",
+    "thinkingBudget": "Rozpočet na přemýšlení",
+    "modelSettings": "Nastavení modelu",
+    "manageModels": "Spravovat modely",
+    "effort": {
+      "default": "Výchozí",
+      "auto": "Automaticky",
+      "on": "Zapnuto",
+      "off": "Vypnuto",
+      "low": "Nízká",
+      "medium": "Střední",
+      "high": "Vysoká",
+      "xhigh": "Velmi vysoká",
+      "unlimited": "Neomezená"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Přidat do projektu",
+    "newProject": "Nový projekt",
+    "noProjects": "Zatím žádné projekty",
+    "addFolderAction": "Přidat složku"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Před přidáním přístupu ke složce vyberte model, který umí používat nástroje.",
+    "folderUnsupported": "Tento model neumí používat nástroje, takže složku nelze přidat. Běžný chat ale funguje dál.",
+    "removeProject": "Zrušit výběr projektu",
+    "temporary": "Dočasný chat nemá přístup ke složce."
+  },
+  "skillDestination": "Ukládat nové dovednosti do",
+  "skillDestinationFolder": "Této složky",
+  "skillDestinationGlobal": "Globálně (pro všechny konverzace)",
+  "overview": {
+    "title": "Přehled konverzace",
+    "description": "Průběh, soubory a úlohy na pozadí v této konverzaci.",
+    "resize": "Změnit velikost bočního panelu",
+    "close": "Skrýt přehled konverzace",
+    "progress": "Průběh",
+    "files": "Soubory",
+    "backgroundTasks": "Úlohy na pozadí",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_few": "{{count}} monitory",
+    "monitorCount_many": "{{count}} monitoru",
+    "monitorCount_other": "{{count}} monitorů",
+    "noProgress": "Kroky se budou zobrazovat průběžně, jak bude Jan pracovat.",
+    "noFiles": "Soubory se zobrazí zde."
+  },
+  "artifactsLibraryDescription": "Soubory vytvořené ve všech vašich konverzacích, přehledně na jednom místě.",
+  "artifactsLibraryCount_one": "{{count}} soubor",
+  "artifactsLibraryCount_few": "{{count}} soubory",
+  "artifactsLibraryCount_many": "{{count}} souboru",
+  "artifactsLibraryCount_other": "{{count}} souborů",
+  "artifactsLibraryFilter": "Filtrovat podle typu souboru",
+  "artifactsLibraryReset": "Vymazat filtry",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Tuto úlohu nebylo možné importovat",
+      "body": "Jan nedokázal tuto úlohu přenést z předchozí verze a přestal to zkoušet. Nic se neztratilo, originál zůstal zachován. Můžete to zkusit znovu, nebo úlohu exportovat do souboru."
+    },
+    "id-collision": {
+      "title": "Tuto úlohu nebylo možné importovat",
+      "body": "Stejné ID už používá jiná konverzace. Tato úloha se proto zobrazuje jen pro čtení a druhá konverzace zůstává nedotčena. Pokud si chcete ponechat kopii, exportujte ji."
+    },
+    "missing-sidecar": {
+      "title": "Historie této úlohy chybí",
+      "body": "Uloženou historii této úlohy se nepodařilo najít, takže se zobrazuje jen pro čtení. Její soubory na disku zůstávají beze změny."
+    },
+    "unreadable-sidecar": {
+      "title": "Historii této úlohy nelze přečíst",
+      "body": "Uložená historie této úlohy je poškozená nebo pochází z novější verze aplikace Jan. Zobrazuje se proto jen pro čtení a nikdy se nepřepíše."
+    },
+    "missing-thread": {
+      "title": "Tato úloha byla odstraněna z úložiště",
+      "body": "Konverzace této úlohy už na disku není. Zobrazuje se kopie, která je stále v paměti. Pokud si ji chcete ponechat, exportujte ji."
+    },
+    "reason": "Důvod: {{reason}}",
+    "retry": "Zkusit znovu",
+    "retrying": "Zkouším...",
+    "export": "Exportovat",
+    "exported": "Úloha exportována",
+    "exportFailed": "Úlohu nebylo možné exportovat",
+    "imported": "Úloha importována",
+    "retryFailed": "Úlohu se stále nepodařilo importovat",
+    "revealFailed": "Složku nebylo možné otevřít",
+    "leftOut": {
+      "title": "Některé soubory nebyly zkopírovány",
+      "body_one": "{{count}} položka ze staré složky této úlohy (odkaz nebo soubor, který Jan nesměl číst) nebyla zkopírována. Původní složka zůstala beze změny.",
+      "body_few": "{{count}} položky ze staré složky této úlohy (odkazy nebo soubory, které Jan nesměl číst) nebyly zkopírovány. Původní složka zůstala beze změny.",
+      "body_many": "{{count}} položky ze staré složky této úlohy (odkazy nebo soubory, které Jan nesměl číst) nebylo zkopírováno. Původní složka zůstala beze změny.",
+      "body_other": "{{count}} položek ze staré složky této úlohy (odkazy nebo soubory, které Jan nesměl číst) nebylo zkopírováno. Původní složka zůstala beze změny.",
+      "show": "Zobrazit původní složku"
+    }
+  },
+  "deleteThreadFailed": "Konverzaci nebylo možné smazat. Po restartu se může znovu objevit.",
+  "continueAsTask": {
+    "action": "Pokračovat jako úkol",
+    "title": "Pokračovat v tomto chatu jako úkol?",
+    "description": "Jan tuto konverzaci zachová a bude v ní pokračovat jako v úkolu Cowork. Úkol může používat nástroje, zapisovat soubory a spouštět příkazy ve svém vlastním pracovním prostoru bez ptaní u každého kroku. Zpět na chat ho převést nelze.",
+    "descriptionFolder": "Jan tuto konverzaci zachová a bude v ní pokračovat jako v úkolu Cowork. Úkol může upravovat soubory a spouštět příkazy ve složce {{folder}} bez ptaní u každé změny. Zpět na chat ho převést nelze.",
+    "confirm": "Pokračovat jako úkol"
   }
 }

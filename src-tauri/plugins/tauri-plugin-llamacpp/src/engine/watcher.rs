@@ -63,7 +63,7 @@ async fn subscribe_once<R: Runtime>(
 ) -> Result<(), String> {
     use futures_util::StreamExt;
 
-    let resp = reqwest::Client::new()
+    let resp = super::worker::loopback_client()
         .get(format!("http://127.0.0.1:{port}/models/sse"))
         .bearer_auth(api_key)
         .send()

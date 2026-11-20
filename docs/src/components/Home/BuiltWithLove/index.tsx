@@ -2,18 +2,20 @@ import { IoMapOutline } from 'react-icons/io5'
 import { FaGithub, FaDiscord } from 'react-icons/fa'
 import { RiStarSFill } from 'react-icons/ri'
 import { useDiscordWidget } from '@/hooks/useDiscordWidget'
+import { useGitHubStars } from '@/hooks/useGitHubStars'
 import { useData } from 'nextra/data'
 import { formatCompactNumber } from '@/utils/format'
 
 const BuiltWithLove = () => {
   const { data: discordWidget } = useDiscordWidget()
-  const { stars } = useData()
+  const { stars: initialStars } = useData()
+  const { stars } = useGitHubStars(initialStars)
 
   return (
     <div className="nextra-wrap-container mt-10">
       <div className="w-full px-4 xl:w-3/4 mx-auto relative py-8">
         <div className="text-center">
-          <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+          <h1 className="text-5xl !font-semibold leading-tight lg:leading-tight mt-2 font-serif">
             100% Open Source
           </h1>
           <p className="leading-relaxed text-black/60 dark:text-white/60 mt-2">

@@ -3,7 +3,7 @@ import {
   cleanHubSearchQuery,
   prioritizeExactModelMatches,
   type RankableCatalogModel,
-} from '../searchRanking'
+} from '../-searchRanking'
 
 const model = (
   model_name: string,

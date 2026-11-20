@@ -62,8 +62,9 @@ const resolves = (
   (typeof lookup(bundle, ns, `${key}_one`) === 'string' &&
     typeof lookup(bundle, ns, `${key}_other`) === 'string')
 
-// Only literal keys; dynamically-built ones can't be checked statically.
-const KEY_CALL = /t\(\s*['"]([a-zA-Z0-9_-]+):([a-zA-Z0-9_.]+)['"]/g
+// Only literal keys; dynamically-built ones can't be checked statically. The
+// word boundary keeps calls such as `gatedEvent('ns:x')` from reading as `t(`.
+const KEY_CALL = /\bt\(\s*['"]([a-zA-Z0-9_-]+):([a-zA-Z0-9_.]+)['"]/g
 
 describe('i18n keys', () => {
   it('resolves every statically-referenced key in the en locale', () => {

@@ -1,0 +1,62 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|╭ Models ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮|
+|│   All models               5│All available models                                                                    │|
+|│   tokamak                  1│⌕ claude█                                                                               │|
+|│   anthropic                2│  anthropic / claude-haiku-4-5                                                          │|
+|│   openai                   2│▶ anthropic / claude-sonnet-4-5                                                         │|
+|│                             │                                                                                        │|
+|│                             │                                                                                        │|
+|│                             │                                                                                        │|
+|│                             │                                                                                        │|
+|│                             │                                                                                        │|
+|│                             │                                                                                        │|
+|│                             │anthropic/claude-sonnet-4-5 · default                                                   │|
+|│ Enter choose · Left/Right panes · Up/Down move · type to search · Ctrl-R refresh · Esc close                         │|
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯|
+
+ 0 0..1 fg=#56B6C2
+ 0 1..9 fg=Black bg=#56B6C2 mod=BOLD
+ 0 9..120 fg=#56B6C2
+ 1 0..1 fg=#56B6C2
+ 1 4..30 mod=REVERSED
+ 1 30..31 fg=#808080
+ 1 31..51 mod=BOLD
+ 1 119..120 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 30..40 fg=#808080
+ 2 119..120 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 30..31 fg=#808080
+ 3 119..120 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 30..31 fg=#808080
+ 4 31..118 mod=BOLD | REVERSED
+ 4 119..120 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 30..31 fg=#808080
+ 5 119..120 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 30..31 fg=#808080
+ 6 119..120 fg=#56B6C2
+ 7 0..1 fg=#56B6C2
+ 7 30..31 fg=#808080
+ 7 119..120 fg=#56B6C2
+ 8 0..1 fg=#56B6C2
+ 8 30..31 fg=#808080
+ 8 119..120 fg=#56B6C2
+ 9 0..1 fg=#56B6C2
+ 9 30..31 fg=#808080
+ 9 119..120 fg=#56B6C2
+10 0..1 fg=#56B6C2
+10 30..31 fg=#808080
+10 119..120 fg=#56B6C2
+11 0..1 fg=#56B6C2
+11 30..68 fg=#808080
+11 119..120 fg=#56B6C2
+12 0..1 fg=#56B6C2
+12 2..94 fg=#808080
+12 119..120 fg=#56B6C2
+13 0..120 fg=#56B6C2

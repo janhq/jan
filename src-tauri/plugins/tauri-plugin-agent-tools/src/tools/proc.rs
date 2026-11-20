@@ -4,54 +4,356 @@
 //! top-level shell. Without this, any command that spawns children (a build, a
 //! `foo &`, a pipeline) leaks orphans when the run is torn down.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::Instant;
 
 use tokio::process::{Child, Command};
 
+/// User-supplied, plugin-declared credentials, scoped to the project that
+/// registered them. Concurrent projects must never replace each other's keys.
+static PLUGIN_ENV: RwLock<BTreeMap<PathBuf, BTreeMap<String, String>>> =
+    RwLock::new(BTreeMap::new());
+
+/// Replace one project's plugin credentials, or revoke them with an empty map.
+pub fn set_plugin_env(root: &Path, vars: BTreeMap<String, String>) {
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut projects = PLUGIN_ENV.write().unwrap();
+    if vars.is_empty() {
+        projects.remove(&root);
+    } else {
+        projects.insert(root, vars);
+    }
+}
+
+/// True for variable names the sandbox owns itself: the static allowlist, the
+/// scratch temp keys, and the classic dynamic-linker/loader injection
+/// prefixes. The host refuses to store or inject plugin-declared values under
+/// these names -- a plugin declaring `PATH` or `LD_PRELOAD` would otherwise
+/// let one pasted value clobber (or escape) the sandbox environment wholesale.
+pub fn is_reserved_env_key(key: &str) -> bool {
+    SANDBOX_ENV_ALLOW.contains(&key)
+        || TEMP_ENV_KEYS.contains(&key)
+        // Case-blind: npm reads `NPM_CONFIG_CACHE` as readily as the lowercase
+        // spelling, and Windows env names have no case at all.
+        || PKG_CACHE_ENV.iter().any(|(name, _)| name.eq_ignore_ascii_case(key))
+        || key.starts_with("LD_")
+        || key.starts_with("DYLD_")
+        || key.starts_with("SUDO_")
+}
+
+/// The command language a resolved shell speaks. It decides how the command is
+/// handed over (see [`spawn_with_stdin`]) and what the model is told to write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellKind {
+    /// `bash`/`sh` and anything else that takes `-c <command>`.
+    Posix,
+    /// Windows PowerShell 5.1 (`powershell.exe`) or PowerShell 7 (`pwsh`).
+    PowerShell,
+    /// `cmd.exe`, the last resort on a Windows box with neither.
+    Cmd,
+}
+
+impl ShellKind {
+    /// The sentence that tells the model which syntax to write, for every shell
+    /// that is not the POSIX one it assumes by default. Shared by the tool
+    /// description and the system prompt's runtime block so the two agree.
+    pub fn syntax_note(self) -> Option<&'static str> {
+        match self {
+            ShellKind::Posix => None,
+            ShellKind::PowerShell => Some(
+                "Commands run in PowerShell: write PowerShell syntax (e.g. `Get-ChildItem`, \
+                 `Get-Content`, `$env:VAR`, `;` between statements), not bash/POSIX. \
+                 Relative paths work. For a full path, use `Convert-Path` rather than \
+                 `$PWD` or `Resolve-Path`, which may show a drive other programs cannot open.",
+            ),
+            ShellKind::Cmd => Some(
+                "Commands run in cmd.exe: write cmd syntax (e.g. `dir`, `type`, `set`, \
+                 `%VAR%`), not bash/POSIX.",
+            ),
+        }
+    }
+}
+
 /// How to invoke the host shell. `program` + `args` are fixed; the command
-/// string is appended as the final argv element, or piped to stdin when
-/// `via_stdin` is set (legacy WSL `bash.exe`, which cannot take `-c`).
-/// `description` names the shell for the model (e.g. git-bash vs `cmd`), so it
-/// can adapt command syntax instead of assuming POSIX bash.
+/// string is appended as the final argv element.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellConfig {
     pub program: PathBuf,
     pub args: Vec<String>,
-    pub via_stdin: bool,
-    /// A short human-readable name of the resolved shell, for the model.
-    pub description: &'static str,
+    /// The language of the shell the command finally runs in. Kept through
+    /// [`super::jail::wrap`], whose wrapper program is not the shell itself.
+    pub kind: ShellKind,
 }
 
-/// Resolved shell for this process, computed once. Prefers a real `bash`
-/// (matching the tool's name and documented guidance) and falls back to a
-/// POSIX `sh`/`cmd` only when no bash is found.
+/// Fixed PowerShell arguments, the command following `-Command`. No profile so
+/// a user's `$PROFILE` cannot change or slow every call; non-interactive so a
+/// prompt fails instead of hanging; `Bypass` so a `.ps1` the agent writes can
+/// run on a client whose default policy is `Restricted`. `-EncodedCommand` is
+/// deliberately not used: with redirected output, Windows PowerShell 5.1 then
+/// writes errors and progress to stderr as `#< CLIXML` records.
+const POWERSHELL_ARGS: &[&str] = &[
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+];
+
+/// `/D` skips the AutoRun registry hook, as `-NoProfile` does for PowerShell.
+/// `/S` makes cmd strip exactly the outer quote pair [`cmd_payload`] adds, so
+/// the command's own quotes survive whatever it contains.
+const CMD_ARGS: &[&str] = &["/D", "/S", "/C"];
+
+/// Classify a shell by its file name, case-insensitively and with either path
+/// separator, so a `JAN_AGENT_SHELL` pointing at PowerShell or cmd is driven as
+/// one rather than handed `-c`.
+pub fn kind_of(program: &Path) -> ShellKind {
+    let text = program.to_string_lossy();
+    let name = text.rsplit(['/', '\\']).next().unwrap_or(&text).to_ascii_lowercase();
+    match name.strip_suffix(".exe").unwrap_or(&name) {
+        "pwsh" | "powershell" => ShellKind::PowerShell,
+        "cmd" => ShellKind::Cmd,
+        _ => ShellKind::Posix,
+    }
+}
+
+/// The fixed arguments a shell of `kind` takes before its command.
+pub fn shell_args(kind: ShellKind) -> Vec<String> {
+    let args: &[&str] = match kind {
+        ShellKind::Posix => &["-c"],
+        ShellKind::PowerShell => POWERSHELL_ARGS,
+        ShellKind::Cmd => CMD_ARGS,
+    };
+    args.iter().map(|s| s.to_string()).collect()
+}
+
+/// The config that drives `program` according to its [`kind_of`].
+fn config_for(program: PathBuf) -> ShellConfig {
+    let kind = kind_of(&program);
+    ShellConfig {
+        program,
+        args: shell_args(kind),
+        kind,
+    }
+}
+
+/// The inbox modules behind everyday cmdlets: `Get-ChildItem`/`Get-Content`/
+/// `Set-Location` (Management), `Write-Output`/`Select-String`/
+/// `ConvertTo-Json` (Utility), `Get-Acl` (Security), `Expand-Archive`
+/// (Archive). Anything else on 5.1 needs its own `Import-Module`.
+const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
+     Microsoft.PowerShell.Utility, Microsoft.PowerShell.Security, Microsoft.PowerShell.Archive";
+
+/// The assemblies behind the Management, Utility and Security cmdlets on
+/// PowerShell 7, as a PowerShell array literal. pwsh finds an inbox module
+/// through the `C:` drive, which an AppContainer whose token cannot open the
+/// drive root never gets, so nothing autoloads and `Write-Output` is "not
+/// recognized"; a cmdlet assembly loads without that lookup. Archive has no
+/// assembly, so it is not here.
+const POWERSHELL_CORE_ASSEMBLIES: &str = "'Microsoft.PowerShell.Commands.Management.dll', \
+     'Microsoft.PowerShell.Commands.Utility.dll', 'Microsoft.PowerShell.Security.dll'";
+
+/// The script PowerShell is given for `command`. PowerShell's own exit code is
+/// only 0 or 1, so it is made to report a failing native command's real code,
+/// which the tool output's `[exit N]` line and the model both rely on.
+/// `$LASTEXITCODE` is reset first so a code left by an earlier call cannot
+/// leak in.
+///
+/// Success is `$?` of the last statement, as in POSIX shells. On failure the
+/// native code is used only when it is non-zero, so a cmdlet failing after a
+/// native command that succeeded still reports 1 rather than 0. PowerShell
+/// does not record which statement set `$LASTEXITCODE`, so when a cmdlet fails
+/// after an earlier native command that failed, the code is that native
+/// command's: still non-zero, possibly not the failing statement's own.
+///
+/// The command runs inside a function, and the code is handed to
+/// `$host.SetShouldExit` rather than `exit`:
+/// - A top-level `exit` discards formatted output that has not been flushed,
+///   so `Get-Location; Write-Output x` printed nothing.
+/// - An error is reported against the statement that raised it. At top level
+///   that statement is the whole `-Command` text, so 5.1 echoed this wrapper
+///   back with every `Write-Error`; inside the function it is just `jan_cmd`.
+///
+/// Output is switched to UTF-8: 5.1 otherwise encodes with the OEM code page
+/// and mangles every non-ASCII character. The progress stream is silenced
+/// because it is noise in captured output.
+///
+/// Inside the AppContainer two things need help:
+/// - Neither PowerShell can always load its inbox modules. Windows PowerShell
+///   5.1 cannot autoload: `Write-Output` is "not recognized" although
+///   `Import-Module` of the same module succeeds, so the core modules are
+///   imported explicitly. pwsh 7 autoloads when its token can open the `C:`
+///   drive root; on a machine where it cannot, no module loads and even
+///   `Set-Location` is missing, so, only then, the cmdlet assemblies are
+///   loaded directly (a load that fails is reported on stderr). That
+///   restores everything but `Expand-Archive` and `Compress-Archive`: pwsh 7's
+///   Archive module is a script file, found through the same drive.
+/// - PowerShell starts at `C:\` rather than the working directory it was
+///   given, because it cannot read the workspace's parent folders to resolve
+///   the path; relative paths, `Get-ChildItem` and, on 5.1, every external
+///   program then fail. The session first moves to the process's working
+///   directory by its real path. Only if that is refused does it fall back to
+///   a `JanWs:` drive, which needs no parent access, so the drive is never
+///   used where a real path works. The drive is rooted at the workspace's
+///   parent, not the workspace: a drive root's `..` is the root itself, so
+///   rooted at the workspace `..\x` silently wrote into the workspace and
+///   reported success. From the parent, `..` names the real parent and the
+///   container's write there is refused. Only a workspace that is itself a
+///   drive root, with no parent, gets the drive at the workspace. Under the
+///   drive, `$PWD` and `Resolve-Path` read `JanWs:\...`, which a native program cannot open;
+///   [`ShellKind::syntax_note`] tells the model to pass `Convert-Path` output
+///   instead, which is the real path.
+///
+/// A `return` in the command leaves `jan_cmd` before its status line runs, so
+/// the code is then taken after the call: the native code if one was set,
+/// else success.
+pub fn powershell_script(command: &str) -> String {
+    format!(
+        "$ProgressPreference = 'SilentlyContinue'\n\
+         if ($PSVersionTable.PSVersion.Major -lt 6) {{ Import-Module {POWERSHELL_CORE_MODULES} -ErrorAction SilentlyContinue }}\n\
+         elseif (-not (Get-Command Write-Output -ErrorAction SilentlyContinue)) {{ foreach ($dll in {POWERSHELL_CORE_ASSEMBLIES}) {{ try {{ Import-Module -Assembly ([System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($PSHOME, $dll))) -ErrorAction Stop }} catch {{ [Console]::Error.WriteLine('jan: could not load ' + $dll + ': ' + $_.Exception.Message) }} }} }}\n\
+         try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
+         $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
+         $JanWs = [Environment]::CurrentDirectory\n\
+         try {{ Set-Location -LiteralPath $JanWs -ErrorAction Stop }} catch {{ try {{ $JanUp = [System.IO.Path]::GetDirectoryName($JanWs); if (-not $JanUp) {{ throw 'drive root' }}; $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanUp -Scope Global -ErrorAction Stop; Set-Location -LiteralPath ('JanWs:\\' + [System.IO.Path]::GetFileName($JanWs)) -ErrorAction Stop }} catch {{ try {{ Remove-PSDrive -Name JanWs -Scope Global -ErrorAction SilentlyContinue; $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanWs -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}} }} }}\n\
+         $global:LASTEXITCODE = $null\n\
+         $JanExit = $null\n\
+         function jan_cmd {{\n\
+         {command}\n\
+         $script:JanExit = if ($?) {{ 0 }} elseif ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }}\n\
+         }}\n\
+         jan_cmd\n\
+         if ($null -eq $JanExit) {{ $JanExit = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 0 }} }}\n\
+         $host.SetShouldExit($JanExit)\n"
+    )
+}
+
+/// What Windows PowerShell prints on stderr when its FileSystem provider cannot
+/// open a drive root, which inside the AppContainer is every start: the token
+/// cannot read `C:\`. It is printed while the runspace opens, before the
+/// script runs, so nothing in [`powershell_script`] can stop it, and it says
+/// nothing about the command. Left in, it led every result and models read it
+/// as the command failing.
+const POWERSHELL_DRIVE_NOISE: &[u8] =
+    b"Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.";
+
+/// Drops [`POWERSHELL_DRIVE_NOISE`] from the start of a shell's stderr and
+/// passes everything else through unchanged. Only the first line is held back,
+/// and only until it is complete, so a command's own errors are never touched
+/// and arrive no later than the line after it.
+#[derive(Default)]
+pub struct StderrStartupFilter {
+    pending: Vec<u8>,
+    decided: bool,
+}
+
+impl StderrStartupFilter {
+    /// The bytes of `chunk` that belong in the output.
+    pub fn feed(&mut self, chunk: &[u8]) -> Vec<u8> {
+        if self.decided {
+            return chunk.to_vec();
+        }
+        self.pending.extend_from_slice(chunk);
+        match self.pending.iter().position(|&b| b == b'\n') {
+            Some(end) => self.decide(end + 1),
+            // A first line longer than the noise cannot be the noise.
+            None if self.pending.len() > POWERSHELL_DRIVE_NOISE.len() + 2 => {
+                self.decided = true;
+                std::mem::take(&mut self.pending)
+            }
+            None => Vec::new(),
+        }
+    }
+
+    /// Whatever is still held once the stream ends.
+    pub fn finish(&mut self) -> Vec<u8> {
+        if self.decided {
+            return Vec::new();
+        }
+        let end = self.pending.len();
+        self.decide(end)
+    }
+
+    fn decide(&mut self, line_end: usize) -> Vec<u8> {
+        self.decided = true;
+        let mut rest = std::mem::take(&mut self.pending);
+        let mut line = &rest[..line_end];
+        while let [head @ .., b'\r' | b'\n' | b' '] = line {
+            line = head;
+        }
+        if line == POWERSHELL_DRIVE_NOISE {
+            rest.drain(..line_end);
+        }
+        rest
+    }
+}
+
+/// The text appended, unescaped, after [`CMD_ARGS`]. cmd does its own quote
+/// handling rather than the `CommandLineToArgvW` rules every argv quoter
+/// follows, so an escaped `\"` reaches it literally; the command is wrapped in
+/// one quote pair that `/S` removes again instead.
+pub fn cmd_payload(command: &str) -> String {
+    format!("\"{command}\"")
+}
+
+/// User-configured additions to the shell's environment, layered on top of the
+/// fixed [`SANDBOX_ENV_ALLOW`] base. Empty by default, so an unconfigured run is
+/// byte-for-byte unchanged. `passthrough` copies host vars by exact name or
+/// `*`-glob; `set` injects explicit key=value pairs and wins per key. Secret-
+/// looking names (`*KEY*`, `*TOKEN*`, ...) are never copied by `passthrough` --
+/// only an explicit `set` can inject one, which names it on purpose.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShellEnv<'a> {
+    pub passthrough: &'a [String],
+    pub set: &'a [(String, String)],
+}
+
+/// Resolved shell for this process, computed once. `JAN_AGENT_SHELL` wins;
+/// otherwise `bash` on unix and PowerShell on Windows, with `cmd` only as the
+/// last resort.
 pub fn shell() -> &'static ShellConfig {
     static SHELL: OnceLock<ShellConfig> = OnceLock::new();
     SHELL.get_or_init(resolve_shell)
 }
 
-fn c(program: &str, args: &[&str], description: &'static str) -> ShellConfig {
-    ShellConfig {
-        program: PathBuf::from(program),
-        args: args.iter().map(|s| s.to_string()).collect(),
-        via_stdin: false,
-        description,
-    }
+/// Whether a `pwsh` at `path` can start inside the AppContainer: only under a
+/// Program Files folder (`program_files`), which every container may read.
+/// A per-user install (scoop, a zip under the profile, dotnet tool) has no
+/// such grant and fails at startup with "Failed to resolve full path of the
+/// current executable"; a Store alias is a reparse point that cannot start
+/// either. Both would leave 5.1, which always works, unused.
+#[cfg(any(windows, test))]
+fn container_can_run(path: &Path, program_files: &[PathBuf]) -> bool {
+    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    !is_app_execution_alias(path)
+        && program_files.iter().any(|root| {
+            let root = root.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+            let root = root.trim_end_matches('\\');
+            !root.is_empty() && p.starts_with(&format!("{root}\\"))
+        })
+}
+
+/// True for a Store app-execution alias under `%LOCALAPPDATA%\Microsoft\
+/// WindowsApps`, such as the Store PowerShell 7's `pwsh.exe`.
+/// An alias is a reparse point that cannot start inside the AppContainer, so
+/// choosing one leaves the sandboxed shell failing every command while a
+/// working shell later in the order goes unused. String-based so it is
+/// testable on any host.
+#[cfg(any(windows, test))]
+fn is_app_execution_alias(path: &Path) -> bool {
+    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    p.contains("\\microsoft\\windowsapps\\")
 }
 
 fn resolve_shell() -> ShellConfig {
     if let Some(path) = std::env::var_os("JAN_AGENT_SHELL") {
         let p = PathBuf::from(&path);
         if p.exists() {
-            return ShellConfig {
-                program: p,
-                args: vec!["-c".to_string()],
-                via_stdin: false,
-                description: "custom",
-            };
+            return config_for(p);
         }
     }
     #[cfg(unix)]
@@ -64,91 +366,71 @@ fn resolve_shell() -> ShellConfig {
         // or `PATH` is degenerate but `/bin/bash` is real (e.g. cron); `/bin/sh`
         // is the guaranteed-POSIX last resort.
         if let Some(p) = which("bash") {
-            return ShellConfig {
-                program: p,
-                args: vec!["-c".to_string()],
-                via_stdin: false,
-                description: "bash",
-            };
+            return config_for(p);
         }
         if Path::new("/bin/bash").exists() {
-            return c("/bin/bash", &["-c"], "bash");
+            return config_for(PathBuf::from("/bin/bash"));
         }
-        c("/bin/sh", &["-c"], "sh")
+        config_for(PathBuf::from("/bin/sh"))
     }
     #[cfg(windows)]
     {
-        // Prefer a real bash before ever falling back to cmd, so POSIX command
-        // syntax keeps working. Check the standard git-bash/msys install
-        // locations under the well-known program dirs first, then `bash` on
-        // PATH.
-        for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
-            if let Some(base) = std::env::var_os(var) {
-                let git_bash = PathBuf::from(base).join("Git").join("bin").join("bash.exe");
-                if git_bash.exists() {
-                    return ShellConfig {
-                        program: git_bash,
-                        args: vec!["-c".to_string()],
-                        via_stdin: false,
-                        description: "git-bash",
-                    };
-                }
-            }
+        // PowerShell, never a bash: the sandbox is an AppContainer, where the
+        // MSYS runtime behind Git Bash cannot create its objects under
+        // `\BaseNamedObjects` and dies at startup (#9101). 7 (`pwsh`) when
+        // installed under Program Files, else the inbox 5.1 by absolute path so
+        // a PATH entry cannot shadow it.
+        let program_files: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+            .iter()
+            .filter_map(std::env::var_os)
+            .map(PathBuf::from)
+            .collect();
+        if let Some(p) = which_all("pwsh")
+            .into_iter()
+            .find(|p| container_can_run(p, &program_files))
+        {
+            return config_for(p);
         }
-        if let Some(p) = which("bash") {
-            // The WSL launcher is the shim at System32\bash.exe; it rejects
-            // `-c`, so the command must be piped to `bash -s` on stdin. Only
-            // that exact location is treated as WSL, so a real bash that merely
-            // lives under a directory named `system32` is not misrouted to
-            // stdin one-shot mode.
-            let is_wsl = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.eq_ignore_ascii_case("bash.exe"))
-                .unwrap_or(false)
-                && p.parent()
-                    .and_then(|d| d.file_name())
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.eq_ignore_ascii_case("System32"))
-                    .unwrap_or(false);
-            if is_wsl {
-                return ShellConfig {
-                    program: p,
-                    args: vec!["-s".to_string()],
-                    via_stdin: true,
-                    description: "wsl bash",
-                };
-            }
-            return ShellConfig {
-                program: p,
-                args: vec!["-c".to_string()],
-                via_stdin: false,
-                description: "bash",
-            };
+        let system = system32_dir();
+        let powershell = system
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        if powershell.exists() {
+            return config_for(powershell);
         }
-        // No bash anywhere: cmd is the only shell. The model is told this (the
-        // runtime env block reports COMSPEC, and the bash handler's output note
-        // names cmd) so it can write cmd syntax rather than silently passing
-        // POSIX commands that cmd would reject.
-        c("cmd.exe", &["/C"], "cmd")
+        config_for(system.join("cmd.exe"))
     }
 }
 
 /// Locate an executable on PATH via the platform's own resolver. Also used by
 /// [`super::jail`] to find `bwrap` on distros with no FHS paths (NixOS keeps it
 /// only at a Nix-store path).
+/// Unix only outside tests: Windows resolution needs every match (see
+/// [`which_all`]) to step past the app-execution aliases.
+#[cfg(any(unix, test))]
 pub(crate) fn which(name: &str) -> Option<PathBuf> {
+    which_all(name).into_iter().next()
+}
+
+/// Every match for `name` on PATH, in PATH order.
+fn which_all(name: &str) -> Vec<PathBuf> {
     #[cfg(unix)]
-    let finder = "which";
+    let finder = PathBuf::from("which");
     #[cfg(windows)]
-    let finder = "where";
-    let out = std::process::Command::new(finder).arg(name).output().ok()?;
+    let finder = system32_dir().join("where.exe");
+    let Ok(out) = std::process::Command::new(finder).arg(name).output() else {
+        return Vec::new();
+    };
     if !out.status.success() {
-        return None;
+        return Vec::new();
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let first = text.lines().map(str::trim).find(|l| !l.is_empty())?;
-    Some(PathBuf::from(first))
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// Spawn `command` in `cwd` using the resolved shell, as a new process group,
@@ -180,6 +462,12 @@ const SANDBOX_ENV_ALLOW: &[&str] = &[
     "PATHEXT",
     "ProgramFiles",
     "ProgramData",
+    // PowerShell keeps its module-analysis cache under `LOCALAPPDATA`, and
+    // npm, pip and most Windows toolchains resolve per-user state through these.
+    // Locations, not secrets; also unset on unix.
+    "SystemDrive",
+    "LOCALAPPDATA",
+    "APPDATA",
 ];
 
 /// Every spelling of "where temporary files go": POSIX tools read `TMPDIR`,
@@ -187,33 +475,134 @@ const SANDBOX_ENV_ALLOW: &[&str] = &[
 /// All are pointed at the scratch together so no tool falls back to the host.
 const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 
+/// Where package managers keep their caches and homes in a sandboxed command:
+/// each name, and the folder under the project's package cache
+/// (`<cache>/jan/<slug>/pkg`, see [`crate::workspace::pkg_dir_in`]) it points
+/// at. Their defaults (`~/.cargo`, `~/.npm`, `~/.cache/...`, `~/go`,
+/// `~/.gradle`) sit in a `$HOME` the sandbox masks or makes read-only, so
+/// without these an ordinary build fails and the model escalates for it.
+/// Unconfined commands keep the host's own values: the user's real caches are
+/// never written from a sandbox, so a tampered download cannot reach a later
+/// unsandboxed build, and one project's cache never feeds another's.
+///
+/// pnpm: `PNPM_HOME` moves its store on every version (`$PNPM_HOME/store`);
+/// v11+ reads only `pnpm_config_*`, which also names the store and cache
+/// explicitly. `npm_config_store_dir` is left out: npm warns about it on every
+/// run as an unknown key.
+pub const PKG_CACHE_ENV: &[(&str, &str)] = &[
+    // XDG-aware tools (pip, uv, pnpm's cache, and many more) on Linux, where it
+    // is the standard. macOS and Windows tools do not read it.
+    #[cfg(target_os = "linux")]
+    ("XDG_CACHE_HOME", "xdg-cache"),
+    ("npm_config_cache", "npm"),
+    ("YARN_CACHE_FOLDER", "yarn-cache"),
+    ("YARN_GLOBAL_FOLDER", "yarn-global"),
+    ("COREPACK_HOME", "corepack"),
+    ("PNPM_HOME", "pnpm-home"),
+    ("pnpm_config_store_dir", "pnpm-store"),
+    ("pnpm_config_cache_dir", "pnpm-cache"),
+    ("PIP_CACHE_DIR", "pip"),
+    ("UV_CACHE_DIR", "uv"),
+    ("GOCACHE", "go-build"),
+    ("GOMODCACHE", "go-mod"),
+    ("GOPATH", "go-path"),
+    ("GRADLE_USER_HOME", "gradle"),
+    ("CCACHE_DIR", "ccache"),
+    ("SCCACHE_DIR", "sccache"),
+    ("DENO_DIR", "deno"),
+    ("BUN_INSTALL_CACHE_DIR", "bun-cache"),
+    // The whole `CARGO_HOME`, not just `registry/` and `git/`: cargo keeps its
+    // lock files at its top. See `workspace::prepare_pkg_cache` for what it
+    // holds of the user's own.
+    ("CARGO_HOME", crate::workspace::PKG_CARGO_HOME),
+];
+
+/// The env a confined command gets over the allowlist, naming folders its
+/// sandbox makes writable: the temp keys at the session scratch and
+/// [`PKG_CACHE_ENV`] under the project's package cache. Built only by the
+/// caller that also built the sandbox (`handlers::confined_shell`), so an
+/// unconfined spawn, which has none, keeps the host's values for all of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SandboxEnv {
+    vars: Vec<(&'static str, PathBuf)>,
+}
+
+impl SandboxEnv {
+    pub fn new(scratch: Option<&Path>, pkg: Option<&Path>) -> Self {
+        let mut vars = Vec::new();
+        if let Some(scratch) = scratch {
+            vars.extend(TEMP_ENV_KEYS.iter().map(|key| (*key, scratch.to_path_buf())));
+        }
+        if let Some(pkg) = pkg {
+            vars.extend(PKG_CACHE_ENV.iter().map(|(key, dir)| (*key, pkg.join(dir))));
+        }
+        Self { vars }
+    }
+
+    pub fn vars(&self) -> &[(&'static str, PathBuf)] {
+        &self.vars
+    }
+}
+
+/// Soft limits the sandboxed child runs under, each capped by the host's hard
+/// limit. `NOFILE` and `FSIZE` are deliberately generous: toolchains (linkers,
+/// node, cargo) routinely want tens of thousands of descriptors, and a debug
+/// `cargo test` binary or incremental artifact can pass a gigabyte on its own.
+/// Caps that low break ordinary work long before they stop abuse. `FSIZE` is a
+/// per-file cap enforced with `SIGXFSZ`, so exceeding it kills the writer rather
+/// than returning an error most tools report clearly. Linux `NPROC` is omitted
+/// because the kernel counts it across the entire real UID, so unrelated host
+/// processes can exhaust a limit mounted on one Jan shell. Per-run process-tree
+/// isolation requires a cgroup `pids.max`; until then the child inherits the
+/// launcher's process limit.
+#[cfg(unix)]
+const CHILD_LIMITS: &[(RlimitResource, u64)] = &[
+    (nix::libc::RLIMIT_NOFILE, 65536),
+    (nix::libc::RLIMIT_FSIZE, 16 * 1024 * 1024 * 1024),
+];
+
+/// libc types the `RLIMIT_*` ids per platform: `__rlimit_resource_t` (`u32`) on
+/// linux-gnu, plain `c_int` everywhere else Unix (macOS, musl). Naming the type
+/// once keeps [`CHILD_LIMITS`] and the `getrlimit`/`setrlimit` calls cast-free.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+type RlimitResource = nix::libc::__rlimit_resource_t;
+#[cfg(all(unix, not(all(target_os = "linux", target_env = "gnu"))))]
+type RlimitResource = nix::libc::c_int;
+
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
 /// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
 /// child's soft limits here, before exec, from the one choke point every backend
-/// funnels through. A fork-bomb is capped by `NPROC`, descriptor exhaustion by
-/// `NOFILE`, and disk fill through the unbounded workspace bind by `FSIZE`. The
-/// bwrap wrapper execs `bwrap` itself, which sets up the namespace and then
-/// execs the real shell, so the limits carry over to every descendant. Linux
-/// only; the Windows AppContainer child is limited by its token.
+/// funnels through. Descriptor exhaustion and disk fill are capped by `NOFILE`
+/// and `FSIZE`. The hard limit is left at the host's value so a command that
+/// genuinely needs more can raise its own soft limit back up. The bwrap wrapper
+/// execs `bwrap` itself, which sets up the namespace and then execs the real
+/// shell, so the limits carry over to every descendant. Unix only; the Windows
+/// AppContainer child is limited by its token.
 #[cfg(unix)]
 fn confine_limits(cmd: &mut Command) {
     // `tokio::process::Command::pre_exec` (unix) is the std `pre_exec`; the call
     // below is what mounts the limits.
     // # Safety: `pre_exec` runs in the forked child before exec. Only async-signal-
-    // safe calls are allowed; `setrlimit` is one. Errors fall back to the parent's
-    // values and are ignored (best effort), so a kernel that refuses a limit
-    // cannot wedge a launch.
+    // safe calls are allowed; `getrlimit`/`setrlimit` are. Errors fall back to the
+    // parent's values and are ignored (best effort), so a kernel that refuses a
+    // limit cannot wedge a launch.
     unsafe {
         cmd.pre_exec(|| {
-            for (resource, limit) in [
-                (nix::libc::RLIMIT_NPROC, 4096_u64),
-                (nix::libc::RLIMIT_NOFILE, 1024_u64),
-                (nix::libc::RLIMIT_FSIZE, 1024_u64 * 1024_u64 * 1024_u64),
-            ] {
-                let r = nix::libc::rlimit {
-                    rlim_cur: limit,
-                    rlim_max: limit,
+            for &(resource, limit) in CHILD_LIMITS {
+                let mut r = nix::libc::rlimit {
+                    rlim_cur: 0,
+                    rlim_max: 0,
                 };
+                if nix::libc::getrlimit(resource, &mut r) != 0 {
+                    continue;
+                }
+                // Never exceed the host's hard limit; setrlimit would refuse.
+                let ceiling = if r.rlim_max == nix::libc::RLIM_INFINITY {
+                    limit
+                } else {
+                    limit.min(r.rlim_max)
+                };
+                r.rlim_cur = ceiling;
                 // Best effort: a setrlimit failure is intentionally ignored so a
                 // kernel that refuses a limit cannot wedge the launch.
                 let _ = nix::libc::setrlimit(resource, &r);
@@ -223,17 +612,178 @@ fn confine_limits(cmd: &mut Command) {
     }
 }
 
+/// Case-insensitive markers a `passthrough` glob must never copy, so a broad
+/// pattern (`GIT_*`, `*`) cannot leak a credential into the shell. To inject one
+/// on purpose, name it in [`ShellEnv::set`], which is not scrubbed.
+///
+/// `HEADERS` covers `OTEL_EXPORTER_OTLP_*HEADERS` and `JAN_CUSTOM_HEADERS`,
+/// which carry an API key when a launcher sets them, so `OTEL_*` cannot copy
+/// one. `AUTHORIZATION`, not a bare `AUTH`, which would also match
+/// `GIT_AUTHOR_NAME`.
+fn is_secret_name(name: &str) -> bool {
+    const MARKERS: &[&str] = &[
+        "KEY",
+        "SECRET",
+        "TOKEN",
+        "PASSWORD",
+        "PASSWD",
+        "CREDENTIAL",
+        "HEADERS",
+        "AUTHORIZATION",
+    ];
+    let upper = name.to_ascii_uppercase();
+    MARKERS.iter().any(|m| upper.contains(m))
+}
+
+/// Minimal case-insensitive `*`-glob, the one wildcard an env-var allowlist
+/// needs. `*` matches any run (including empty); every other character is
+/// literal. No `?`/`[]` -- env-var names do not use them.
+fn glob_match(pattern: &str, name: &str) -> bool {
+    let p = pattern.to_ascii_uppercase();
+    let n = name.to_ascii_uppercase();
+    if !p.contains('*') {
+        return p == n;
+    }
+    let parts: Vec<&str> = p.split('*').collect();
+    let last = parts.len() - 1;
+    let mut pos = 0usize;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 {
+            if !n[pos..].starts_with(part) {
+                return false;
+            }
+            pos += part.len();
+        } else if i == last {
+            if !n[pos..].ends_with(part) {
+                return false;
+            }
+        } else {
+            match n[pos..].find(part) {
+                Some(idx) => pos += idx + part.len(),
+                None => return false,
+            }
+        }
+    }
+    true
+}
+
+/// The env additions for a run: host vars matched by `passthrough` (minus
+/// secret-looking names) followed by `set`, which wins per key. Pure over its
+/// `host` input so it is unit-tested without spawning a shell.
+pub(crate) fn resolve_env_overrides<I>(host: I, env: ShellEnv<'_>) -> Vec<(String, String)>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let mut out: Vec<(String, String)> = Vec::new();
+    if !env.passthrough.is_empty() {
+        for (name, val) in host {
+            if is_secret_name(&name) {
+                continue;
+            }
+            if env.passthrough.iter().any(|p| glob_match(p, &name)) {
+                out.push((name, val));
+            }
+        }
+    }
+    for (key, val) in env.set {
+        out.retain(|(n, _)| n != key);
+        out.push((key.clone(), val.clone()));
+    }
+    out
+}
+
+/// Whether `bash` can carry its working directory between calls here: a known
+/// POSIX shell on unix, whose `pwd -P` names the path the next call can `cd` to.
+/// git-bash on Windows prints `/c/...` instead, and PowerShell and cmd have no
+/// `EXIT` trap to report from.
+pub fn shell_cwd_supported() -> bool {
+    cfg!(unix) && speaks_posix(&shell().program)
+}
+
+/// Whether `program` is a shell the cwd wrapper's POSIX syntax runs in.
+/// [`kind_of`] calls anything not PowerShell or cmd POSIX, which is right for
+/// handing it `-c`; a `JAN_AGENT_SHELL` of fish or nu takes `-c` too but would
+/// reject the wrapper, so only names known to speak POSIX sh qualify.
+fn speaks_posix(program: &Path) -> bool {
+    let name = program.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    matches!(name, "sh" | "bash" | "dash" | "zsh" | "ksh" | "mksh" | "ash" | "busybox")
+}
+
 pub async fn spawn(
     cfg: &ShellConfig,
     command: &str,
     cwd: &Path,
-    scratch: Option<&Path>,
+    sandbox: Option<&SandboxEnv>,
+    env: ShellEnv<'_>,
+    thread: Option<&str>,
+) -> std::io::Result<Child> {
+    spawn_with_stdin(cfg, command, cwd, sandbox, env, thread, None).await
+}
+
+/// `path` without the `\\?\` verbatim prefix `canonicalize` adds on Windows:
+/// `\\?\C:\x` becomes `C:\x` and `\\?\UNC\srv\share` becomes
+/// `\\srv\share`. cmd refuses a verbatim working directory and silently runs
+/// in `C:\Windows` instead, and tools print the prefix back at the model. Any
+/// other path, including other verbatim forms, is returned unchanged.
+pub fn without_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let b = rest.as_bytes();
+        if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Append `command` to `cmd` in the form `cfg`'s shell reads it. When `cfg` is a
+/// sandbox wrapper rather than the shell itself, the command travels as a plain
+/// argument and the AppContainer helper re-applies the cmd rule when it builds
+/// the shell's own command line (see `appcontainer::command_line`).
+fn append_command(cmd: &mut Command, cfg: &ShellConfig, command: &str) {
+    match cfg.kind {
+        ShellKind::Posix => {
+            cmd.arg(command);
+        }
+        ShellKind::PowerShell => {
+            cmd.arg(powershell_script(command));
+        }
+        ShellKind::Cmd => {
+            #[cfg(windows)]
+            if kind_of(&cfg.program) == ShellKind::Cmd {
+                cmd.raw_arg(cmd_payload(command));
+                return;
+            }
+            cmd.arg(command);
+        }
+    }
+}
+
+/// [`spawn`] plus a string fed to the child on stdin and then closed. Used by
+/// the hook and plugin-tool runners, whose contract is "JSON in on stdin, JSON
+/// out on stdout".
+///
+/// The write itself happens on a detached task, so this function returns as
+/// soon as the child is spawned and the caller's timeout covers the whole
+/// exchange. See the comment at the write site.
+pub async fn spawn_with_stdin(
+    cfg: &ShellConfig,
+    command: &str,
+    cwd: &Path,
+    sandbox: Option<&SandboxEnv>,
+    env: ShellEnv<'_>,
+    thread: Option<&str>,
+    stdin_payload: Option<&str>,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
-    if !cfg.via_stdin {
-        cmd.arg(command);
-    }
+    append_command(&mut cmd, cfg, command);
     // Strip every inherited variable, then re-add only the allowlist so the
     // sandboxed process holds no host secrets regardless of which backend wraps
     // it. `current_dir` on the workspace keeps relative work correct.
@@ -243,21 +793,57 @@ pub async fn spawn(
             cmd.env(key, val);
         }
     }
-    // Point the shell's temp env at the session scratch, overriding the host
-    // values the allowlist just copied in. Without this a command that writes
-    // through `mktemp`/`$TMPDIR` lands in the host temp dir -- unreachable to
-    // the filesystem tools, and on the backends that confine by path, not
-    // writable at all. `scratch` is what the sandbox exposes, which is not
-    // always the host path (see `jail::scratch_env_path`).
-    if let Some(scratch) = scratch {
-        for key in TEMP_ENV_KEYS {
-            cmd.env(key, scratch);
+    // Layer the run's configured pass-through and explicit overrides on top of
+    // the base allowlist. Deny-by-default is preserved: nothing here is copied
+    // unless the config named it, and a secret-looking host var is never copied
+    // by a glob (see [`resolve_env_overrides`]).
+    for (key, val) in resolve_env_overrides(std::env::vars(), env) {
+        cmd.env(key, val);
+    }
+    // Plugin-declared credentials come last so they always win over an
+    // allowlist key of the same name (reserved names never get this far --
+    // see `is_reserved_env_key`). `cwd` is the tool context's project root, not
+    // a shell-selected subdirectory, so the borrow is scoped to the project that
+    // registered the keys rather than every project in the process.
+    {
+        let root = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+        let projects = PLUGIN_ENV.read().unwrap();
+        if let Some(vars) = projects.get(&root) {
+            cmd.envs(vars);
         }
     }
-    cmd.current_dir(cwd)
+    // Point the shell's temp env at the session scratch and its package caches
+    // at the project's, overriding the host values copied in above. Without
+    // this a command that writes through `mktemp`/`$TMPDIR` or downloads a
+    // dependency targets the host's dirs -- unreachable to the filesystem
+    // tools, and on the backends that confine by path, not writable at all.
+    // Every backend exposes both at their real paths, so those are the values.
+    if let Some(sandbox) = sandbox {
+        // A case variant copied in above (`NPM_CONFIG_CACHE` from the host,
+        // `Tmpdir` from `env_set`) would sit beside the exact name set here,
+        // and tools that read either spelling (npm) would get two answers.
+        // Only on Unix: Windows env names have no case, so the set below
+        // already replaces any spelling.
+        #[cfg(unix)]
+        {
+            let names: Vec<std::ffi::OsString> =
+                cmd.as_std().get_envs().map(|(name, _)| name.to_owned()).collect();
+            for name in names {
+                let Some(text) = name.to_str() else { continue };
+                let variant = |(key, _): &(&str, PathBuf)| key.eq_ignore_ascii_case(text) && *key != text;
+                if sandbox.vars().iter().any(variant) {
+                    cmd.env_remove(&name);
+                }
+            }
+        }
+        for (key, dir) in sandbox.vars() {
+            cmd.env(key, dir);
+        }
+    }
+    cmd.current_dir(without_verbatim_prefix(cwd))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(if cfg.via_stdin {
+        .stdin(if stdin_payload.is_some() {
             Stdio::piped()
         } else {
             Stdio::null()
@@ -269,26 +855,35 @@ pub async fn spawn(
 
     let mut child = cmd.spawn()?;
 
-    if cfg.via_stdin {
+    if let Some(payload) = stdin_payload {
         if let Some(mut stdin) = child.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(command.as_bytes()).await;
-            let _ = stdin.write_all(b"\n").await;
-            let _ = stdin.shutdown().await;
+            // Written from a detached task, never awaited here: a payload
+            // larger than the pipe buffer blocks until the child reads it, and
+            // a child that never reads its stdin would wedge the caller *before*
+            // it could arm its timeout. A PostToolUse hook carries a whole tool
+            // result, so this is the common size, not a corner case. Detached,
+            // the write simply fails when the child is killed or exits.
+            let payload = payload.to_string();
+            tokio::spawn(async move {
+                use tokio::io::AsyncWriteExt;
+                if stdin.write_all(payload.as_bytes()).await.is_err() {
+                    return;
+                }
+                let _ = stdin.write_all(b"\n").await;
+                let _ = stdin.shutdown().await;
+            });
         }
     }
 
     if let Some(pid) = child.id() {
-        register(pid);
+        register(thread, pid, command);
     }
     Ok(child)
 }
 
 #[cfg(unix)]
 fn set_process_group(cmd: &mut Command) {
-    // pgid 0 => the child becomes leader of a new group whose id equals its pid,
-    // so `kill_tree(pid)` can signal the whole group.
-    cmd.process_group(0);
+    detach_from_terminal(cmd);
 }
 
 #[cfg(windows)]
@@ -297,41 +892,296 @@ fn set_process_group(cmd: &mut Command) {
     cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
 }
 
+/// Start the child in a new session (`setsid`), so it leads a new process group
+/// (pgid == pid, which [`kill_tree`] relies on) **and** has no controlling
+/// terminal.
+///
+/// A new process group alone (`process_group(0)`) is not enough when Jan runs
+/// in a terminal: the child stays in Jan's session, so anything it starts can
+/// open `/dev/tty` and make itself the terminal's foreground group with
+/// `tcsetpgrp` (a job-control program blocking SIGTTOU does exactly that).
+/// Once it exits, the foreground points at a dead group and the TUI's next
+/// read of the terminal stops Jan with SIGTTIN -- the shell then reports
+/// `suspended (tty input)` and the session looks dead. Without a controlling
+/// terminal, opening `/dev/tty` fails (ENXIO) and `tcsetpgrp` has no terminal
+/// to act on, so a child can never make itself the foreground group of Jan's
+/// terminal; a tool that prompts on `/dev/tty` fails fast instead of stopping
+/// or hanging.
+///
+/// This replaces `process_group(0)` rather than adding to it: std applies the
+/// process group before the `pre_exec` hooks, and `setsid` refuses (EPERM) in a
+/// process that already leads a group.
+#[cfg(unix)]
+pub fn detach_from_terminal(cmd: &mut Command) {
+    detach_std_from_terminal(cmd.as_std_mut());
+}
+
+/// [`detach_from_terminal`] for a blocking `std::process::Command`.
+#[cfg(unix)]
+pub fn detach_std_from_terminal(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // # Safety: runs in the forked child before exec; `setsid` is
+    // async-signal-safe. It can only fail if the child already leads a process
+    // group, which a freshly forked child never does; failing the spawn then is
+    // better than silently sharing Jan's terminal.
+    unsafe {
+        cmd.pre_exec(|| {
+            if nix::libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
 /// Kill the process `pid` and every descendant it spawned.
+///
+/// Every child we register is spawned in its own session (see
+/// [`detach_from_terminal`]), so its pgid equals its pid and `killpg` reaps the
+/// whole tree. There is deliberately no bare-`kill(pid)` fallback: `killpg`
+/// fails only when the group is already gone (ESRCH) or we lack permission
+/// (EPERM, which a single `kill` would hit too), so the fallback could never
+/// help a live tree -- it could only signal a recycled pid, since the registry
+/// lock is dropped before this call and the OS may have reused the number.
 #[cfg(unix)]
 pub fn kill_tree(pid: u32) {
     use nix::sys::signal::{killpg, Signal};
     use nix::unistd::Pid;
-    let group = Pid::from_raw(pid as i32);
-    if killpg(group, Signal::SIGKILL).is_err() {
-        let _ = nix::sys::signal::kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
-    }
+    let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+}
+
+/// `%SystemRoot%\System32`, for spawning system tools by absolute path: a
+/// bare name would be looked up in the application's directory first.
+#[cfg(windows)]
+fn system32_dir() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .filter(|r| !r.is_empty())
+        .or_else(|| std::env::var_os("windir"))
+        .filter(|r| !r.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join("System32")
 }
 
 #[cfg(windows)]
 pub fn kill_tree(pid: u32) {
-    let _ = std::process::Command::new("taskkill")
+    let _ = std::process::Command::new(system32_dir().join("taskkill.exe"))
         .args(["/F", "/T", "/PID", &pid.to_string()])
         .output();
 }
 
-fn running() -> &'static Mutex<HashSet<u32>> {
-    static RUNNING: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
-    RUNNING.get_or_init(|| Mutex::new(HashSet::new()))
+/// Raw output bytes a running shell keeps for the `/shells` live view. Past
+/// this the front is dropped: the view shows a tail, and the tool keeps the
+/// authoritative full output (spilling to disk past its own cap).
+pub const OUTPUT_TAIL_MAX_BYTES: usize = 64 * 1024;
+
+#[derive(Default)]
+struct TailBuf {
+    bytes: std::collections::VecDeque<u8>,
+    total: u64,
 }
 
-pub fn register(pid: u32) {
-    running().lock().unwrap().insert(pid);
+/// The newest [`OUTPUT_TAIL_MAX_BYTES`] of one shell's combined output plus a
+/// count of every byte it ever printed, so a viewer can tell new output from a
+/// repaint without diffing the text. Shared between the registry, which drops
+/// it with the shell, and the task draining the shell's pipes, which feeds it.
+#[derive(Clone, Default)]
+pub struct OutputTail(Arc<Mutex<TailBuf>>);
+
+impl OutputTail {
+    /// Append a raw chunk of the shell's output, dropping the front past the cap.
+    pub fn push(&self, chunk: &[u8]) {
+        let mut buf = self.0.lock().unwrap();
+        buf.total += chunk.len() as u64;
+        let keep = &chunk[chunk.len().saturating_sub(OUTPUT_TAIL_MAX_BYTES)..];
+        buf.bytes.extend(keep.iter().copied());
+        let over = buf.bytes.len().saturating_sub(OUTPUT_TAIL_MAX_BYTES);
+        buf.bytes.drain(..over);
+    }
+
+    /// Bytes printed so far, without decoding the tail: a viewer compares this
+    /// to the count its last [`read`](Self::read) returned to skip a no-op read.
+    pub fn total(&self) -> u64 {
+        self.0.lock().unwrap().total
+    }
+
+    /// The tail as display text plus the byte count it covers, sanitized here
+    /// rather than on every push: progress redraws collapse only once the whole
+    /// line is in view.
+    pub fn read(&self) -> (String, u64) {
+        // Copied out so the pipe-draining task is not held up by the decode.
+        let (bytes, total) = {
+            let buf = self.0.lock().unwrap();
+            (buf.bytes.iter().copied().collect::<Vec<u8>>(), buf.total)
+        };
+        // A trimmed front can start inside a character; skip its continuation
+        // bytes rather than decoding them to a replacement character.
+        let start = bytes
+            .iter()
+            .position(|b| b & 0xC0 != 0x80)
+            .unwrap_or(bytes.len());
+        let text = String::from_utf8_lossy(&bytes[start..]);
+        (super::handlers::sanitize_output(&text), total)
+    }
 }
 
-pub fn unregister(pid: u32) {
-    running().lock().unwrap().remove(&pid);
+/// A running bash command: what it is, when it started, whether it outran its
+/// call's timeout and detached into the background, and the tail of what it
+/// printed. Backs the `/shells` inspector, which lists the detached ones so the
+/// user can watch or stop a stuck job.
+struct ShellProc {
+    command: String,
+    started: Instant,
+    backgrounded: bool,
+    output: OutputTail,
 }
 
-/// Reap every still-running bash command. Called on app shutdown so no shell
-/// tree outlives the process that spawned it.
+/// One running background shell, as `snapshot` reports it to the UI. `pid` is
+/// the handle [`kill`] and [`output_handle`] take. The output stays out of this
+/// per-frame copy.
+#[derive(Debug, Clone)]
+pub struct ShellInfo {
+    pub pid: u32,
+    pub command: String,
+    pub elapsed_secs: u64,
+    pub backgrounded: bool,
+}
+
+/// Running bash commands, bucketed by the session (thread id) that spawned them
+/// and keyed by pid, so a per-session cancel (`kill_thread`) reaps exactly that
+/// session's shells without touching a concurrently-running one. Callers with no
+/// session (the monitor poll children, tests) share the [`NO_THREAD`] bucket,
+/// which only `kill_all` reaps.
+fn running() -> &'static Mutex<HashMap<String, HashMap<u32, ShellProc>>> {
+    static RUNNING: OnceLock<Mutex<HashMap<String, HashMap<u32, ShellProc>>>> = OnceLock::new();
+    RUNNING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Bucket for pids spawned outside any session.
+const NO_THREAD: &str = "";
+
+pub fn register(thread: Option<&str>, pid: u32, command: &str) {
+    running()
+        .lock()
+        .unwrap()
+        .entry(thread.unwrap_or(NO_THREAD).to_string())
+        .or_default()
+        .insert(
+            pid,
+            ShellProc {
+                command: command.to_string(),
+                started: Instant::now(),
+                backgrounded: false,
+                output: OutputTail::default(),
+            },
+        );
+}
+
+/// The output tail of a running shell: the task draining its pipes feeds it,
+/// and a viewer reads it. Taken once, so the output itself never passes through
+/// the registry lock. `None` once the shell finished or was stopped; the
+/// registry drops its reference then, so the tail lives on only as long as a
+/// viewer still holding it, which keeps the last of the output on screen.
+pub fn output_handle(pid: u32) -> Option<OutputTail> {
+    running()
+        .lock()
+        .unwrap()
+        .values()
+        .find_map(|set| set.get(&pid).map(|p| p.output.clone()))
+}
+
+pub fn unregister(thread: Option<&str>, pid: u32) {
+    let key = thread.unwrap_or(NO_THREAD);
+    let mut map = running().lock().unwrap();
+    if let Some(set) = map.get_mut(key) {
+        set.remove(&pid);
+        if set.is_empty() {
+            map.remove(key);
+        }
+    }
+}
+
+/// Apply `change` to a registered shell; a no-op if the pid already finished
+/// (its task unregistered it in the race).
+fn update(thread: Option<&str>, pid: u32, change: impl FnOnce(&mut ShellProc)) {
+    if let Some(set) = running().lock().unwrap().get_mut(thread.unwrap_or(NO_THREAD)) {
+        if let Some(proc) = set.get_mut(&pid) {
+            change(proc);
+        }
+    }
+}
+
+/// List a registered shell under `command` instead of the script it was
+/// spawned with, for a caller that wraps what the user wrote (the shell-cwd
+/// wrapper) and wants `/shells` to show the original.
+pub fn relabel(thread: Option<&str>, pid: u32, command: &str) {
+    update(thread, pid, |proc| proc.command = command.to_string());
+}
+
+/// Flag a still-running command as backgrounded: it outran its `bash` call's
+/// timeout and is now detached, so `/shells` should list it.
+pub fn mark_backgrounded(thread: Option<&str>, pid: u32) {
+    update(thread, pid, |proc| proc.backgrounded = true);
+}
+
+/// Every currently-running bash command across all sessions, pid-sorted for a
+/// stable list. The `/shells` inspector filters to the backgrounded ones.
+pub fn snapshot() -> Vec<ShellInfo> {
+    let map = running().lock().unwrap();
+    let mut out: Vec<ShellInfo> = map
+        .values()
+        .flat_map(|set| {
+            set.iter().map(|(pid, p)| ShellInfo {
+                pid: *pid,
+                command: p.command.clone(),
+                elapsed_secs: p.started.elapsed().as_secs(),
+                backgrounded: p.backgrounded,
+            })
+        })
+        .collect();
+    out.sort_by_key(|s| s.pid);
+    out
+}
+
+/// Stop one running shell by pid: reap its whole tree and drop it from the
+/// registry. Returns whether the pid was known. Drives the `/shells` stop action.
+pub fn kill(pid: u32) -> bool {
+    let found = {
+        let mut map = running().lock().unwrap();
+        let hit = map.values_mut().any(|set| set.remove(&pid).is_some());
+        map.retain(|_, set| !set.is_empty());
+        hit
+    };
+    if found {
+        kill_tree(pid);
+    }
+    found
+}
+
+/// Reap every bash tree a session started. The per-session counterpart of
+/// [`kill_all`]: the Stop button drives this so a running or backgrounded shell
+/// is terminated with the run rather than left to finish on the host.
+pub fn kill_thread(thread: &str) {
+    let pids: Vec<u32> = running()
+        .lock()
+        .unwrap()
+        .remove(thread)
+        .map(|set| set.into_keys().collect())
+        .unwrap_or_default();
+    for pid in pids {
+        kill_tree(pid);
+    }
+}
+
+/// Reap every still-running bash command across all sessions. Called on app
+/// shutdown so no shell tree outlives the process that spawned it.
 pub fn kill_all() {
-    let pids: Vec<u32> = running().lock().unwrap().drain().collect();
+    let pids: Vec<u32> = running()
+        .lock()
+        .unwrap()
+        .drain()
+        .flat_map(|(_, set)| set.into_keys())
+        .collect();
     for pid in pids {
         kill_tree(pid);
     }
@@ -347,12 +1197,325 @@ mod env_allowlist_tests {
     /// a bare Windows box can actually run a command.
     #[test]
     fn allowlist_has_windows_system_keys() {
-        for key in ["SystemRoot", "windir", "ComSpec", "PATHEXT", "ProgramFiles", "ProgramData"] {
+        for key in [
+            "SystemRoot", "windir", "ComSpec", "PATHEXT", "ProgramFiles", "ProgramData",
+            "SystemDrive", "LOCALAPPDATA", "APPDATA",
+        ] {
             assert!(
                 SANDBOX_ENV_ALLOW.contains(&key),
                 "missing {key} in SANDBOX_ENV_ALLOW"
             );
         }
+    }
+
+    /// Every package-manager name the issue lists is set, each to its own
+    /// folder inside the package cache, so no two tools share one and none
+    /// lands outside what the sandbox makes writable.
+    #[test]
+    fn every_pkg_cache_name_is_set_under_the_package_cache() {
+        let pkg = Path::new("/c/jan/p-1/pkg");
+        let env = SandboxEnv::new(None, Some(pkg));
+        let mut expected = vec![
+            "npm_config_cache", "YARN_CACHE_FOLDER", "YARN_GLOBAL_FOLDER", "COREPACK_HOME",
+            "PNPM_HOME", "pnpm_config_store_dir", "pnpm_config_cache_dir", "PIP_CACHE_DIR",
+            "UV_CACHE_DIR", "GOCACHE", "GOMODCACHE", "GOPATH", "GRADLE_USER_HOME",
+            "CCACHE_DIR", "SCCACHE_DIR", "DENO_DIR", "BUN_INSTALL_CACHE_DIR", "CARGO_HOME",
+        ];
+        if cfg!(target_os = "linux") {
+            expected.push("XDG_CACHE_HOME");
+        }
+        let names: Vec<&str> = env.vars().iter().map(|(k, _)| *k).collect();
+        for name in &expected {
+            assert!(names.contains(name), "{name} missing from {names:?}");
+            assert!(is_reserved_env_key(name), "{name} must be reserved");
+        }
+        assert_eq!(names.len(), expected.len(), "{names:?}");
+        let mut dirs: Vec<&PathBuf> = env.vars().iter().map(|(_, v)| v).collect();
+        for dir in &dirs {
+            assert_eq!(dir.parent(), Some(pkg), "{dir:?} is not directly under pkg/");
+        }
+        dirs.sort();
+        dirs.dedup();
+        assert_eq!(dirs.len(), expected.len(), "two tools share a folder");
+        let cargo = env.vars().iter().find(|(k, _)| *k == "CARGO_HOME").unwrap();
+        assert_eq!(cargo.1, pkg.join("cargo"));
+    }
+
+    /// A plugin must not redirect a sandboxed cache, in either spelling npm
+    /// accepts.
+    #[test]
+    fn pkg_cache_names_are_reserved_in_any_case() {
+        assert!(is_reserved_env_key("NPM_CONFIG_CACHE"));
+        assert!(is_reserved_env_key("cargo_home"));
+        assert!(!is_reserved_env_key("CARGO_TARGET_DIR"));
+    }
+
+    /// A host `NPM_CONFIG_CACHE` copied in by passthrough (or set) must not
+    /// sit beside the sandbox's `npm_config_cache`: npm reads both spellings,
+    /// so the shell would get two answers to one key. Any case variant of a
+    /// name the sandbox env sets is dropped; unconfined, it is kept.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_case_variant_of_a_sandbox_env_name_is_dropped() {
+        let pkg = std::env::temp_dir().join(format!("jan_proc_case_{}", std::process::id()));
+        let set = vec![
+            ("NPM_CONFIG_CACHE".to_string(), "/host/npm".to_string()),
+            ("Tmpdir".to_string(), "/host/tmp".to_string()),
+            ("KEEP_ME".to_string(), "yes".to_string()),
+        ];
+        let env = ShellEnv { passthrough: &[], set: &set };
+        let run = |sandbox: Option<SandboxEnv>| async move {
+            let child = spawn(shell(), "env", Path::new("/"), sandbox.as_ref(), env, None)
+                .await
+                .unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+        let out = run(Some(SandboxEnv::new(Some(&pkg), Some(&pkg)))).await;
+        assert!(!out.contains("/host/"), "{out}");
+        assert!(out.contains("npm_config_cache=") && out.contains("KEEP_ME=yes"), "{out}");
+        let bare = run(None).await;
+        assert!(bare.contains("NPM_CONFIG_CACHE=/host/npm"), "{bare}");
+    }
+
+    /// No scratch and no package cache: nothing is overridden.
+    #[test]
+    fn an_empty_sandbox_env_sets_nothing() {
+        assert!(SandboxEnv::new(None, None).vars().is_empty());
+        let temp = SandboxEnv::new(Some(Path::new("/s")), None);
+        let names: Vec<&str> = temp.vars().iter().map(|(k, _)| *k).collect();
+        assert_eq!(names, TEMP_ENV_KEYS);
+    }
+}
+
+#[cfg(test)]
+mod shell_kind_tests {
+    use super::*;
+
+    #[test]
+    fn kind_of_reads_the_file_name_on_any_separator_and_case() {
+        for (path, kind) in [
+            ("/bin/bash", ShellKind::Posix),
+            ("/bin/sh", ShellKind::Posix),
+            (r"C:\Program Files\Git\bin\bash.exe", ShellKind::Posix),
+            (r"C:\Program Files\PowerShell\7\pwsh.exe", ShellKind::PowerShell),
+            ("/usr/bin/pwsh", ShellKind::PowerShell),
+            (
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\PowerShell.EXE",
+                ShellKind::PowerShell,
+            ),
+            (r"C:\Windows\System32\cmd.exe", ShellKind::Cmd),
+            ("CMD.EXE", ShellKind::Cmd),
+        ] {
+            assert_eq!(kind_of(Path::new(path)), kind, "{path}");
+        }
+    }
+
+    #[test]
+    fn each_kind_gets_the_arguments_its_shell_reads() {
+        assert_eq!(config_for(PathBuf::from("/bin/bash")).args, vec!["-c"]);
+        let ps = config_for(PathBuf::from("pwsh.exe"));
+        assert_eq!(ps.kind, ShellKind::PowerShell);
+        assert_eq!(ps.args.last().map(String::as_str), Some("-Command"));
+        assert!(ps.args.iter().any(|a| a == "-NoProfile"));
+        assert!(ps.args.iter().any(|a| a == "-NonInteractive"));
+        assert_eq!(config_for(PathBuf::from("cmd.exe")).args, vec!["/D", "/S", "/C"]);
+    }
+
+    /// Only a pwsh under Program Files can start in the AppContainer: a Store
+    /// alias or a per-user install is skipped, so 5.1 is used instead.
+    #[test]
+    fn only_a_program_files_pwsh_is_chosen() {
+        let pf = [PathBuf::from(r"C:\Program Files"), PathBuf::from(r"C:\Program Files (x86)\")];
+        assert!(container_can_run(Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe"), &pf));
+        assert!(container_can_run(Path::new(r"c:\program files (x86)\PowerShell\7\pwsh.exe"), &pf));
+        for skipped in [
+            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\pwsh.exe",
+            r"C:\Users\a\scoop\apps\pwsh\current\pwsh.exe",
+            r"C:\Program Files Extra\pwsh.exe",
+            r"D:\tools\pwsh.exe",
+        ] {
+            assert!(!container_can_run(Path::new(skipped), &pf), "{skipped}");
+        }
+        assert!(!container_can_run(Path::new(r"C:\Program Files\pwsh.exe"), &[]));
+    }
+
+    /// A Store PowerShell 7 is an app-execution alias, which cannot start in
+    /// the AppContainer, so it is skipped; an installed pwsh is not.
+    #[test]
+    fn a_store_pwsh_alias_is_recognised_and_an_installed_pwsh_is_not() {
+        assert!(is_app_execution_alias(Path::new(
+            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+        )));
+        assert!(!is_app_execution_alias(Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe")));
+    }
+
+    #[test]
+    fn the_verbatim_prefix_is_stripped_only_from_drive_and_unc_paths() {
+        assert_eq!(
+            without_verbatim_prefix(Path::new(r"\\?\C:\Users\a\proj")),
+            PathBuf::from(r"C:\Users\a\proj")
+        );
+        assert_eq!(
+            without_verbatim_prefix(Path::new(r"\\?\UNC\server\share\proj")),
+            PathBuf::from(r"\\server\share\proj")
+        );
+        for unchanged in [r"C:\Users\a", "/home/a/proj", r"\\?\Volume{abc}\x"] {
+            assert_eq!(without_verbatim_prefix(Path::new(unchanged)), PathBuf::from(unchanged));
+        }
+    }
+
+    /// cmd with `/S` strips exactly the outer pair, so the command's own quotes
+    /// reach it untouched -- the `\"` an argv quoter would produce never does.
+    #[test]
+    fn the_cmd_payload_keeps_the_commands_own_quotes() {
+        let payload = cmd_payload(r#""C:\Program Files\x.exe" "a b" && echo "done""#);
+        assert_eq!(payload, r#"""C:\Program Files\x.exe" "a b" && echo "done"""#);
+        assert!(!payload.contains(r#"\""#));
+    }
+
+    #[test]
+    fn the_powershell_script_runs_the_command_and_reports_its_exit_code() {
+        let script = powershell_script("git status");
+        assert!(script.contains("\ngit status\n"));
+        let (setup, rest) = script.split_once("git status").unwrap();
+        assert!(setup.contains("$global:LASTEXITCODE = $null"), "reset before the command");
+        assert!(
+            setup.contains("Major -lt 6) { Import-Module Microsoft.PowerShell.Management,"),
+            "5.1 imports the core modules it cannot autoload in the sandbox"
+        );
+        assert!(
+            setup.contains("elseif (-not (Get-Command Write-Output")
+                && setup.contains("Import-Module -Assembly"),
+            "pwsh 7 loads its cmdlet assemblies only when its modules did not autoload"
+        );
+        assert!(setup.contains("OutputEncoding"));
+        assert!(setup.contains("Set-Location -LiteralPath $JanWs"), "real path first");
+        assert!(setup.contains("Set-Location JanWs:\\"), "the drive only as the fallback");
+        assert!(setup.contains("function jan_cmd {"), "runs inside the function");
+        assert!(rest.contains("elseif ($LASTEXITCODE) { $LASTEXITCODE }"), "real code after it");
+        assert!(rest.contains("$host.SetShouldExit($JanExit)"), "exit without dropping output");
+    }
+
+    /// Only PowerShell's drive complaint, as the whole first line, is dropped:
+    /// however the pipe splits it, and never a command's own error.
+    #[test]
+    fn stderr_filter_drops_only_the_startup_drive_line() {
+        let run = |chunks: &[&[u8]]| {
+            let mut f = StderrStartupFilter::default();
+            let mut out: Vec<u8> = chunks.iter().flat_map(|c| f.feed(c)).collect();
+            out.extend(f.finish());
+            String::from_utf8(out).unwrap()
+        };
+        let noise = [POWERSHELL_DRIVE_NOISE, b"\r\n"].concat();
+        assert_eq!(run(&[&noise]), "");
+        assert_eq!(run(&[&noise[..20], &noise[20..], b"real error\r\n"]), "real error\r\n");
+        assert_eq!(run(&[POWERSHELL_DRIVE_NOISE]), "", "no trailing newline");
+        assert_eq!(run(&[b"boom\n", &noise]), format!("boom\n{}", String::from_utf8_lossy(&noise)));
+        assert_eq!(run(&[b"fatal: ", b"not a repo\n"]), "fatal: not a repo\n");
+        assert_eq!(run(&[b"partial"]), "partial");
+    }
+
+    /// The syntax note names the language for every non-POSIX shell and is
+    /// absent for POSIX, which the model already assumes.
+    #[test]
+    fn only_non_posix_shells_carry_a_syntax_note() {
+        assert!(ShellKind::Posix.syntax_note().is_none());
+        assert!(ShellKind::PowerShell.syntax_note().unwrap().contains("PowerShell"));
+        assert!(ShellKind::Cmd.syntax_note().unwrap().contains("cmd.exe"));
+    }
+
+    /// Run the PowerShell script through a real `pwsh` when one is installed
+    /// (`JAN_TEST_PWSH`, else `pwsh` on PATH); skipped otherwise. Covers the
+    /// pieces that only an actual PowerShell can prove: quoting survives, a
+    /// native command's exit code comes back, and a failing cmdlet is not 0.
+    #[tokio::test]
+    async fn powershell_runs_commands_and_reports_exit_codes() {
+        let Some(pwsh) = std::env::var_os("JAN_TEST_PWSH")
+            .map(PathBuf::from)
+            .or_else(|| which("pwsh"))
+        else {
+            eprintln!("skipped: no pwsh");
+            return;
+        };
+        let cfg = config_for(pwsh);
+        let run = |command: &'static str| {
+            let cfg = cfg.clone();
+            async move {
+                let child = spawn(&cfg, command, &std::env::temp_dir(), None, ShellEnv::default(), None)
+                    .await
+                    .unwrap();
+                let pid = child.id().unwrap();
+                let out = child.wait_with_output().await.unwrap();
+                unregister(None, pid);
+                (
+                    out.status.code(),
+                    String::from_utf8_lossy(&out.stdout).trim().to_string(),
+                    String::from_utf8_lossy(&out.stderr).to_string(),
+                )
+            }
+        };
+        // Non-ASCII written as escapes to keep the source ASCII; UTF-8 output is
+        // what the script's encoding switch is for.
+        let (code, stdout, _) = run("Write-Output \"say \"\"hi\"\" & 'bye' \u{fc}n\u{ef}\"").await;
+        assert_eq!(code, Some(0));
+        assert_eq!(stdout, "say \"hi\" & 'bye' \u{fc}n\u{ef}");
+
+        let (code, _, _) = run("Get-Item ./definitely-not-here-jan").await;
+        assert_eq!(code, Some(1), "a failing cmdlet must not report success");
+
+        // A cmdlet failing after a native command that succeeded: the native
+        // code (0) must not mask the failure.
+        let (code, _, _) = run(
+            "& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 0'; \
+             Get-Item ./definitely-not-here-jan",
+        )
+        .await;
+        assert_eq!(code, Some(1), "a later cmdlet failure must not report 0");
+
+        // The last statement succeeding is success, as in a POSIX shell.
+        let (code, _, _) = run("Get-Item ./definitely-not-here-jan; Write-Output ok").await;
+        assert_eq!(code, Some(0));
+
+        // The running PowerShell itself as the native command, so the test does
+        // not depend on what else is installed.
+        let (code, _, stderr) =
+            run("& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 7'").await;
+        assert_eq!(code, Some(7), "a native command's own code comes back");
+        assert!(!stderr.contains("CLIXML"), "errors stay plain text: {stderr}");
+
+        // Formatted output is flushed before the process exits.
+        let (code, stdout, _) = run("Get-Location; Write-Output after").await;
+        assert_eq!(code, Some(0));
+        assert!(stdout.contains("after") && stdout.contains("Path"), "{stdout}");
+
+        // An error names the command's own text, never the wrapper's.
+        let (code, _, stderr) = run("Write-Error boom; exit 2").await;
+        assert_eq!(code, Some(2));
+        assert!(stderr.contains("boom"), "{stderr}");
+        assert!(!stderr.contains("SetShouldExit"), "wrapper leaked: {stderr}");
+        assert!(!stderr.contains("ProgressPreference"), "wrapper leaked: {stderr}");
+
+        // A `return` leaves the function early and still reports success.
+        let (code, _, _) = run("if ($true) { return }; Get-Item ./definitely-not-here-jan").await;
+        assert_eq!(code, Some(0), "an early return is not a failure");
+
+        // The location is a real path, not the fallback drive.
+        let (_, stdout, _) = run("$PWD.Provider.Name; $PWD.Path").await;
+        assert!(stdout.starts_with("FileSystem"), "{stdout}");
+        assert!(!stdout.contains("JanWs:"), "{stdout}");
+
+        // Relative paths resolve in the working directory it was started in.
+        let (code, stdout, _) = run("(Convert-Path .).TrimEnd('/', '\\')").await;
+        assert_eq!(code, Some(0));
+        // Compared resolved: PowerShell reports the physical path, so on macOS
+        // the `/var` temp dir comes back as `/private/var`.
+        let tmp = std::env::temp_dir();
+        assert_eq!(
+            std::fs::canonicalize(&stdout).ok(),
+            std::fs::canonicalize(&tmp).ok(),
+            "starts in the working directory: {stdout}"
+        );
     }
 }
 
@@ -380,10 +1543,10 @@ mod tests {
 
     #[tokio::test]
     async fn runs_a_command_and_captures_stdout() {
-        let child = spawn(shell(), "echo hello", &tmp(), None).await.unwrap();
+        let child = spawn(shell(), "echo hello", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello");
     }
 
@@ -398,13 +1561,15 @@ mod tests {
             shell(),
             "echo \"$TMPDIR $TMP $TEMP\"",
             &tmp(),
-            Some(&scratch),
+            Some(&SandboxEnv::new(Some(&scratch), None)),
+            ShellEnv::default(),
+            None,
         )
         .await
         .unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         let s = scratch.to_string_lossy();
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
@@ -413,25 +1578,93 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
+    /// A spawn with a package cache names it; one without (unconfined, or an
+    /// escalated command) passes none of the redirect names through, so the
+    /// host's own caches and `CARGO_HOME` stand.
+    #[tokio::test]
+    async fn pkg_cache_env_is_set_only_for_a_sandbox_env() {
+        let probe = "echo \"${CARGO_HOME-unset} ${npm_config_cache-unset}\"";
+        let pkg = tmp().join("jan_proc_pkg_env");
+        let run = |env: Option<SandboxEnv>| async move {
+            let child = spawn(shell(), probe, &tmp(), env.as_ref(), ShellEnv::default(), None)
+                .await
+                .unwrap();
+            let pid = child.id().unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            unregister(None, pid);
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        let p = pkg.to_string_lossy();
+        assert_eq!(
+            run(Some(SandboxEnv::new(None, Some(&pkg)))).await,
+            format!("{p}/cargo {p}/npm")
+        );
+        assert_eq!(run(None).await, "unset unset");
+    }
+
     /// With no scratch the shell keeps whatever the host allowlist passed
     /// through, rather than being handed an empty temp dir.
     #[tokio::test]
     async fn temp_env_is_left_alone_without_a_scratch() {
-        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None)
+        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None, ShellEnv::default(), None)
             .await
             .unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         let expected = std::env::var("TMPDIR").unwrap_or_else(|_| "unset".to_string());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), expected);
+    }
+
+    /// The child leads its own session and process group: `kill_tree` still
+    /// reaches the whole tree, and it is outside Jan's session, so it cannot
+    /// take Jan's terminal.
+    #[tokio::test]
+    async fn spawned_child_leads_its_own_session() {
+        use nix::unistd::{getpgid, getsid, Pid};
+        let mut child = spawn(shell(), "sleep 30", &tmp(), None, ShellEnv::default(), None)
+            .await
+            .unwrap();
+        let pid = Pid::from_raw(child.id().unwrap() as i32);
+        let (sid, pgid) = (getsid(Some(pid)), getpgid(Some(pid)));
+        kill_tree(pid.as_raw() as u32);
+        let _ = child.wait().await;
+        unregister(None, pid.as_raw() as u32);
+        assert_eq!(sid.unwrap(), pid, "child must lead a new session");
+        assert_eq!(pgid.unwrap(), pid, "child must lead its process group");
+        assert_ne!(sid.unwrap(), getsid(None).unwrap());
+    }
+
+    /// The SIGTTIN stop behind a "dead" TUI session: a tool child that could
+    /// open `/dev/tty` could also make itself the terminal's foreground group
+    /// and leave Jan reading from the background. Without a controlling
+    /// terminal the open fails. Only meaningful when the test runner itself
+    /// has a terminal (run it under a pty to see the old `process_group(0)`
+    /// spawn print "opened"); without one it passes either way, and
+    /// `spawned_child_leads_its_own_session` is the guard.
+    #[tokio::test]
+    async fn spawned_child_cannot_open_the_terminal() {
+        let child = spawn(
+            shell(),
+            "if (: </dev/tty) 2>/dev/null; then echo opened; else echo denied; fi",
+            &tmp(),
+            None,
+            ShellEnv::default(),
+            None,
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(None, pid);
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "denied");
     }
 
     #[tokio::test]
     async fn kill_tree_reaps_backgrounded_grandchild() {
         // The shell backgrounds a long sleeper, prints its pid, then waits on
         // it. Killing the group must take down that grandchild too.
-        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None)
+        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None, ShellEnv::default(), None)
             .await
             .unwrap();
         let leader = child.id().unwrap();
@@ -447,7 +1680,7 @@ mod tests {
 
         kill_tree(leader);
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await;
-        unregister(leader);
+        unregister(None, leader);
 
         // Give the kernel a moment to tear the group down.
         for _ in 0..50 {
@@ -459,35 +1692,310 @@ mod tests {
         assert!(!alive(grandchild), "grandchild must be reaped by group kill");
     }
 
+    fn is_registered(thread: Option<&str>, pid: u32) -> bool {
+        running()
+            .lock()
+            .unwrap()
+            .get(thread.unwrap_or(NO_THREAD))
+            .map(|set| set.contains_key(&pid))
+            .unwrap_or(false)
+    }
+
     #[test]
     fn register_and_unregister_track_pids() {
         // A pid outside any real range: exercising the registry only, never
         // signalling a live process (kill_all is shutdown-only and would reap
         // other tests' children if called under the parallel harness).
         let fake = u32::MAX - 1;
-        register(fake);
-        assert!(running().lock().unwrap().contains(&fake));
-        unregister(fake);
-        assert!(!running().lock().unwrap().contains(&fake));
+        register(Some("thread-a"), fake, "sleep 1");
+        assert!(is_registered(Some("thread-a"), fake));
+        unregister(Some("thread-a"), fake);
+        assert!(!is_registered(Some("thread-a"), fake));
+    }
+
+    /// `mark_backgrounded` flips only the named pid, and `snapshot` reports it
+    /// with its command so `/shells` can name the detached job.
+    #[test]
+    fn snapshot_reports_backgrounded_shells_with_their_command() {
+        let (fg, bg) = (u32::MAX - 10, u32::MAX - 11);
+        register(Some("snap"), fg, "cargo build");
+        register(Some("snap"), bg, "sleep 300");
+        mark_backgrounded(Some("snap"), bg);
+        let shells = snapshot();
+        let got = |pid| shells.iter().find(|s| s.pid == pid).cloned();
+        assert_eq!(got(bg).unwrap().command, "sleep 300");
+        assert!(got(bg).unwrap().backgrounded, "marked one is backgrounded");
+        assert!(!got(fg).unwrap().backgrounded, "the other is not");
+        unregister(Some("snap"), fg);
+        unregister(Some("snap"), bg);
+    }
+
+    /// The live tail keeps only the newest bytes, counts every byte, and the
+    /// registry lets go of it with the shell.
+    #[test]
+    fn output_tail_is_bounded_counted_and_freed() {
+        let pid = u32::MAX - 20;
+        register(Some("tail"), pid, "yes");
+        let tail = output_handle(pid).expect("registered");
+        tail.push(&vec![b'a'; OUTPUT_TAIL_MAX_BYTES]);
+        tail.push(b"\nlast\n");
+        let (text, total) = output_handle(pid).expect("still running").read();
+        assert_eq!(total, OUTPUT_TAIL_MAX_BYTES as u64 + 6);
+        assert_eq!(tail.total(), total);
+        assert_eq!(text.len(), OUTPUT_TAIL_MAX_BYTES);
+        assert!(text.ends_with("\nlast\n"), "keeps the newest bytes");
+        unregister(Some("tail"), pid);
+        assert!(output_handle(pid).is_none(), "freed with the shell");
+        assert_eq!(std::sync::Arc::strong_count(&tail.0), 1, "only the viewer holds it");
+    }
+
+    /// Read for display: progress redraws collapse, escapes go, and a front
+    /// trimmed mid-character does not decode to a replacement character.
+    #[test]
+    fn output_tail_reads_sanitized() {
+        let tail = OutputTail::default();
+        tail.push(b"10%\r50%\r100%\n\x1b[31mred\x1b[0m\n");
+        assert_eq!(tail.read().0, "100%\nred\n");
+        // The cap now falls on the second byte of the two-byte `\u{e9}`.
+        tail.push("\u{e9}".as_bytes());
+        tail.push(&vec![b'a'; OUTPUT_TAIL_MAX_BYTES - 1]);
+        let (text, _) = tail.read();
+        assert!(!text.contains('\u{fffd}'), "decoded a split character");
+        assert_eq!(text.len(), OUTPUT_TAIL_MAX_BYTES - 1);
+    }
+
+    /// `kill` drops the named pid from the registry (whichever bucket it is in)
+    /// and reports whether it was known; an unknown pid is a no-op. Fake pids
+    /// chosen to stay a positive, implausible i32 so the `kill_tree` this reaches
+    /// signals a non-existent group (ESRCH), never a real low-numbered one.
+    #[test]
+    fn kill_removes_a_known_pid_and_reports_unknown() {
+        let fake = 2_000_000_001;
+        register(Some("kill-sess"), fake, "sleep 300");
+        assert!(is_registered(Some("kill-sess"), fake));
+        assert!(kill(fake), "a known pid is reported found");
+        assert!(!is_registered(Some("kill-sess"), fake), "and dropped");
+        assert!(!kill(2_000_000_002), "an unknown pid is a no-op");
+    }
+
+    /// `kill_thread` reaps only its own session's pids and leaves another
+    /// session's registrations intact, so Stop in one run cannot tear down a
+    /// concurrent run's shell. Fake pids: exercising bucketing, never signalling.
+    #[test]
+    fn kill_thread_is_scoped_to_its_session() {
+        let (a, b) = (u32::MAX - 2, u32::MAX - 3);
+        register(Some("sess-a"), a, "sleep 1");
+        register(Some("sess-b"), b, "sleep 1");
+        kill_thread("sess-a");
+        assert!(!is_registered(Some("sess-a"), a), "own session must be reaped");
+        assert!(is_registered(Some("sess-b"), b), "other session must survive");
+        unregister(Some("sess-b"), b);
+    }
+
+    /// Only shells known to speak POSIX sh run the cwd wrapper; fish and nu
+    /// take `-c` but would reject its syntax.
+    #[test]
+    fn only_known_posix_shells_carry_the_cwd() {
+        for posix in ["/bin/sh", "/usr/bin/bash", "/bin/dash", "/bin/zsh", "/bin/busybox"] {
+            assert!(speaks_posix(Path::new(posix)), "{posix}");
+        }
+        for other in ["/usr/bin/fish", "/usr/bin/nu", "/usr/bin/xonsh", "pwsh"] {
+            assert!(!speaks_posix(Path::new(other)), "{other}");
+        }
     }
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn confine_limits_caps_the_child_process_count() {
-        // The rlimit mounting must actually reach the spawned child: with NPROC
-        // clamped we still run up to the cap, but a fork-bomb past it fails.
-        let child = spawn(shell(), "exit 0", &tmp(), None).await.unwrap();
+    async fn confine_limits_caps_child_resource_limits() {
+        // The rlimit mounting must reach the spawned child before its shell runs.
+        let child = spawn(shell(), "exit 0", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
 
-        // Spawn a shell that reports its own soft NOFILE limit; confine_limits
-        // sets it to 1024, which should be visible inside the sandbox.
-        let child = spawn(shell(), "ulimit -n", &tmp(), None).await.unwrap();
+        // Spawn a shell that reports its own soft limits; confine_limits sets
+        // each to the target, bounded by whatever hard limit the host allows.
+        // `ulimit -f` reports FSIZE in 1024-byte blocks; `-n` is a raw count.
+        for (name, flag, resource, target, unit) in [
+            ("NOFILE", "-n", nix::libc::RLIMIT_NOFILE, 65536_u64, 1_u64),
+            (
+                "FSIZE",
+                "-f",
+                nix::libc::RLIMIT_FSIZE,
+                16 * 1024 * 1024 * 1024,
+                1024,
+            ),
+        ] {
+            let cmd = format!("ulimit {flag}");
+            let child = spawn(shell(), &cmd, &tmp(), None, ShellEnv::default(), None).await.unwrap();
+            let pid = child.id().unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            unregister(None, pid);
+            let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+            let mut host = nix::libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            // # Safety: reads the calling process's own limit into a local.
+            unsafe { nix::libc::getrlimit(resource, &mut host) };
+            let want = if host.rlim_max == nix::libc::RLIM_INFINITY {
+                target
+            } else {
+                target.min(host.rlim_max)
+            };
+            assert_eq!(
+                val,
+                (want / unit).to_string(),
+                "{name} soft limit should be raised to the target, got: {val}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn confine_limits_preserves_the_launcher_process_limit() {
+        // NPROC counts every process owned by the real UID. Jan must inherit the
+        // launcher's value so unrelated workstation activity cannot starve one
+        // agent-tool shell at an arbitrary Jan-specific threshold.
+        let mut launcher = nix::libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // # Safety: reads the test process's own limit into a local value.
+        assert_eq!(
+            unsafe { nix::libc::getrlimit(nix::libc::RLIMIT_NPROC, &mut launcher) },
+            0
+        );
+
+        let child = spawn(
+            shell(),
+            "ulimit -u",
+            &tmp(),
+            None,
+            ShellEnv::default(),
+            None,
+        )
+        .await
+        .unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
-        let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
+        unregister(None, pid);
+        let actual = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+        assert_eq!(
+            actual,
+            launcher.rlim_cur.to_string(),
+            "NPROC soft limit should be inherited from the launcher, got: {actual}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod env_policy_tests {
+    use super::*;
+
+    fn host(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn glob_matches_prefix_suffix_and_infix_case_insensitively() {
+        assert!(glob_match("GIT_*", "GIT_AUTHOR_NAME"));
+        assert!(glob_match("git_*", "GIT_AUTHOR_NAME"));
+        assert!(glob_match("*_PROXY", "http_proxy".to_ascii_uppercase().as_str()));
+        assert!(glob_match("*PROXY*", "HTTPS_PROXY_HOST"));
+        assert!(glob_match("*", "ANYTHING"));
+        assert!(glob_match("PATH", "PATH"));
+        assert!(!glob_match("GIT_*", "CARGO_HOME"));
+        assert!(!glob_match("PATH", "PATHEXT"));
+    }
+
+    #[test]
+    fn secret_names_are_recognized() {
+        for name in [
+            "OPENAI_API_KEY",
+            "MY_SECRET",
+            "GH_TOKEN",
+            "DB_PASSWORD",
+            "aws_credential",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+            "JAN_CUSTOM_HEADERS",
+            "HTTP_AUTHORIZATION",
+        ] {
+            assert!(is_secret_name(name), "{name} should read as secret");
+        }
+        for name in [
+            "PATH",
+            "HOME",
+            "GIT_AUTHOR_NAME",
+            "RUST_LOG",
+            "OTEL_SERVICE_NAME",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+        ] {
+            assert!(!is_secret_name(name), "{name} should not read as secret");
+        }
+    }
+
+    #[test]
+    fn empty_policy_copies_nothing() {
+        let out = resolve_env_overrides(host(&[("PATH", "/bin"), ("FOO", "bar")]), ShellEnv::default());
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn passthrough_copies_matches_and_skips_secret_named_vars() {
+        let pats = vec!["GIT_*".to_string(), "CARGO_HOME".to_string()];
+        let env = ShellEnv { passthrough: &pats, set: &[] };
+        let out = resolve_env_overrides(
+            host(&[
+                ("GIT_AUTHOR_NAME", "Ada"),
+                ("GIT_TOKEN", "leak"), // matches GIT_* but is secret-named
+                ("CARGO_HOME", "/c"),
+                ("UNRELATED", "x"),
+            ]),
+            env,
+        );
+        assert!(out.contains(&("GIT_AUTHOR_NAME".into(), "Ada".into())));
+        assert!(out.contains(&("CARGO_HOME".into(), "/c".into())));
+        assert!(!out.iter().any(|(k, _)| k == "GIT_TOKEN"), "secret-named var must not leak");
+        assert!(!out.iter().any(|(k, _)| k == "UNRELATED"));
+    }
+
+    #[test]
+    fn an_otel_glob_never_copies_the_exporters_headers() {
+        // A launcher puts its API key in the OTLP headers; `OTEL_*` is a
+        // natural pass-through to write, and must not carry it into a shell.
+        let pats = vec!["OTEL_*".to_string(), "JAN_*".to_string()];
+        let env = ShellEnv { passthrough: &pats, set: &[] };
+        let out = resolve_env_overrides(
+            host(&[
+                ("OTEL_SERVICE_NAME", "jan-agent"),
+                ("OTEL_EXPORTER_OTLP_HEADERS", "x-api-key=sk"),
+                ("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "x-api-key=sk"),
+                ("JAN_CUSTOM_HEADERS", "Authorization: Bearer sk"),
+            ]),
+            env,
+        );
+        assert_eq!(out, vec![("OTEL_SERVICE_NAME".to_string(), "jan-agent".to_string())]);
+    }
+
+    #[test]
+    fn set_wins_over_passthrough_and_injects_verbatim() {
+        let pats = vec!["RUST_LOG".to_string()];
+        let set = vec![
+            ("RUST_LOG".to_string(), "debug".to_string()),
+            ("GH_TOKEN".to_string(), "explicit".to_string()), // secret-named but user-named
+        ];
+        let env = ShellEnv { passthrough: &pats, set: &set };
+        let out = resolve_env_overrides(host(&[("RUST_LOG", "info")]), env);
+        // Only one RUST_LOG, and it is the set value.
+        assert_eq!(out.iter().filter(|(k, _)| k == "RUST_LOG").count(), 1);
+        assert!(out.contains(&("RUST_LOG".into(), "debug".into())));
+        assert!(out.contains(&("GH_TOKEN".into(), "explicit".into())));
     }
 }

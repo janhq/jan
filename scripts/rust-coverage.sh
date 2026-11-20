@@ -3,7 +3,7 @@
 # Outputs: rust-lcov.info in the current directory.
 set -euo pipefail
 
-"$(dirname "$0")/stub-tauri-resources.sh"
+node "$(dirname "$0")/stub-tauri-resources.mjs"
 
 cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
 cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1

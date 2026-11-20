@@ -99,8 +99,6 @@
     "threadScrollFlowHint": "Maintient la fenêtre ancrée au dernier message que vous envoyez.",
     "threadScrollStickyTitle": "Défilement collant",
     "threadScrollStickyHint": "Suit automatiquement au fur et à mesure que les réponses arrivent en temps réel.",
-    "tokenCounterCompact": "Compteur de jetons compact",
-    "tokenCounterCompactDesc": "Affichez le compteur de jetons à l'intérieur de la saisie de discussion. Lorsqu'il est désactivé, le compteur de jetons apparaît sous la saisie.",
     "codeBlockTitle": "Bloc de code",
     "codeBlockDesc": "Choisissez un style de coloration syntaxique.",
     "showLineNumbers": "Afficher les numéros de ligne",
@@ -108,7 +106,8 @@
     "resetCodeBlockStyle": "Réinitialiser le style du bloc de code",
     "resetCodeBlockStyleDesc": "Réinitialisez le style du bloc de code par défaut.",
     "resetCodeBlockSuccess": "Style du bloc de code réinitialisé avec succès",
-    "resetCodeBlockSuccessDesc": "Le style du bloc de code a été restauré par défaut."
+    "resetCodeBlockSuccessDesc": "Le style du bloc de code a été restauré par défaut.",
+    "themeDescFixed": "Toujours utiliser ce thème. Choisissez Système pour suivre celui de l'OS."
   },
   "hardware": {
     "os": "Système d'exploitation",
@@ -221,6 +220,8 @@
     "checkForUpdates": "Vérifier les mises à jour",
     "checkForUpdatesDesc": "Vérifiez si une nouvelle version de Jan est disponible.",
     "checkingForUpdates": "Vérification des mises à jour...",
+    "autoUpdateCheck": "Vérification automatique des mises à jour",
+    "autoUpdateCheckDesc": "Vérifie automatiquement les mises à jour au démarrage, puis régulièrement.",
     "copied": "Copié",
     "copyPath": "Copier le chemin",
     "changeLocation": "Changer l'emplacement",
@@ -236,6 +237,9 @@
     "reset": "Réinitialiser",
     "huggingfaceToken": "Jeton HuggingFace",
     "huggingfaceTokenDesc": "Votre jeton API HuggingFace pour accéder aux modèles.",
+    "janCli": "Jan CLI",
+    "janCliDesc": "Exécutez l'agent de Jan depuis votre terminal. Suivez le guide pour l'installer et démarrer.",
+    "janCliSetupGuide": "Guide d'installation",
     "resources": "Ressources",
     "documentation": "Documentation",
     "documentationDesc": "Apprenez à utiliser Jan et explorez ses fonctionnalités.",
@@ -302,5 +306,31 @@
     }
   },
   "backendInstallSuccess": "Backend installé avec succès",
-  "backendInstallError": "Échec de l'installation du backend"
+  "backendInstallError": "Échec de l'installation du backend",
+  "cowork": {
+    "title": "Agent",
+    "description": "Ce que Jan peut faire sur votre ordinateur : son shell isolé, ainsi que les souvenirs et compétences conservés durablement dans votre dossier de données Jan.",
+    "networkDesc": "Autorisez les commandes shell à accéder au réseau, par exemple pour installer des paquets ou récupérer un dépôt. Activé par défaut. Le bac à sable limite toujours les fichiers accessibles aux commandes.",
+    "shell": "Commandes shell",
+    "shellChecking": "Recherche d’un bac à sable…",
+    "shellSandboxed": "Les commandes sont isolées par {{backend}} : elles ne peuvent écrire que dans l’espace de travail de la session et ne peuvent pas lire les fichiers de votre dossier personnel.",
+    "shellUnavailable": "Aucun bac à sable n’est disponible sur ce système. L’outil shell n’est donc pas proposé. Les commandes ne sont jamais exécutées sans isolation.",
+    "network": "Autoriser l’accès au réseau",
+    "openFolder": "Ouvrir le dossier",
+    "memories": "Souvenirs",
+    "noMemories": "Aucun souvenir pour le moment. Les modèles en ajoutent avec l’outil de mémoire lorsqu’ils apprennent des informations utiles à conserver.",
+    "skills": "Compétences",
+    "noSkills": "Aucune compétence pour le moment. Une compétence est un ensemble d’instructions réutilisables qu’un modèle peut charger à la demande.",
+    "add": "Ajouter",
+    "editMemory": "Modifier le souvenir",
+    "editMemoryDesc": "Un sujet par note. Les modèles relisent ces notes avec l’outil de mémoire.",
+    "editSkill": "Modifier la compétence",
+    "editSkillDesc": "Instructions en Markdown, avec une description facultative dans l’en-tête YAML. Les modèles voient cette description avant de charger la compétence.",
+    "namePlaceholder": "Nom",
+    "contentPlaceholder": "Contenu",
+    "loadFailed": "Impossible de charger l’espace de travail de l’agent",
+    "saveFailed": "Impossible d’enregistrer",
+    "deleteFailed": "Impossible de supprimer",
+    "revealFailed": "Impossible d’ouvrir le dossier"
+  }
 }

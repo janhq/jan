@@ -64,7 +64,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: (selector: any) =>
     selector({
       spellCheckChatInput: false,
-      tokenCounterCompact: false,
     }),
 }))
 
@@ -138,6 +137,16 @@ vi.mock('@/hooks/useAttachments', () => ({
       parseMode: 'auto',
       maxFileSizeMB: 10,
     }),
+}))
+
+// The real image-limit store runs against an in-memory backend so tests can
+// set the configured limit the same way the settings page does.
+vi.mock('@/lib/backendStorage', () => ({
+  backendStorage: {
+    getItem: async () => null,
+    setItem: async () => {},
+    removeItem: async () => {},
+  },
 }))
 
 let attachmentsList: any[] = []
@@ -215,20 +224,8 @@ vi.mock('@/stores/message-queue-store', () => ({
   useMessageQueue: useMessageQueueImpl,
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => undefined,
-      getByName: () => undefined,
-      listExtensions: () => [],
-    }),
-  },
-}))
-
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { MCP: 'mcp', VectorDB: 'vectordb' },
-  MCPExtension: class {},
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
   fs: {
     existsSync: vi.fn().mockResolvedValue(false),
     readFile: vi.fn().mockResolvedValue(''),
@@ -264,9 +261,6 @@ vi.mock('@/containers/DropdownToolsAvailable', () => ({
 vi.mock('@/containers/AvatarEmoji', () => ({
   AvatarEmoji: () => <span data-testid="stub-avatar" />,
 }))
-vi.mock('@/containers/McpExtensionToolLoader', () => ({
-  McpExtensionToolLoader: () => null,
-}))
 vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
   __esModule: true,
   default: () => null,
@@ -277,8 +271,18 @@ vi.mock('@/containers/MovingBorder', () => ({
 vi.mock('@/components/TokenCounter', () => ({
   TokenCounter: () => <div data-testid="stub-token-counter" />,
 }))
+// Model selection/effort is covered by ComposerModelPicker's own suite.
+vi.mock('@/containers/ComposerModelPicker', () => ({
+  default: ({ className }: { className?: string }) => (
+    <button aria-label="Select model" className={className}>
+      Model
+    </button>
+  ),
+}))
 vi.mock('@/components/AssistantsMenu', () => ({
-  AssistantsMenu: () => <div data-testid="stub-assistants-menu" />,
+  AssistantsMenu: ({ selectedAssistant }: any) => (
+    <div data-testid="stub-assistants-menu">{selectedAssistant}</div>
+  ),
 }))
 
 // Minimal dropdown/tooltip stubs (pass-throughs to keep DOM shallow)
@@ -294,6 +298,11 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     ),
     DropdownMenuTrigger: Pass,
     DropdownMenuSeparator: () => null,
+    DropdownMenuCheckboxItem: ({ children, onCheckedChange, checked, disabled }: any) => (
+      <button role="menuitemcheckbox" aria-checked={checked} disabled={disabled} onClick={() => onCheckedChange?.(!checked)}>
+        {children}
+      </button>
+    ),
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
@@ -315,6 +324,9 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
 
 // Helpers -------------------------------------------------------------------
 
@@ -338,6 +350,9 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  updateCurrentThreadAssistantMock.mockClear()
+  useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
+  useWebSearchConfig.setState({ webSearchEnabled: false })
 }
 
 const getTextarea = () =>
@@ -364,9 +379,62 @@ describe('ChatInput', () => {
   it('shows the project assistant for a new conversation', () => {
     renderInput({ projectId: 'project-1', projectAssistantId: 'a2' })
 
-    expect(
-      screen.getByRole('button', { name: 'Switch assistant' })
-    ).toHaveTextContent('Project assistant')
+    // The assistant list now lives in the composer's options menu.
+    expect(screen.getByTestId('stub-assistants-menu')).toHaveTextContent('a2')
+  })
+
+  describe('Cmd/Ctrl+J assistant cycle', () => {
+    const cycle = () =>
+      act(() => {
+        useAssistantSwitcher.getState().cycleHandler?.()
+      })
+
+    it('cycles a1 -> a2 -> None -> a1 on a home composer', () => {
+      renderInput()
+      const shown = () => screen.getByTestId('stub-assistants-menu').textContent
+      expect(shown()).toBe('a1')
+      cycle()
+      expect(shown()).toBe('a2')
+      cycle()
+      expect(shown()).toBe('')
+      cycle()
+      expect(shown()).toBe('a1')
+    })
+
+    it('cycles a1 -> a2 -> None -> a1 on an open thread', () => {
+      const withAssistant = (id?: string) => ({
+        id: 'thread-1',
+        assistants: id ? [{ id }] : [],
+      })
+      getCurrentThreadMock.mockReturnValue(withAssistant('a1') as never)
+      // ChatInput is memoized and takes no thread prop, so a changed store
+      // value only shows after a fresh mount.
+      const remount = (v: ReturnType<typeof renderInput>) => {
+        v.unmount()
+        return renderInput()
+      }
+      let view = renderInput()
+
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'a2' })
+      )
+
+      getCurrentThreadMock.mockReturnValue(withAssistant('a2') as never)
+      view = remount(view)
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        undefined
+      )
+
+      getCurrentThreadMock.mockReturnValue(withAssistant() as never)
+      view = remount(view)
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'a1' })
+      )
+      expect(updateCurrentThreadAssistantMock).toHaveBeenCalledTimes(3)
+    })
   })
 
   it('disables the send button when prompt is empty', () => {
@@ -398,10 +466,24 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'hello world',
+        undefined,
+        undefined,
+        'hello world'
+      )
     )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  it('keeps the draft when the surface refuses the send', async () => {
+    promptState = 'keep me'
+    const onSubmit = vi.fn(() => 'refused' as const)
+    renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(setPromptMock).not.toHaveBeenCalledWith('')
   })
 
   it('does NOT submit on Shift+Enter (newline behavior)', () => {
@@ -432,7 +514,12 @@ describe('ChatInput', () => {
     ) as HTMLButtonElement
     fireEvent.click(btn)
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'button submit',
+        undefined,
+        undefined,
+        'button submit'
+      )
     )
   })
 
@@ -483,6 +570,22 @@ describe('ChatInput', () => {
     // onSubmit should NOT fire when queued
     expect(onSubmit).not.toHaveBeenCalled()
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  // Tools running means the stream is over (`ready`), but the turn is not: a new
+  // message must wait for it like one sent mid-stream.
+  it('queues the message while the turn\'s tools are still running', async () => {
+    promptState = 'queued msg'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready', toolsRunning: true })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('shows "please select a model" inline message when no model selected', () => {
@@ -546,10 +649,30 @@ describe('ChatInput', () => {
             mediaType: 'image/png',
             url: 'data:image/png;base64,xxx',
           }),
-        ])
+        ]),
+        undefined,
+        'with image'
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
+  })
+
+  it('passes document attachments to onSubmit as the third argument', async () => {
+    promptState = 'read this'
+    attachmentsList = [
+      { type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' },
+    ]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'read this',
+        undefined,
+        [expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' })],
+        'read this'
+      )
+    )
   })
 
   it('shows the queued-message chips from the message queue', () => {
@@ -651,8 +774,10 @@ describe('ChatInput', () => {
     // Web access is a global capability both surfaces honour -- Cowork reads
     // the same store when it builds its tool set -- so the toggle travels.
     it('offers the web-search toggle on every surface', () => {
+      useWebSearchConfig.setState({ webSearchEnabled: true })
       renderInput()
-      expect(icons('world-search')).toBe(1)
+      // One menu entry plus the inline shortcut shown while it is on.
+      expect(icons('world-search')).toBe(2)
       renderInput({ ownsToolSet: false })
       expect(icons('world-search')).toBeGreaterThan(0)
     })
@@ -689,4 +814,170 @@ describe('ChatInput', () => {
       expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
     })
   })
-})
+
+  describe('menuWorkspace', () => {
+    it('adds the surface-owned workspace entries to the + menu', () => {
+      renderInput({ menuWorkspace: <button>add-folder</button> })
+      expect(screen.getByText('add-folder')).toBeInTheDocument()
+    })
+
+    it('adds nothing when the surface supplies none', () => {
+      renderInput()
+      expect(screen.queryByText('add-folder')).toBeNull()
+    })
+  })
+
+  describe('draftFolder (home composer with a folder)', () => {
+    const submit = () =>
+      fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+
+    it('creates the chat thread with the folder attached, then lets the surface forget it', async () => {
+      promptState = 'work on this'
+      createThreadMock.mockResolvedValue({ id: 'new-thread' })
+      const onDraftFolderUsed = vi.fn()
+      renderInput({
+        onSubmit: undefined,
+        draftFolder: '/home/u/app',
+        onDraftFolderUsed,
+      })
+      submit()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(createThreadMock.mock.calls[0][5]).toBe('/home/u/app')
+      expect(onDraftFolderUsed).toHaveBeenCalledTimes(1)
+    })
+
+    it('creates an ordinary chat thread when there is no folder', async () => {
+      promptState = 'just chat'
+      createThreadMock.mockResolvedValue({ id: 'new-thread' })
+      const onDraftFolderUsed = vi.fn()
+      renderInput({ onSubmit: undefined, draftFolder: null, onDraftFolderUsed })
+      submit()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(createThreadMock.mock.calls[0][5]).toBeUndefined()
+      expect(onDraftFolderUsed).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('image size limit', () => {
+    const MB = 1024 * 1024
+    const imageFile = (name: string, bytes: number, type = 'image/png') => {
+      const file = new File(['x'], name, { type })
+      Object.defineProperty(file, 'size', { value: bytes })
+      return file
+    }
+    const renderVision = () => {
+      selectedModelOverride = {
+        id: 'vision-model',
+        capabilities: ['tools', 'vision'],
+        provider: 'llamacpp',
+      }
+      return renderInput()
+    }
+    const pickFiles = (files: File[]) => {
+      const input = document.querySelector(
+        'input[type="file"]:not([accept])'
+      ) as HTMLInputElement
+      fireEvent.change(input, { target: { files } })
+    }
+    // ChatInput always calls setAttachments with an updater; run it against an
+    // empty list to see which images (if any) it would add.
+    const attachedImages = () =>
+      setAttachmentsMock.mock.calls.flatMap(([, updater]) =>
+        typeof updater === 'function' ? updater([]) : updater
+      )
+    const attachedNames = () => (attachedImages().length > 0 ? 'attached' : 'none')
+
+    beforeEach(() => {
+      setAttachmentsMock.mockClear()
+    })
+
+    it('accepts an image under the default 10MB limit via the picker', async () => {
+      renderVision()
+      pickFiles([imageFile('ok.png', 9 * MB)])
+      await waitFor(() => expect(attachedNames()).toBe('attached'))
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument()
+    })
+
+    it('rejects an image over the default limit and reports 10MB', async () => {
+      renderVision()
+      pickFiles([imageFile('big.png', 11 * MB)])
+      expect(
+        await screen.findByText('File too large (max 10MB): big.png')
+      ).toBeInTheDocument()
+      expect(attachedNames()).toBe('none')
+    })
+
+    it('honors a raised limit and accepts a 20MB image', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 25 })
+      renderVision()
+      pickFiles([imageFile('large.png', 20 * MB)])
+      await waitFor(() => expect(attachedNames()).toBe('attached'))
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument()
+    })
+
+    it('honors a lowered limit and builds the message from it', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 2 })
+      renderVision()
+      pickFiles([imageFile('a.png', 3 * MB), imageFile('b.png', 4 * MB)])
+      expect(
+        await screen.findByText('Files too large (max 2MB): a.png, b.png')
+      ).toBeInTheDocument()
+      expect(attachedNames()).toBe('none')
+    })
+
+    it('applies the same limit to pasted images', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 3 })
+      renderVision()
+      const file = imageFile('pasted.png', 5 * MB)
+      fireEvent.paste(getTextarea(), {
+        clipboardData: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+        },
+      })
+      expect(
+        await screen.findByText('File too large (max 3MB): pasted.png')
+      ).toBeInTheDocument()
+    })
+
+    it('applies the same limit to dropped images', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 3 })
+      // jsdom has no DataTransfer constructor; handleDrop builds one.
+      class FakeDataTransfer {
+        files: File[] = []
+        items = { add: (f: File) => this.files.push(f) }
+      }
+      vi.stubGlobal('DataTransfer', FakeDataTransfer)
+      try {
+        renderVision()
+        const dropZone = document.querySelector(
+          '[data-drop-zone="true"]'
+        ) as HTMLElement
+        const file = imageFile('dropped.png', 5 * MB)
+        fireEvent.drop(dropZone, { dataTransfer: { files: [file] } })
+        expect(
+          await screen.findByText('File too large (max 3MB): dropped.png')
+        ).toBeInTheDocument()
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+  })
+
+  // #9363: the option was greyed out, with no reason given, for any model
+  // without the `tools` capability, so such a model could take no document at
+  // all. A document can still go into the prompt as text.
+  describe('document attachments', () => {
+    const attachDocs = () =>
+      screen.getByText('Add documents or files').closest('button')!
+
+    it('stay available for a model that cannot call tools', () => {
+      selectedModelOverride = {
+        id: 'no-tools-model',
+        capabilities: ['completion'],
+        provider: 'llamacpp',
+      }
+      renderInput()
+      expect(attachDocs()).not.toBeDisabled()
+    })
+  })
+ })

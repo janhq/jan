@@ -1,0 +1,1210 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import {
+  createCoworkPersistence,
+  isMissingThreadError,
+  loadCoworkSessions,
+  sessionFromThread,
+  sessionToThreadRecord,
+  COWORK_CURRENT_ID_KEY,
+} from '../coworkPersistence'
+import {
+  CODE_SESSIONS_KEY,
+  COWORK_DELETED_IDS_KEY,
+} from '../migrateCoworkSessions'
+import { transcriptFromThreadMessages } from '../coworkThreadMessages'
+
+type Json = Record<string, any>
+
+// In-memory backend with the same semantics as the Rust commands: the sidecar
+// write refuses a thread with no thread.json unless `create` is set.
+function makeBackend(opts: { failNext?: { cmd: string; times: number } } = {}) {
+  const settings = new Map<string, string>()
+  const threads = new Map<string, Json>()
+  const extras = new Map<string, any>()
+  const log: string[] = []
+  // The derived messages.jsonl per thread, and a switch to fail its writes.
+  const logs = new Map<string, any[]>()
+  const messageFailure: { error: unknown } = { error: null }
+  let failure = opts.failNext
+  const invoke = async (cmd: string, args: Record<string, any> = {}) => {
+    log.push(cmd === 'write_thread_extra' ? `${cmd}:${args.threadId}` : cmd)
+    if (failure && failure.cmd === cmd && failure.times > 0) {
+      failure.times -= 1
+      throw new Error(`${cmd} failed`)
+    }
+    switch (cmd) {
+      case 'settings_get':
+        return settings.get(args.key) ?? null
+      case 'settings_set':
+        settings.set(args.key, args.value)
+        return
+      case 'settings_flush':
+        return
+      case 'settings_remove':
+        settings.delete(args.key)
+        return
+      case 'list_threads':
+        return [...threads.values()].map((t) => JSON.parse(JSON.stringify(t)))
+      case 'write_thread_extra':
+        if (!args.create && !threads.has(args.threadId)) {
+          throw new Error("thread_missing: Thread has no thread.json")
+        }
+        extras.set(args.threadId, JSON.parse(JSON.stringify(args.value)))
+        return
+      case 'replace_thread_messages': {
+        if (!args.create && !threads.has(args.threadId)) {
+          throw new Error('thread_missing: Thread has no thread.json')
+        }
+        if (messageFailure.error) throw messageFailure.error
+        logs.set(args.threadId, JSON.parse(JSON.stringify(args.messages)))
+        return
+      }
+      case 'read_thread_extra':
+        return extras.get(args.threadId) ?? null
+      case 'list_messages':
+        return JSON.parse(JSON.stringify(logs.get(args.threadId) ?? []))
+      case 'create_thread': {
+        const existing = threads.get(args.thread.id)
+        if (existing) return existing
+        threads.set(args.thread.id, JSON.parse(JSON.stringify(args.thread)))
+        return args.thread
+      }
+      case 'modify_thread':
+        threads.set(args.thread.id, JSON.parse(JSON.stringify(args.thread)))
+        return
+      case 'delete_thread':
+        threads.delete(args.threadId)
+        extras.delete(args.threadId)
+        logs.delete(args.threadId)
+        return
+      default:
+        throw new Error(`unexpected ${cmd}`)
+    }
+  }
+  // The transcript as the loader resolves it: carried by messages.jsonl, else
+  // a v1 sidecar's own arrays, else (v2) empty.
+  const stored = (id: string) =>
+    transcriptFromThreadMessages(logs.get(id) ?? []) ??
+    (extras.get(id)?.version === 1 ? extras.get(id) : { turns: [], messages: [] })
+  return { invoke: invoke as any, settings, threads, extras, log, logs, messageFailure, stored }
+}
+
+const session = (id: string, extra: Json = {}): any => ({
+  id,
+  title: 'T ' + id,
+  model: { id: 'gpt', provider: 'openai' },
+  folder: '/proj',
+  turns: [{ role: 'user', content: 'hi' }],
+  messages: [{ id: 'm', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+  updated: 1_700_000_000_000,
+  ...extra,
+})
+
+describe('coworkPersistence write protocol', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    vi.useFakeTimers()
+    b = makeBackend()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('debounces: many schedules for a session produce one write of the latest snapshot', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 100 })
+    p.schedule(session('a', { title: 'one' }))
+    p.schedule(session('a', { title: 'two' }))
+    p.schedule(session('a', { title: 'three' }))
+    await vi.advanceTimersByTimeAsync(150)
+    await p.flush()
+    expect(b.log.filter((c) => c === 'create_thread')).toHaveLength(1)
+    expect(b.threads.get('a')!.title).toBe('three')
+  })
+
+  it('first commit is sidecar first, thread.json last', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.schedule(session('a'))
+    await p.flush()
+    expect(b.log.indexOf('write_thread_extra:a')).toBeLessThan(b.log.indexOf('create_thread'))
+    expect(b.threads.get('a')!.metadata.mode).toBe('cowork')
+  })
+
+  it('writes only the changed session', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.schedule(session('a'))
+    p.schedule(session('b'))
+    await p.flush()
+    b.log.length = 0
+    p.schedule(session('a', { title: 'changed' }))
+    await p.flush()
+    expect(b.log).not.toContain('write_thread_extra:b')
+    expect(b.log).toContain('write_thread_extra:a')
+  })
+
+  it('never writes a new empty session, but does write a persisted one that became empty', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.schedule(session('a', { turns: [], messages: [] }))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(false)
+
+    p.schedule(session('a'))
+    await p.flush()
+    expect(b.stored('a').turns).toHaveLength(1)
+
+    p.schedule(session('a', { turns: [], messages: [] })) // /clear
+    await p.flush()
+    expect(b.stored('a').turns).toHaveLength(0)
+  })
+
+  it('a cleared session is a used session: written even if never persisted, and it rehydrates as cleared and listed', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    // Used then cleared inside the debounce window: no prior write exists.
+    p.schedule(session('a', { title: 'Kept title', turns: [], messages: [], cleared: true }))
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(true)
+    expect(b.threads.get('a')!.title).toBe('Kept title')
+    expect(b.threads.get('a')!.metadata.cleared).toBe(true)
+    const back = sessionFromThread(b.threads.get('a'), { ...b.extras.get('a'), ...b.stored('a') })
+    expect(back).toMatchObject({ id: 'a', title: 'Kept title', cleared: true, turns: [], messages: [] })
+    // A blank placeholder carries no marker and is still not written.
+    p.schedule(session('blank', { turns: [], messages: [] }))
+    await p.flush()
+    expect(b.threads.has('blank')).toBe(false)
+  })
+
+  it('explicitly writes an empty new session only when allowEmpty is set', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: false })
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(false)
+
+    p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: true })
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(true)
+    expect(b.threads.get('a')!.metadata.mode).toBe('cowork')
+    expect(b.stored('a').turns).toHaveLength(0)
+  })
+
+  it('a failed write keeps the session dirty and retries', async () => {
+    b = makeBackend({ failNext: { cmd: 'create_thread', times: 1 } })
+    const onError = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10, retryMs: 50, onError })
+    p.schedule(session('a'))
+    await vi.advanceTimersByTimeAsync(20)
+    await Promise.resolve()
+    expect(onError).toHaveBeenCalled()
+    expect(b.threads.has('a')).toBe(false)
+    await vi.advanceTimersByTimeAsync(100)
+    await p.flush()
+    expect(b.threads.has('a')).toBe(true)
+  })
+
+  it.each(['write_thread_extra', 'create_thread', 'modify_thread'])(
+    'rejects flush after bounded %s failures and recovers the latest snapshot',
+    async (cmd) => {
+      const failure = { cmd, times: 0 }
+      b = makeBackend({ failNext: failure })
+      const onError = vi.fn()
+      const p = createCoworkPersistence(b.invoke, { onError, retryMs: 50 })
+      if (cmd === 'modify_thread') {
+        p.schedule(session('a'))
+        await p.flush()
+      }
+      failure.times = 6
+      p.schedule(session('a', { title: 'unsaved' }))
+      await expect(p.flush()).rejects.toThrow('pending writes: a')
+      expect(onError).toHaveBeenCalledTimes(3)
+      await expect(p.flush()).rejects.toThrow('pending writes: a')
+      expect(onError).toHaveBeenCalledTimes(6)
+      p.schedule(session('a', { title: 'latest' }))
+      await p.flush()
+      expect(b.threads.get('a')!.title).toBe('latest')
+      expect(b.stored('a').messages).toEqual(session('a').messages)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(onError).toHaveBeenCalledTimes(6)
+    }
+  )
+
+  it('counts failures from an already in-flight write and rejects instead of losing dirty work', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const onError = vi.fn()
+    let failing = true
+    const p = createCoworkPersistence(async (cmd, args) => {
+      if (cmd === 'write_thread_extra' && failing) {
+        await gate
+        throw new Error('disk full')
+      }
+      return b.invoke(cmd, args)
+    }, { debounceMs: 10, onError })
+    p.schedule(session('a'))
+    await vi.advanceTimersByTimeAsync(10)
+    const flushed = expect(p.flush()).rejects.toThrow('pending writes: a')
+    release()
+    await flushed
+    expect(onError).toHaveBeenCalledTimes(3)
+    failing = false
+    await p.flush()
+    expect(b.threads.get('a')!.title).toBe('T a')
+  })
+
+  it('retains a failed snapshot for automatic background recovery after rejected flush', async () => {
+    b = makeBackend({ failNext: { cmd: 'write_thread_extra', times: 3 } })
+    const p = createCoworkPersistence(b.invoke, { retryMs: 50 })
+    p.schedule(session('a'))
+    await expect(p.flush()).rejects.toThrow('pending writes: a')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(b.threads.get('a')!.title).toBe('T a')
+    await p.flush()
+  })
+
+  it.each(['settings_set', 'settings_remove'])(
+    'rejects flush after bounded current-id %s failures and retries without a new selection',
+    async (cmd) => {
+      b = makeBackend({ failNext: { cmd, times: 3 } })
+      b.settings.set(COWORK_CURRENT_ID_KEY, 'old')
+      const onError = vi.fn()
+      const p = createCoworkPersistence(b.invoke, { onError })
+      p.setCurrentId(cmd === 'settings_set' ? 'new' : null)
+      await expect(p.flush()).rejects.toThrow('pending writes: current-id')
+      expect(onError).toHaveBeenCalledTimes(3)
+      expect(onError).toHaveBeenLastCalledWith('current-id', expect.any(Error))
+      expect(b.settings.get(COWORK_CURRENT_ID_KEY)).toBe('old')
+      await p.flush()
+      expect(b.settings.get(COWORK_CURRENT_ID_KEY)).toBe(cmd === 'settings_set' ? 'new' : undefined)
+    }
+  )
+
+  it('flush writes pending work immediately without waiting for the debounce', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 60_000 })
+    p.schedule(session('a'))
+    expect(b.threads.has('a')).toBe(false)
+    await p.flush()
+    expect(b.threads.has('a')).toBe(true)
+  })
+
+  it('a mutation during an in-flight write is written after it, in order', async () => {
+    const order: string[] = []
+    const slow = async (cmd: string, args: any) => {
+      if (cmd === 'replace_thread_messages') {
+        await new Promise((r) => setTimeout(r, 50))
+        order.push(`log:${transcriptFromThreadMessages(args.messages)!.turns.length}`)
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(slow as any, { debounceMs: 5 })
+    p.schedule(session('a'))
+    await vi.advanceTimersByTimeAsync(10) // first write now in flight
+    p.schedule(session('a', { turns: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] }))
+    const done = p.flush()
+    await vi.advanceTimersByTimeAsync(500)
+    await done
+    expect(order).toEqual(['log:1', 'log:2'])
+    expect(b.stored('a').turns).toHaveLength(2)
+  })
+
+  it('delete cancels a pending write and drops late writes (no resurrection)', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 100 })
+    p.schedule(session('a'))
+    await p.flush()
+    p.schedule(session('a', { title: 'pending edit' }))
+    await p.remove('a')
+    p.schedule(session('a', { title: 'late edit' }))
+    await vi.advanceTimersByTimeAsync(500)
+    await p.flush()
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+  })
+
+  it('delete during an in-flight write drains it first, then removes the thread', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const gated = async (cmd: string, args: any) => {
+      if (cmd === 'write_thread_extra') await gate
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(gated as any, { debounceMs: 5 })
+    p.schedule(session('a'))
+    await vi.advanceTimersByTimeAsync(10)
+    const removed = p.remove('a')
+    release()
+    await vi.advanceTimersByTimeAsync(10)
+    await removed
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+  })
+
+  it('records a deleted id on disk before deleting the thread, so the legacy blob cannot resurrect it', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
+    p.schedule(session('a'))
+    await p.flush()
+    await p.remove('a', { recordDeleted: true })
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
+    // settings_set alone only reaches a debounced in-memory map; a crash
+    // between it and delete_thread would lose the journal.
+    const order = b.log.filter((cmd) => ['settings_set', 'settings_flush', 'delete_thread'].includes(cmd))
+    expect(order).toEqual(['settings_set', 'settings_flush', 'delete_thread'])
+  })
+
+  it('serializes the shared deletion journal for concurrent removals', async () => {
+    const p = createCoworkPersistence(b.invoke)
+    await Promise.all([p.remove('a', { recordDeleted: true }), p.remove('b', { recordDeleted: true })])
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!).sort()).toEqual(['a', 'b'])
+  })
+
+  it('rolls back failed deletion intent so a legacy-only session survives rehydration', async () => {
+    b = makeBackend({ failNext: { cmd: 'delete_thread', times: 1 } })
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: [session('a')] }, version: 1,
+    }))
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete_thread failed')
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
+    // No retry write has persisted a thread before this simulated restart.
+    expect(b.threads.has('a')).toBe(false)
+    const loaded = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(loaded.sessions.map((s) => s.id)).toEqual(['a'])
+    expect([...loaded.legacyIds]).toEqual(['a'])
+    p.schedule(session('a', { title: 'still editable' }), { legacy: true })
+    await p.flush()
+    expect(b.threads.get('a')!.title).toBe('still editable')
+  })
+
+  it('retries transient rollback failure before rejecting so immediate legacy hydration recovers', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: [session('a')] }, version: 1,
+    }))
+    let rollbackAttempts = 0
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]') {
+        if (++rollbackAttempts === 1) throw new Error('rollback failed')
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete failed')
+    expect(rollbackAttempts).toBe(2)
+    expect(b.threads.has('a')).toBe(false)
+    const loaded = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(loaded.sessions.map((s) => s.id)).toEqual(['a'])
+    expect([...loaded.legacyIds]).toEqual(['a'])
+  })
+
+  it('retries a failed rollback read without erasing unrelated deletion markers', async () => {
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other']))
+    let rollbackReads = 0
+    let deleting = false
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') {
+        deleting = true
+        throw new Error('delete failed')
+      }
+      if (deleting && cmd === 'settings_get' && args.key === COWORK_DELETED_IDS_KEY) {
+        if (++rollbackReads === 1) throw new Error('read failed')
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete failed')
+    expect(rollbackReads).toBe(2)
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['other'])
+    expect(b.log.filter((cmd) => cmd === 'settings_set')).toHaveLength(2)
+  })
+
+  it.each(['{invalid', '{}', 'null', '["other", 42]', ''])(
+    'does not overwrite invalid journal %j during rollback and reports pending recovery',
+    async (raw) => {
+      b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other']))
+      const invoke = async (cmd: string, args: any) => {
+        if (cmd === 'delete_thread') {
+          b.settings.set(COWORK_DELETED_IDS_KEY, raw)
+          throw new Error('delete failed')
+        }
+        return b.invoke(cmd, args)
+      }
+      const p = createCoworkPersistence(invoke as any)
+      await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+      await expect(p.flush()).rejects.toThrow()
+      expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(raw)
+      expect(b.log.filter((cmd) => cmd === 'settings_set')).toHaveLength(1)
+      b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other', 'a']))
+      await p.flush()
+      expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['other'])
+    }
+  )
+
+  it('does not erase existing markers or delete files when the intent read fails', async () => {
+    b = makeBackend({ failNext: { cmd: 'settings_get', times: 1 } })
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other']))
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('settings_get failed')
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('["other"]')
+    expect(b.log).not.toContain('settings_set')
+    expect(b.log).not.toContain('delete_thread')
+    await p.remove('a', { recordDeleted: true })
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['other', 'a'])
+  })
+
+  it.each(['{invalid', '{}', 'null', '["other", 42]', ''])(
+    'rejects invalid journal %j before recording intent or deleting files',
+    async (raw) => {
+      b.settings.set(COWORK_DELETED_IDS_KEY, raw)
+      const p = createCoworkPersistence(b.invoke)
+      await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow()
+      expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(raw)
+      expect(b.log).not.toContain('settings_set')
+      expect(b.log).not.toContain('delete_thread')
+    }
+  )
+
+  it('surfaces persistent rollback failure, retains compensation for bounded flush retry and queued edits', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: [session('a')] }, version: 1,
+    }))
+    let broken = true
+    let rollbackAttempts = 0
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]') {
+        rollbackAttempts++
+        if (broken) throw new Error('rollback failed')
+      }
+      return b.invoke(cmd, args)
+    }
+    const onError = vi.fn()
+    const p = createCoworkPersistence(invoke as any, { onError })
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+    expect(onError).toHaveBeenCalledWith('a', expect.objectContaining({ message: expect.stringContaining('rollback failed') }))
+    expect(rollbackAttempts).toBe(3)
+    // The sync catch restores this snapshot; it must not be silently discarded.
+    p.schedule(session('a', { title: 'restored edit' }), { legacy: true })
+    await expect(p.flush()).rejects.toThrow('rollback failed')
+    expect(rollbackAttempts).toBe(6)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(rollbackAttempts).toBe(6)
+    expect(b.threads.has('a')).toBe(false)
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
+    // Disk is still broken: do not pretend this is restart-safe recovery.
+    expect((await loadCoworkSessions(b.invoke, { migrationSettled: false })).sessions).toEqual([])
+    broken = false
+    await p.flush()
+    expect(rollbackAttempts).toBe(7)
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
+    expect(b.threads.get('a')!.title).toBe('restored edit')
+    expect((await loadCoworkSessions(b.invoke, { migrationSettled: false })).sessions.map((s) => s.id)).toEqual(['a'])
+    await p.flush()
+    expect(rollbackAttempts).toBe(7)
+  })
+
+  it('flushSession drains only the target: unrelated dirty failures and current-id never block or run', async () => {
+    let brokenOther = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'write_thread_extra' && args.threadId === 'other' && brokenOther) throw new Error('other failed')
+      if (cmd === 'settings_set' && args.key === COWORK_CURRENT_ID_KEY) throw new Error('current-id failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10, retryMs: 1_000_000 })
+    p.setCurrentId('other')
+    p.schedule(session('other'))
+    p.schedule(session('target', { turns: [], messages: [] }), { allowEmpty: true })
+    b.log.length = 0
+    await expect(p.flushSession('target')).resolves.toBeUndefined()
+    expect(p.isPersisted('target')).toBe(true)
+    expect(p.isPersisted('other')).toBe(false)
+    expect(b.log).not.toContain('write_thread_extra:other')
+    expect(b.log).not.toContain('settings_set')
+    // The unrelated failure is still pending for a full flush.
+    await expect(p.flush()).rejects.toThrow()
+    brokenOther = false
+  })
+
+  it('flushSession fails closed when the target write fails, keeping it dirty for retry', async () => {
+    let broken = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'write_thread_extra' && args.threadId === 'target' && broken) throw new Error('target failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10, retryMs: 1_000_000 })
+    p.schedule(session('target'))
+    await expect(p.flushSession('target')).rejects.toThrow('pending writes: target')
+    expect(p.isPersisted('target')).toBe(false)
+    broken = false
+    await expect(p.flushSession('target')).resolves.toBeUndefined()
+    expect(p.isPersisted('target')).toBe(true)
+  })
+
+  it('flushSession respects a pending rollback of the same id and ignores other ids', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({ state: { sessions: [session('a')] }, version: 1 }))
+    let broken = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]' && broken) throw new Error('rollback failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10 })
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+    p.schedule(session('a', { title: 'restored' }), { legacy: true })
+    await expect(p.flushSession('a')).rejects.toThrow('rollback failed')
+    expect(b.threads.has('a')).toBe(false)
+    // An unrelated id does not retry the pending rollback of 'a'.
+    await expect(p.flushSession('zzz')).resolves.toBeUndefined()
+    broken = false
+    await expect(p.flushSession('a')).resolves.toBeUndefined()
+    expect(b.threads.get('a')!.title).toBe('restored')
+  })
+
+  it('flushSession on an already durable clean id makes no storage call and schedules no write', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.adopt([{ id: 'a' }])
+    b.log.length = 0
+    await expect(p.flushSession('a')).resolves.toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(b.log).toEqual([])
+  })
+
+  it('flushSession denies the same id while its deletion is in flight and after it completes', async () => {
+    let releaseDelete!: () => void
+    const gate = new Promise<void>((resolve) => (releaseDelete = resolve))
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') await gate
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10 })
+    p.schedule(session('a'))
+    await p.flushSession('a')
+    expect(p.isPersisted('a')).toBe(true)
+    const removal = p.remove('a')
+    await expect(p.flushSession('a')).rejects.toThrow('being deleted')
+    // Another session is unaffected.
+    await expect(p.flushSession('other')).resolves.toBeUndefined()
+    releaseDelete()
+    await removal
+    await expect(p.flushSession('a')).rejects.toThrow('being deleted')
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('flushSession rejects a target whose thread the host confirmed missing', async () => {
+    const onThreadMissing = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10, onThreadMissing })
+    p.adopt([{ id: 'gone' }]) // adopted, but no thread.json on disk
+    p.schedule(session('gone'))
+    await expect(p.flushSession('gone')).rejects.toThrow('thread is missing')
+    expect(onThreadMissing).toHaveBeenCalledOnce()
+    expect(b.threads.has('gone')).toBe(false)
+  })
+
+  it('a failed deletion with failed rollback still blocks flushSession of a durable id until rollback settles', async () => {
+    let broken = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]' && broken) throw new Error('rollback failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10 })
+    p.schedule(session('a'))
+    await p.flushSession('a')
+    expect(p.isPersisted('a')).toBe(true) // durable and clean
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+    expect(p.isPersisted('a')).toBe(true) // still durable, deletion intent still journaled
+    await expect(p.flushSession('a')).rejects.toThrow('rollback failed')
+    broken = false
+    await expect(p.flushSession('a')).resolves.toBeUndefined()
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
+  })
+
+  it('rollback preserves concurrent deletion intent and successful deletes cannot resurrect', async () => {
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['already-deleted']))
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: ['a', 'b', 'already-deleted'].map((id) => session(id)) }, version: 1,
+    }))
+    let rejectDelete!: (e: Error) => void
+    let started!: () => void
+    const deleting = new Promise<void>((resolve) => (started = resolve))
+    const gate = new Promise<void>((_resolve, reject) => (rejectDelete = reject))
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread' && args.threadId === 'a') {
+        started()
+        await gate
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any)
+    const failed = expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete failed')
+    await deleting
+    await p.remove('b', { recordDeleted: true })
+    rejectDelete(new Error('delete failed'))
+    await failed
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!).sort()).toEqual(['already-deleted', 'b'])
+    p.schedule(session('b', { title: 'late edit' }))
+    await p.flush()
+    expect(b.threads.has('b')).toBe(false)
+    const loaded = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(loaded.sessions.map((s) => s.id)).toEqual(['a'])
+  })
+
+  it('does not roll back a pre-existing legitimate deletion marker', async () => {
+    b = makeBackend({ failNext: { cmd: 'delete_thread', times: 1 } })
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['a', 'other']))
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete_thread failed')
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a', 'other'])
+  })
+
+  it('keeps deletion intent if notification fails after the backend has deleted the thread', async () => {
+    const p = createCoworkPersistence(b.invoke, {
+      onThreadRemoved: () => { throw new Error('notification failed') },
+    })
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('notification failed')
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
+  })
+
+  it('does not delete files when journaling fails and the journal queue remains usable', async () => {
+    b = makeBackend({ failNext: { cmd: 'settings_set', times: 1 } })
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('settings_set failed')
+    expect(b.log).not.toContain('delete_thread')
+    await p.remove('b', { recordDeleted: true })
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['b'])
+  })
+
+  it('keeps the thread when the journal cannot be written to disk', async () => {
+    b = makeBackend({ failNext: { cmd: 'settings_flush', times: 1 } })
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('settings_flush failed')
+    expect(b.log).not.toContain('delete_thread')
+    // The unflushed intent is rolled back, so the session is not hidden either.
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
+  })
+
+  it('a failed deletion is surfaced and does not permanently block session writes', async () => {
+    b = makeBackend({ failNext: { cmd: 'delete_thread', times: 1 } })
+    const p = createCoworkPersistence(b.invoke)
+    p.schedule(session('a'))
+    await p.flush()
+    await expect(p.remove('a')).rejects.toThrow('delete_thread failed')
+    p.schedule(session('a', { title: 'still editable' }))
+    await p.flush()
+    expect(b.threads.get('a')!.title).toBe('still editable')
+  })
+
+  it('deleting a collision placeholder never deletes or unlists the unrelated chat', async () => {
+    b.threads.set('collision', { id: 'collision', title: 'Original chat' })
+    const onRemoved = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { onThreadRemoved: onRemoved })
+    await p.remove('collision', { preserveThread: true, recordDeleted: true })
+    expect(b.threads.get('collision')!.title).toBe('Original chat')
+    expect(onRemoved).not.toHaveBeenCalled()
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toContain('collision')
+  })
+
+  it('settles without endless retry when the thread directory is permanently missing', async () => {
+    const onThreadMissing = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('a'))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(true)
+    // Out-of-band deletion of the thread directory.
+    b.threads.delete('a')
+    b.extras.delete('a')
+    p.schedule(session('a', { title: 'edited' }))
+    await expect(p.flush()).resolves.toBeUndefined()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    expect(onThreadMissing.mock.calls[0][0]).toBe('a')
+    expect(onThreadMissing.mock.calls[0][1].title).toBe('edited')
+    const writes = () => b.log.filter((l) => l === 'write_thread_extra:a').length
+    const before = writes()
+    await vi.advanceTimersByTimeAsync(1000)
+    await p.flush()
+    expect(writes()).toBe(before)
+    // Never resurrected by the failed write or later retries.
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+  })
+
+  it('does not treat a transient disk failure as a missing thread', async () => {
+    const onThreadMissing = vi.fn()
+    b = makeBackend({ failNext: { cmd: 'write_thread_extra', times: 3 } })
+    const q = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    q.schedule(session('t'))
+    await expect(q.flush()).rejects.toThrow(/pending writes: t/)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    await q.flush()
+    expect(b.threads.has('t')).toBe(true)
+    expect(b.extras.has('t')).toBe(true)
+  })
+
+  it('a missing-thread error from an in-flight write while a deletion is pending keeps tombstone semantics (no unavailable, no recreate)', async () => {
+    const onThreadMissing = vi.fn()
+    let entered!: () => void
+    const enteredP = new Promise<void>((r) => (entered = r))
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let gatingArmed = false
+    let gatedOnce = false
+    // Real Tauri rejection shape: a plain string, not an Error.
+    const gated = (async (cmd: string, args: Record<string, any> = {}) => {
+      if (cmd === 'write_thread_extra' && args.threadId === 'a' && gatingArmed && !gatedOnce) {
+        gatedOnce = true
+        entered()
+        await gate
+        b.threads.delete('a')
+        b.extras.delete('a')
+        throw 'thread_missing: Thread has no thread.json'
+      }
+      return b.invoke(cmd, args)
+    }) as any
+    const onThreadRemoved = vi.fn()
+    const p = createCoworkPersistence(gated, { debounceMs: 5, retryMs: 50, onThreadMissing, onThreadRemoved })
+    p.schedule(session('a'))
+    await p.flush()
+    gatingArmed = true // arm only after the initial persist
+    p.schedule(session('a', { title: 'late' }))
+    await vi.advanceTimersByTimeAsync(10)
+    await enteredP // the write is now genuinely in flight
+    const removal = p.remove('a')
+    release()
+    await removal
+    await p.flush()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    expect(onThreadRemoved).toHaveBeenCalledWith('a')
+    expect(b.log).toContain('delete_thread')
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+    // No write after the in-flight one failed (no retry, no recreate).
+    expect(b.log.filter((l) => l === 'write_thread_extra:a')).toHaveLength(1)
+    // And the tombstone still blocks a stale snapshot.
+    p.schedule(session('a', { title: 'stale' }))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('a late flush after delete never recreates the sidecar or thread', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.schedule(session('a'))
+    await p.flush()
+    p.schedule(session('a', { title: 'late' }))
+    await p.remove('a')
+    b.log.length = 0
+    await p.flush()
+    await vi.advanceTimersByTimeAsync(1000)
+    p.schedule(session('a', { title: 'later' }), { allowEmpty: true })
+    await p.flush()
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toEqual([])
+    expect(b.extras.has('a')).toBe(false)
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('a first write queued behind the tombstone does not create the sidecar (create: true)', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.schedule(session('n'))
+    await vi.advanceTimersByTimeAsync(10) // write dispatched, never persisted before remove
+    await p.remove('n')
+    await p.flush()
+    expect(b.extras.has('n')).toBe(false)
+    expect(b.threads.has('n')).toBe(false)
+  })
+
+  it('isMissingThreadError accepts only the host code, as a string, Error or {message}', () => {
+    expect(isMissingThreadError('thread_missing: x')).toBe(true)
+    expect(isMissingThreadError(new Error('thread_missing: x'))).toBe(true)
+    expect(isMissingThreadError({ message: 'thread_missing: x' })).toBe(true)
+    // Not the typed code: stays on the retry path.
+    expect(isMissingThreadError('Error: thread_missing: x')).toBe(false)
+    expect(isMissingThreadError('thread_missing')).toBe(false)
+    expect(isMissingThreadError('write failed: thread_missing: x')).toBe(false)
+    expect(isMissingThreadError('disk full')).toBe(false)
+    expect(isMissingThreadError({ message: 42 })).toBe(false)
+    expect(isMissingThreadError({ code: 'thread_missing' })).toBe(false)
+    expect(isMissingThreadError(null)).toBe(false)
+    expect(isMissingThreadError(undefined)).toBe(false)
+    expect(isMissingThreadError(42)).toBe(false)
+  })
+
+  it.each([
+    ['a plain string (real Tauri rejection)', () => 'thread_missing: gone'],
+    ['an {message} object', () => ({ message: 'thread_missing: gone' })],
+    ['an Error', () => new Error('thread_missing: gone')],
+  ])('settles as missing when the host rejects with %s', async (_label, make) => {
+    const onThreadMissing = vi.fn()
+    let failing = false
+    const inv = (async (cmd: string, args: Record<string, any> = {}) => {
+      if (failing && cmd === 'write_thread_extra') throw make()
+      return b.invoke(cmd, args)
+    }) as any
+    const p = createCoworkPersistence(inv, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('a'))
+    await p.flush()
+    failing = true
+    p.schedule(session('a', { title: 'edited' }))
+    await expect(p.flush()).resolves.toBeUndefined()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    const before = b.log.filter((l) => l === 'write_thread_extra:a').length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(b.log.filter((l) => l === 'write_thread_extra:a').length).toBe(before)
+  })
+
+  it('a non-prefixed string rejection stays on the retry path', async () => {
+    const onThreadMissing = vi.fn()
+    let failing = true
+    const inv = (async (cmd: string, args: Record<string, any> = {}) => {
+      if (failing && cmd === 'write_thread_extra') throw 'disk full'
+      return b.invoke(cmd, args)
+    }) as any
+    const p = createCoworkPersistence(inv, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('t'))
+    await expect(p.flush()).rejects.toThrow(/pending writes: t/)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    failing = false
+    await p.flush()
+    expect(b.threads.has('t')).toBe(true)
+  })
+
+  it('a session flagged missing can still be deleted: remove resolves and notifies', async () => {
+    const onThreadMissing = vi.fn()
+    const onThreadRemoved = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing, onThreadRemoved })
+    p.schedule(session('a'))
+    await p.flush()
+    b.threads.delete('a')
+    b.extras.delete('a')
+    p.schedule(session('a', { title: 'edited' }))
+    await p.flush()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    await expect(p.remove('a')).resolves.toBeUndefined()
+    expect(onThreadRemoved).toHaveBeenCalledWith('a')
+    expect(b.log).toContain('delete_thread')
+    expect(p.isPersisted('a')).toBe(false)
+    // No resurrection after the removal.
+    p.schedule(session('a', { title: 'stale' }))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('never writes sessions flagged unavailable (files are preserved)', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
+    p.schedule(session('a', { unavailable: 'unreadable-sidecar' }))
+    await p.flush()
+    expect(b.log).not.toContain('create_thread')
+    expect(b.log).not.toContain('write_thread_extra:a')
+  })
+
+  it('stamps migratedFrom on legacy-sourced first writes', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
+    p.schedule(session('a'), { legacy: true })
+    await p.flush()
+    expect(b.threads.get('a')!.metadata.migratedFrom.store).toBe(CODE_SESSIONS_KEY)
+  })
+
+  it('a thread that already exists on disk is updated, not duplicated, and keeps its metadata', async () => {
+    b.threads.set('a', {
+      id: 'a',
+      created: 5,
+      assistants: [{ id: 'model-only', name: 'Model', model: { id: 'x', engine: 'y' } }],
+      metadata: { mode: 'cowork', is_favorite: true, order: 3 },
+    })
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
+    p.schedule(session('a', { title: 'renamed' }))
+    await p.flush()
+    const t = b.threads.get('a')!
+    expect(t.title).toBe('renamed')
+    expect(t.created).toBe(5)
+    expect(t.metadata.is_favorite).toBe(true)
+    expect(t.metadata.order).toBe(3)
+  })
+
+  it('persists the current id and clears it with null', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
+    p.setCurrentId('a')
+    await p.flush()
+    expect(b.settings.get(COWORK_CURRENT_ID_KEY)).toBe('a')
+    p.setCurrentId(null)
+    await p.flush()
+    expect(b.settings.has(COWORK_CURRENT_ID_KEY)).toBe(false)
+  })
+})
+
+describe('thread record mapping', () => {
+  it('round-trips a session through the thread record (model, folder, plan mode, seconds)', () => {
+    const s = session('a', { planMode: true })
+    const rec = sessionToThreadRecord(s)
+    expect(rec.assistants[0].model).toEqual({ id: 'gpt', engine: 'openai' })
+    expect(rec.updated).toBe(1_700_000_000)
+    const back = sessionFromThread(rec, {
+      version: 1,
+      turns: s.turns,
+      messages: s.messages,
+    })
+    expect(back.model).toEqual({ id: 'gpt', provider: 'openai' })
+    expect(back.folder).toBe('/proj')
+    expect(back.planMode).toBe(true)
+    expect(back.updated).toBe(1_700_000_000_000)
+  })
+
+  it('does not rewrite created and drops cleared plan mode / goal', () => {
+    const rec = sessionToThreadRecord(session('a'), {
+      id: 'a',
+      created: 9,
+      metadata: { mode: 'cowork', planMode: true, goal: { condition: 'x' } },
+    })
+    expect(rec.created).toBe(9)
+    expect(rec.metadata.planMode).toBeUndefined()
+    expect(rec.metadata.goal).toBeUndefined()
+  })
+})
+
+describe('loadCoworkSessions', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    b = makeBackend()
+  })
+  const commit = (id: string, extra: Json = {}) => {
+    b.threads.set(id, { ...sessionToThreadRecord(session(id, extra)) })
+    b.extras.set(id, { version: 1, turns: session(id).turns, messages: session(id).messages })
+  }
+
+  it('loads cowork threads only, newest first, and ignores chat threads', async () => {
+    commit('old', { updated: 1_600_000_000_000 })
+    commit('new', { updated: 1_700_000_000_000 })
+    b.threads.set('chat', { id: 'chat', metadata: {} })
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    expect(r.sessions.map((s) => s.id)).toEqual(['new', 'old'])
+  })
+
+  it('shows a session with a corrupt or missing sidecar as unavailable instead of hiding it', async () => {
+    commit('ok')
+    b.threads.set('bad', sessionToThreadRecord(session('bad')))
+    const broken = async (cmd: string, args: any) => {
+      if (cmd === 'read_thread_extra' && args.threadId === 'bad') throw new Error('corrupt')
+      return b.invoke(cmd, args)
+    }
+    b.threads.set('gone', sessionToThreadRecord(session('gone')))
+    const r = await loadCoworkSessions(broken as any, { migrationSettled: true })
+    expect(r.sessions.find((s) => s.id === 'bad')!.unavailable).toBe('unreadable-sidecar')
+    expect(r.sessions.find((s) => s.id === 'gone')!.unavailable).toBe('missing-sidecar')
+    expect(r.sessions.find((s) => s.id === 'ok')!.unavailable).toBeUndefined()
+  })
+
+  it('while the migration is unsettled, adds sessions only in the legacy blob', async () => {
+    commit('migrated')
+    b.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [session('migrated'), session('only-legacy')] }, version: 1 })
+    )
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.sessions.map((s) => s.id).sort()).toEqual(['migrated', 'only-legacy'])
+    expect([...r.legacyIds]).toEqual(['only-legacy'])
+  })
+
+  it('does not read the legacy blob once the migration is settled', async () => {
+    b.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [session('x')] }, version: 1 })
+    )
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    expect(r.sessions).toHaveLength(0)
+  })
+
+  it('honours deleted ids and flags an id collision with a chat thread as unavailable', async () => {
+    b.threads.set('chat-id', { id: 'chat-id', metadata: {} })
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['deleted']))
+    b.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({
+        state: { sessions: [session('deleted'), session('chat-id'), session('fine')] },
+        version: 1,
+      })
+    )
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    const ids = r.sessions.map((s) => s.id).sort()
+    expect(ids).toEqual(['chat-id', 'fine'])
+    expect(r.sessions.find((s) => s.id === 'chat-id')!.unavailable).toBe('id-collision')
+  })
+
+  it('resumes the saved current id only if that session still exists', async () => {
+    commit('a')
+    b.settings.set(COWORK_CURRENT_ID_KEY, 'a')
+    expect((await loadCoworkSessions(b.invoke, { migrationSettled: true })).currentId).toBe('a')
+    b.settings.set(COWORK_CURRENT_ID_KEY, 'zzz')
+    expect((await loadCoworkSessions(b.invoke, { migrationSettled: true })).currentId).toBeNull()
+  })
+
+  it.each(['{corrupt', JSON.stringify([42])])(
+    'a corrupt deletion journal (%j) skips the legacy merge and overwrites nothing',
+    async (journal) => {
+      commit('committed')
+      b.settings.set(COWORK_DELETED_IDS_KEY, journal)
+      b.settings.set(
+        CODE_SESSIONS_KEY,
+        JSON.stringify({ state: { sessions: [session('was-deleted')] }, version: 1 })
+      )
+      const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+      // Deletion intent is unreadable, so the blob must not be merged (fail
+      // closed against resurrection) - but committed threads still load.
+      expect(r.sessions.map((s) => s.id)).toEqual(['committed'])
+      expect(r.legacyIds.size).toBe(0)
+      // The unreadable journal itself is never replaced or rewritten by a load.
+      expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(journal)
+      // The hidden state is surfaced to the caller, never swallowed silently.
+      expect(r.deletionJournalError).toBeTruthy()
+    }
+  )
+
+  it('does not report a journal error on a healthy load', async () => {
+    commit('committed')
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.deletionJournalError).toBeUndefined()
+  })
+
+  it.each([
+    ['no legacy blob', undefined],
+    [
+      'nothing mergeable in the blob',
+      // Already committed + empty: nothing the journal could protect.
+      JSON.stringify({
+        state: { sessions: [session('committed'), session('empty', { turns: [], messages: [] })] },
+        version: 1,
+      }),
+    ],
+  ])('a corrupt journal with %s raises no false journal error', async (_name, blob) => {
+    commit('committed')
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    if (blob) b.settings.set(CODE_SESSIONS_KEY, blob)
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.deletionJournalError).toBeUndefined()
+    expect(r.sessions.map((s) => s.id)).toEqual(['committed'])
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+})
+
+describe('sidecar version/shape containment', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    b = makeBackend()
+  })
+  const seed = (id: string, sidecar: any) => {
+    b.threads.set(id, { ...sessionToThreadRecord(session(id)) })
+    b.extras.set(id, JSON.parse(JSON.stringify(sidecar)))
+  }
+  /** Load, then try to touch (rename + /clear) the session through write-through. */
+  const loadAndTouch = async (id: string) => {
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    const s = r.sessions.find((x) => x.id === id)!
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 1 })
+    p.adopt(r.threads)
+    p.schedule({ ...s, title: 'renamed', turns: [], messages: [], updated: Date.now() })
+    await p.flush()
+    return s
+  }
+
+  it('a future-version sidecar loads read-only and its bytes survive a touch', async () => {
+    const v3 = { version: 3, turns: [], messages: [], future: { rich: true } }
+    seed('s', v3)
+    const s = await loadAndTouch('s')
+    expect(s.unavailable).toBe('unreadable-sidecar')
+    expect(b.extras.get('s')).toEqual(v3)
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toHaveLength(0)
+  })
+
+  it.each([
+    ['null turns', { version: 1, turns: null, messages: [] }],
+    ['non-array messages', { version: 1, turns: [], messages: 'garbage' }],
+    ['missing version', { turns: [{ role: 'user', content: 'hi' }], messages: [] }],
+  ])('a malformed sidecar (%s) is contained read-only, bytes preserved', async (_name, sidecar) => {
+    seed('s', sidecar)
+    const s = await loadAndTouch('s')
+    expect(s.unavailable).toBe('unreadable-sidecar')
+    expect(b.extras.get('s')).toEqual(sidecar)
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toHaveLength(0)
+  })
+
+  it('a valid v1 sidecar with rich optional data loads writable and an edit erases none of it', async () => {
+    const rich = {
+      version: 1,
+      turns: [{ role: 'user', content: 'hi' }],
+      messages: [{ id: 'm', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      history: [{ role: 'user', content: 'old' }],
+      subagents: [{ id: 'sub' }],
+      lastUsage: { inputTokens: 5 },
+      todos: [{ id: 't', text: 'todo' }],
+    }
+    seed('s', rich)
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    const s = r.sessions.find((x) => x.id === 's')!
+    expect(s.unavailable).toBeUndefined()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 1 })
+    p.adopt(r.threads)
+    p.schedule({ ...s, title: 'renamed' })
+    await p.flush()
+    // The touch wrote through and the rich payload round-tripped intact: the
+    // transcript moved into messages.jsonl, the rest into a v2 sidecar.
+    expect(b.threads.get('s')!.title).toBe('renamed')
+    const { turns, messages, history, ...state } = rich
+    expect(b.stored('s')).toEqual({ version: 1, turns, messages, history })
+    expect(b.extras.get('s')).toEqual({ ...state, version: 2 })
+    const back = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    expect(back.sessions.find((x) => x.id === 's')).toMatchObject({
+      turns, messages, history, subagents: state.subagents, lastUsage: state.lastUsage, todos: state.todos,
+    })
+  })
+})
+
+describe('transcript authority (messages.jsonl vs sidecar)', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    b = makeBackend()
+  })
+  const load = async () =>
+    (await loadCoworkSessions(b.invoke, { migrationSettled: true })).sessions.find(
+      (x) => x.id === 's'
+    )!
+  const live = async (s: any) => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 1 })
+    p.schedule(s)
+    await p.flush()
+  }
+
+  it('a write that crashed before the sidecar loads the newer carried transcript over an older v1 sidecar', async () => {
+    await live(session('s'))
+    const newer = b.logs.get('s')
+    // An older build's v1 sidecar beside it, as if the v2 rewrite never landed.
+    b.extras.set('s', { version: 1, turns: [], messages: [] })
+    b.logs.set('s', newer!)
+    expect(await load()).toMatchObject({ turns: session('s').turns, messages: session('s').messages })
+  })
+
+  it('a log without a carrier (migrated, or rewritten by an older build) falls back to the v1 sidecar', async () => {
+    b.threads.set('s', sessionToThreadRecord(session('s')))
+    b.extras.set('s', { version: 1, turns: [{ role: 'user', content: 'from sidecar' }], messages: [] })
+    b.logs.set('s', [{ id: 's-msg-0', thread_id: 's', role: 'user', content: [] }])
+    expect((await load()).turns).toEqual([{ role: 'user', content: 'from sidecar' }])
+  })
+
+  it('an unreadable messages.jsonl makes the session read-only rather than loading the sidecar alone', async () => {
+    await live(session('s'))
+    const invoke = b.invoke
+    b.invoke = (async (cmd: string, args: any) => {
+      if (cmd === 'list_messages') throw new Error('corrupt log')
+      return invoke(cmd, args)
+    }) as any
+    expect((await load()).unavailable).toBe('unreadable-sidecar')
+  })
+
+  it('the carrier rides only on metadata: the provider-facing records are unchanged', async () => {
+    await live(session('s'))
+    const [record] = b.logs.get('s')!
+    const { coworkTranscript, ...rest } = record.metadata ?? {}
+    expect(coworkTranscript).toBeDefined()
+    expect(rest).toEqual({})
+    expect(record.content).toEqual([{ type: 'text', text: { value: 'hi', annotations: [] } }])
+  })
+
+  it('a record appended after the carrier by another writer makes the carrier stale: the v1 sidecar wins', async () => {
+    b.threads.set('s', sessionToThreadRecord(session('s')))
+    b.extras.set('s', { version: 1, turns: [{ role: 'user', content: 'sidecar' }], messages: [] })
+    b.logs.set('s', [
+      { id: 's-msg-0', thread_id: 's', metadata: { coworkTranscript: { version: 1, turns: [], messages: [] } } },
+      { id: 'appended', thread_id: 's', role: 'user', content: [] },
+    ])
+    expect((await load()).turns).toEqual([{ role: 'user', content: 'sidecar' }])
+  })
+})

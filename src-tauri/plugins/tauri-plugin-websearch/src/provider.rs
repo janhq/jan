@@ -33,6 +33,24 @@ const EXA_REST_CONTENTS_URL: &str = "https://api.exa.ai/contents";
 const TAVILY_SEARCH_URL: &str = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL: &str = "https://api.tavily.com/extract";
 
+const YOU_COM_HOSTED_URL: &str = "https://api.you.com/mcp?profile=free";
+// Identifies the calling application to You.com, per the convention its other
+// integrations follow. Carries no user or query data beyond the request itself,
+// and is sent only on requests to You.com.
+const YOU_COM_USER_AGENT: &str = concat!(
+    "jan-websearch/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/janhq/jan)"
+);
+const YOU_COM_CLIENT_INFO: &str = concat!(
+    "plugin; client=jan-websearch/",
+    env!("CARGO_PKG_VERSION"),
+    "; ua=rust/unknown"
+);
+const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
+const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
+const YOU_COM_EXTRACT_URL: &str = "https://api.you.com/v1/extract";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
     pub title: String,
@@ -58,6 +76,95 @@ pub trait SearchProvider: Send + Sync {
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String>;
 }
 
+/// Static description of one selectable backend: what settings surfaces need to
+/// render its form (does it need a key, an instance URL) and where its API key
+/// lives in the secret store. The desktop's `WEB_SEARCH_PROVIDERS` uses the
+/// same ids and secret keys, so a key saved on one surface is found by the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderMeta {
+    /// Id accepted by [`create_provider`].
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Works with no API key (a key only upgrades it).
+    pub keyless: bool,
+    /// Secret-store record holding the API key; `None` for key-less backends.
+    pub secret_key: Option<&'static str>,
+    /// Needs a user-supplied instance URL (`endpoint`).
+    pub requires_endpoint: bool,
+}
+
+/// Every backend [`create_provider`] accepts, default first.
+pub const PROVIDERS: &[ProviderMeta] = &[
+    ProviderMeta {
+        id: "exa",
+        label: "Exa",
+        keyless: true,
+        secret_key: Some("exa-api-key"),
+        requires_endpoint: false,
+    },
+    ProviderMeta {
+        id: "tavily",
+        label: "Tavily",
+        keyless: false,
+        secret_key: Some("tavily-api-key"),
+        requires_endpoint: false,
+    },
+    ProviderMeta {
+        id: "searxng",
+        label: "SearXNG",
+        keyless: true,
+        secret_key: None,
+        requires_endpoint: true,
+    },
+    ProviderMeta {
+        id: "you",
+        label: "You.com",
+        keyless: true,
+        secret_key: Some("you-api-key"),
+        requires_endpoint: false,
+    },
+];
+
+/// Look up a backend by id (case-insensitive; empty/absent is the default).
+pub fn provider_meta(provider: Option<&str>) -> Option<&'static ProviderMeta> {
+    match provider.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        None | Some("") => PROVIDERS.first(),
+        Some(id) => PROVIDERS.iter().find(|p| p.id == id),
+    }
+}
+
+/// A resolved backend selection: what [`create_provider`] is called with. Built
+/// by the host from its own settings store; `Default` is the keyless default.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct WebSearchConfig {
+    pub provider: Option<String>,
+    pub api_key: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+impl std::fmt::Debug for WebSearchConfig {
+    /// Hand-written so the API key never reaches a log: hosts embed this in
+    /// structs that derive `Debug`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSearchConfig")
+            .field("provider", &self.provider)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("endpoint", &self.endpoint)
+            .finish()
+    }
+}
+
+impl WebSearchConfig {
+    /// Build the backend this selection names.
+    pub fn create(&self) -> Result<Box<dyn SearchProvider>, String> {
+        create_provider(
+            self.provider.as_deref(),
+            self.api_key.clone(),
+            self.endpoint.clone(),
+        )
+    }
+}
+
 /// Build the backend for `provider` (case-insensitive; empty/absent selects the
 /// default). `api_key` is used by keyed backends; `endpoint` by self-hosted ones
 /// (e.g. a SearXNG instance URL).
@@ -70,6 +177,7 @@ pub fn create_provider(
         None | Some("") | Some("exa") => Ok(Box::new(ExaProvider::new(api_key)?)),
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
+        Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -151,7 +259,7 @@ impl ExaProvider {
                 text.chars().take(400).collect::<String>()
             ));
         }
-        parse_hosted_result_text(&text)
+        parse_hosted_result_text(&text, "Exa")
     }
 }
 
@@ -248,39 +356,67 @@ impl SearchProvider for ExaProvider {
     }
 }
 
-fn parse_hosted_result_text(body: &str) -> Result<String, String> {
-    let json_str = body
+/// Pull the tool payload out of an MCP `tools/call` response. Streamable HTTP
+/// answers with either a bare JSON-RPC object or an SSE stream, and a stream may
+/// carry progress notifications ahead of the answer, so the frame holding
+/// `result` or `error` is the one to read.
+fn parse_hosted_result_text(body: &str, provider: &str) -> Result<String, String> {
+    let envelope = match body
         .lines()
-        .find_map(|l| l.strip_prefix("data:").map(str::trim))
-        .unwrap_or_else(|| body.trim());
-    let parsed: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Exa: invalid response payload: {e}"))?;
-    if let Some(err) = parsed.get("error") {
-        return Err(format!("Exa returned an error: {err}"));
+        .filter_map(|l| l.strip_prefix("data:").map(str::trim))
+        .filter_map(|frame| serde_json::from_str::<Value>(frame).ok())
+        .find(|v| v.get("result").is_some() || v.get("error").is_some())
+    {
+        Some(frame) => frame,
+        None => serde_json::from_str::<Value>(body.trim())
+            .map_err(|e| format!("{provider}: invalid response payload: {e}"))?,
+    };
+    if let Some(err) = envelope.get("error") {
+        return Err(format!("{provider} returned an error: {err}"));
     }
-    let result = parsed
+    let result = envelope
         .get("result")
-        .ok_or("Exa response missing 'result'")?;
-    if result.get("isError").and_then(|v| v.as_bool()) == Some(true) {
-        return Err(format!(
-            "Exa tool call failed: {}",
-            result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c| c.get("text"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error")
-        ));
-    }
+        .ok_or_else(|| format!("{provider} response missing 'result'"))?;
     let text = result
         .get("content")
         .and_then(|c| c.as_array())
         .and_then(|a| a.first())
         .and_then(|c| c.get("text"))
-        .and_then(|v| v.as_str())
-        .ok_or("Exa response had no text content")?;
-    Ok(text.to_string())
+        .and_then(|v| v.as_str());
+    // A throttled hosted endpoint answers HTTP 200 with no `isError`, putting
+    // the refusal in the text block where it parses as zero results. Reported
+    // as success that reads to a model as "the web has nothing", so the flag in
+    // `_meta` is the only thing separating a refusal from a real empty answer.
+    if is_rate_limited(result) {
+        return Err(format!(
+            "{provider} rate limit reached: {}",
+            text.unwrap_or("no quota remaining on the keyless endpoint")
+        ));
+    }
+    if result.get("isError").and_then(|v| v.as_bool()) == Some(true) {
+        return Err(format!(
+            "{provider} tool call failed: {}",
+            text.unwrap_or("unknown error")
+        ));
+    }
+    text.map(str::to_string)
+        .ok_or_else(|| format!("{provider} response had no text content"))
+}
+
+/// Whether a hosted `result` carries a provider rate-limit marker in `_meta`.
+///
+/// Namespaced per vendor (`ai.exa/rateLimited`), so the suffix is matched
+/// rather than one hard-coded key: the hosted transport is shared by every
+/// keyless backend here.
+fn is_rate_limited(result: &Value) -> bool {
+    result
+        .get("_meta")
+        .and_then(|m| m.as_object())
+        .is_some_and(|meta| {
+            meta.iter().any(|(k, v)| {
+                (k == "rateLimited" || k.ends_with("/rateLimited")) && v.as_bool() == Some(true)
+            })
+        })
 }
 
 fn parse_hosted_search_text(text: &str) -> Vec<SearchResult> {
@@ -545,6 +681,318 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
     })
 }
 
+/// Attach the shared You.com request headers. Callers set the body with
+/// `.json()`, which already sets `Content-Type: application/json` — setting it
+/// again here would duplicate the header (reqwest's `.header()` appends), and
+/// api.you.com rejects a multi-valued `Content-Type` with HTTP 415.
+fn with_youcom_headers(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    request
+        .header("user-agent", YOU_COM_USER_AGENT)
+        .header("x-client-info", YOU_COM_CLIENT_INFO)
+}
+
+/// Which You.com transport the adapter uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum YouComMode {
+    Hosted,
+    Rest(String),
+}
+
+/// You.com backend. Defaults to the keyless hosted endpoint; upgrades to the
+/// structured REST API when a key is supplied.
+///
+/// * Keyless (default): the hosted MCP endpoint answers `you-search` with no
+///   credentials, and `web_fetch` reads the page as markdown from the keyless
+///   `/v1/extract` endpoint. When extraction is refused, `web_fetch` falls back
+///   to a direct GET, the same way [`SearxngProvider`] reads pages.
+/// * Keyed (opt-in): the structured REST API at `https://ydc-index.io`, which
+///   adds `/v1/contents` for real content extraction and lifts the free tier's
+///   request cap.
+///
+/// Both transports return the same search payload, so one normalizer serves
+/// both.
+pub struct YouComProvider {
+    mode: YouComMode,
+    client: reqwest::Client,
+}
+
+impl YouComProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        let mode = match normalize_key(api_key) {
+            Some(key) => YouComMode::Rest(key),
+            None => YouComMode::Hosted,
+        };
+        Ok(Self {
+            mode,
+            client: build_http_client("You.com")?,
+        })
+    }
+
+    /// Send a prepared request and return its status and body, failing only
+    /// on transport errors.
+    async fn send_raw(&self, request: reqwest::RequestBuilder) -> Result<(u16, String), String> {
+        let resp = with_youcom_headers(request)
+            .send()
+            .await
+            .map_err(|e| format!("You.com request failed: {e}"))?;
+        let status = resp.status().as_u16();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("You.com: failed to read response body: {e}"))?;
+        Ok((status, text))
+    }
+
+    /// Send a prepared request and return the body, mapping transport and HTTP
+    /// failures into one message shape for both transports.
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<String, String> {
+        let (status, text) = self.send_raw(request).await?;
+        if !(200..300).contains(&status) {
+            return Err(format!(
+                "You.com failed with HTTP {status}: {}",
+                clip_chars(&text, 400)
+            ));
+        }
+        Ok(text)
+    }
+
+    /// Keyed transport: plain JSON POST authenticated with `X-API-Key`.
+    async fn post_rest(&self, url: &str, key: &str, body: Value) -> Result<Value, String> {
+        let text = self
+            .send(self.client.post(url).header("X-API-Key", key).json(&body))
+            .await?;
+        serde_json::from_str(&text).map_err(|e| format!("You.com: invalid JSON response: {e}"))
+    }
+
+    /// Keyless transport: one MCP `tools/call` for `you-search`, the only tool
+    /// the free profile exposes. The tool payload is the same JSON the REST
+    /// endpoint returns, so the caller can hand it to the same normalizer.
+    async fn hosted_search(&self, arguments: Value) -> Result<Value, String> {
+        let text = self
+            .send(
+                self.client
+                    .post(YOU_COM_HOSTED_URL)
+                    .header("accept", "application/json, text/event-stream")
+                    .json(&json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": { "name": "you-search", "arguments": arguments }
+                    })),
+            )
+            .await?;
+        let payload = parse_hosted_result_text(&text, "You.com")?;
+        serde_json::from_str(&payload)
+            .map_err(|e| format!("You.com: invalid JSON in tool result: {e}"))
+    }
+
+    /// Keyless page extraction: a plain JSON POST with no credentials.
+    fn extract_request(&self, url: &str) -> reqwest::RequestBuilder {
+        self.client
+            .post(YOU_COM_EXTRACT_URL)
+            .json(&json!({ "url": url }))
+    }
+
+    /// Keyless `web_fetch`: markdown from `/v1/extract`, falling back to a
+    /// direct GET when extraction is refused (see [`extract_fallback`]).
+    async fn keyless_fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        let note = match self.send_raw(self.extract_request(url)).await {
+            Ok((200, body)) => {
+                let page = serde_json::from_str::<Value>(&body)
+                    .ok()
+                    .and_then(|v| normalize_youcom_extract(&v, url).ok());
+                if let Some(page) = page {
+                    return Ok(page);
+                }
+                None
+            }
+            Ok((status, body)) => extract_fallback(status, &body)?,
+            Err(_) => None,
+        };
+        match (fetch_url_direct(url, "You.com").await, note) {
+            (Ok(page), Some(note)) => Ok(prefix_extract_note(page, &note)),
+            (Ok(page), None) => Ok(page),
+            (Err(e), Some(note)) => Err(format!("You.com extraction unavailable ({note}); {e}")),
+            (Err(e), None) => Err(e),
+        }
+    }
+}
+
+#[async_trait]
+impl SearchProvider for YouComProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let args = json!({ "query": query, "count": count });
+        let parsed = match &self.mode {
+            YouComMode::Hosted => self.hosted_search(args).await?,
+            YouComMode::Rest(key) => self.post_rest(YOU_COM_SEARCH_URL, key, args).await?,
+        };
+        Ok(normalize_youcom_search(&parsed))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        match &self.mode {
+            YouComMode::Hosted => self.keyless_fetch(url).await,
+            YouComMode::Rest(key) => {
+                let parsed = self
+                    .post_rest(
+                        YOU_COM_CONTENTS_URL,
+                        key,
+                        json!({ "urls": [url], "formats": ["markdown"] }),
+                    )
+                    .await?;
+                normalize_youcom_contents(&parsed, url)
+            }
+        }
+    }
+}
+
+/// `/v1/search` groups results into sections. `web` is the section jan's
+/// `web_search` contract maps to, so a response carrying no `web` section
+/// (news-only, or empty) yields no results rather than falling back to `news`.
+fn normalize_youcom_search(body: &Value) -> Vec<SearchResult> {
+    let Some(web) = body
+        .get("results")
+        .and_then(|r| r.get("web"))
+        .and_then(|v| v.as_array())
+    else {
+        return Vec::new();
+    };
+    web.iter()
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            // `description` is the whole-result summary; `snippets` are keyword
+            // fragments, used only when a result carries no description.
+            let snippet = r
+                .get("description")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    r.get("snippets")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                })
+                .map(|s| clip_chars(s, 500))
+                .unwrap_or_default();
+            let published_at = r
+                .get("page_age")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at,
+            }
+        })
+        .collect()
+}
+
+/// `/v1/contents` answers with a bare array, one entry per requested URL.
+/// The request asks for `markdown`, so that is the only content field read.
+/// The spec types `markdown` as nullable — null is how the API reports a
+/// failed extraction — so a missing or empty `markdown` is an error, not an
+/// empty page.
+fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let first = body
+        .as_array()
+        .and_then(|a| a.first())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let url = first
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(requested_url)
+        .to_string();
+    let title = first
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let raw = first
+        .get("markdown")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let (content, truncated) = bound_text(raw);
+    Ok(FetchedPage {
+        url,
+        title,
+        content,
+        truncated,
+    })
+}
+
+/// Keyless `/v1/extract` answers one object per page, with the markdown under
+/// `contents.full_page`. A missing or empty `markdown` is an error, not an
+/// empty page: it is also how a skipped PDF comes back (`{}`).
+fn normalize_youcom_extract(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let raw = body
+        .pointer("/contents/full_page/markdown")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let (content, truncated) = bound_text(raw);
+    Ok(FetchedPage {
+        url: body
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or(requested_url)
+            .to_string(),
+        title: body
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        content,
+        truncated,
+    })
+}
+
+/// What a refused keyless extraction means for `web_fetch`:
+///
+/// * `Err`: report it. Only for a PDF, which the free tier won't extract and a
+///   direct GET would return as binary.
+/// * `Ok(Some(note))`: fall back, and tell the user why. A 402 means the free
+///   allowance is spent or paused; the note is the server's own message.
+/// * `Ok(None)`: fall back quietly (rate limits, outages, URLs the endpoint
+///   won't take but a direct GET can still read).
+fn extract_fallback(status: u16, body: &str) -> Result<Option<String>, String> {
+    let parsed = serde_json::from_str::<Value>(body).ok();
+    let field = |key: &str| {
+        parsed
+            .as_ref()
+            .and_then(|v| v.get(key))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+    };
+    match status {
+        422 if field("error") == Some("pdf_not_supported") => Err(field("message")
+            .unwrap_or("You.com can't extract PDFs without an API key.")
+            .to_string()),
+        402 => Ok(Some(clip_chars(
+            field("message").unwrap_or("You.com's free extraction allowance is used up."),
+            400,
+        ))),
+        _ => Ok(None),
+    }
+}
+
+/// Lead a fallback page with why it isn't extracted, keeping the page within
+/// the fetch bound.
+fn prefix_extract_note(page: FetchedPage, note: &str) -> FetchedPage {
+    let (content, truncated) = bound_text(&format!(
+        "[You.com extraction unavailable: {note} Showing the page's raw HTML instead.]\n\n{}",
+        page.content
+    ));
+    FetchedPage {
+        content,
+        truncated: page.truncated || truncated,
+        ..page
+    }
+}
+
 /// SearXNG backend (self-hosted, key-less). Queries a user-supplied instance's
 /// JSON search API. SearXNG has no content-extraction endpoint, so `fetch` does
 /// a plain HTTP GET of the URL and returns the bounded raw response body.
@@ -600,31 +1048,7 @@ impl SearchProvider for SearxngProvider {
     }
 
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| format!("SearXNG fetch request failed: {e}"))?;
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("SearXNG fetch: failed to read response body: {e}"))?;
-        if !status.is_success() {
-            return Err(format!(
-                "SearXNG fetch failed with HTTP {}",
-                status.as_u16()
-            ));
-        }
-        let title = extract_html_title(&body).unwrap_or_default();
-        let (content, truncated) = bound_text(&body);
-        Ok(FetchedPage {
-            url: url.to_string(),
-            title,
-            content,
-            truncated,
-        })
+        fetch_url_direct(url, "SearXNG").await
     }
 }
 
@@ -656,6 +1080,162 @@ fn normalize_searxng_search(body: &Value, count: u32) -> Vec<SearchResult> {
             }
         })
         .collect()
+}
+
+/// Fetch a URL directly and return its bounded body, titled from its `<title>`.
+/// Used by backends that have no content-extraction endpoint on the active
+/// transport, so `web_fetch` still answers instead of erroring.
+/// Redirect hops a direct fetch follows, each re-vetted.
+const DIRECT_FETCH_MAX_REDIRECTS: usize = 5;
+
+/// Whether `ip` is an address on the public internet. A direct fetch runs
+/// from the user's machine on a URL the model chose, so loopback, private,
+/// link-local (cloud metadata), CGNAT, multicast and unspecified targets are
+/// refused: otherwise a prompt-injected page could make the agent read local
+/// services and LAN hosts through an auto-allowed tool.
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || v4.is_documentation()
+                || o[0] == 0
+                // 100.64.0.0/10, carrier-grade NAT.
+                || (o[0] == 100 && (o[1] & 0xc0) == 64))
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let s = v6.segments();
+            let embedded = |hi: u16, lo: u16| {
+                std::net::Ipv4Addr::new((hi >> 8) as u8, hi as u8, (lo >> 8) as u8, lo as u8)
+            };
+            // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address
+            // a translating network delivers to; judge them by it.
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public_ip(IpAddr::V4(embedded(s[6], s[7])));
+            }
+            if s[0] == 0x2002 {
+                return is_public_ip(IpAddr::V4(embedded(s[1], s[2])));
+            }
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                // fc00::/7 unique local, fe80::/10 link-local, fec0::/10
+                // deprecated site-local.
+                || (s[0] & 0xfe00) == 0xfc00
+                || (s[0] & 0xffc0) == 0xfe80
+                || (s[0] & 0xffc0) == 0xfec0)
+        }
+    }
+}
+
+/// Resolve `url`'s host and return the address to connect to, refusing any
+/// target that is not public. Every resolved address must pass, so a name with
+/// one public and one private record cannot be used to reach the private one.
+async fn vet_direct_target(url: &reqwest::Url) -> Result<std::net::SocketAddr, String> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!("only http(s) URLs can be fetched, got: {url}"));
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| format!("no port for {url}"))?;
+    let host = url
+        .host_str()
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| format!("no host in {url}"))?;
+    // An IPv6 literal comes back bracketed; a literal is used as-is so it is
+    // vetted without a lookup.
+    let literal = host.trim_start_matches('[').trim_end_matches(']');
+    let addrs: Vec<std::net::SocketAddr> = match literal.parse::<std::net::IpAddr>() {
+        Ok(ip) => vec![(ip, port).into()],
+        Err(_) => tokio::net::lookup_host((host, port))
+            .await
+            .map_err(|e| format!("could not resolve {host}: {e}"))?
+            .collect(),
+    };
+    let first = *addrs
+        .first()
+        .ok_or_else(|| format!("no address for {url}"))?;
+    if let Some(bad) = addrs.iter().find(|a| !is_public_ip(a.ip())) {
+        return Err(format!(
+            "refusing to fetch {url}: it resolves to a local or private address ({})",
+            bad.ip()
+        ));
+    }
+    Ok(first)
+}
+
+/// GET a URL straight from this machine. Each hop (the URL and every
+/// redirect) is vetted by [`vet_direct_target`], and the connection is pinned
+/// to the vetted address so a second DNS answer cannot swap in a private one.
+///
+/// Proxies from the environment are ignored on purpose: a proxy resolves the
+/// name itself, so the pin would no longer decide what is fetched, and a name
+/// that is only private inside the proxy's network would pass the vetting.
+async fn fetch_url_direct(url: &str, provider: &str) -> Result<FetchedPage, String> {
+    let mut current =
+        reqwest::Url::parse(url).map_err(|e| format!("{provider} fetch: invalid URL {url}: {e}"))?;
+    let mut hops = 0;
+    let resp = loop {
+        let addr = vet_direct_target(&current).await?;
+        let mut builder = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy();
+        if let Some(domain) = current.domain() {
+            builder = builder.resolve(domain, addr);
+        }
+        let client = builder
+            .build()
+            .map_err(|e| format!("failed to build HTTP client for {provider}: {e}"))?;
+        let resp = client
+            .get(current.clone())
+            .send()
+            .await
+            .map_err(|e| format!("{provider} fetch request failed: {e}"))?;
+        if !resp.status().is_redirection() {
+            break resp;
+        }
+        hops += 1;
+        if hops > DIRECT_FETCH_MAX_REDIRECTS {
+            return Err(format!("{provider} fetch: too many redirects for {url}"));
+        }
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| format!("{provider} fetch: redirect without a Location header"))?;
+        current = current
+            .join(location)
+            .map_err(|e| format!("{provider} fetch: bad redirect target {location}: {e}"))?;
+    };
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("{provider} fetch: failed to read response body: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "{provider} fetch failed with HTTP {}",
+            status.as_u16()
+        ));
+    }
+    let title = extract_html_title(&body).unwrap_or_default();
+    let (content, truncated) = bound_text(&body);
+    Ok(FetchedPage {
+        url: url.to_string(),
+        title,
+        content,
+        truncated,
+    })
 }
 
 fn extract_html_title(html: &str) -> Option<String> {
@@ -727,6 +1307,81 @@ mod tests {
         assert!(create_provider(None, None, None).is_ok());
         assert!(create_provider(Some(""), None, None).is_ok());
         assert!(create_provider(Some("Exa"), None, None).is_ok());
+    }
+
+    #[test]
+    fn public_ip_check_refuses_local_and_private_ranges() {
+        for ip in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a00:1",
+            "2002:c0a8:101::1",
+            "2002:7f00:1::1",
+            "fec0::1",
+        ] {
+            assert!(!is_public_ip(ip.parse().unwrap()), "{ip} must be refused");
+        }
+        for ip in [
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700:4700::1111",
+            "64:ff9b::101:101",
+            "2002:101:101::1",
+        ] {
+            assert!(is_public_ip(ip.parse().unwrap()), "{ip} must be allowed");
+        }
+    }
+
+    /// Literal and named local targets are refused before any request is made.
+    #[tokio::test]
+    async fn direct_fetch_refuses_local_targets() {
+        for url in [
+            "http://127.0.0.1:9/",
+            "http://localhost:9/",
+            "http://[::1]:9/",
+            "http://169.254.169.254/latest/meta-data/",
+        ] {
+            let err = fetch_url_direct(url, "SearXNG").await.unwrap_err();
+            assert!(err.contains("local or private"), "{url}: {err}");
+        }
+    }
+
+    #[test]
+    fn web_search_config_debug_redacts_the_key() {
+        let config = WebSearchConfig {
+            provider: Some("tavily".into()),
+            api_key: Some("tvly-secret".into()),
+            endpoint: None,
+        };
+        let printed = format!("{config:?}");
+        assert!(!printed.contains("tvly-secret"), "{printed}");
+        assert!(printed.contains("redacted"), "{printed}");
+    }
+
+    #[test]
+    fn every_listed_provider_is_constructible() {
+        for meta in PROVIDERS {
+            let key = (!meta.keyless).then(|| "k".to_string());
+            let endpoint = meta.requires_endpoint.then(|| "https://x.example".to_string());
+            assert!(
+                create_provider(Some(meta.id), key, endpoint).is_ok(),
+                "{} must be accepted by create_provider",
+                meta.id
+            );
+        }
+        assert_eq!(provider_meta(None).map(|m| m.id), Some("exa"));
+        assert_eq!(provider_meta(Some("Tavily")).map(|m| m.id), Some("tavily"));
+        assert!(provider_meta(Some("brave")).is_none());
     }
 
     #[test]
@@ -834,21 +1489,71 @@ mod tests {
     #[test]
     fn parse_hosted_result_text_reads_sse_frame() {
         let sse = "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}\n\n";
-        assert_eq!(parse_hosted_result_text(sse).unwrap(), "hello");
+        assert_eq!(parse_hosted_result_text(sse, "Exa").unwrap(), "hello");
     }
 
     #[test]
     fn parse_hosted_result_text_reads_raw_json() {
         let raw = "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}";
-        assert_eq!(parse_hosted_result_text(raw).unwrap(), "hi");
+        assert_eq!(parse_hosted_result_text(raw, "Exa").unwrap(), "hi");
     }
 
     #[test]
     fn parse_hosted_result_text_surfaces_errors() {
         let err = "{\"error\":{\"code\":-32000,\"message\":\"boom\"}}";
-        assert!(parse_hosted_result_text(err).is_err());
+        assert!(parse_hosted_result_text(err, "Exa").is_err());
         let tool_err = "{\"result\":{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"bad\"}]}}";
-        assert!(parse_hosted_result_text(tool_err).unwrap_err().contains("bad"));
+        assert!(parse_hosted_result_text(tool_err, "Exa")
+            .unwrap_err()
+            .contains("bad"));
+    }
+
+    #[test]
+    fn parse_hosted_result_text_surfaces_rate_limit_as_error() {
+        // Verbatim shape of a throttled `mcp.exa.ai/mcp` reply: the call
+        // "succeeds" (no `isError`, HTTP 200) and the refusal is prose in the
+        // text block, so only `_meta` distinguishes it from a real answer.
+        let sse = format!(
+            "event: message\ndata: {}\n\n",
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "_meta": { "ai.exa/rateLimited": true },
+                    "content": [{
+                        "type": "text",
+                        "text": "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key."
+                    }]
+                }
+            })
+        );
+        let err = parse_hosted_result_text(&sse, "Exa")
+            .expect_err("a throttled reply must not read as a successful search");
+        assert!(err.contains("rate limit"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_ignores_unrelated_meta() {
+        let raw = json!({
+            "result": {
+                "_meta": { "ai.exa/cached": true },
+                "content": [{ "type": "text", "text": "hello" }]
+            }
+        })
+        .to_string();
+        assert_eq!(parse_hosted_result_text(&raw, "Exa").unwrap(), "hello");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_rate_limit_flag_must_be_true() {
+        let raw = json!({
+            "result": {
+                "_meta": { "ai.exa/rateLimited": false },
+                "content": [{ "type": "text", "text": "hello" }]
+            }
+        })
+        .to_string();
+        assert_eq!(parse_hosted_result_text(&raw, "Exa").unwrap(), "hello");
     }
 
     #[test]
@@ -941,5 +1646,446 @@ mod tests {
     #[test]
     fn normalize_exa_rest_fetch_no_results_errors() {
         assert!(normalize_exa_rest_fetch(&json!({"results": []}), "u").is_err());
+    }
+
+    #[test]
+    fn youcom_attribution_follows_the_client_info_grammar() {
+        // `<source>; client=<name>/<version>; ua=<runtime>/<version>`
+        let segments: Vec<&str> = YOU_COM_CLIENT_INFO.split("; ").collect();
+        assert_eq!(segments.len(), 3, "unexpected segment count");
+        assert_eq!(segments[0], "plugin");
+        let client = segments[1]
+            .strip_prefix("client=")
+            .expect("second segment names the client");
+        let (name, version) = client.split_once('/').expect("client carries a version");
+        assert_eq!(name, "jan-websearch");
+        assert!(!version.is_empty(), "client version must not be empty");
+        assert!(segments[2].starts_with("ua="));
+        // Values are interpolated verbatim; a stray delimiter would corrupt
+        // the segment split on the receiving side.
+        assert!(segments.iter().all(|s| !s.contains(';')));
+        assert!(YOU_COM_USER_AGENT.starts_with("jan-websearch/"));
+        assert!(YOU_COM_USER_AGENT.contains("github.com/janhq/jan"));
+    }
+
+    #[test]
+    fn youcom_requests_send_a_single_content_type() {
+        // Regression test: reqwest's `.json()` sets `Content-Type` and
+        // `.header()` appends, so an extra explicit header produced a
+        // duplicated `content-type: application/json` — which api.you.com
+        // rejects with HTTP 415 ("Content-Type must be application/json").
+        let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call" });
+        let req = with_youcom_headers(
+            YouComProvider::new(None)
+                .unwrap()
+                .client
+                .post(YOU_COM_HOSTED_URL)
+                .header("accept", "application/json, text/event-stream")
+                .json(&body),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(req.headers().get_all("content-type").iter().count(), 1);
+        assert_eq!(
+            req.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        assert!(req.headers().contains_key("user-agent"));
+        assert!(req.headers().contains_key("x-client-info"));
+    }
+
+    #[test]
+    fn youcom_key_selects_transport() {
+        assert_eq!(YouComProvider::new(None).unwrap().mode, YouComMode::Hosted);
+        assert_eq!(
+            YouComProvider::new(Some("   ".into())).unwrap().mode,
+            YouComMode::Hosted
+        );
+        assert_eq!(
+            YouComProvider::new(Some("ydc-key".into())).unwrap().mode,
+            YouComMode::Rest("ydc-key".into())
+        );
+    }
+
+    #[test]
+    fn create_provider_youcom_works_with_and_without_key() {
+        assert!(create_provider(Some("you"), None, None).is_ok());
+        assert!(create_provider(Some("you"), Some("ydc-key".into()), None).is_ok());
+    }
+
+    #[test]
+    fn parse_hosted_result_text_youcom_skips_notification_frames() {
+        // The hosted endpoint emits a progress notification ahead of the
+        // answer, so the result is not the first `data:` frame.
+        let payload = json!({
+            "results": {
+                "web": [
+                    { "url": "https://example.com", "title": "T", "description": "D" }
+                ]
+            }
+        });
+        let sse = format!(
+            "event: message\ndata: {}\n\nevent: message\ndata: {}\n\n",
+            json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/message",
+                "params": { "level": "info", "data": "searching" }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": { "content": [{ "type": "text", "text": payload.to_string() }] }
+            })
+        );
+        let text = parse_hosted_result_text(&sse, "You.com").expect("result frame must be found");
+        // The hosted payload is the same shape the REST endpoint returns, so
+        // the REST normalizer reads it unchanged.
+        let parsed: Value = serde_json::from_str(&text).expect("tool payload is JSON");
+        let results = normalize_youcom_search(&parsed);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://example.com");
+        assert_eq!(results[0].snippet, "D");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_youcom_reads_bare_json_body() {
+        let raw = json!({"result": {"content": [{"type": "text", "text": "hi"}]}}).to_string();
+        assert_eq!(parse_hosted_result_text(&raw, "You.com").unwrap(), "hi");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_youcom_surfaces_errors() {
+        let err = json!({"error": {"code": -32000, "message": "boom"}}).to_string();
+        assert!(parse_hosted_result_text(&err, "You.com")
+            .unwrap_err()
+            .contains("boom"));
+
+        let tool_err = json!({
+            "result": {
+                "isError": true,
+                "content": [{"type": "text", "text": "quota exceeded"}]
+            }
+        })
+        .to_string();
+        assert!(parse_hosted_result_text(&tool_err, "You.com")
+            .unwrap_err()
+            .contains("quota exceeded"));
+
+        // A stream that never carries an answer must error rather than
+        // silently returning the notification.
+        let only_notification = format!(
+            "event: message\ndata: {}\n\n",
+            json!({"jsonrpc": "2.0", "method": "notifications/message", "params": {}})
+        );
+        assert!(parse_hosted_result_text(&only_notification, "You.com").is_err());
+    }
+
+    #[test]
+    fn normalize_youcom_search_maps_contract() {
+        // Field set mirrors a live `ydc-index.io/v1/search` web result,
+        // including the thumbnail and favicon keys the normalizer ignores.
+        let body = json!({
+            "results": {
+                "web": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "description": "A short summary.",
+                        "snippets": ["first excerpt", "second excerpt"],
+                        "thumbnail_url": "https://cdn.example.com/img.jpg",
+                        "original_thumbnail_url": "https://cdn.example.com/img.jpg",
+                        "favicon_url": "https://example.com/favicon.ico",
+                        "page_age": "2024-05-01T00:00:00.000Z"
+                    },
+                    { "url": "https://example.org", "title": "No date", "description": "Body." }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].url, "https://example.com");
+        // Description wins over snippets when both are present.
+        assert_eq!(results[0].snippet, "A short summary.");
+        assert_eq!(
+            results[0].published_at.as_deref(),
+            Some("2024-05-01T00:00:00.000Z")
+        );
+        assert!(results[1].published_at.is_none());
+    }
+
+    #[test]
+    fn normalize_youcom_search_falls_back_to_snippet_when_no_description() {
+        let body = json!({
+            "results": {
+                "web": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Missing",
+                        "snippets": ["passage one", "passage two"]
+                    },
+                    {
+                        "url": "https://example.org",
+                        "title": "Empty",
+                        "description": "",
+                        "snippets": ["passage three"]
+                    }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].snippet, "passage one");
+        // An empty description falls through to snippets rather than
+        // yielding an empty snippet.
+        assert_eq!(results[1].snippet, "passage three");
+    }
+
+    #[test]
+    fn normalize_youcom_search_clips_long_snippet() {
+        let body = json!({
+            "results": {
+                "web": [
+                    { "url": "https://example.com", "description": "x".repeat(900) }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results[0].snippet.chars().count(), 500);
+    }
+
+    #[test]
+    fn normalize_youcom_search_empty_or_news_only_is_empty() {
+        // A news-only response must not be reported as web results.
+        let news_only = json!({
+            "results": { "news": [{ "url": "https://x", "title": "X" }] }
+        });
+        assert!(normalize_youcom_search(&news_only).is_empty());
+        assert!(normalize_youcom_search(&json!({})).is_empty());
+        assert!(normalize_youcom_search(&json!({"results": {}})).is_empty());
+        assert!(normalize_youcom_search(&json!({"results": {"web": []}})).is_empty());
+    }
+
+    #[test]
+    fn normalize_youcom_contents_reads_markdown() {
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "markdown": "hello world" }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert_eq!(page.title, "T");
+        assert_eq!(page.url, "https://example.com");
+        assert_eq!(page.content, "hello world");
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_youcom_contents_truncates_and_marks_truncated() {
+        let big = "a".repeat(FETCH_MAX_CHARS + 100);
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "markdown": big }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert!(page.truncated);
+        assert_eq!(page.content.chars().count(), FETCH_MAX_CHARS);
+    }
+
+    #[test]
+    fn normalize_youcom_contents_no_results_errors() {
+        assert!(normalize_youcom_contents(&json!([]), "u").is_err());
+        // A non-array body must error rather than panic.
+        assert!(normalize_youcom_contents(&json!({"results": []}), "u").is_err());
+        // The spec types `markdown` as nullable for failed extractions; a null,
+        // missing, or empty `markdown` must error rather than return an empty page.
+        let null_markdown = json!([{ "url": "https://example.com", "markdown": null }]);
+        assert!(normalize_youcom_contents(&null_markdown, "u").is_err());
+        let no_markdown = json!([{ "url": "https://example.com", "title": "T" }]);
+        assert!(normalize_youcom_contents(&no_markdown, "u").is_err());
+        let empty_markdown = json!([{ "url": "https://example.com", "markdown": "" }]);
+        assert!(normalize_youcom_contents(&empty_markdown, "u").is_err());
+    }
+
+    #[test]
+    fn youcom_extract_request_shape() {
+        // Built the way `send_raw` sends it.
+        let req = with_youcom_headers(
+            YouComProvider::new(None)
+                .unwrap()
+                .extract_request("https://example.com"),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(req.method(), reqwest::Method::POST);
+        assert_eq!(req.url().as_str(), YOU_COM_EXTRACT_URL);
+        let body: Value =
+            serde_json::from_slice(req.body().and_then(|b| b.as_bytes()).unwrap()).unwrap();
+        assert_eq!(body, json!({ "url": "https://example.com" }));
+        // A duplicated Content-Type gets a 422 from /v1/extract, which the
+        // fallback would silently hide behind a direct GET.
+        for header in ["content-type", "user-agent", "x-client-info"] {
+            assert_eq!(req.headers().get_all(header).iter().count(), 1, "{header}");
+        }
+        assert!(!req.headers().contains_key("x-api-key"));
+    }
+
+    #[test]
+    fn normalize_youcom_extract_reads_markdown() {
+        // Verbatim keyless `/v1/extract` response for https://example.com.
+        let body = json!({
+            "url": "https://example.com",
+            "extraction_source": "blend",
+            "contents": {
+                "full_page": {
+                    "markdown": "This domain is for use in documentation examples without needing permission. Avoid use in operations.\n\nLearn more"
+                }
+            },
+            "title": "Example Domain",
+            "metadata": {
+                "site_name": "",
+                "favicon_url": "https://api.ydc-index.io/favicon?domain=example.com&size=128"
+            }
+        });
+        let page = normalize_youcom_extract(&body, "https://example.com").unwrap();
+        assert_eq!(page.url, "https://example.com");
+        assert_eq!(page.title, "Example Domain");
+        assert!(page.content.starts_with("This domain is for use"));
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_youcom_extract_bounds_to_fetch_max() {
+        let body = json!({
+            "contents": { "full_page": { "markdown": "a".repeat(FETCH_MAX_CHARS + 100) } }
+        });
+        let page = normalize_youcom_extract(&body, "u").unwrap();
+        assert!(page.truncated);
+        assert_eq!(page.content.chars().count(), FETCH_MAX_CHARS);
+    }
+
+    #[test]
+    fn normalize_youcom_extract_missing_content_errors() {
+        // `{}` is what the proxy returns for a PDF it skipped parsing.
+        for body in [
+            json!({}),
+            json!({ "url": "https://example.com", "title": "T" }),
+            json!({ "contents": { "full_page": { "markdown": null } } }),
+            json!({ "contents": { "full_page": {} } }),
+            json!({ "contents": { "full_page": { "markdown": "" } } }),
+            json!([]),
+        ] {
+            assert!(normalize_youcom_extract(&body, "u").is_err(), "{body}");
+        }
+    }
+
+    #[test]
+    fn youcom_extract_fallback_rules() {
+        // Bodies are the keyless proxy's own (search_api_proxy extract.py,
+        // free_tier.py, and the governance rate limiter).
+        let spent = json!({
+            "error": "free_tier_limit_exceeded",
+            "message": "You've used all your free requests. Sign up for free at https://you.com/platform to continue.",
+            "upgrade_url": "https://you.com/platform",
+            "limit": 100,
+            "used": 100,
+            "reset_at": "2026-10-30T00:00:00+00:00"
+        });
+        let paused = json!({
+            "error": "free_tier_unavailable",
+            "message": "Free extraction is currently unavailable. Sign up for free at https://you.com/platform to continue.",
+            "upgrade_url": "https://you.com/platform"
+        });
+        for body in [&spent, &paused] {
+            let note = extract_fallback(402, &body.to_string()).unwrap().unwrap();
+            assert_eq!(note, body["message"].as_str().unwrap());
+        }
+        // A 402 with no usable message still tells the user.
+        for body in ["not json", "{}", r#"{"message": 7}"#, r#"{"message": ""}"#] {
+            assert!(extract_fallback(402, body).unwrap().is_some(), "{body}");
+        }
+        let long = json!({ "message": "x".repeat(1000) }).to_string();
+        let note = extract_fallback(402, &long).unwrap().unwrap();
+        assert_eq!(note.chars().count(), 400);
+
+        let unavailable = json!({
+            "error": "temporarily_unavailable",
+            "message": "Extraction is temporarily unavailable. Please retry shortly."
+        });
+        let bad_url = json!({
+            "error": "invalid_request",
+            "message": "url host must be a public domain name, on the default port, with no credentials."
+        });
+        let blocked = json!({
+            "error": "invalid_request",
+            "message": "url must point to a public, resolvable host."
+        });
+        let rate_limited = json!({ "errors": [{ "title": "Rate limit exceeded" }] });
+        for (status, body) in [
+            (429, rate_limited.to_string()),
+            (500, String::new()),
+            (503, unavailable.to_string()),
+            (504, unavailable.to_string()),
+            (422, bad_url.to_string()),
+            (422, blocked.to_string()),
+            (422, "not json".to_string()),
+        ] {
+            assert_eq!(extract_fallback(status, &body), Ok(None), "{status} {body}");
+        }
+
+        let pdf = json!({
+            "error": "pdf_not_supported",
+            "message": "PDF extraction is not available on the free tier. Sign up for free at https://you.com/platform to use it.",
+            "upgrade_url": "https://you.com/platform"
+        });
+        assert_eq!(
+            extract_fallback(422, &pdf.to_string()),
+            Err(pdf["message"].as_str().unwrap().to_string())
+        );
+    }
+
+    #[test]
+    fn youcom_extract_note_prefixes_and_stays_bounded() {
+        let page = FetchedPage {
+            url: "https://example.com".into(),
+            title: "T".into(),
+            content: "<html>body</html>".into(),
+            truncated: false,
+        };
+        let noted = prefix_extract_note(page, "Out of free requests.");
+        assert!(noted
+            .content
+            .starts_with("[You.com extraction unavailable: Out of free requests."));
+        assert!(noted.content.ends_with("<html>body</html>"));
+        assert_eq!(noted.url, "https://example.com");
+        assert_eq!(noted.title, "T");
+        assert!(!noted.truncated);
+
+        // A page already at the cap stays within it once the note is added.
+        let full = FetchedPage {
+            url: "u".into(),
+            title: String::new(),
+            content: "a".repeat(FETCH_MAX_CHARS),
+            truncated: false,
+        };
+        let noted = prefix_extract_note(full, "Out of free requests.");
+        assert_eq!(noted.content.chars().count(), FETCH_MAX_CHARS);
+        assert!(noted.truncated);
+    }
+
+    /// Live smoke test against keyless `/v1/extract`. Ignored by default (needs
+    /// network, spends one free request); run with
+    /// `cargo test -- --ignored youcom_fetch_live`.
+    #[tokio::test]
+    #[ignore]
+    async fn youcom_fetch_live_keyless() {
+        let page = YouComProvider::new(None)
+            .unwrap()
+            .fetch("https://example.com")
+            .await
+            .unwrap();
+        // The direct-GET fallback would return the page's raw HTML.
+        assert!(
+            !page.content.to_lowercase().contains("<html"),
+            "fell back: {}",
+            page.content
+        );
+        assert!(page.content.contains("documentation examples"));
     }
 }

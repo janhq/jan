@@ -44,7 +44,7 @@ jobs:
       SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -65,12 +65,12 @@ jobs:
           sudo apt-get install -y pkg-config
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       # See template-cli-build-linux-x64.yml for why this blocklist exists.
       - name: Assert no GUI or D-Bus crates in the CLI dependency graph
         run: |
-          cd src-tauri
+          cd src-tauri/jan-cli
           for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service; do
             out=$(cargo tree --no-default-features --features cli -e normal \
               --target aarch64-unknown-linux-gnu -i "$crate" 2>&1) || continue
@@ -86,8 +86,8 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
-          cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release
+          cd src-tauri/jan-cli
+          cargo build --no-default-features --features cli --release
 
       # See template-cli-build-linux-x64.yml for why this check exists.
       - name: Assert the CLI binary links no unexpected shared libraries

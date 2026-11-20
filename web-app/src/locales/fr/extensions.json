@@ -1,0 +1,8 @@
+{
+  "crashed": {
+    "reason": "Arrêtée : {{error}}",
+    "disabled": "Elle a planté 3 fois en 10 minutes et reste désactivée jusqu'au redémarrage de Jan.",
+    "safeMode": "Des extensions installées ont empêché Jan de démarrer, le mode sans échec est donc activé.",
+    "safeModeFailed": "Des extensions installées ont empêché Jan de démarrer, et le mode sans échec n'a pas pu être activé. Elles ne sont pas chargées cette fois."
+  }
+}

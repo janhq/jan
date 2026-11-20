@@ -2,8 +2,8 @@ import { isDev } from '@/lib/utils'
 import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import type { UpdateInfo } from '@/services/updater/types'
-import { SystemEvent } from '@/types/events'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { relaunchAfterSave } from '@/lib/coworkSync'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -169,10 +169,10 @@ export const useAppUpdater = () => {
 
       let downloaded = 0
       let contentLength = 0
-      await getServiceHub().models().stopAllModels()
-      getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
-      await new Promise((resolve) => setTimeout(resolve, 1000))
 
+      // The engine, MCP servers and agent shells are stopped by the updater
+      // service once the download has verified, not here: a failed download
+      // must not take them down.
       await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
         switch (event.event) {
           case 'Started':
@@ -222,7 +222,7 @@ export const useAppUpdater = () => {
         }
       })
 
-      await window.core?.api?.relaunch()
+      await relaunchAfterSave(() => window.core?.api?.relaunch())
 
       console.log('Update installed')
     } catch (error) {

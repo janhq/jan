@@ -10,7 +10,7 @@ struct MLXServerCommand: AsyncParsableCommand {
         abstract: "MLX-Swift inference server with OpenAI-compatible API"
     )
 
-    @Option(name: [.long, .short], help: "Path to the GGUF model file")
+    @Option(name: [.long, .short], help: "Path to the model directory, or a file inside it")
     var model: String
 
     @Option(name: .long, help: "Port to listen on")

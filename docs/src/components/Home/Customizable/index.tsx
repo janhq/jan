@@ -5,7 +5,7 @@ const Customizable = () => {
   return (
     <div className="pt-24 pb-20 nextra-wrap-container">
       <div className="w-full text-center">
-        <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+        <h1 className="text-5xl lg:text-7xl !font-semibold leading-tight lg:leading-tight mt-2 font-serif">
           Highly Customizable
         </h1>
         <div className="lg:w-1/2 mx-auto">

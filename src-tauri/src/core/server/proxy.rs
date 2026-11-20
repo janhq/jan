@@ -7,7 +7,9 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
+use jan_utils::{
+    is_cors_header, is_same_or_app_origin, is_trusted_origin, is_valid_host, remove_prefix,
+};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -29,9 +31,9 @@ use crate::core::{
 pub(crate) use crate::core::agent::r#loop::run_server_side_openai_orchestration;
 pub(crate) use crate::core::agent::upstream::{
     call_openai_chat_completions, collect_mcp_openai_tools, copy_optional_chat_params,
-    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
-    parse_openai_messages, repair_dangling_tool_calls, resolve_upstream_for_model,
-    set_system_prompt,
+    drop_orphaned_tool_results, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
+    load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
+    replace_system_prompt, resolve_upstream_for_model,
 };
 use crate::core::openai_schema::{
     http_status_indicates_api_key_retry, normalize_openai_tools_in_chat_body,
@@ -64,6 +66,12 @@ fn body_channel() -> (BodySender, ResBody) {
         tokio_stream::wrappers::ReceiverStream::new(rx),
     ));
     (BodySender(tx), body)
+}
+
+/// Keeps `lease` alive until `body` has been read to its end or dropped, which
+/// is when the client has everything it asked the engine for or has gone away.
+fn hold_lease(body: ResBody, lease: tauri_plugin_llamacpp::state::EngineLease) -> ResBody {
+    BodyExt::boxed(lease.guard(body))
 }
 
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
@@ -561,6 +569,55 @@ pub struct ProxyConfig {
     pub host: String,
     pub port: u16,
     pub enable_server_tool_execution: bool,
+    /// "Allow cross-origin requests" setting. When off, only the server's own
+    /// pages and the app webview may call it from a browser context.
+    pub cors_enabled: bool,
+}
+
+/// Whether a request carrying this `Origin` may proceed. Requests without an
+/// Origin (curl, SDKs, CLI tools, LAN clients) always may; browser requests
+/// must come from a trusted origin (see `jan_utils::is_trusted_origin`).
+///
+/// Runs on every non-preflight request, before auth and body parsing, because
+/// a browser sends "simple" cross-origin POSTs (e.g. `text/plain`) without a
+/// preflight, so CORS headers alone do not stop the request from executing.
+pub(crate) fn origin_allowed(
+    origin: &str,
+    host_header: &str,
+    trusted_hosts: &[Vec<String>],
+    cors_enabled: bool,
+) -> bool {
+    if origin.is_empty() {
+        return true;
+    }
+    // Same-origin trust relies on the Host header naming this server, so only
+    // a Host that passes validation counts.
+    let host = if is_valid_host(host_header, trusted_hosts) {
+        host_header
+    } else {
+        ""
+    };
+    if cors_enabled {
+        is_trusted_origin(origin, host, trusted_hosts)
+    } else {
+        is_same_or_app_origin(origin, host)
+    }
+}
+
+/// The request's `Origin` header, or "" when there is none. None when the
+/// header is present but not visible ASCII: such a request must be refused,
+/// not treated as one without an origin.
+pub(crate) fn request_origin(headers: &hyper::HeaderMap) -> Option<&str> {
+    match headers.get(hyper::header::ORIGIN) {
+        None => Some(""),
+        Some(value) => value.to_str().ok(),
+    }
+}
+
+/// `/orchestrations` runs MCP tools without per-call approval, so it is only
+/// served when the user opted in to server-side tool execution.
+pub(crate) fn orchestrations_allowed(config: &ProxyConfig) -> bool {
+    config.enable_server_tool_execution
 }
 
 /// Determines the final destination path based on the original request path
@@ -781,8 +838,7 @@ async fn proxy_request(
             );
 
         if !origin.is_empty() {
-            let origin_host = extract_host_from_origin(origin);
-            if is_valid_host(&origin_host, &config.trusted_hosts) {
+            if origin_allowed(origin, host, &config.trusted_hosts, config.cors_enabled) {
                 response = response
                     .header("Access-Control-Allow-Origin", origin)
                     .header("Access-Control-Allow-Credentials", "true");
@@ -799,12 +855,14 @@ async fn proxy_request(
 
     let (parts, body) = req.into_parts();
 
-    let origin_header = parts
-        .headers
-        .get(hyper::header::ORIGIN)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let Some(origin_header) = request_origin(&parts.headers).map(str::to_string) else {
+        log::warn!("Rejected request with an Origin header that is not visible ASCII");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Vary", "Origin")
+            .body(full("Origin not allowed"))
+            .unwrap());
+    };
 
     let host_header = parts
         .headers
@@ -812,6 +870,20 @@ async fn proxy_request(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+
+    if !origin_allowed(
+        &origin_header,
+        &host_header,
+        &config.trusted_hosts,
+        config.cors_enabled,
+    ) {
+        log::warn!("Rejected request from untrusted origin '{origin_header}'");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Vary", "Origin")
+            .body(full("Origin not allowed"))
+            .unwrap());
+    }
 
     let original_path = parts.uri.path();
     let headers = parts.headers.clone();
@@ -1126,6 +1198,21 @@ async fn proxy_request(
                 "Handling POST request to {destination_path} for assistant tool orchestration"
             );
 
+            if !orchestrations_allowed(&config) {
+                let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
+                error_response = add_cors_headers_with_host_and_origin(
+                    error_response,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(error_response
+                    .body(full(
+                        "/orchestrations requires server-side tool execution to be enabled in Settings > Local API Server",
+                    ))
+                    .unwrap());
+            }
+
             let body_bytes = match body.collect().await {
                 Ok(c) => c.to_bytes(),
                 Err(_) => {
@@ -1212,9 +1299,17 @@ async fn proxy_request(
                     return Ok(error_response.body(full(e)).unwrap());
                 }
             };
-            // Self-heal a client-supplied conversation that has a tool_calls
-            // turn missing one of its results -- some providers (notably
-            // Anthropic) reject the entire request on a dangling tool_use.
+            // Self-heal a client-supplied conversation: a `role: "tool"`
+            // result whose call is not in the request, or a `tool_calls` turn
+            // missing one of its results, is rejected outright by some
+            // providers (notably Anthropic), so both shapes are fixed before
+            // the request goes on.
+            let orphaned = drop_orphaned_tool_results(&mut conversation_messages);
+            if orphaned > 0 {
+                log::warn!(
+                    "proxy: dropped {orphaned} tool result(s) whose call is not in the request"
+                );
+            }
             let repaired = repair_dangling_tool_calls(&mut conversation_messages);
             if repaired > 0 {
                 log::warn!("proxy: repaired {repaired} dangling tool call(s) with no prior result");
@@ -1242,7 +1337,10 @@ async fn proxy_request(
                 };
 
             if let Some(sys) = assistant_instructions {
-                set_system_prompt(&mut conversation_messages, &sys);
+                // The caller's own `system` message is the one this replaces:
+                // the request is stateless, so there is no earlier request to
+                // keep byte-stable.
+                replace_system_prompt(&mut conversation_messages, &sys);
             }
 
             // Resolve model to use for orchestration.
@@ -2305,9 +2403,14 @@ async fn proxy_request(
 }
 
 /// True when this bind exposes the API to the network with no authentication:
-/// a non-loopback host and an empty API key.
+/// a non-loopback host and an empty API key. Every loopback address is safe
+/// (127.0.0.0/8, ::1, "localhost"): only this machine can reach it.
 fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
-    let is_loopback = matches!(host, "127.0.0.1" | "localhost" | "::1");
+    let is_loopback = host == "localhost"
+        || host
+            .trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
     !is_loopback && api_key.is_empty()
 }
 
@@ -2334,18 +2437,20 @@ fn map_bind_error(
 
 pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
-    _host: &str,
+    host: &str,
     origin: &str,
     trusted_hosts: &[Vec<String>],
 ) -> hyper::http::response::Builder {
     let mut builder = builder;
 
-    let origin_trusted = if !origin.is_empty() {
-        let origin_host = extract_host_from_origin(origin);
-        is_valid_host(&origin_host, trusted_hosts)
-    } else {
-        false
-    };
+    // Requests from an origin `origin_allowed` refuses never reach a handler,
+    // so this only decides whether to reflect an already-admitted origin.
+    let origin_trusted = !origin.is_empty()
+        && is_trusted_origin(
+            origin,
+            if is_valid_host(host, trusted_hosts) { host } else { "" },
+            trusted_hosts,
+        );
 
     builder = builder
         .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
@@ -2388,6 +2493,7 @@ pub async fn start_server(
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
     enable_server_tool_execution: bool,
+    cors_enabled: bool,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         server_handle,
@@ -2405,6 +2511,7 @@ pub async fn start_server(
         mcp_settings,
         jan_data_folder,
         enable_server_tool_execution,
+        cors_enabled,
     )
     .await
 }
@@ -2426,6 +2533,7 @@ async fn start_server_internal(
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
     enable_server_tool_execution: bool,
+    cors_enabled: bool,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -2442,8 +2550,18 @@ async fn start_server_internal(
     // and private-range IP literals, which is safe against DNS rebinding (that sends an
     // attacker *hostname*, not an IP). Hostnames still require an explicit allowlist entry.
 
-    // Calculate this before proxy_api_key is moved into ProxyConfig.
-    let insecure_public_bind = is_insecure_public_bind(&host, &proxy_api_key);
+    // Security: a non-loopback bind exposes the OpenAI-compatible API on the
+    // network, and with no API key any reachable host could call it
+    // unauthenticated (inference, model enumeration and, when enabled, MCP tool
+    // execution). Refuse before binding rather than serve it open.
+    if is_insecure_public_bind(&host, &proxy_api_key) {
+        return Err(format!(
+            "The API server is set to listen on {host}, which other devices on the network \
+             can reach, but no API key is set. Set an API key in Settings > Local API Server, \
+             or switch the host to 127.0.0.1."
+        )
+        .into());
+    }
 
     let config = ProxyConfig {
         prefix,
@@ -2452,6 +2570,7 @@ async fn start_server_internal(
         host: host.clone(),
         port,
         enable_server_tool_execution,
+        cors_enabled,
     };
 
     let client = Client::builder()
@@ -2468,19 +2587,6 @@ async fn start_server_internal(
         }
     };
     log::info!("Jan API server started on http://{addr}");
-
-    // Security: binding to a non-loopback interface exposes the OpenAI-compatible
-    // API on the network. With no API key set, any reachable host can call it
-    // unauthenticated (model inference, model enumeration, and MCP tool execution
-    // when enabled). Warn loudly rather than refuse to start, so existing
-    // trusted-LAN setups keep working, but the operator is told.
-    if insecure_public_bind {
-        log::warn!(
-            "Jan API server is bound to a non-loopback address ({host}) with no API key set. \
-             The local API is reachable UNAUTHENTICATED by any host that can reach this machine. \
-             Set an API key in Settings > Local API Server to require authentication."
-        );
-    }
 
     let server_task = tokio::spawn(async move {
         loop {
@@ -2504,18 +2610,37 @@ async fn start_server_internal(
             let jan_data_folder = jan_data_folder.clone();
 
             let svc = service_fn(move |req| {
-                proxy_request(
-                    req,
-                    client.clone(),
-                    config.clone(),
-                    llama_state.clone(),
-                    mlx_sessions.clone(),
-                    provider_configs.clone(),
-                    model_param_defaults.clone(),
-                    mcp_servers.clone(),
-                    mcp_settings.clone(),
-                    jan_data_folder.clone(),
-                )
+                let client = client.clone();
+                let config = config.clone();
+                let llama_state = llama_state.clone();
+                let mlx_sessions = mlx_sessions.clone();
+                let provider_configs = provider_configs.clone();
+                let model_param_defaults = model_param_defaults.clone();
+                let mcp_servers = mcp_servers.clone();
+                let mcp_settings = mcp_settings.clone();
+                let jan_data_folder = jan_data_folder.clone();
+                async move {
+                    // Taken before the request resolves the engine's address and
+                    // kept until its response body is finished, so a device-change
+                    // restart cannot stop the worker between the two. A request
+                    // arriving mid-restart waits here and is then served by the
+                    // new worker instead of failing with "no models are running".
+                    let lease = llama_state.lease().await;
+                    let response = proxy_request(
+                        req,
+                        client,
+                        config,
+                        llama_state,
+                        mlx_sessions,
+                        provider_configs,
+                        model_param_defaults,
+                        mcp_servers,
+                        mcp_settings,
+                        jan_data_folder,
+                    )
+                    .await?;
+                    Ok::<_, hyper::Error>(response.map(|body| hold_lease(body, lease)))
+                }
             });
 
             tokio::spawn(async move {
@@ -2956,17 +3081,18 @@ mod tests {
     use std::net::SocketAddr;
 
     #[test]
-    fn loopback_never_warns() {
-        for host in ["127.0.0.1", "localhost", "::1"] {
+    fn loopback_hosts_need_no_key() {
+        for host in ["127.0.0.1", "127.0.0.2", "localhost", "::1", "[::1]"] {
             assert!(!is_insecure_public_bind(host, ""), "{host} should be safe");
             assert!(!is_insecure_public_bind(host, "secret"));
         }
     }
 
     #[test]
-    fn public_bind_without_key_warns() {
-        assert!(is_insecure_public_bind("0.0.0.0", ""));
-        assert!(is_insecure_public_bind("192.168.1.10", ""));
+    fn public_bind_without_key_is_insecure() {
+        for host in ["0.0.0.0", "192.168.1.10", "::", "10.0.0.5"] {
+            assert!(is_insecure_public_bind(host, ""), "{host} should need a key");
+        }
     }
 
     #[test]

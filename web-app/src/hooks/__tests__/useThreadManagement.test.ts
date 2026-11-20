@@ -41,7 +41,13 @@ vi.mock('@/hooks/useThreads', () => ({
   },
 }))
 
+const mockDeleteCowork = vi.fn()
+const mockFlushCoworkDeletes = vi.fn()
+vi.mock('@/lib/coworkDelete', () => ({ deleteCoworkConversation: (id: string) => mockDeleteCowork(id) }))
+vi.mock('@/lib/coworkSync', () => ({ flushCoworkDeletes: () => mockFlushCoworkDeletes() }))
+
 import { useThreadManagement } from '../useThreadManagement'
+import { useCoworkSessions } from '../useCoworkSessions'
 
 // We need to get the underlying store for direct testing
 // The hook wraps a zustand store with useEffect, so we test both
@@ -145,6 +151,49 @@ describe('useThreadManagement', () => {
     expect(mockDeleteThreadState).toHaveBeenCalledWith('t1')
     expect(mockDeleteThreadState).toHaveBeenCalledWith('t2')
     expect(mockDeleteProject).toHaveBeenCalledWith('p1')
+  })
+
+  describe('Cowork conversations in a project', () => {
+    const project = { id: 'p1', name: 'P', updated_at: 1 }
+    const live = (id: string, extra = {}) =>
+      ({ id, title: id, folder: null, turns: [], messages: [], updated: 1, project, ...extra }) as never
+
+    beforeEach(() => {
+      mockDeleteProject.mockResolvedValue(undefined)
+      mockDeleteThread.mockResolvedValue(undefined)
+      mockFlushCoworkDeletes.mockResolvedValue(undefined)
+      useCoworkSessions.setState({ sessions: [] })
+    })
+
+    it('deletes a not-yet-mirrored session through the session store before the project', async () => {
+      useCoworkSessions.setState({ sessions: [live('c1')] })
+      const { result } = renderHook(() => useThreadManagement())
+      await act(async () => {
+        await result.current.deleteFolderWithThreads('p1')
+      })
+      expect(mockDeleteCowork).toHaveBeenCalledWith('c1')
+      expect(mockFlushCoworkDeletes).toHaveBeenCalled()
+      expect(mockDeleteProject).toHaveBeenCalledWith('p1')
+    })
+
+    it('never deletes an unavailable session it cannot write', async () => {
+      useCoworkSessions.setState({ sessions: [live('c1', { unavailable: 'missing-thread' })] })
+      const { result } = renderHook(() => useThreadManagement())
+      await act(async () => {
+        await result.current.deleteFolderWithThreads('p1')
+      })
+      expect(mockDeleteCowork).not.toHaveBeenCalled()
+    })
+
+    it('keeps the project when a Cowork delete fails to flush', async () => {
+      useCoworkSessions.setState({ sessions: [live('c1')] })
+      mockFlushCoworkDeletes.mockRejectedValueOnce(new Error('flush failed'))
+      const { result } = renderHook(() => useThreadManagement())
+      await act(async () => {
+        await expect(result.current.deleteFolderWithThreads('p1')).rejects.toThrow('flush failed')
+      })
+      expect(mockDeleteProject).not.toHaveBeenCalled()
+    })
   })
 
   it('should get folder by id', async () => {

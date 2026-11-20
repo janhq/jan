@@ -241,7 +241,7 @@ fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("netstat");
+    let mut cmd = Command::new(crate::windows_system_tool("netstat.exe"));
     cmd.args(&["-ano"]);
 
     #[cfg(windows)]
@@ -256,7 +256,7 @@ fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if let Some(pid_str) = parts.last() {
                 if let Ok(pid) = pid_str.parse::<u32>() {
-                    let mut tasklist_cmd = Command::new("tasklist");
+                    let mut tasklist_cmd = Command::new(crate::windows_system_tool("tasklist.exe"));
                     tasklist_cmd.args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
 
                     #[cfg(windows)]
@@ -311,7 +311,9 @@ fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("wmic");
+    // Absent on newer Windows 11 builds: then the spawn fails and the caller
+    // gets None, i.e. the process is unknown.
+    let mut cmd = Command::new(crate::windows_system_tool(r"wbem\wmic.exe"));
     cmd.args(&[
         "process",
         "where",
@@ -393,8 +395,9 @@ fn get_process_info_by_pid_windows(pid: u32) -> Option<ProcessUsingPort> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    // Use wmic to get process info by PID
-    let mut cmd = Command::new("wmic");
+    // Use wmic to get process info by PID. Absent on newer Windows 11 builds:
+    // then the spawn fails and the caller gets None, i.e. the process is unknown.
+    let mut cmd = Command::new(crate::windows_system_tool(r"wbem\wmic.exe"));
     cmd.args(&[
         "process",
         "where",

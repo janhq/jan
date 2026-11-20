@@ -12,7 +12,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useParams } from '@tanstack/react-router'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useThreads } from '@/hooks/useThreads'
 import { useSkills, type HubSkill } from '@/hooks/useSkills'
 
 export default function SkillsManagerDialog({
@@ -23,11 +25,28 @@ export default function SkillsManagerDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const sessions = useCoworkSessions((s) => s.sessions)
-  const currentId = useCoworkSessions((s) => s.currentId)
-  const folder = sessions.find((s) => s.id === currentId)?.folder ?? null
+  // The folder comes from the conversation on screen, not from whichever Cowork
+  // session was selected last: the store keeps `currentId` after the user leaves.
+  const { sessionId, threadId } = useParams({ strict: false }) as {
+    sessionId?: string
+    threadId?: string
+  }
+  const sessionFolder = useCoworkSessions(
+    (s) => s.sessions.find((x) => x.id === sessionId)?.folder ?? null
+  )
+  const threadFolder = useThreads((s) => {
+    const folder = threadId ? s.threads[threadId]?.metadata?.folder : null
+    return typeof folder === 'string' ? folder : null
+  })
+  const folder = sessionId ? sessionFolder : threadFolder
 
-  const { skills, remove, write, read, hubList, hubImport } = useSkills(folder)
+  // A new skill goes to the chosen destination; existing ones stay where they
+  // live. With no folder there is only the global store.
+  const [destination, setDestination] = useState<'folder' | 'global'>('folder')
+  const { skills, remove, write, read, hubList, hubImport } = useSkills(
+    folder,
+    destination
+  )
   const localNames = new Set(skills.map((s) => s.name))
 
   // `selected` is the skill being edited; '' with isNew means a fresh draft.
@@ -135,14 +154,17 @@ export default function SkillsManagerDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t('common:skillsTitle')}</DialogTitle>
+          {/* Name the stores being managed. With a folder attached the list is
+              the union of its co-located skills and the global store (#8879);
+              with nothing attached it is the global store every session reads. */}
+          <p className="text-xs text-muted-foreground">
+            {folder
+              ? t('common:skillsScopeMerged', { folder })
+              : t('common:skillsScopeGlobal')}
+          </p>
         </DialogHeader>
 
-        {!folder ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            {t('common:skillsSelectFolder')}
-          </div>
-        ) : (
-          <div className="flex gap-4 h-[60vh] overflow-hidden">
+        <div className="flex gap-4 h-[60vh] overflow-hidden">
             {/* Skill list */}
             <div className="w-1/3 min-h-0 flex flex-col gap-2 border-r pr-3">
               <Button
@@ -183,7 +205,18 @@ export default function SkillsManagerDialog({
                     >
                       <FileText size={14} className="shrink-0 text-muted-foreground" />
                       <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium">{s.name}</div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="truncate font-medium">{s.name}</span>
+                          {folder && (
+                            <span className="shrink-0 rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground">
+                              {t(
+                                s.origin === 'project'
+                                  ? 'common:skillOriginFolder'
+                                  : 'common:skillOriginGlobal'
+                              )}
+                            </span>
+                          )}
+                        </div>
                         {s.description && (
                           <div className="line-clamp-2 break-words text-xs text-muted-foreground">
                             {s.description}
@@ -272,6 +305,31 @@ export default function SkillsManagerDialog({
                     placeholder={t('common:skillNamePlaceholder')}
                     disabled={!isNew}
                   />
+                  {isNew && folder && (
+                    <div
+                      role="group"
+                      aria-label={t('common:skillDestination')}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      <span>{t('common:skillDestination')}</span>
+                      {(['folder', 'global'] as const).map((choice) => (
+                        <Button
+                          key={choice}
+                          type="button"
+                          size="xs"
+                          variant={destination === choice ? 'secondary' : 'ghost'}
+                          aria-pressed={destination === choice}
+                          onClick={() => setDestination(choice)}
+                        >
+                          {t(
+                            choice === 'folder'
+                              ? 'common:skillDestinationFolder'
+                              : 'common:skillDestinationGlobal'
+                          )}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                   <Textarea
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
@@ -294,7 +352,6 @@ export default function SkillsManagerDialog({
               )}
             </div>
           </div>
-        )}
       </DialogContent>
     </Dialog>
   )

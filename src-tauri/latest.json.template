@@ -14,10 +14,6 @@
     "darwin-aarch64": {
       "signature": "",
       "url": ""
-    },
-    "darwin-x86_64": {
-      "signature": "",
-      "url": ""
     }
   }
 }

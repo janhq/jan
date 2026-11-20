@@ -298,119 +298,8 @@ describe('TauriMCPService', () => {
     })
   })
 
-  describe('callTool', () => {
-    it('should call tool with correct arguments and return result', async () => {
-      const toolArgs = {
-        toolName: 'file_read',
-        arguments: { path: '/path/to/file.txt' },
-      }
-
-      const mockResult = {
-        error: '',
-        content: [{ text: 'File content here' }],
-      }
-
-      mockCore.api.callTool.mockResolvedValue(mockResult)
-
-      const result = await mcpService.callTool(toolArgs)
-
-      expect(mockCore.api.callTool).toHaveBeenCalledWith(toolArgs)
-      expect(result).toEqual(mockResult)
-    })
-
-    it('should handle tool call with error', async () => {
-      const toolArgs = {
-        toolName: 'file_read',
-        arguments: { path: '/nonexistent/file.txt' },
-      }
-
-      const mockResult = {
-        error: 'File not found',
-        content: [],
-      }
-
-      mockCore.api.callTool.mockResolvedValue(mockResult)
-
-      const result = await mcpService.callTool(toolArgs)
-
-      expect(result.error).toBe('File not found')
-      expect(result.content).toEqual([])
-    })
-
-    it('should handle complex tool arguments', async () => {
-      const toolArgs = {
-        toolName: 'database_query',
-        arguments: {
-          query: 'SELECT * FROM users WHERE age > ?',
-          params: [18],
-          limit: 100,
-        },
-      }
-
-      const mockResult = {
-        error: '',
-        content: [{ text: 'Query results...' }],
-      }
-
-      mockCore.api.callTool.mockResolvedValue(mockResult)
-
-      const result = await mcpService.callTool(toolArgs)
-
-      expect(mockCore.api.callTool).toHaveBeenCalledWith(toolArgs)
-      expect(result).toEqual(mockResult)
-    })
-
-    it('should handle API rejection', async () => {
-      const toolArgs = {
-        toolName: 'file_read',
-        arguments: { path: '/path/to/file.txt' },
-      }
-
-      const mockError = new Error('Tool execution failed')
-      mockCore.api.callTool.mockRejectedValue(mockError)
-
-      await expect(mcpService.callTool(toolArgs)).rejects.toThrow('Tool execution failed')
-    })
-
-    it('should handle undefined window.core.api', async () => {
-      const originalCore = window.core
-      // @ts-ignore
-      window.core = undefined
-
-      const toolArgs = {
-        toolName: 'test_tool',
-        arguments: {},
-      }
-
-      const result = await mcpService.callTool(toolArgs)
-
-      expect(result).toBeUndefined()
-
-      window.core = originalCore
-    })
-
-    it('should handle empty arguments object', async () => {
-      const toolArgs = {
-        toolName: 'simple_tool',
-        arguments: {},
-      }
-
-      const mockResult = {
-        error: '',
-        content: [{ text: 'Success' }],
-      }
-
-      mockCore.api.callTool.mockResolvedValue(mockResult)
-
-      const result = await mcpService.callTool(toolArgs)
-
-      expect(mockCore.api.callTool).toHaveBeenCalledWith(toolArgs)
-      expect(result).toEqual(mockResult)
-    })
-  })
-
   describe('integration tests', () => {
-    it('should handle full MCP workflow: config -> restart -> get tools -> call tool', async () => {
+    it('should handle full MCP workflow: config -> restart -> get tools', async () => {
       const config = '{"filesystem": {"command": "filesystem-server"}}'
       const tools: MCPTool[] = [
         {
@@ -420,41 +309,27 @@ describe('TauriMCPService', () => {
         },
       ]
       const servers = ['filesystem']
-      const toolResult = {
-        error: '',
-        content: [{ text: 'File content' }],
-      }
 
       mockCore.api.saveMcpConfigs.mockResolvedValue(undefined)
       mockCore.api.restartMcpServers.mockResolvedValue(undefined)
       mockCore.api.getTools.mockResolvedValue(tools)
       mockCore.api.getConnectedServers.mockResolvedValue(servers)
-      mockCore.api.callTool.mockResolvedValue(toolResult)
 
       // Execute workflow
       await mcpService.updateMCPConfig(config)
       await mcpService.restartMCPServers()
       const availableTools = await mcpService.getTools()
       const connectedServers = await mcpService.getConnectedServers()
-      const result = await mcpService.callTool({
-        toolName: 'read_file',
-        arguments: { path: '/test.txt' },
-      })
 
       // Verify all calls were made correctly
       expect(mockCore.api.saveMcpConfigs).toHaveBeenCalledWith({ configs: config })
       expect(mockCore.api.restartMcpServers).toHaveBeenCalled()
       expect(mockCore.api.getTools).toHaveBeenCalled()
       expect(mockCore.api.getConnectedServers).toHaveBeenCalled()
-      expect(mockCore.api.callTool).toHaveBeenCalledWith({
-        toolName: 'read_file',
-        arguments: { path: '/test.txt' },
-      })
 
       // Verify results
       expect(availableTools).toEqual(tools)
       expect(connectedServers).toEqual(servers)
-      expect(result).toEqual(toolResult)
     })
   })
 

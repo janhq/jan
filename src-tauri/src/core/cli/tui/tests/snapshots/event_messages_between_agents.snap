@@ -1,0 +1,26 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• Message to general-4
+  └ Narrow it to the parser.
+    Skip the lexer: it is covered.
+• Message from general-4
+  └ Found the bug in parse_command.
+    It drops the last token.
+-- collapsed
+
+• Message to general-4
+  └ Narrow it to the parser.
+• Message from general-4
+  └ Found the bug in parse_command.
+-- narrow (28)
+
+• Message to general-4
+  └ Narrow it to the
+    parser.
+• Message from general-4
+  └ Found the bug in
+    parse_command.

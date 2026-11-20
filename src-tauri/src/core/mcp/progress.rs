@@ -93,12 +93,12 @@ mod tests {
     use rmcp::model::{NumberOrString, ProgressToken};
 
     fn params(progress: f64, total: Option<f64>) -> ProgressNotificationParam {
-        ProgressNotificationParam {
-            progress_token: ProgressToken(NumberOrString::Number(1)),
-            progress,
-            total,
-            message: None,
+        let mut p =
+            ProgressNotificationParam::new(ProgressToken(NumberOrString::Number(1)), progress);
+        if let Some(total) = total {
+            p = p.with_total(total);
         }
+        p
     }
 
     #[test]

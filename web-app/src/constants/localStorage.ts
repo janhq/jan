@@ -11,7 +11,9 @@ export const localStorageKey = {
   settingLocalApiServer: 'setting-local-api-server',
   settingProxyConfig: 'setting-proxy-config',
   settingWebSearch: 'setting-web-search',
-  settingAgentTools: 'setting-agent-tools',
+  settingCowork: 'setting-cowork',
+  settingImageAttachments: 'setting-image-attachments',
+  settingChatShell: 'setting-chat-shell',
   settingHardware: 'setting-hardware',
   settingVulkan: 'setting-vulkan',
   productAnalyticPrompt: 'productAnalyticPrompt',
@@ -34,6 +36,7 @@ export const localStorageKey = {
   pausedDownloads: 'paused-downloads',
   // Value predates the Cowork rename; changing it would orphan saved sessions.
   coworkSessions: 'code-sessions',
+  cotDuration: 'cot-duration',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

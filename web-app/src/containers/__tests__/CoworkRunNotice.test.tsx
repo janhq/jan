@@ -35,10 +35,23 @@ describe('CoworkRunNotice', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('common:run.failed')
   })
 
-  it('offers a retry', async () => {
-    const onRetry = vi.fn()
-    render(<CoworkRunNotice kind="error" onRetry={onRetry} />)
-    await userEvent.click(screen.getByRole('button'))
-    expect(onRetry).toHaveBeenCalledOnce()
+  it('offers an increase-context action on overflow instead of a bare retry', async () => {
+    const onIncreaseContext = vi.fn()
+    render(
+      <CoworkRunNotice
+        kind="error"
+        message="request (4423 tokens) exceeds the available context size (4096 tokens), try increasing it"
+        onRetry={vi.fn()}
+        onIncreaseContext={onIncreaseContext}
+      />
+    )
+    const button = screen.getByRole('button', {
+      name: 'model-errors:increaseContextSize',
+    })
+    await userEvent.click(button)
+    expect(onIncreaseContext).toHaveBeenCalledOnce()
+    expect(
+      screen.queryByRole('button', { name: 'common:run.tryAgain' })
+    ).toBeNull()
   })
 })

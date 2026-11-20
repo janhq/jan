@@ -1,3 +1,7 @@
+/// The fixed context MLX models are seeded with. MLX has no auto-fit, so the
+/// empty llamacpp default below would leave the window to the mlx server.
+export const MLX_DEFAULT_CTX_LEN = 8192
+
 export const modelSettings = {
   ctx_len: {
     key: 'ctx_len',
@@ -6,8 +10,12 @@ export const modelSettings = {
       'Size of the prompt context. Leave empty to auto-fit when --fit is on.',
     controller_type: 'input',
     controller_props: {
-      value: 8192,
-      placeholder: '8192',
+      // Empty, not 8192: an explicit value pins n_ctx and upstream's fit then
+      // leaves the context alone. With fit off, preset.ts's [*] ctx-size =
+      // 8192 still applies, so the effective default is unchanged there.
+      // MLX overrides this with MLX_DEFAULT_CTX_LEN.
+      value: '',
+      placeholder: 'auto',
       type: 'number',
     },
   },
@@ -173,6 +181,45 @@ export const modelSettings = {
       type: 'number',
     },
   },
+  n_cpu_ffn: {
+    key: 'n_cpu_ffn',
+    title: 'Number of dense FFN weights in the CPU',
+    description:
+      'Keep the dense feed-forward weights of the first N layers in the CPU (if GPU is used). For dense models; MoE experts use the setting above.',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '24',
+      type: 'number',
+    },
+  },
+  moe_cache_mib: {
+    key: 'moe_cache_mib',
+    title: 'MoE expert GPU cache (MiB)',
+    description:
+      'Experimental. GPU memory for caching the MoE experts kept in the CPU by the settings above, which speeds those models up. Applies to MoE models only and is ignored for any other model. Needs a single GPU. Leave empty to disable.',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '4096',
+      type: 'number',
+    },
+  },
+  moe_cache_cpu_share: {
+    key: 'moe_cache_cpu_share',
+    title: 'MoE cache misses computed on the CPU',
+    description:
+      'Experimental. Once the MoE expert GPU cache above is full, the share of cache misses (0 to 1) the CPU computes from its own copy of the experts instead of uploading them to the GPU. Has no effect unless the cache is enabled. Leave empty for 0.',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '0.25',
+      type: 'number',
+      min: 0,
+      max: 1,
+      step: 0.05,
+    },
+  },
   override_tensor_buffer_t: {
     key: 'override_tensor_buffer_t',
     title: 'Override Tensor Buffer Type',
@@ -203,6 +250,28 @@ export const modelSettings = {
       placeholder: '2048',
       type: 'number',
       textAlign: 'right',
+    },
+  },
+  load_mode: {
+    key: 'load_mode',
+    title: 'Load Mode',
+    description:
+      'How this model\'s weights are read into memory. Inherit global uses the engine-wide Load Mode; any other choice, including Auto, overrides it for this model.',
+    controller_type: 'dropdown',
+    controller_props: {
+      // Empty means inherit: the extension drops the yaml key, so no
+      // load-mode line is written for the model. Auto is not that: it is an
+      // explicit override of a non-auto global.
+      value: '',
+      options: [
+        { value: '', name: 'Inherit global' },
+        { value: 'auto', name: 'Auto (mmap if supported)' },
+        { value: 'none', name: 'None (no mmap)' },
+        { value: 'mmap', name: 'mmap' },
+        { value: 'mlock', name: 'mlock (no mmap)' },
+        { value: 'mmap+mlock', name: 'mmap + mlock' },
+        { value: 'dio', name: 'Direct I/O' },
+      ],
     },
   },
   reasoning: {

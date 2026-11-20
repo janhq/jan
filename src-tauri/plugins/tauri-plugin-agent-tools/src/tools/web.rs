@@ -9,11 +9,14 @@
 //! `tauri_plugin_websearch::provider` and are shared with the desktop
 //! `web_search`/`web_fetch` Tauri commands so there is a single implementation.
 //! This module owns only the agent tool contract: argument parsing/validation,
-//! selecting the keyless-vs-keyed Exa path from the process environment, and
-//! rendering normalized results as compact, model-friendly text.
+//! picking the backend (the host's [`WebSearchConfig`] when it supplies one,
+//! else Exa with an optional key from the process environment), and rendering
+//! normalized results as compact, model-friendly text.
 
 use serde_json::Value;
-use tauri_plugin_websearch::provider::{clamp_count, create_provider, FetchedPage, SearchResult};
+use tauri_plugin_websearch::provider::{
+    clamp_count, provider_meta, FetchedPage, SearchProvider, SearchResult, WebSearchConfig,
+};
 
 /// Upper bound on the readable text `web_fetch` returns. Mirrors the plugin's
 /// internal bound; used here only to phrase the truncation notice.
@@ -38,9 +41,21 @@ fn exa_api_key() -> Option<String> {
     None
 }
 
+/// The backend for one call. The host's selection wins; an Exa selection with
+/// no stored key (and no selection at all) still honours the Exa env vars, so
+/// an existing `EXA_API_KEY` setup keeps working after a provider is chosen.
+fn backend(config: Option<&WebSearchConfig>) -> Result<Box<dyn SearchProvider>, String> {
+    let mut config = config.cloned().unwrap_or_default();
+    let is_exa = provider_meta(config.provider.as_deref()).is_some_and(|m| m.id == "exa");
+    if is_exa && !config.api_key.as_deref().is_some_and(|k| !k.trim().is_empty()) {
+        config.api_key = exa_api_key();
+    }
+    config.create().map_err(|e| format!("ERROR: {e}"))
+}
+
 /// Execute the `web_search` built-in. Returns the tool-result text; errors are
 /// returned as a `String` starting with "ERROR" to match the other handlers.
-pub async fn web_search(args: &Value) -> String {
+pub async fn web_search(args: &Value, config: Option<&WebSearchConfig>) -> String {
     let Some(query) = args.get("query").and_then(|v| v.as_str()).map(str::trim) else {
         return "ERROR: web_search requires a 'query' string argument.".to_string();
     };
@@ -48,7 +63,7 @@ pub async fn web_search(args: &Value) -> String {
         return "ERROR: web_search 'query' must not be empty.".to_string();
     }
     let count = clamp_count(args.get("count").and_then(|v| v.as_u64()));
-    let provider = match create_provider(None, exa_api_key(), None) {
+    let provider = match backend(config) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -63,7 +78,7 @@ pub async fn web_search(args: &Value) -> String {
 
 /// Execute the `web_fetch` built-in. Returns bounded readable content with its
 /// source URL/title; errors start with "ERROR".
-pub async fn web_fetch(args: &Value) -> String {
+pub async fn web_fetch(args: &Value, config: Option<&WebSearchConfig>) -> String {
     let Some(url) = args.get("url").and_then(|v| v.as_str()).map(str::trim) else {
         return "ERROR: web_fetch requires a 'url' string argument.".to_string();
     };
@@ -73,7 +88,7 @@ pub async fn web_fetch(args: &Value) -> String {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return format!("ERROR: web_fetch 'url' must be an http(s) URL, got: {url}");
     }
-    let provider = match create_provider(None, exa_api_key(), None) {
+    let provider = match backend(config) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -123,14 +138,33 @@ mod tests {
 
     #[tokio::test]
     async fn web_search_requires_query() {
-        assert!(web_search(&json!({})).await.starts_with("ERROR"));
-        assert!(web_search(&json!({"query": "   "})).await.starts_with("ERROR"));
+        assert!(web_search(&json!({}), None).await.starts_with("ERROR"));
+        assert!(web_search(&json!({"query": "   "}), None).await.starts_with("ERROR"));
     }
 
     #[tokio::test]
     async fn web_fetch_validates_url() {
-        assert!(web_fetch(&json!({})).await.starts_with("ERROR"));
-        assert!(web_fetch(&json!({"url": "ftp://x"})).await.starts_with("ERROR"));
+        assert!(web_fetch(&json!({}), None).await.starts_with("ERROR"));
+        assert!(web_fetch(&json!({"url": "ftp://x"}), None).await.starts_with("ERROR"));
+    }
+
+    /// A configured backend that cannot be built (a keyed provider with no
+    /// key) surfaces as a tool ERROR before any request is made, instead of
+    /// silently falling back to Exa.
+    #[tokio::test]
+    async fn configured_provider_is_used_and_validated() {
+        let tavily = WebSearchConfig {
+            provider: Some("tavily".into()),
+            ..Default::default()
+        };
+        let out = web_search(&json!({"query": "q"}), Some(&tavily)).await;
+        assert!(out.starts_with("ERROR") && out.contains("Tavily"), "got: {out}");
+        let searx = WebSearchConfig {
+            provider: Some("searxng".into()),
+            ..Default::default()
+        };
+        let out = web_fetch(&json!({"url": "https://x.example"}), Some(&searx)).await;
+        assert!(out.starts_with("ERROR") && out.contains("SearXNG"), "got: {out}");
     }
 
     #[test]
@@ -165,7 +199,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn web_search_live_keyless() {
-        let out = web_search(&json!({ "query": "capital of France", "count": 2 })).await;
+        let out = web_search(&json!({ "query": "capital of France", "count": 2 }), None).await;
         assert!(!out.starts_with("ERROR"), "unexpected error: {out}");
         assert!(out.to_lowercase().contains("paris"), "got: {out}");
     }

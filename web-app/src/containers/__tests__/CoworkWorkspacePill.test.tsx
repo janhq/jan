@@ -9,6 +9,11 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }))
+vi.mock('sonner', () => ({
+  toast: { error: toastError },
+}))
+
 const openPath = vi.fn()
 const revealItemInDir = vi.fn()
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -19,8 +24,9 @@ import { CoworkWorkspacePill } from '../CoworkWorkspacePill'
 
 describe('CoworkWorkspacePill', () => {
   beforeEach(() => {
-    openPath.mockReset()
-    revealItemInDir.mockReset()
+    openPath.mockReset().mockResolvedValue(undefined)
+    revealItemInDir.mockReset().mockResolvedValue(undefined)
+    toastError.mockReset()
   })
 
   it('invites attaching a folder when none is attached', async () => {
@@ -37,10 +43,11 @@ describe('CoworkWorkspacePill', () => {
     ).toBeGreaterThan(0)
   })
 
-  // The honesty requirement: whenever a folder is attached, the popover must
-  // name the direction and mark the folder read-only. A regression here would
-  // have the UI implying the agent edits the user's project.
-  it('names the read direction and marks the folder read-only', async () => {
+  // The honesty requirement, inverted from the read-only days: the folder is
+  // mounted writable now, so the popover must say the agent edits it in place.
+  // A regression here would have the UI promising an untouched project while
+  // the agent changes real files.
+  it('names the folder and marks it read & write', async () => {
     render(
       <CoworkWorkspacePill
         folder="/home/u/Projects/jan-app"
@@ -53,8 +60,9 @@ describe('CoworkWorkspacePill', () => {
 
     expect(screen.getByText('common:workspace.readsFrom')).toBeInTheDocument()
     expect(
-      screen.getAllByText('common:workspace.readOnly').length
+      screen.getAllByText('common:workspace.writable').length
     ).toBeGreaterThan(0)
+    expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
     expect(screen.getByText('dev')).toBeInTheDocument()
     expect(screen.getByText('common:workspace.footnote')).toBeInTheDocument()
   })
@@ -74,6 +82,63 @@ describe('CoworkWorkspacePill', () => {
 
     await userEvent.click(screen.getByText('common:workspace.reveal'))
     expect(revealItemInDir).toHaveBeenCalledWith('/home/u/Projects/jan-app')
+  })
+
+  it('notifies and offers a replacement when the folder cannot be opened', async () => {
+    openPath.mockRejectedValueOnce(new Error('path does not exist'))
+    const onAttach = vi.fn()
+    render(
+      <CoworkWorkspacePill
+        folder="/home/u/Projects/jan-app"
+        onAttach={onAttach}
+        onDetach={vi.fn()}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
+    await userEvent.click(screen.getAllByText('common:workspace.open')[0])
+
+    await vi.waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        'common:workspace.unavailable',
+        expect.objectContaining({
+          description: 'common:workspace.missing jan-app',
+          action: expect.objectContaining({
+            label: 'common:workspace.change',
+            onClick: onAttach,
+          }),
+        })
+      )
+    })
+    const [, options] = toastError.mock.calls[0]
+    options.action.onClick()
+    expect(onAttach).toHaveBeenCalledOnce()
+  })
+
+  it('notifies and offers a replacement when the folder cannot be revealed', async () => {
+    revealItemInDir.mockRejectedValueOnce(new Error('path does not exist'))
+    const onAttach = vi.fn()
+    render(
+      <CoworkWorkspacePill
+        folder="/home/u/Projects/jan-app"
+        onAttach={onAttach}
+        onDetach={vi.fn()}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
+    await userEvent.click(screen.getByText('common:workspace.reveal'))
+
+    await vi.waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        'common:workspace.unavailable',
+        expect.objectContaining({
+          description: 'common:workspace.missing jan-app',
+          action: expect.objectContaining({
+            label: 'common:workspace.change',
+            onClick: onAttach,
+          }),
+        })
+      )
+    })
   })
 
   it('detaches the folder', async () => {

@@ -10,6 +10,7 @@ import {
   coworkToolSignature,
   allowedToolNames,
   PLAN_DENIED_TOOLS,
+  PLAN_DENIED_MEMORY_OPS,
   TODO_TOOL_NAME,
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
@@ -20,7 +21,7 @@ const schema = (name: string) => ({
   function: { name, description: name, parameters: { type: 'object' } },
 })
 
-const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'bash', 'memory_write']
+const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'shell', 'memory']
 
 const opts = (over: Partial<Parameters<typeof buildCoworkTools>[0]> = {}) => ({
   planMode: false,
@@ -123,12 +124,12 @@ describe('web tools', () => {
     expect(tools.web_fetch).toBeDefined()
   })
 
-  // Research is most of what planning is, so unlike write/edit/bash these are
+  // Research is most of what planning is, so unlike write/edit/shell these are
   // reads that plan mode keeps.
   it('survive plan mode', async () => {
     const tools = await buildCoworkTools(opts({ webSearch: true, planMode: true }))
     expect(tools.web_search).toBeDefined()
-    expect(tools.bash).toBeUndefined()
+    expect(tools.shell).toBeUndefined()
   })
 
   // Advertising them changes the tool JSON, so a run that froze without them
@@ -143,11 +144,82 @@ describe('web tools', () => {
 describe('allowedToolNames', () => {
   it('refuses the same set plan mode withholds', () => {
     const out = allowedToolNames([...ALL, TASK_TOOL_NAME], opts({ planMode: true }))
-    expect(out).toEqual(['read', 'ls', 'grep'])
+    // Memory stays for its reads (view, search); the dispatcher refuses the
+    // ops that change the store.
+    expect(out).toEqual(['read', 'ls', 'grep', 'memory'])
+  })
+
+  it('names the memory ops plan mode refuses', () => {
+    expect([...PLAN_DENIED_MEMORY_OPS].sort()).toEqual([
+      'delete',
+      'edit',
+      'move',
+      'write',
+    ])
   })
 
   it('refuses task past the subagent depth cap', () => {
     const out = allowedToolNames(['read', TASK_TOOL_NAME], opts({ allowSubagents: false }))
     expect(out).toEqual(['read'])
+  })
+
+  /// The flat schema: `{ subagents: [ {name, task, phase?, allowed_tools?} ] }`,
+  /// with no system_prompt and no unknown-name failure (an unknown name is an
+  /// ephemeral generalist). One optional per-subagent `phase` pipelines them.
+  describe('the task schema is a flat subagents array with an optional phase', () => {
+    type TaskSchema = {
+      description: string
+      inputSchema: {
+        jsonSchema: {
+          required?: string[]
+          properties: {
+            subagents: {
+              items: {
+                required?: string[]
+                properties: Record<string, unknown>
+              }
+            }
+          }
+        }
+      }
+    }
+
+    it('requires a subagents array with name+task, an optional phase, and no system_prompt', async () => {
+      const { buildCoworkTools } = await import('../coworkTools')
+      const tools = await buildCoworkTools({
+        planMode: false,
+        subagentNames: [],
+        allowSubagents: true,
+        webSearch: false,
+      })
+      const task = tools['task'] as unknown as TaskSchema
+      const schema = task.inputSchema.jsonSchema
+      expect(schema.required).toContain('subagents')
+      const sub = schema.properties.subagents.items
+      expect(sub.required).toEqual(['name', 'task'])
+      expect(Object.keys(sub.properties)).toEqual([
+        'name',
+        'task',
+        'phase',
+        'allowed_tools',
+      ])
+      // The one-off vocabulary is gone entirely.
+      const serialized = JSON.stringify(schema)
+      expect(serialized).not.toContain('system_prompt')
+      expect(serialized).not.toContain('subagent_name')
+      expect(task.description).toContain('No saved subagents yet')
+    })
+
+    it('lists the saved definitions when there are any', async () => {
+      const { buildCoworkTools } = await import('../coworkTools')
+      const tools = await buildCoworkTools({
+        planMode: false,
+        subagentNames: ['reviewer'],
+        allowSubagents: true,
+        webSearch: false,
+      })
+      const task = tools['task'] as unknown as { description: string }
+      expect(task.description).toContain('Saved subagents: reviewer.')
+    })
   })
 })

@@ -9,6 +9,11 @@ vi.mock('@/lib/webSearchTool', () => ({
   executeWebTool,
 }))
 
+const coworkConfig = vi.hoisted(() => ({ networkEnabled: true }))
+vi.mock('@/hooks/useCoworkConfig', () => ({
+  useCoworkConfig: { getState: () => coworkConfig },
+}))
+
 import { dispatchCoworkTool } from '../coworkDispatch'
 import type { PendingToolCall } from '../coworkRunner'
 
@@ -35,9 +40,10 @@ describe('dispatchCoworkTool', () => {
     executeAgentTool.mockResolvedValue({ content: 'ok' })
   })
 
-  // The trailing 'session' is load-bearing: under the default 'thread' scope a
-  // session's files land where the thread sweep's keep-list can never mention
-  // them, and the sweep deletes the only copy of the agent's work.
+  // The scope is load-bearing: a Cowork conversation is a thread, and the
+  // migration copied its sandbox to threads/<id>. Running it under 'session'
+  // would read the stale pre-migration copy and keep the thread sweep from
+  // ever seeing the files the agent writes.
   it('routes built-ins to the Rust plugin with the session as workspace key', async () => {
     const c = ctx()
     await dispatchCoworkTool(call('read', { path: 'a' }), c)
@@ -46,8 +52,43 @@ describe('dispatchCoworkTool', () => {
       { path: 'a' },
       's1',
       null,
-      'session'
+      'thread',
+      true,
+      true,
+      null
     )
+  })
+
+  // Cowork's shell network follows the Cowork setting (on by default), read
+  // per call so a Settings toggle applies to the next command.
+  it('passes the cowork network setting through per call', async () => {
+    await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
+    expect(executeAgentTool).toHaveBeenCalledWith(
+      'shell',
+      { command: 'curl x' },
+      's1',
+      null,
+      'thread',
+      true,
+      true,
+      null
+    )
+    coworkConfig.networkEnabled = false
+    try {
+      await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
+      expect(executeAgentTool).toHaveBeenLastCalledWith(
+        'shell',
+        { command: 'curl x' },
+        's1',
+        null,
+        'thread',
+        false,
+        true,
+        null
+      )
+    } finally {
+      coworkConfig.networkEnabled = true
+    }
   })
 
   it('routes the client-only tools to their handlers', async () => {
@@ -74,14 +115,50 @@ describe('dispatchCoworkTool', () => {
     expect(executeAgentTool).toHaveBeenCalled()
   })
 
-  it('passes the attached folder through', async () => {
+  // Plan mode is read-only for memory too: the tool stays advertised for its
+  // reads, so the refusal is per op.
+  it('refuses memory ops that change the store in plan mode', async () => {
+    for (const op of ['write', 'edit', 'delete', 'move']) {
+      const out = await dispatchCoworkTool(
+        call('memory', { op, name: 'n' }),
+        ctx({ planMode: true })
+      )
+      expect(out.isError).toBe(true)
+      expect(out.output).toMatch(/plan mode/)
+      expect(out.output).toMatch(/view/)
+    }
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('still runs memory view and search in plan mode', async () => {
+    for (const op of ['view', 'search']) {
+      await dispatchCoworkTool(
+        call('memory', { op, query: 'q' }),
+        ctx({ planMode: true })
+      )
+    }
+    expect(executeAgentTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('runs memory writes outside plan mode', async () => {
+    await dispatchCoworkTool(call('memory', { op: 'write' }), ctx())
+    expect(executeAgentTool).toHaveBeenCalled()
+  })
+
+  // The attached folder is passed twice: as the read-only filesystem root and
+  // as the skill-overlay project (last arg), so the folder's skills reach the
+  // agent on top of the permanent store (#8879).
+  it('passes the attached folder through as both read root and skill overlay', async () => {
     await dispatchCoworkTool(call('grep'), ctx({ readOnlyFolder: '/repo' }))
     expect(executeAgentTool).toHaveBeenCalledWith(
       'grep',
       {},
       's1',
       '/repo',
-      'session'
+      'thread',
+      true,
+      true,
+      '/repo'
     )
   })
 
@@ -93,6 +170,17 @@ describe('dispatchCoworkTool', () => {
     const out = await dispatchCoworkTool(call('edit'), ctx())
     expect(out.output).toBe('Wrote a.txt')
     expect(out.diff).toBe('- a\n+ b')
+  })
+
+  it('carries returned images beside the output', async () => {
+    const images = [{ dataUrl: 'data:image/png;base64,AA', name: 'a.html' }]
+    executeAgentTool.mockResolvedValue({
+      content: 'Screenshot of a.html (1280x960)',
+      images,
+    })
+    const out = await dispatchCoworkTool(call('screenshot'), ctx())
+    expect(out.output).toBe('Screenshot of a.html (1280x960)')
+    expect(out.images).toEqual(images)
   })
 
   // A rejection would abort the whole run; the model can usually recover if it
@@ -108,6 +196,44 @@ describe('dispatchCoworkTool', () => {
     const out = await dispatchCoworkTool(call('read'), ctx())
     expect(out).toEqual({ output: 'ipc died', isError: true })
   })
+})
+
+it('pauses repeated failed reads for review without swallowing the read error', async () => {
+  const error = 'ERROR: No such file or directory (os error 2)'
+  executeAgentTool.mockResolvedValue({ error })
+  let review: unknown
+  let answer!: (result: { output: string }) => void
+  const context = ctx({
+    planMode: true,
+    failedReadPaths: new Set<string>(),
+    onAsk: async (_id: string, input: unknown) => {
+      review = input
+      return new Promise<{ output: string }>((resolve) => {
+        answer = resolve
+      })
+    },
+  })
+  const first = await dispatchCoworkTool(
+    call('read', { path: 'index.html' }),
+    context
+  )
+  expect(first.isError).toBe(true)
+  expect(review).toBeUndefined()
+  let finished = false
+  const second = dispatchCoworkTool(
+    call('read', { path: 'index.html' }),
+    context
+  ).then((result) => {
+    finished = true
+    return result
+  })
+  await vi.waitFor(() => expect(review).toBeDefined())
+  expect(finished).toBe(false)
+  answer({ output: 'Keep planning' })
+  const result = await second
+  expect(result.isError).toBe(true)
+  expect(result.output).toContain(error)
+  expect(result.output).toContain('Keep planning')
 })
 
 describe('web tools', () => {

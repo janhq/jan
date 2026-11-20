@@ -225,34 +225,41 @@ docs: update installation instructions
 
 ### Signed Commits
 
-We ask that you **sign your commits** so we can verify that changes really come from you. Git supports signing with a GPG/SSH key or, on Linux, a PGP key via `git commit -S`.
+**Signed commits are required on `main`.** A PR with any commit that isn't verified can't be merged, and a bot will comment on the PR listing the commits that need fixing. A commit counts as signed when GitHub shows a green **Verified** badge, which needs two things:
+- the key that signed it is added to your GitHub account as a **signing key**, and
+- the commit email (`git config user.email`) is a verified email on that same account.
 
-**1. Create and publish your key** (if you don't have one):
+**SSH signing (quickest, needs Git 2.34+)** — reuse the SSH key you already push with (use whichever key that is, e.g. `id_rsa`):
 ```bash
-# Generate a GPG key (follow the prompts, add your email)
-gpg --full-generate-key
-
-# List your key IDs
-gpg --list-secret-keys --keyid-format=long
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519   # the private key; use the .pub path only if the key is loaded in ssh-agent
+git config --global commit.gpgsign true
 ```
+Then go to GitHub → **Settings** → **SSH and GPG keys** → **New SSH key**, choose **Key type: Signing Key**, and paste the contents of `~/.ssh/id_ed25519.pub`. A key added only as an authentication key won't verify signatures, so add it again as a signing key even if it's already there.
 
-**2. Register the key on GitHub**
-- Export your public key: `gpg --armor --export YOUR_KEY_ID > public.gpg`
-- Go to GitHub → **Settings** → **SSH and GPG keys** → **New GPG key** and paste the contents
-- Add your key ID to Git:
+**GPG signing** — if you'd rather use GPG:
 ```bash
+gpg --full-generate-key                      # follow the prompts, use your GitHub email
+gpg --list-secret-keys --keyid-format=long   # copy the key ID
+gpg --armor --export YOUR_KEY_ID             # paste into GitHub → New GPG key
+git config --global gpg.format openpgp
 git config --global user.signingkey YOUR_KEY_ID
 git config --global commit.gpgsign true
 ```
 
-**3. Sign your commits**
+With `commit.gpgsign true`, every `git commit` is signed automatically. See [GitHub's commit signing docs](https://docs.github.com/en/authentication/managing-commit-signature-verification) for details.
+
+**Already opened a PR with unsigned commits?** Set up signing as above, then replace your branch's commits with one signed commit that has exactly the same content, and force-push:
 ```bash
-git commit -S -m 'feat: add support for Qwen models'
+git status --short   # must print nothing: commit or stash your changes first
+git fetch upstream
+git branch -f unsigned-backup   # replaces any older backup with this branch
+git reset --soft "$(git merge-base HEAD upstream/main)"
+git commit -S -m "<your PR title>"
+git diff unsigned-backup HEAD   # must print nothing
+git push --force-with-lease origin HEAD
 ```
-
-The `-S` flag signs the commit; `commit.gpgsign true` (above) makes it the default. Signed commits show a green **Verified** badge on GitHub once your key is registered. See [Git's signing docs](https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work) for details.
-
-> **SSH signing**: If you prefer SSH over GPG, follow [GitHub's SSH signing guide](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits-with-ssh) and commit with `git commit -S` as well.
+`upstream` is whatever your remote for `janhq/jan` is called and `origin` is your fork (check with `git remote -v`). PRs are squash-merged, so collapsing them into one commit loses nothing. Unlike a rebase, this keeps changes made in merge commits. If `git diff` prints anything, stop and restore with `git reset --hard unsigned-backup`. After the push, every commit on the PR's **Commits** tab shows a **Verified** badge and the bot comment disappears.
 
 ### Pull Request Requirements
 - Include a screenshot or screen recording in your PR description showing the change in action

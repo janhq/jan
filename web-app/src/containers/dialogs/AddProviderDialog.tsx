@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useId, useState, useRef } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -30,6 +30,7 @@ export function AddProviderDialog({
   children,
 }: AddProviderDialogProps) {
   const { t } = useTranslation()
+  const nameInputId = useId()
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -78,6 +79,7 @@ export function AddProviderDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
+        data-testid="add-provider-dialog"
         className="sm:max-w-[460px] max-w-[90vw]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
@@ -89,13 +91,23 @@ export function AddProviderDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3 mt-2">
-          <Input
-            ref={nameInputRef}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('provider:enterNameForProvider')}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor={nameInputId}
+              className="text-xs text-muted-foreground"
+            >
+              {t('provider:nameLabel')}
+            </label>
+            <Input
+              id={nameInputId}
+              data-testid="provider-name-input"
+              ref={nameInputRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('provider:enterNameForProvider')}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-muted-foreground">
               {t('provider:apiTypeLabel')}
@@ -120,6 +132,7 @@ export function AddProviderDialog({
               {t('provider:baseUrlLabel')}
             </label>
             <Input
+              data-testid="provider-base-url-input"
               value={baseUrl}
               onChange={(e) => {
                 setBaseUrl(e.target.value)
@@ -134,6 +147,7 @@ export function AddProviderDialog({
               {t('provider:apiKeyLabel')}
             </label>
             <Input
+              data-testid="provider-api-key-input"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -163,6 +177,7 @@ export function AddProviderDialog({
             </Button>
           </DialogClose>
           <Button
+            data-testid="add-provider-submit"
             disabled={!canSubmit}
             onClick={handleCreate}
             className="w-full sm:w-auto"

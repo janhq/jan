@@ -5,6 +5,9 @@ pub mod commands;
 pub mod constants;
 #[cfg(not(feature = "cli"))]
 pub mod helpers;
+// Server connection generations and tool-name routing: shared by the desktop
+// commands, the CLI and the agent loop.
+pub mod identity;
 #[cfg(not(feature = "cli"))]
 pub mod lockfile;
 pub mod models;
@@ -13,6 +16,9 @@ pub mod models;
 pub mod oauth;
 #[cfg(not(feature = "cli"))]
 pub mod progress;
+// The server direction: Jan's own toolset offered to other agents. Tauri-free,
+// so it is built in both feature configs.
+pub mod server;
 pub mod truncate;
 
 #[cfg(test)]

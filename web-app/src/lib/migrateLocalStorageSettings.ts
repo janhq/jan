@@ -1,7 +1,8 @@
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { localStorageKey } from '@/constants/localStorage'
-import { HUGGINGFACE_TOKEN_SECRET_KEY } from '@/hooks/useGeneralSetting'
+import { HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
+import type { Invoke } from '@/lib/migrateCoworkSessions'
 
 /**
  * One-time migration of settings from webview localStorage to the backend
@@ -36,8 +37,6 @@ const MIGRATED_KEYS: string[] = [
   localStorageKey.defaultEmbeddingModel,
   localStorageKey.agentMode,
 ]
-
-type Invoke = <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>
 
 // zustand persist wraps state as { state, version }; unwrap defensively.
 function getStateSlice(parsed: unknown): Record<string, unknown> | undefined {
