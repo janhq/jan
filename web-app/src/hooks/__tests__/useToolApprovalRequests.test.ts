@@ -1,222 +1,111 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
 import { useToolApprovalRequests } from '../useToolApprovalRequests'
-import { useToolApproval } from '../useToolApproval'
 
-// useToolApproval persists via backendStorage; stub the persist layer so the
-// import is inert and no disk I/O happens in tests.
-vi.mock('@/constants/localStorage', () => ({
-  localStorageKey: { toolApproval: 'tool-approval-settings' },
+// The grant rules themselves are Rust's (agent-tools `consent`, tested there);
+// this store only carries the prompt between Rust and the UI.
+const consent = vi.hoisted(() => ({
+  request: vi.fn(),
+  answer: vi.fn(),
+  cancel: vi.fn(),
 }))
-vi.mock('zustand/middleware', () => ({
-  persist: (fn: any) => fn,
-  createJSONStorage: () => ({
-    getItem: vi.fn(),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-  }),
+vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
+  consentRequest: consent.request,
+  consentAnswer: consent.answer,
+  consentCancelThread: consent.cancel,
 }))
+
+const flush = () => new Promise((r) => setTimeout(r, 0))
 
 describe('useToolApprovalRequests', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
     useToolApprovalRequests.setState({ pending: {} })
-    useToolApproval.setState({
-      approvedTools: {},
-      approvedServers: [],
-      approvedToolsGlobal: [],
-      allowAllMCPPermissions: false,
+    consent.request.mockReset()
+    consent.answer.mockReset()
+    consent.cancel.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('runs a call Rust allows without prompting', async () => {
+    consent.request.mockResolvedValue('allowed')
+    const approved = await useToolApprovalRequests
+      .getState()
+      .requestApproval('c1', 'search', 't1', 'web')
+    expect(approved).toBe(true)
+    expect(useToolApprovalRequests.getState().pending).toEqual({})
+    expect(consent.request).toHaveBeenCalledWith({
+      threadId: 't1',
+      callId: 'c1',
+      tool: 'search',
+      server: 'web',
+      origin: 'mcp',
+      strict: false,
     })
   })
 
-  it('stores a pending approval keyed by toolCallId', () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    act(() => {
-      result.current.requestApproval('tc1', 'tool-a', 'thread-1')
+  it('prompts when Rust asks, and resolves with what Rust says the answer allows', async () => {
+    consent.request.mockResolvedValue('ask')
+    consent.answer.mockResolvedValue(true)
+    const approved = useToolApprovalRequests
+      .getState()
+      .requestApproval('c1', 'notes', 't1', 'ext:acme', {
+        strict: true,
+        origin: 'extension',
+      })
+    await flush()
+    expect(useToolApprovalRequests.getState().pending.c1).toMatchObject({
+      serverName: 'ext:acme',
+      strict: true,
+      extension: true,
     })
-
-    expect(result.current.pending['tc1']).toMatchObject({
-      toolCallId: 'tc1',
-      toolName: 'tool-a',
-      threadId: 'thread-1',
-    })
+    useToolApprovalRequests.getState().resolveApproval('c1', 'allow-thread')
+    expect(useToolApprovalRequests.getState().pending.c1).toBeUndefined()
+    await expect(approved).resolves.toBe(true)
+    expect(consent.answer).toHaveBeenCalledWith('c1', 'allow-thread')
   })
 
-  it('auto-resolves true (no pending) when allowAllMCPPermissions is set', async () => {
-    useToolApproval.setState({ allowAllMCPPermissions: true })
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
-  })
-
-  it('auto-resolves true (no pending) when the tool is already approved for the thread', async () => {
-    act(() => {
-      useToolApproval.getState().approveToolForThread('thread-1', 'tool-a')
-    })
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
-  })
-
-  it('resolveApproval allow-once resolves true without persisting the tool', async () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
-    })
-    act(() => {
-      result.current.resolveApproval('tc1', 'allow-once')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    expect(useToolApproval.getState().isToolApproved('thread-1', 'tool-a')).toBe(false)
-    expect(result.current.pending['tc1']).toBeUndefined()
-  })
-
-  it('resolveApproval allow-thread persists the tool for that thread only', async () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
-    })
-    act(() => {
-      result.current.resolveApproval('tc1', 'allow-thread')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    const approval = useToolApproval.getState()
-    expect(approval.isToolApproved('thread-1', 'tool-a')).toBe(true)
-    expect(approval.isToolApproved('thread-2', 'tool-a')).toBe(false)
-  })
-
-  // "Always" has to mean always, which is what the thread scope could not say.
-  it('resolveApproval allow-always trusts the whole server, in every thread', async () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
-    })
-    act(() => {
-      result.current.resolveApproval('tc1', 'allow-always')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    const approval = useToolApproval.getState()
-    expect(approval.isToolApproved('thread-2', 'other-tool', 'github')).toBe(
-      true
+  it('denies a repeated call id instead of replacing the open prompt', async () => {
+    consent.request.mockResolvedValue('ask')
+    consent.answer.mockResolvedValue(true)
+    const { requestApproval } = useToolApprovalRequests.getState()
+    const first = requestApproval('c1', 'search', 't1', 'web')
+    const concurrent = requestApproval('c1', 'search', 't1', 'web')
+    await flush()
+    const later = requestApproval('c1', 'search', 't1', 'web')
+    await expect(concurrent).resolves.toBe(false)
+    await expect(later).resolves.toBe(false)
+    expect(useToolApprovalRequests.getState().pending.c1.toolName).toBe(
+      'search'
     )
-    expect(approval.isToolApproved('thread-2', 'tool-a', 'gitlab')).toBe(false)
+    useToolApprovalRequests.getState().resolveApproval('c1', 'allow-once')
+    await expect(first).resolves.toBe(true)
   })
 
-  it('resolveApproval allow-always falls back to the tool when it has no server', async () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
+  it('denies when Rust cannot be reached, asked or answered', async () => {
+    consent.request.mockRejectedValueOnce(new Error('ipc'))
+    await expect(
+      useToolApprovalRequests.getState().requestApproval('c1', 'x', 't1')
+    ).resolves.toBe(false)
 
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
-    })
-    act(() => {
-      result.current.resolveApproval('tc1', 'allow-always')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    const approval = useToolApproval.getState()
-    expect(approval.isToolApproved('thread-2', 'tool-a')).toBe(true)
-    expect(approval.isToolApproved('thread-2', 'tool-b')).toBe(false)
+    consent.request.mockResolvedValue('ask')
+    consent.answer.mockRejectedValue(new Error('ipc'))
+    const approved = useToolApprovalRequests
+      .getState()
+      .requestApproval('c2', 'x', 't1')
+    await flush()
+    useToolApprovalRequests.getState().resolveApproval('c2', 'allow-once')
+    await expect(approved).resolves.toBe(false)
   })
 
-  it('auto-resolves true when the tool comes from an already trusted server', async () => {
-    act(() => {
-      useToolApproval.getState().approveServer('github')
-    })
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
-    })
-
-    await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
-  })
-
-  it('keeps the server on the pending entry so the prompt can name it', () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    act(() => {
-      result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
-    })
-
-    expect(result.current.pending['tc1']).toMatchObject({
-      serverName: 'github',
-    })
-  })
-
-  it('resolveApproval deny resolves false', async () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let p: Promise<boolean>
-    act(() => {
-      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
-    })
-    act(() => {
-      result.current.resolveApproval('tc1', 'deny')
-    })
-
-    await expect(p!).resolves.toBe(false)
-    expect(useToolApproval.getState().isToolApproved('thread-1', 'tool-a')).toBe(false)
-  })
-
-  it('clearPendingForThread resolves matching promises false and removes only that thread', async () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    let pA: Promise<boolean>
-    let pB: Promise<boolean>
-    act(() => {
-      pA = result.current.requestApproval('tcA', 'tool-a', 'thread-A')
-      pB = result.current.requestApproval('tcB', 'tool-b', 'thread-B')
-    })
-
-    act(() => {
-      result.current.clearPendingForThread('thread-A')
-    })
-
-    await expect(pA!).resolves.toBe(false)
-    expect(result.current.pending['tcA']).toBeUndefined()
-    expect(result.current.pending['tcB']).toMatchObject({ threadId: 'thread-B' })
-
-    act(() => {
-      result.current.resolveApproval('tcB', 'allow-once')
-    })
-    await expect(pB!).resolves.toBe(true)
-  })
-
-  it('clearPendingForThread is a no-op when nothing matches', () => {
-    const { result } = renderHook(() => useToolApprovalRequests())
-
-    act(() => {
-      result.current.requestApproval('tcA', 'tool-a', 'thread-A')
-    })
-    act(() => {
-      result.current.clearPendingForThread('thread-Z')
-    })
-
-    expect(result.current.pending['tcA']).toMatchObject({ threadId: 'thread-A' })
+  it('clearPendingForThread denies that thread only and ends its authorizations', async () => {
+    consent.request.mockResolvedValue('ask')
+    const a = useToolApprovalRequests.getState().requestApproval('a', 'x', 't1')
+    const b = useToolApprovalRequests.getState().requestApproval('b', 'x', 't2')
+    await flush()
+    useToolApprovalRequests.getState().clearPendingForThread('t1')
+    await expect(a).resolves.toBe(false)
+    expect(consent.cancel).toHaveBeenCalledWith('t1')
+    expect(useToolApprovalRequests.getState().pending.b).toBeDefined()
+    consent.answer.mockResolvedValue(false)
+    useToolApprovalRequests.getState().resolveApproval('b', 'deny')
+    await expect(b).resolves.toBe(false)
   })
 })

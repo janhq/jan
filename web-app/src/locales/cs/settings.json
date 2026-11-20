@@ -99,8 +99,6 @@
     "threadScrollFlowHint": "Ukotvuje viewport k poslední zprávě, kterou odešlete.",
     "threadScrollStickyTitle": "Lepkavé rolování",
     "threadScrollStickyHint": "Automaticky sleduje příchozí odpovědi v reálném čase.",
-    "tokenCounterCompact": "Kompaktní počítadlo tokenů",
-    "tokenCounterCompactDesc": "Zobrazit počítadlo tokenů uvnitř chatového vstupu. Pokud je zakázáno, počítadlo tokenů se zobrazí pod vstupem.",
     "codeBlockTitle": "Blok kódu",
     "codeBlockDesc": "Vybrat styl zvýraznění syntaxe.",
     "showLineNumbers": "Zobrazit čísla řádků",
@@ -108,7 +106,8 @@
     "resetCodeBlockStyle": "Obnovit styl bloku kódu",
     "resetCodeBlockStyleDesc": "Obnovit styl bloku kódu na výchozí.",
     "resetCodeBlockSuccess": "Styl bloku kódu úspěšně obnoven",
-    "resetCodeBlockSuccessDesc": "Styl bloku kódu byl obnoven na výchozí."
+    "resetCodeBlockSuccessDesc": "Styl bloku kódu byl obnoven na výchozí.",
+    "themeDescFixed": "Vždy používat tento motiv. Pokud má odpovídat operačnímu systému, zvolte Systém."
   },
   "hardware": {
     "os": "Operační systém",
@@ -157,6 +156,11 @@
     "peerSslDesc": "Ověřit SSL certifikáty peer připojení.",
     "hostSsl": "SSL hostitele",
     "hostSslDesc": "Ověřit SSL certifikáty cílových hostitelů."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Co Jan může dělat ve vašem počítači: jeho izolovaný shell a k tomu vzpomínky a dovednosti trvale uložené ve složce dat Janu.",
+    "networkDesc": "Povolí příkazům shellu přístup k síti, například k instalaci balíčků nebo stažení repozitáře. Ve výchozím nastavení zapnuto. Sandbox stále omezuje, ke kterým souborům mají příkazy přístup."
   },
   "localApiServer": {
     "title": "Lokální API server",

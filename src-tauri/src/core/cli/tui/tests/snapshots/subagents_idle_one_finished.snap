@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 164
+expression: render_snapshot(buf)
+---
+| 1 subagent running · 1 queued · /agents to view or stop                        |
+|  └ perf-scan · 12s · starting…                                                 |
+|    docs-writer · Queued (1)                                                    |
+
+ 0 0..33 fg=#808080
+ 0 33..40 fg=#56B6C2
+ 0 40..56 fg=#808080
+ 1 0..4 fg=DarkGray
+ 1 4..13 fg=#56B6C2 mod=BOLD
+ 1 13..31 fg=#808080
+ 2 0..4 fg=DarkGray
+ 2 4..15 fg=#56B6C2 mod=BOLD
+ 2 15..28 fg=#808080

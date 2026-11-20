@@ -1,0 +1,44 @@
+{
+  "name": "@janhq/extension-api",
+  "version": "1.0.0",
+  "description": "Stable API, manifest types and validator for Jan desktop extensions",
+  "keywords": [
+    "jan",
+    "extension"
+  ],
+  "homepage": "https://jan.ai",
+  "license": "Apache-2.0",
+  "author": "Jan <service@jan.ai>",
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "default": "./dist/manifest.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "api-report": "node scripts/api-report.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "packageManager": "yarn@4.5.3"
+}

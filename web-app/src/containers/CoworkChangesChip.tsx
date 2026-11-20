@@ -45,7 +45,10 @@ export function CoworkChangesChip({
             deletions,
           })}
           onClick={onToggle}
-          className={cn('shrink-0', open && 'text-primary')}
+          className={cn(
+            'shrink-0',
+            open ? 'text-primary' : 'text-muted-foreground'
+          )}
         >
           <FileDiff className="size-3.5 shrink-0" />
           <span className={cn('font-mono tabular-nums', DIFF_ADD_TEXT)}>

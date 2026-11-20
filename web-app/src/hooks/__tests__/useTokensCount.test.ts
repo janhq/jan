@@ -6,13 +6,11 @@ import { useAppState } from '../useAppState'
 
 const mockGetModelProps = vi.fn()
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      getByName: () => ({ getModelProps: mockGetModelProps }),
-      listExtensions: () => [],
-    }),
-  },
+// Both local engines answer through their host service.
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({
+    services: { get: () => ({ getModelProps: mockGetModelProps }) },
+  }),
 }))
 
 const modelProviderState = {
@@ -232,7 +230,7 @@ describe('useTokensCount', () => {
       expect(result.current.tokenCount).toBe(4242)
     })
 
-    // "Increase context" (Cowork's recovery chip, the model rail's settings
+    // "Increase context" (Cowork's recovery chip, the model settings sheet's
     // form) writes the new size and reloads the router with it. The meter
     // divides by the launched window, so it has to refetch or it keeps
     // reporting the previous one for the rest of the session.

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useThreads } from '../useThreads'
+import { forgetMessageWrites } from '../useMessages'
+
+vi.mock('../useMessages', () => ({ forgetMessageWrites: vi.fn() }))
 
 // Mock the services
 vi.mock('@/services/threads', () => ({
@@ -157,6 +160,17 @@ describe('useThreads', () => {
     expect(Object.keys(result.current.threads)).toHaveLength(1)
     expect(result.current.threads['thread1']).toBeUndefined()
     expect(result.current.threads['thread2']).toBeDefined()
+  })
+
+  it('drops the deleted thread message write queue', () => {
+    const { result } = renderHook(() => useThreads())
+    act(() => {
+      result.current.setThreads([{ id: 'thread1', title: 'Thread 1', messages: [] }])
+    })
+    act(() => {
+      result.current.deleteThread('thread1')
+    })
+    expect(forgetMessageWrites).toHaveBeenCalledWith('thread1')
   })
 
   it('should rename thread', () => {

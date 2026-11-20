@@ -1,0 +1,23 @@
+[default]
+description = "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/extensions.json)"
+permissions = [
+    "allow-stage-bundle",
+    "allow-confirm-install",
+    "allow-discard-stage",
+    "allow-list",
+    "allow-set-enabled",
+    "allow-set-grants",
+    "allow-uninstall",
+    "allow-rollback",
+    "allow-read-entry",
+    "allow-set-safe-mode",
+    "allow-http-fetch",
+    "allow-http-fetch-stream",
+    "allow-http-cancel",
+    "allow-list-sources",
+    "allow-add-source",
+    "allow-remove-source",
+    "allow-get-catalog",
+    "allow-accept-next-key",
+    "allow-stage-from-index",
+]

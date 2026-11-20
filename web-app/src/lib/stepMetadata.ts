@@ -1,4 +1,5 @@
 import type { LanguageModelUsage } from 'ai'
+import type { ExtensionAuthorMetadata } from '@/lib/extensions/authorship'
 
 /** The speed block the transcript's token-speed popover reads. */
 export type TokenSpeedMeta = {
@@ -9,7 +10,7 @@ export type TokenSpeedMeta = {
 }
 
 /** What a finished step leaves on its message, as `MessageItem` reads it. */
-export type StepMetadata = {
+export type StepMetadata = Partial<ExtensionAuthorMetadata> & {
   finishReason?: string
   usage: {
     inputTokens?: number
@@ -31,16 +32,25 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 /**
  * Shared chat/subagent finish metadata. Prefer engine timings; otherwise measure
  * from the first content part to exclude prompt processing.
+ *
+ * `stamp` is merged onto the message from its `start` part on, so the message
+ * carries it before any content renders (an extension provider's reply is
+ * rendered without remote images; see `extensions/authorship.ts`), and again
+ * at the finish, which is what gets persisted.
  */
-export function createStepMetadata() {
+export function createStepMetadata(stamp?: ExtensionAuthorMetadata) {
   let startedAt: number | undefined
   let tokensPerSecond = 0
   let promptPerSecond = 0
 
   return {
-    /** Feed the parts the AI SDK hands `messageMetadata`; returns the metadata
-     * once the step finishes, and `undefined` for every other part. */
-    onPart(part: StreamPart): StepMetadata | undefined {
+    /** Feed the parts the AI SDK hands `messageMetadata`; returns the stamp
+     * on the start part, the metadata once the step finishes, and `undefined`
+     * for every other part. */
+    onPart(
+      part: StreamPart
+    ): StepMetadata | ExtensionAuthorMetadata | undefined {
+      if (part.type === 'start') return stamp
       const startsContent =
         part.type === 'text-start' || part.type === 'reasoning-start'
       if (startedAt === undefined && startsContent) startedAt = Date.now()
@@ -72,6 +82,7 @@ export function createStepMetadata() {
       }
 
       return {
+        ...stamp,
         finishReason: part.finishReason as string | undefined,
         usage: {
           inputTokens,

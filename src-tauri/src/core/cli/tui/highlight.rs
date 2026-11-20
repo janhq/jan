@@ -152,7 +152,17 @@ fn highlight_uncached(body: &[&str], token: &str) -> Rows {
 
 /// syntect style -> ratatui style, dropping the background (see module docs).
 fn convert(s: SynStyle) -> Style {
-    let mut out = Style::new().fg(Color::Rgb(s.foreground.r, s.foreground.g, s.foreground.b));
+    convert_in(s, super::theme::Theme::current())
+}
+
+/// `convert` at an explicit theme. The token colour is fitted to the colour
+/// depth and dropped on 16 colours, leaving only the font style there.
+fn convert_in(s: SynStyle, t: super::theme::Theme) -> Style {
+    let fg = Color::Rgb(s.foreground.r, s.foreground.g, s.foreground.b);
+    let mut out = match t.subtle(fg) {
+        Some(fg) => Style::new().fg(fg),
+        None => Style::new(),
+    };
     if s.font_style.contains(FontStyle::BOLD) {
         out = out.bold();
     }
@@ -219,6 +229,26 @@ mod tests {
     fn empty_language_tag_falls_back_without_panicking() {
         let rows = block(&["plain text"], "");
         assert_eq!(text(&rows[0]), "plain text");
+    }
+
+    #[test]
+    fn token_colours_follow_the_colour_depth() {
+        use super::super::theme::{ColorDepth, Theme};
+        use super::{convert_in, FontStyle, SynStyle};
+        use ratatui::style::{Color, Modifier};
+        use syntect::highlighting::Color as SynColor;
+        let s = SynStyle {
+            foreground: SynColor { r: 191, g: 97, b: 106, a: 0xff },
+            background: SynColor::BLACK,
+            font_style: FontStyle::BOLD,
+        };
+        let at = |depth| convert_in(s, Theme { light: false, depth });
+        assert_eq!(at(ColorDepth::Truecolor).fg, Some(Color::Rgb(191, 97, 106)));
+        assert!(matches!(at(ColorDepth::Ansi256).fg, Some(Color::Indexed(_))));
+        // 16 colours keep the font style but leave the token in the default fg.
+        let plain = at(ColorDepth::Ansi16);
+        assert_eq!(plain.fg, None);
+        assert!(plain.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]

@@ -169,6 +169,8 @@ export interface ModelsService {
     spec_draft_n_max?: number
     spec_draft_n_min?: number
     spec_draft_p_min?: number
+    spec_draft_sampling?: string
+    spec_draft_n_ubatch?: number
   }>
   updateMtpSettings(
     modelId: string,
@@ -177,6 +179,8 @@ export interface ModelsService {
       spec_draft_n_max?: number | null
       spec_draft_n_min?: number | null
       spec_draft_p_min?: number | null
+      spec_draft_sampling?: string | null
+      spec_draft_n_ubatch?: number | null
     }
   ): Promise<void>
   updateModelSettings(
@@ -201,9 +205,9 @@ export interface ModelsService {
  * extension, not to the plugin.
  */
 export interface EngineVersionInfo {
-  /** llama.cpp's own version, e.g. "0.4.0". */
+  /** llama.cpp's own version, e.g. "1.0.0". */
   version: string
-  /** Upstream build tag, e.g. "b10809". */
+  /** Upstream build tag, e.g. "b12359". */
   tag: string
   buildNumber: string
   /** Full commit sha the build is pinned to. */

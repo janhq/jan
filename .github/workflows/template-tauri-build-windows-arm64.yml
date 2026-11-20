@@ -113,25 +113,21 @@ on:
           the vulkan feature -- and the SDK requirement -- to any vendor build
           whether or not the variant named it. Set to 1 with cuda13-vulkan.
 
-  # Pre-merge hook: workflow_dispatch is not offered until the file is on the
-  # default branch, so until this merges a push is the only way to exercise it.
-  # Drop this once it lands there.
-  push:
-    branches: ['feat/windows-arm64']
-
 # Don't spend 3h of ARM runner on a superseded commit, and concurrent CUDA pulls
 # get throttled. Keyed on the caller's ref so nightly and a feature branch don't
-# evict each other. x64 needs none of this; only this one takes pushes.
+# evict each other.
 concurrency:
   group: tauri-win-arm64-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # `||` defaults because a push carries no inputs at all.
+  # `||` defaults for a run that carries no inputs.
   CHANNEL: ${{ inputs.channel || 'nightly' }}
   NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
   JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
   JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
+  # engine-build.yml's prebuilt-windows-arm64 copies this job's toolchain
+  # (MSVC, CUDA, Vulkan) to keep its prebuilt warm: change both together.
   CUDA_SHORT: '13.4'
   # Redistributable archives, as upstream llama.cpp provisions this same
   # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
@@ -151,22 +147,22 @@ jobs:
 
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
       - name: Replace Icons for Beta Build
         if: env.CHANNEL != 'stable'
         shell: bash
-        run: cp ".github/scripts/icon-${CHANNEL}.png" src-tauri/icons/icon.png
+        run: bash .github/scripts/use-channel-icons.sh "${CHANNEL}"
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: cargo install ctoml
@@ -307,6 +303,8 @@ jobs:
           }
 
       # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
+      # Pinned because glslc's version is in the engine-prebuilt.sh key; bump it
+      # with the x64 one in setup-engine-toolchain and the copy in engine-build.yml.
       - name: Provision the Vulkan SDK
         if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
         shell: bash
@@ -314,7 +312,7 @@ jobs:
           curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
             --connect-timeout 30 --max-time 900 \
             -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-            https://sdk.lunarg.com/sdk/download/latest/warm/vulkan_sdk.exe
+            https://sdk.lunarg.com/sdk/download/1.4.363.0/warm/vulkan_sdk.exe
           "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
             --accept-licenses --default-answer --confirm-command install
           echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
@@ -350,9 +348,7 @@ jobs:
       - name: Update app version and product name
         shell: bash
         run: |
-          jq --arg version "$NEW_VERSION" \
-             '.version = $version | .bundle.createUpdaterArtifacts = true' \
-             ./src-tauri/tauri.conf.json > /tmp/c.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/c.json
           mv /tmp/c.json ./src-tauri/tauri.conf.json
 
           jq '.bundle.targets = ["nsis"]
@@ -361,16 +357,8 @@ jobs:
              ./src-tauri/tauri.windows.conf.json > /tmp/w.json
           mv /tmp/w.json ./src-tauri/tauri.windows.conf.json
 
-          jq --arg version "$NEW_VERSION" '.version = $version' web-app/package.json > /tmp/p.json
-          mv /tmp/p.json web-app/package.json
-
-          for p in hardware llamacpp; do
-            jq --arg version "$NEW_VERSION" '.version = $version' \
-              "./src-tauri/plugins/tauri-plugin-$p/package.json" > /tmp/p.json
-            mv /tmp/p.json "./src-tauri/plugins/tauri-plugin-$p/package.json"
-            ctoml "./src-tauri/plugins/tauri-plugin-$p/Cargo.toml" package.version "$NEW_VERSION"
-          done
-          ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "$NEW_VERSION"
 
           if [ "$CHANNEL" != "stable" ]; then
             # Without this an arm64 nightly keeps tauri.conf.json's stable
@@ -454,12 +442,16 @@ jobs:
       #
       # Does nothing for a cold first run; the payoff is every run after it.
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: src-tauri
           # This job has failed in packaging after an hour of compiling more
           # than once. Saving anyway keeps the next attempt cheap.
           cache-on-failure: true
+          # A pull request's cache is readable only by that pull request, and
+          # each one was an 835MB entry against the repo's 10GB cap. PR builds
+          # restore what main, release and nightly runs saved.
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Install AzureSignTool
         run: dotnet tool install --global --version 6.0.0 AzureSignTool
@@ -469,6 +461,22 @@ jobs:
           corepack enable
           corepack prepare yarn@4.5.3 --activate
           yarn config set -H enableImmutableInstalls false
+
+      # Links a cached build of the pinned llama.cpp instead of compiling it
+      # (~88 of the ~115 minutes below). No credentials, or a missing,
+      # truncated or incomplete object, means the full cmake build. Key and
+      # layout: src-tauri/build-utils/engine-prebuilt.sh
+      - name: Restore the prebuilt llama.cpp engine
+        id: engine_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       - name: Build app
         shell: bash
@@ -486,9 +494,29 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
+      # Only after a miss, and only when the job builds main or a release tag
+      # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
+      # write it, and neither does a caller on main that builds another ref.
+      # `!cancelled()` rather than success() so the engine is kept when signing
+      # or bundling fails later;
+      # the script itself refuses unless the worker was built and every output
+      # is present.
+      - name: Save the prebuilt llama.cpp engine
+        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' && (inputs.ref || github.ref) == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh save
+        env:
+          KEY: ${{ steps.engine_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
       - name: Upload the engine build log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: engine-build-log-windows-arm64
           path: src-tauri/target/engine-build.log
@@ -553,7 +581,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload NSIS Installer Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-windows-arm64-exe-${{ env.NEW_VERSION }}
           path: |
@@ -581,7 +609,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}

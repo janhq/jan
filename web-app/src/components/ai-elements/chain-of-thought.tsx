@@ -7,8 +7,6 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import {
-  SparklesIcon,
-  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CheckCircle2Icon,
@@ -31,6 +29,11 @@ import { Streamdown } from 'streamdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatCompactDuration } from '@/lib/duration'
 import { Shimmer } from './shimmer'
+import { useReleaseScrollLock } from './conversation'
+import {
+  ExternalAnchor,
+  type ExternalAnchorProps,
+} from '@/components/ExternalAnchor'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -114,7 +117,13 @@ export const ChainOfThought = memo(
       else if (shouldCollapse === false) setIsOpen(true)
     }, [forceOpen, shouldCollapse, setIsOpen])
 
+    // A click on the header is the reader choosing what to look at, so the
+    // conversation stops pinning to the bottom; otherwise expanding the last
+    // trace would scroll it straight back out of view. The automatic opens and
+    // collapses above are not routed here and keep following the stream.
+    const releaseScrollLock = useReleaseScrollLock()
     const handleOpenChange = (newOpen: boolean) => {
+      releaseScrollLock()
       setIsOpen(newOpen)
     }
 
@@ -164,15 +173,9 @@ export const ChainOfThought = memo(
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
         <Collapsible
-          className={cn(
-            'not-prose transition-colors',
-            // Expanded: a full-width card frame around the timeline.
-            'data-[state=open]:w-full data-[state=open]:rounded-2xl data-[state=open]:border data-[state=open]:border-border/50 data-[state=open]:bg-main-view-fg/2 data-[state=open]:p-3',
-            // Collapsed: a compact pill that hugs its label, so the folded trace
-            // reads as a distinct chip between messages, not a full-width row.
-            'data-[state=closed]:w-fit data-[state=closed]:self-start data-[state=closed]:rounded-full data-[state=closed]:border data-[state=closed]:border-border/50 data-[state=closed]:bg-main-view-fg/2 data-[state=closed]:px-2.5 data-[state=closed]:py-1 data-[state=closed]:hover:bg-main-view-fg/5',
-            className
-          )}
+          // Plain text in both states: no card frame when expanded and no pill
+          // when collapsed, so the trace reads as a quiet line between messages.
+          className={cn('not-prose w-full', className)}
           onOpenChange={handleOpenChange}
           open={isOpen}
           {...props}
@@ -227,6 +230,7 @@ export const ChainOfThoughtHeader = memo(
   }: ChainOfThoughtHeaderProps) => {
     const { t } = useTranslation()
     const { isStreaming, isOpen, duration } = useChainOfThought()
+    const releaseScrollLock = useReleaseScrollLock()
 
     const keys = COMPLETED_KEYS[completedVariant]
     const completedLabel =
@@ -234,12 +238,9 @@ export const ChainOfThoughtHeader = memo(
         ? t(keys.aWhile)
         : t(keys.withDuration, { duration: formatCompactDuration(duration, t) })
 
-    // The folded summary is a compact pill, so it reads a notch smaller than
-    // the expanded card's header.
-    const iconSize = isOpen ? 'size-4' : 'size-3.5'
+    // w-fit so the clickable row hugs its label instead of spanning the column.
     const rowClassName = cn(
-      'flex w-full items-center gap-2 text-muted-foreground transition-colors hover:text-foreground',
-      isOpen ? 'text-sm' : 'text-xs',
+      'flex w-fit cursor-pointer items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground',
       className
     )
 
@@ -253,7 +254,6 @@ export const ChainOfThoughtHeader = memo(
 
     const label = (
       <>
-        <SparklesIcon className={cn(iconSize, 'shrink-0')} />
         {isStreaming ? (
           <Shimmer duration={1}>
             {streamingLabel ?? t('chat:reasoning.label')}
@@ -275,7 +275,12 @@ export const ChainOfThoughtHeader = memo(
         <button
           type="button"
           className={rowClassName}
-          onClick={onNavigate}
+          onClick={() => {
+            // Switching to the full timeline grows the trace like expanding
+            // it does, so release the bottom lock for the same reason.
+            releaseScrollLock()
+            onNavigate?.()
+          }}
           aria-label={navLabel}
           title={navLabel}
           {...props}
@@ -290,11 +295,12 @@ export const ChainOfThoughtHeader = memo(
     return (
       <CollapsibleTrigger className={rowClassName} {...props}>
         {label}
-        <ChevronDownIcon
+        {/* Points at the folded content: right when collapsed, turning down
+            as the trace opens beneath it. */}
+        <ChevronRightIcon
           className={cn(
-            iconSize,
-            'shrink-0 transition-transform',
-            isOpen ? 'rotate-180' : 'rotate-0'
+            'size-4 shrink-0 transition-transform',
+            isOpen ? 'rotate-90' : 'rotate-0'
           )}
         />
       </CollapsibleTrigger>
@@ -312,11 +318,9 @@ export const ChainOfThoughtContent = memo(
   ({ className, children, ...props }: ChainOfThoughtContentProps) => (
     <CollapsibleContent
       className={cn(
-        'mt-4 text-sm relative',
+        'mt-3 text-sm relative',
         // Expand animates in; collapse unmounts synchronously (no exit
-        // animation). A lingering exit keeps the content's height while the
-        // root has already snapped to the folded w-fit/rounded-full pill,
-        // which renders a tall narrow rounded box as a circle for that frame.
+        // animation), so the folded header never sits on a lingering body.
         'data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=open]:animate-in',
         className
       )}
@@ -422,14 +426,12 @@ export const ChainOfThoughtSearchResults = memo(
 
 // ── ChainOfThoughtSearchResult ─────────────────────────────────────────────
 
-export type ChainOfThoughtSearchResultProps = ComponentProps<'a'>
+export type ChainOfThoughtSearchResultProps = ExternalAnchorProps
 
 export const ChainOfThoughtSearchResult = memo(
   ({ className, children, href, ...props }: ChainOfThoughtSearchResultProps) => (
-    <a
+    <ExternalAnchor
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground',
         className
@@ -439,7 +441,7 @@ export const ChainOfThoughtSearchResult = memo(
       <SearchIcon className="size-3 shrink-0" />
       <span className="truncate max-w-[200px]">{children}</span>
       <ExternalLinkIcon className="size-3 shrink-0 opacity-50" />
-    </a>
+    </ExternalAnchor>
   )
 )
 

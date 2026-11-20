@@ -11,9 +11,10 @@ import {
   StepRow,
 } from '@/components/ai-elements/reasoning-timeline'
 import { Button } from '@/components/ui/button'
+import { scrollToBottomButtonClassName } from '@/components/ai-elements/conversation'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
-  findRunningToolCallId,
+  isToolCallRunning,
   useToolCallRuntime,
 } from '@/hooks/useToolCallRuntime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -56,7 +57,16 @@ export const ChainOfThoughtGroup = memo(
   }: ChainOfThoughtGroupProps) => {
     const { t } = useTranslation()
     const pendingApprovals = useToolApprovalRequests((s) => s.pending)
-    const runningToolCallId = useToolCallRuntime((s) => findRunningToolCallId(s.timings))
+    // This trace's own running call: another thread's loop may be running one
+    // in the background at the same time.
+    const runningToolCallId = useToolCallRuntime(
+      (s) =>
+        entries.find(
+          (e) =>
+            e.part.toolCallId !== undefined &&
+            isToolCallRunning(s.timings[e.part.toolCallId])
+        )?.part.toolCallId
+    )
     // Seed the header from a persisted duration on reload; persist the live
     // measurement so it survives the next one. Keyed by the (stable) message id.
     const storedDuration = useCoTDuration((s) => s.durations[messageId])
@@ -227,13 +237,18 @@ export const ChainOfThoughtGroup = memo(
         </div>
         {!isReasoningAtBottom && (
           <Button
-            className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+            className={twMerge(
+              'absolute bottom-2 left-[50%] translate-x-[-50%] size-7 z-10',
+              scrollToBottomButtonClassName
+            )}
             onClick={onReasoningScrollToBottom}
             size="icon"
             type="button"
             variant="outline"
+            aria-label={t('common:scrollToBottom')}
+            title={t('common:scrollToBottom')}
           >
-            <IconArrowDown className="size-3" />
+            <IconArrowDown className="size-3" aria-hidden="true" />
           </Button>
         )}
       </div>

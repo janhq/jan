@@ -89,6 +89,16 @@ pub async fn find_gguf_tensors_internal(
     .await
 }
 
+/// The distinct ggml type ids the gguf's tensors use. See
+/// [`helpers::read_gguf_tensor_types`] for why this is read rather than
+/// inferred from `general.file_type`.
+pub async fn read_gguf_tensor_types_internal(path: String) -> Result<Vec<u32>, String> {
+    parse_gguf(&path, "GGUF tensor types", |r: &mut (dyn ReadSeek + '_)| {
+        helpers::read_gguf_tensor_types(r)
+    })
+    .await
+}
+
 /// Estimate KVCache size from a given metadata
 pub async fn estimate_kv_cache_internal(
     meta: HashMap<String, String>,

@@ -611,15 +611,6 @@ function HubContent() {
                         <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
                           <RenderMarkdown
                             className="select-none reset-heading"
-                            components={{
-                              a: ({ ...props }) => (
-                                <a
-                                  {...props}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                />
-                              ),
-                            }}
                             content={
                               extractDescription(
                                 filteredModels[virtualItem.index]?.description

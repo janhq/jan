@@ -31,6 +31,7 @@
 //! has a single writable root and a binary network switch, which AppContainer
 //! expresses directly.
 
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 /// Marks a re-exec of this binary as the confined-spawn helper. Must be the
@@ -72,13 +73,14 @@ pub fn moniker(workspace: &Path) -> String {
 
 /// argv for the helper re-exec. Shaped like the other backends -- fixed
 /// arguments, then the shell, with the command string appended by the caller --
-/// so the spawn path does not change per platform. The scratch travels with the
-/// workspace because both need an ACE, and only the helper holds the container
-/// SID to grant one with; an absent scratch is the empty string, since a
-/// positional slot cannot simply be omitted.
+/// so the spawn path does not change per platform. The scratch and the package
+/// cache travel with the workspace because all need an ACE, and only the helper
+/// holds the container SID to grant one with; an absent one is the empty
+/// string, since a positional slot cannot simply be omitted.
 pub fn helper_args(
     workspace: &Path,
     scratch: Option<&Path>,
+    pkg: Option<&Path>,
     allow_network: bool,
     program: &Path,
     args: &[String],
@@ -89,6 +91,8 @@ pub fn helper_args(
         workspace.to_string_lossy().to_string(),
         scratch
             .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        pkg.map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
         "--".to_string(),
         program.to_string_lossy().to_string(),
@@ -133,13 +137,20 @@ fn quote_arg(arg: &str) -> String {
     out
 }
 
-/// Join a program and its arguments into a `CreateProcessW` command line.
+/// Join a program and its arguments into a `CreateProcessW` command line. cmd
+/// does not parse its line with `CommandLineToArgvW`, so for cmd the last
+/// argument -- the command -- is appended in cmd's own form instead of quoted.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn command_line(program: &Path, args: &[String]) -> String {
     let mut line = quote_arg(&program.to_string_lossy());
-    for a in args {
+    let cmd = super::proc::kind_of(program) == super::proc::ShellKind::Cmd;
+    for (i, a) in args.iter().enumerate() {
         line.push(' ');
-        line.push_str(&quote_arg(a));
+        if cmd && i + 1 == args.len() {
+            line.push_str(&super::proc::cmd_payload(a));
+        } else {
+            line.push_str(&quote_arg(a));
+        }
     }
     line
 }
@@ -149,6 +160,7 @@ fn command_line(program: &Path, args: &[String]) -> String {
 struct Request {
     workspace: PathBuf,
     scratch: Option<PathBuf>,
+    pkg: Option<PathBuf>,
     allow_network: bool,
     program: PathBuf,
     args: Vec<String>,
@@ -168,10 +180,12 @@ fn parse_request<I: IntoIterator<Item = String>>(argv: I) -> Option<Request> {
         _ => return None,
     };
     let workspace = PathBuf::from(it.next()?);
-    let scratch = match it.next()? {
-        s if s.is_empty() => None,
-        s => Some(PathBuf::from(s)),
+    let mut optional_dir = || match it.next()? {
+        s if s.is_empty() => Some(None),
+        s => Some(Some(PathBuf::from(s))),
     };
+    let scratch = optional_dir()?;
+    let pkg = optional_dir()?;
     if it.next()? != "--" {
         return None;
     }
@@ -179,10 +193,118 @@ fn parse_request<I: IntoIterator<Item = String>>(argv: I) -> Option<Request> {
     Some(Request {
         workspace,
         scratch,
+        pkg,
         allow_network,
         program,
         args: it.collect(),
     })
+}
+
+/// UTF-16 view of an `OsStr`. Windows holds environment names and values as
+/// UTF-16 already, so the block is exact there; on other hosts this exists for
+/// the tests and loses lone surrogates, which cannot reach `CreateProcessW`
+/// anyway.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn env_wide(s: &OsStr) -> Vec<u16> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        s.encode_wide().collect()
+    }
+    #[cfg(not(windows))]
+    {
+        s.to_string_lossy().encode_utf16().collect()
+    }
+}
+
+/// The environment block handed to `CreateProcessW` for the container child:
+/// `name=value` entries in UTF-16, sorted by name and terminated by a second
+/// NUL, which is the layout Windows requires.
+///
+/// Built from the helper's own environment rather than inherited. `proc.rs`
+/// already reduced that environment to `SANDBOX_ENV_ALLOW` before the helper was
+/// spawned, so passing it on is what carries the tool's policy into the
+/// container; asking Windows to reconstruct it by inheritance (`lpEnvironment`
+/// NULL, which is what this used to do) is the step that failed with
+/// `ERROR_ENVVAR_NOT_FOUND` (203) on the machine in the report - before the
+/// shell ran at all, which is why the old message's advice about where the shell
+/// lives could not explain it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn environment_block<I>(vars: I) -> Vec<u16>
+where
+    I: IntoIterator<Item = (OsString, OsString)>,
+{
+    let mut entries: Vec<(String, Vec<u16>)> = vars
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let (name_wide, value_wide) = (env_wide(&name), env_wide(&value));
+            // An interior NUL would be read as the end of this entry and the
+            // rest of the value as the next one: the block would be malformed
+            // rather than merely incomplete, so drop the entry.
+            if name_wide.is_empty() || name_wide.contains(&0) || value_wide.contains(&0) {
+                return None;
+            }
+            let mut entry = name_wide;
+            entry.push(u16::from(b'='));
+            entry.extend(value_wide);
+            entry.push(0);
+            // Windows compares variable names without regard to case.
+            Some((name.to_string_lossy().to_ascii_uppercase(), entry))
+        })
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut block: Vec<u16> = entries.into_iter().flat_map(|(_, entry)| entry).collect();
+    block.push(0);
+    block
+}
+
+/// The shell's working directory: the long form of `workspace` (`long`, its
+/// canonical path) when that is still a drive path, else `workspace` as given.
+///
+/// The long form fixes an 8.3 short path, which Windows PowerShell 5.1 cannot
+/// expand inside the container. But a workspace on a mapped drive canonicalizes
+/// to `\\?\UNC\server\share\...`, and cmd refuses a UNC working directory
+/// and silently runs in `C:\Windows` instead, so that one keeps its drive path.
+#[cfg(any(windows, test))]
+fn working_dir(workspace: &Path, long: Option<PathBuf>) -> PathBuf {
+    match long.map(|l| super::proc::without_verbatim_prefix(&l)) {
+        Some(l) if !l.to_string_lossy().starts_with(r"\\") => l,
+        _ => workspace.to_path_buf(),
+    }
+}
+
+/// The message for a confined spawn that never started. The advice is keyed to
+/// the error: `ERROR_ACCESS_DENIED` is the one case where a shell installed
+/// under the user profile is the likely cause, and every other failure used to
+/// be told the same thing - which sent one report to reinstall a shell that
+/// was already installed system-wide.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
+    /// `ERROR_ACCESS_DENIED`.
+    const DENIED: i32 = 5;
+    /// `ERROR_ENVVAR_NOT_FOUND`: raised while the child's environment is being
+    /// established, so it says nothing about the shell's location.
+    const ENVVAR_NOT_FOUND: i32 = 203;
+    match error.raw_os_error() {
+        Some(DENIED) => format!(
+            "could not start {} inside the sandbox: {error}. A shell installed \
+             under your user profile is unreadable to the sandbox; install it \
+             system-wide (under Program Files), or unset JAN_AGENT_SHELL to use \
+             the built-in Windows PowerShell.",
+            program.display()
+        ),
+        Some(ENVVAR_NOT_FOUND) => format!(
+            "could not start {} inside the sandbox: {error}. The sandbox could \
+             not build an environment for the shell, which is a bug in Jan \
+             rather than a problem with the shell's location; please report it \
+             with the app logs.",
+            program.display()
+        ),
+        _ => format!(
+            "could not start {} inside the sandbox: {error}",
+            program.display()
+        ),
+    }
 }
 
 /// True when this host can build an AppContainer at all. On Windows this only
@@ -506,9 +628,9 @@ mod win {
                 req.workspace.display()
             ));
         }
-        if let Some(scratch) = &req.scratch {
-            if !scratch.is_dir() {
-                return Err(format!("scratch does not exist: {}", scratch.display()));
+        for dir in req.scratch.iter().chain(&req.pkg) {
+            if !dir.is_dir() {
+                return Err(format!("directory does not exist: {}", dir.display()));
             }
         }
         reap_children_with_this_process();
@@ -518,6 +640,13 @@ mod win {
         // temp-file write in the container is denied.
         if let Some(scratch) = &req.scratch {
             grant_path(scratch, sid.0)?;
+        }
+        // The package cache is where `CARGO_HOME`, npm and the rest write. The
+        // cargo config copy inside it is only marked read-only: no deny ACE is
+        // used (see the module doc), so the container could clear the mark.
+        // See `workspace::write_read_only` for why that is accepted.
+        if let Some(pkg) = &req.pkg {
+            grant_path(pkg, sid.0)?;
         }
 
         let mut capability_sid = Vec::new();
@@ -579,7 +708,17 @@ mod win {
         startup.lpAttributeList = attributes;
 
         let mut line = wide(OsStr::new(&command_line(&req.program, &req.args)));
-        let cwd = wide(req.workspace.as_os_str());
+        // The moniker and ACEs keep the path as given. The shell's working
+        // directory is the long form: a `TEMP`-based workspace is often 8.3
+        // (`C:\Users\RUNNER~1\...`), and Windows PowerShell 5.1 expands a short
+        // name by listing each parent, which the container may not read, so it
+        // fails with access denied. Resolved here, outside the container, and
+        // without the verbatim prefix `canonicalize` adds, which cmd refuses.
+        let cwd = wide(super::working_dir(&req.workspace, req.workspace.canonicalize().ok()).as_os_str());
+        // The helper's own environment, which `proc.rs` reduced to
+        // `SANDBOX_ENV_ALLOW` before re-exec'ing it. Passed explicitly rather
+        // than left to inheritance: see `environment_block`.
+        let env = super::environment_block(std::env::vars_os());
         let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
         let spawned = unsafe {
             CreateProcessW(
@@ -589,24 +728,22 @@ mod win {
                 std::ptr::null(),
                 1,
                 EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                std::ptr::null(),
+                env.as_ptr() as *const c_void,
                 cwd.as_ptr(),
                 &startup.StartupInfo,
                 &mut process,
             )
         };
+        // Read before the attribute list is torn down: that call ends with a
+        // Win32 call that can set the last error, and the message has to name
+        // the failure that actually stopped the spawn.
+        let spawn_error = (spawned == 0).then(std::io::Error::last_os_error);
         unsafe { DeleteProcThreadAttributeList(attributes) };
-        if spawned == 0 {
-            // Easily the most likely failure: the shell lives somewhere the
-            // container cannot read, such as a per-user Git install under
-            // AppData, which grants nothing to application packages.
-            return Err(format!(
-                "could not start {} inside the sandbox: {}. A shell installed \
-                 under your user profile is unreadable to the sandbox; install \
-                 Git for Windows system-wide instead.",
-                req.program.display(),
-                last_error()
-            ));
+        if let Some(error) = spawn_error {
+            // `spawn_failure` words the advice by the error: a per-user shell
+            // install is the likely cause only when the container was refused
+            // read access to it.
+            return Err(super::spawn_failure(&req.program, &error));
         }
 
         let code = wait_for(process.hProcess);
@@ -678,6 +815,7 @@ mod tests {
         let args = helper_args(
             &ws(),
             None,
+            None,
             false,
             Path::new("bash.exe"),
             &["-c".to_string()],
@@ -692,10 +830,10 @@ mod tests {
 
     #[test]
     fn helper_args_carry_the_network_decision() {
-        let denied = helper_args(&ws(), None, false, Path::new("bash.exe"), &[]);
+        let denied = helper_args(&ws(), None, None, false, Path::new("bash.exe"), &[]);
         assert!(denied.contains(&NET_OFF.to_string()));
         assert!(!denied.contains(&NET_ON.to_string()));
-        let allowed = helper_args(&ws(), None, true, Path::new("bash.exe"), &[]);
+        let allowed = helper_args(&ws(), None, None, true, Path::new("bash.exe"), &[]);
         assert!(allowed.contains(&NET_ON.to_string()));
     }
 
@@ -704,6 +842,7 @@ mod tests {
         let args = helper_args(
             &ws(),
             Some(Path::new(r"C:\Temp\jan-agent-s1")),
+            Some(Path::new(r"C:\Cache\jan\p\pkg")),
             true,
             Path::new(r"C:\Program Files\Git\bin\bash.exe"),
             &["-c".to_string(), "echo hi".to_string()],
@@ -714,6 +853,7 @@ mod tests {
             req.scratch.as_deref(),
             Some(Path::new(r"C:\Temp\jan-agent-s1"))
         );
+        assert_eq!(req.pkg.as_deref(), Some(Path::new(r"C:\Cache\jan\p\pkg")));
         assert!(req.allow_network);
         assert_eq!(req.program, Path::new(r"C:\Program Files\Git\bin\bash.exe"));
         assert_eq!(req.args, vec!["-c".to_string(), "echo hi".to_string()]);
@@ -723,10 +863,11 @@ mod tests {
     /// writable can only be granted on the far side of the re-exec.
     #[test]
     fn the_helper_round_trips_an_absent_scratch() {
-        let args = helper_args(&ws(), None, false, Path::new("bash.exe"), &[]);
+        let args = helper_args(&ws(), None, None, false, Path::new("bash.exe"), &[]);
         let req = parse_request(args).expect("parsed");
         assert_eq!(req.workspace, ws());
         assert_eq!(req.scratch, None);
+        assert_eq!(req.pkg, None);
     }
 
     #[test]
@@ -774,6 +915,134 @@ mod tests {
         assert_eq!(
             line,
             r#""C:\Program Files\Git\bin\bash.exe" -c "ls -la && echo \"done\"""#
+        );
+    }
+
+    /// A short or verbatim path becomes its long drive form; a mapped drive
+    /// that resolves to UNC keeps its drive letter, which cmd can start in.
+    #[test]
+    fn the_working_dir_is_the_long_form_unless_that_is_unc() {
+        let short = Path::new(r"C:\Users\RUNNER~1\ws");
+        assert_eq!(
+            working_dir(short, Some(PathBuf::from(r"\\?\C:\Users\runneradmin\ws"))),
+            PathBuf::from(r"C:\Users\runneradmin\ws")
+        );
+        let mapped = Path::new(r"Z:\proj");
+        assert_eq!(
+            working_dir(mapped, Some(PathBuf::from(r"\\?\UNC\server\share\proj"))),
+            PathBuf::from(r"Z:\proj")
+        );
+        assert_eq!(working_dir(mapped, None), PathBuf::from(r"Z:\proj"));
+    }
+
+    /// cmd reads its own line, not `CommandLineToArgvW`'s: its fixed switches
+    /// are quoted as usual, but the command goes in cmd's `/S` form so its own
+    /// quotes are not turned into `\"`.
+    #[test]
+    fn the_cmd_command_line_hands_the_command_over_in_cmds_form() {
+        let line = command_line(
+            Path::new(r"C:\Windows\System32\cmd.exe"),
+            &["/D".into(), "/S".into(), "/C".into(), r#"echo "a b" && dir"#.into()],
+        );
+        assert_eq!(
+            line,
+            r#"C:\Windows\System32\cmd.exe /D /S /C "echo "a b" && dir""#
+        );
+    }
+
+    /// The block's entries, with the terminating NULs removed.
+    fn entries(block: &[u16]) -> Vec<String> {
+        let text = String::from_utf16(block).expect("utf-16");
+        text.trim_end_matches('\0')
+            .split('\0')
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn var(name: &str, value: &str) -> (OsString, OsString) {
+        (OsString::from(name), OsString::from(value))
+    }
+
+    #[test]
+    fn the_environment_block_is_sorted_and_double_nul_terminated() {
+        let block = environment_block(vec![
+            var("SystemRoot", r"C:\Windows"),
+            var("PATH", r"C:\Windows\System32"),
+            // Windows keeps the per-drive current directories as `=C:` entries
+            // and expects them first; `=` sorts before every letter.
+            var("=C:", r"C:\work"),
+        ]);
+        assert_eq!(
+            entries(&block),
+            vec![
+                r"=C:=C:\work".to_string(),
+                r"PATH=C:\Windows\System32".to_string(),
+                r"SystemRoot=C:\Windows".to_string(),
+            ]
+        );
+        assert_eq!(&block[block.len() - 2..], &[0, 0]);
+    }
+
+    #[test]
+    fn the_environment_block_sorts_names_without_regard_to_case() {
+        // `Path` and `PATHEXT` are the pair that tells the two orderings apart:
+        // by bytes, `PATHEXT` comes first (`A` < `a`), while Windows compares
+        // names without regard to case, where `PATH` is the shorter prefix and
+        // therefore first. Windows requires the block sorted its way.
+        let block = environment_block(vec![
+            var("windir", r"C:\Windows"),
+            var("Path", r"C:\a"),
+            var("PATHEXT", ".COM;.EXE"),
+            var("ProgramFiles", r"C:\Program Files"),
+        ]);
+        assert_eq!(
+            entries(&block),
+            vec![
+                r"Path=C:\a".to_string(),
+                r"PATHEXT=.COM;.EXE".to_string(),
+                r"ProgramFiles=C:\Program Files".to_string(),
+                r"windir=C:\Windows".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_environment_block_drops_entries_that_would_truncate_it() {
+        // A NUL inside a name or value would be read as the end of the entry and
+        // the remainder as the next one, so the block would be malformed.
+        let block = environment_block(vec![
+            var("PATH", r"C:\Windows"),
+            var("bad\0name", "value"),
+            var("badvalue", "one\0two"),
+            var("", "nameless"),
+        ]);
+        assert_eq!(entries(&block), vec![r"PATH=C:\Windows".to_string()]);
+    }
+
+    #[test]
+    fn the_environment_block_is_never_empty() {
+        // A block with no entries is still a terminator, never a null pointer.
+        assert_eq!(environment_block(Vec::new()), vec![0]);
+    }
+
+    #[test]
+    fn spawn_failure_only_blames_the_shell_location_when_access_was_denied() {
+        let shell = Path::new(r"C:\Program Files\Git\bin\bash.exe");
+        let denied = spawn_failure(shell, &std::io::Error::from_raw_os_error(5));
+        assert!(denied.contains("system-wide"), "{denied}");
+
+        // 203 is raised while the child's environment is being built, so the
+        // advice that made the report reinstall an already system-wide Git must
+        // not appear.
+        let env_missing = spawn_failure(shell, &std::io::Error::from_raw_os_error(203));
+        assert!(!env_missing.contains("system-wide"), "{env_missing}");
+        assert!(env_missing.contains("bug in Jan"), "{env_missing}");
+
+        let other = spawn_failure(shell, &std::io::Error::from_raw_os_error(2));
+        assert!(!other.contains("system-wide"), "{other}");
+        assert!(
+            other.contains(r"C:\Program Files\Git\bin\bash.exe"),
+            "{other}"
         );
     }
 }

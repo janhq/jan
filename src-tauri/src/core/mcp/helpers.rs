@@ -20,6 +20,7 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
+    mcp::identity,
     mcp::oauth,
     mcp::progress::JanClientHandler,
     state::{AppState, RunningMcpService, SharedMcpServers},
@@ -444,8 +445,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                  connecting over Streamable HTTP instead"
             );
         }
-        let handler =
-            JanClientHandler::new(client_info("Jan Streamable Client"), name.clone(), app.clone());
+        let handler = JanClientHandler::new(jan_client_info(), name.clone(), app.clone());
 
         let client = match authorized {
             Some(c) => serve_http(c, &url, handler).await,
@@ -455,7 +455,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         match client {
             Ok(client) => {
                 log::info!("Connected to server: {:?}", client.peer_info());
-                servers.lock().await.insert(name.clone(), client);
+                identity::insert_server(&mut *servers.lock().await, &name, client);
 
                 emit_mcp_update_event(&app, &name);
             }
@@ -547,11 +547,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
             // Make the child a process-group leader (pgid == pid) so teardown can
             // signal the whole tree; MCP bridges fork grandchildren that hold the
-            // port and outlive a single-PID kill.
+            // port and outlive a single-PID kill. A new session, not just a new
+            // group, so the server can never take over a terminal Jan runs in.
             #[cfg(unix)]
-            {
-                cmd.process_group(0);
-            }
+            tauri_plugin_agent_tools::tools::proc::detach_from_terminal(&mut cmd);
             cmd.kill_on_drop(true);
             config_params
                 .args
@@ -585,10 +584,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 pids.insert(name.clone(), pid);
             }
 
-            // ClientInfo::default() is exactly what the previous `()` handler
-            // sent on initialize, so the handshake is unchanged.
-            let handler =
-                JanClientHandler::new(ClientInfo::default(), name.clone(), app.clone());
+            let handler = JanClientHandler::new(jan_client_info(), name.clone(), app.clone());
             match handler.serve(process).await {
                 Ok(server) => break (server, stderr),
                 Err(e) => {
@@ -642,10 +638,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             });
         }
         log::trace!("Connected to server: {:#?}", server.peer_info());
-        servers
-            .lock()
-            .await
-            .insert(name.clone(), server);
+        identity::insert_server(&mut *servers.lock().await, &name, server);
         log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
@@ -784,10 +777,14 @@ fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest13::header::He
     map
 }
 
-fn client_info(label: &str) -> ClientInfo {
+/// What every MCP server sees in `initialize.clientInfo`: Jan and its app
+/// version. Servers use it for logs, audit and per-client policy, so leaving
+/// the `rmcp` crate default would make Jan indistinguishable from any other
+/// client built on it.
+pub(crate) fn jan_client_info() -> ClientInfo {
     ClientInfo::new(
         ClientCapabilities::default(),
-        Implementation::new(label, "0.0.1"),
+        Implementation::new("Jan", env!("CARGO_PKG_VERSION")),
     )
 }
 
@@ -988,7 +985,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("taskkill");
+    let mut cmd = Command::new(jan_utils::windows_system_tool("taskkill.exe"));
     cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
 
     #[cfg(windows)]

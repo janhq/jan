@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useMessages } from '../useMessages'
+import { useMessages, __resetMessageWritesForTests } from '../useMessages'
 import { ThreadMessage } from '@janhq/core'
 
 // Mock the ServiceHub
@@ -22,6 +22,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 describe('useMessages', () => {
 
   beforeEach(() => {
+    __resetMessageWritesForTests()
     vi.clearAllMocks()
     // Reset store state
     useMessages.setState({ messages: {} })

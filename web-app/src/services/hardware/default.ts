@@ -17,6 +17,10 @@ export class DefaultHardwareService implements HardwareService {
     return []
   }
 
+  async reconcileLlamacppDevices(): Promise<'unchanged' | 'restarted' | 'busy'> {
+    return 'unchanged'
+  }
+
   async setActiveGpus(data: { gpus: number[] }): Promise<void> {
     console.log('setActiveGpus called with data:', data)
     // No-op - not implemented in default service

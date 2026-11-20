@@ -17,6 +17,8 @@ pub struct StartServerConfig {
     pub trusted_hosts: Vec<String>,
     pub proxy_timeout: u64,
     pub enable_server_tool_execution: Option<bool>,
+    /// "Allow cross-origin requests" toggle. Absent means on, the UI default.
+    pub cors_enabled: Option<bool>,
 }
 
 #[tauri::command]
@@ -33,6 +35,7 @@ pub async fn start_server<R: Runtime>(
         trusted_hosts,
         proxy_timeout,
         enable_server_tool_execution,
+        cors_enabled,
     } = config;
     let server_handle = state.server_handle.clone();
     let llama_state: State<Arc<LlamacppState>> = app_handle.state();
@@ -67,9 +70,14 @@ pub async fn start_server<R: Runtime>(
             .to_string_lossy()
             .into_owned(),
         enable_server_tool_execution.unwrap_or(false),
+        cors_enabled.unwrap_or(true),
     )
     .await
     .map_err(|e| e.to_string())?;
+
+    // No extension request may reach this port on a local host.
+    #[cfg(feature = "extensions")]
+    tauri_plugin_extensions::set_local_api_port(&app_handle, Some(actual_port));
 
     #[cfg(feature = "desktop")]
     crate::core::setup::show_tray(&app_handle);
@@ -87,6 +95,9 @@ pub async fn stop_server<R: Runtime>(
     proxy::stop_server(server_handle)
         .await
         .map_err(|e| e.to_string())?;
+
+    #[cfg(feature = "extensions")]
+    tauri_plugin_extensions::set_local_api_port(&app_handle, None);
 
     #[cfg(feature = "desktop")]
     crate::core::setup::remove_tray(&app_handle);

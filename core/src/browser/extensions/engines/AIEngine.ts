@@ -1,5 +1,4 @@
-import { BaseExtension } from '../../extension'
-import { EngineManager } from './EngineManager'
+import type { SettingComponentProps } from '../../../types'
 
 /* AIEngine class types */
 
@@ -328,22 +327,20 @@ export function isEmbeddingEngine(engine: unknown): engine is AIEngine & Embeddi
  * Applicable to all AI Engines
  */
 
-export abstract class AIEngine extends BaseExtension {
+export abstract class AIEngine {
   // The inference engine ID, implementing the readonly providerId from interface
   abstract readonly provider: string
 
-  /**
-   * On extension load, subscribe to events.
-   */
-  override onLoad() {
-    this.registerEngine()
-  }
+  /** The engine's provider settings, as the provider settings page shows them. */
+  abstract getSettings(): Promise<SettingComponentProps[]>
 
-  /**
-   * Registers AI Engines
-   */
-  registerEngine() {
-    EngineManager.instance().register(this)
+  /** Stores new values for the given settings and applies them. */
+  abstract updateSettings(settings: Partial<SettingComponentProps>[]): Promise<void>
+
+  /** The stored value of one setting, or `defaultValue` when it has none. */
+  async getSetting<T>(key: string, defaultValue: T): Promise<T> {
+    const setting = (await this.getSettings()).find((s) => s.key === key)
+    return (setting?.controllerProps.value as T) ?? defaultValue
   }
 
   /**

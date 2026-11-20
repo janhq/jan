@@ -193,6 +193,14 @@ describe('convertThreadMessageToUIMessage', () => {
     expect(result.parts).toContainEqual({ type: 'file', mediaType: 'image/jpeg', url: 'http://img.png' })
   })
 
+  it('reloads a data-URL image with the media type the URL declares', () => {
+    const url = 'data:image/png;base64,iVBORw0KGgo='
+    const result = convertThreadMessageToUIMessage(makeTm({
+      role: 'user', content: [{ type: 'image_url', image_url: { url } }],
+    }) as any)
+    expect(result.parts).toContainEqual({ type: 'file', mediaType: 'image/png', url })
+  })
+
   it('converts input_audio content to a file part with audio mediaType', () => {
     const wav = convertThreadMessageToUIMessage(makeTm({
       role: 'user',

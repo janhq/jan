@@ -46,6 +46,13 @@ sure the directory is on your `PATH`.
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
+
+Installs to `%USERPROFILE%\.local\bin`, which isn't on your `PATH` by default. To install and add
+it to your user `PATH` in one go, then open a new terminal:
+
+```powershell
+& ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
+```
   </Tabs.Tab>
 </Tabs>
 
@@ -130,10 +137,10 @@ Press <kbd>y</kbd> to allow it once, <kbd>a</kbd> to stop being asked for that k
 While the agent runs you'll see each tool call as it happens, and a receipt when the turn ends:
 
 ```
-2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+  Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s
 ```
 
-That's the time, context sent, tokens produced, how long it took, and throughput.
+That's how long the turn took, when it finished, context sent, tokens produced, and throughput.
 
 Press <kbd>Esc</kbd> at any point to cancel the current turn. Press <kbd>Ctrl</kbd>+<kbd>D</kbd> to
 quit.
@@ -188,7 +195,9 @@ jan --task "fix the failing test in tests/auth"
 ## Troubleshooting
 
 **`jan: command not found`** - the install directory isn't on your `PATH`. The installer prints a
-note when it detects this. Add `~/.local/bin` to your shell profile.
+note when it detects this. Add `~/.local/bin` to your shell profile. On Windows, re-run the installer
+with `-AddToPath` (see [Install Nightly](#install-nightly)) and open a new terminal. If the installer warns that
+another `jan` comes first on your `PATH`, remove the entry it names.
 
 **"no providers configured"** - run `jan config set --provider <id> --api-key <key>`, or `jan login`
 for Tokamak. `jan config path` prints the file it reads.

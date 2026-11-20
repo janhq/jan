@@ -1,0 +1,135 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+
+// #9222: a user who turns the chat shell off must get neither the tool nor the
+// prompt paragraph that describes it.
+const h = vi.hoisted(() => ({
+  shellEnabled: true,
+  sandbox: true,
+  schemas: vi.fn(),
+  threads: {} as Record<string, unknown>,
+}))
+
+vi.mock('@/hooks/useChatShell', () => ({
+  useChatShell: { getState: () => ({ shellEnabled: h.shellEnabled }) },
+}))
+vi.mock('@/lib/agentTools', () => ({
+  CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
+  getAgentToolSchemas: h.schemas,
+  sandboxEnforces: () => h.sandbox,
+  memoryDigestNow: () => '',
+  refreshMemoryDigest: async () => '',
+}))
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceStore: {
+    getState: () => ({
+      serviceHub: {
+        mcp: () => ({ getTools: async () => [] }),
+        rag: () => ({ getTools: async () => [] }),
+      },
+    }),
+  },
+}))
+vi.mock('@/hooks/useToolAvailable', () => ({
+  useToolAvailable: { getState: () => ({ getDisabledTools: () => [] }) },
+}))
+vi.mock('@/hooks/useModelProvider', () => ({
+  useModelProvider: {
+    getState: () => ({
+      selectedModel: { capabilities: ['tools'] },
+      selectedProvider: '',
+      getProviderByName: () => null,
+    }),
+  },
+}))
+vi.mock('@/hooks/useAssistant', () => ({
+  useAssistant: { getState: () => ({ currentAssistant: null }) },
+}))
+vi.mock('@/hooks/useThreads', () => ({
+  useThreads: { getState: () => ({ threads: h.threads }) },
+}))
+vi.mock('@/hooks/useAttachments', () => ({
+  useAttachments: { getState: () => ({ enabled: false }) },
+}))
+vi.mock('@/hooks/useMCPServers', () => ({
+  useMCPServers: {
+    getState: () => ({ settings: { enableSmartToolRouting: false } }),
+  },
+}))
+vi.mock('@/hooks/useWebSearchConfig', () => ({
+  useWebSearchConfig: { getState: () => ({ webSearchEnabled: false }) },
+}))
+vi.mock('@/lib/mcp-orchestrator', () => ({
+  mcpOrchestrator: { getRelevantTools: vi.fn() },
+}))
+vi.mock('@/lib/mcp-router-model-filter', () => ({
+  isRouterModelSelectable: () => false,
+}))
+vi.mock('../model-factory', () => ({
+  ModelFactory: { createModel: vi.fn() },
+}))
+
+import { CustomChatTransport } from '../custom-chat-transport'
+
+describe('chat shell switch (#9222)', () => {
+  let transport: CustomChatTransport
+
+  beforeEach(() => {
+    h.shellEnabled = true
+    h.sandbox = true
+    h.threads = {}
+    h.schemas.mockReset()
+    h.schemas.mockResolvedValue(
+      ['shell', 'read', 'write', 'memory'].map((name) => ({
+        type: 'function',
+        function: { name, description: 'run', parameters: { type: 'object' } },
+      }))
+    )
+    transport = new CustomChatTransport('sys', 'thread-1')
+  })
+
+  it('offers the shell and describes it while the switch is on', async () => {
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools())).toContain('shell')
+    expect(transport.buildAgentToolsSystemInstruction()).toContain('# Shell')
+  })
+
+  it('withholds the shell and its prompt text once the switch is off', async () => {
+    h.shellEnabled = false
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools())).not.toContain('shell')
+    expect(transport.buildAgentToolsSystemInstruction()).toBe('')
+  })
+
+  it('does not even ask the sandbox for schemas when the switch is off', async () => {
+    h.shellEnabled = false
+    await transport.refreshTools()
+    expect(h.schemas).not.toHaveBeenCalled()
+  })
+
+  it('takes effect on the very next send without a new transport', async () => {
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools())).toContain('shell')
+    h.shellEnabled = false
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools())).not.toContain('shell')
+  })
+
+  // #9649: a folder the user attached to the thread adds the file tools, and
+  // the prompt names it; the shell switch still governs the shell alone.
+  it('offers the file tools on an attached folder, and only then', async () => {
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools()).sort()).toEqual(['shell'])
+
+    h.shellEnabled = false
+    h.threads = { 'thread-1': { metadata: { folder: '/Users/me/project' } } }
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools()).sort()).toEqual(['read', 'write'])
+    const prompt = transport.buildAgentToolsSystemInstruction()
+    expect(prompt).toContain('/Users/me/project')
+    expect(prompt).not.toContain('# Shell')
+
+    h.threads = {}
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools())).toEqual([])
+  })
+})

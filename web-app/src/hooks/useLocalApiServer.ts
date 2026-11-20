@@ -93,7 +93,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
-      version: 4,
+      version: 5,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
         if (version < 1) {
@@ -111,6 +111,11 @@ export const useLocalApiServer = create<LocalApiServerState>()(
         if (version < 4) {
           // v3 -> v4: add run-in-background toggle (matches previous behavior)
           state.runInBackground = true
+        }
+        if (version < 5) {
+          // v4 -> v5: the CORS switch had no effect before v5, so a saved
+          // value was never a working choice; start from the default
+          state.corsEnabled = true
         }
         return state
       },

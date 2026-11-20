@@ -39,12 +39,13 @@ export function CoworkTasksChip({
   const activeSubagents = subagents.filter((s) => s.status !== 'done').length
   const activeMonitors = monitors.filter((m) => m.status === 'running').length
   const active = activeSubagents + activeMonitors
+  const onlyKind = (kept: number) => active > 0 && active === kept
   const label =
     active === 0
       ? t('common:backgroundTasks')
-      : activeMonitors === 0
+      : onlyKind(activeSubagents)
         ? t('common:subagentsRunning', { count: active })
-        : activeSubagents === 0
+        : onlyKind(activeMonitors)
           ? t('common:monitorsRunning', { count: active })
           : t('common:backgroundRunning', { count: active })
 
@@ -57,7 +58,10 @@ export function CoworkTasksChip({
           aria-pressed={open}
           aria-label={label}
           onClick={onToggle}
-          className={cn('shrink-0', open && 'text-primary')}
+          className={cn(
+            'shrink-0',
+            open ? 'text-primary' : 'text-muted-foreground'
+          )}
         >
           {active > 0 ? (
             <Loader2 className="size-3.5 shrink-0 animate-spin" />

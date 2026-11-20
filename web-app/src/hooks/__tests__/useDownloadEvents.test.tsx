@@ -29,7 +29,10 @@ vi.mock('@/hooks/useDownloadStore', () => {
 })
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  // Echo the interpolated reason so a test can tell which message was chosen.
+  useTranslation: () => ({
+    t: (k: string, o?: { reason?: string }) => (o?.reason ? `${k}|${o.reason}` : k),
+  }),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -37,7 +40,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/constants/routes', () => ({
-  route: { settings: { general: '/settings/general' } },
+  route: { settings: { general: '/settings/general' }, appLogs: '/logs' },
 }))
 
 vi.mock('@janhq/core', () => ({
@@ -155,6 +158,30 @@ describe('useDownloadEvents', () => {
       'common:toast.downloadFailed.title',
       expect.any(Object)
     )
+  })
+
+  it('names the cause when a network error carries no HTTP status', () => {
+    mount()
+    hoisted.eventHandlers['fde']({
+      modelId: 'embed',
+      error:
+        'Error: error sending request for url (https://huggingface.co/x.gguf): client error (Connect): dns error: failed to lookup address information',
+    })
+    const [title, opts] = hoisted.toastMock.error.mock.calls[0]
+    expect(title).toBe('common:toast.downloadFailed.title')
+    expect(opts.description).toBe(
+      'common:toast.downloadFailed.descriptionWithReason|common:toast.downloadFailed.reason.dns'
+    )
+  })
+
+  it('points at the logs when the error has no recognisable cause', () => {
+    mount()
+    hoisted.eventHandlers['fde']({ modelId: 'w', error: 'Error: disk full' })
+    const [, opts] = hoisted.toastMock.error.mock.calls[0]
+    expect(opts.description).toBe('common:toast.downloadFailed.description')
+    expect(opts.action.label).toBe('common:toast.openLogs')
+    opts.action.onClick()
+    expect(hoisted.navigateMock).toHaveBeenCalledWith({ to: '/logs' })
   })
 
   it('clears the download on success', () => {

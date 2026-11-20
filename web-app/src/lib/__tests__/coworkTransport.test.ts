@@ -101,7 +101,7 @@ describe('CoworkChatTransport', () => {
     expect(buildCoworkTools).toHaveBeenCalledTimes(1)
   })
 
-  it('rebuilds when the sandbox appears, since bash joins the set', async () => {
+  it('rebuilds when the sandbox appears, since shell joins the set', async () => {
     sandboxEnforces.mockReturnValue(false)
     const t = new CoworkChatTransport('s1', config())
     await t.refreshTools()
@@ -132,7 +132,7 @@ describe('CoworkChatTransport.advertisedTools', () => {
   })
 
   // A subagent's allowlist intersects with this, so plan mode and a withheld
-  // `bash` reach children without a second policy check.
+  // `shell` reach children without a second policy check.
   it('reports the set frozen for the run', async () => {
     const t = new CoworkChatTransport('s1', config())
     await t.refreshTools()

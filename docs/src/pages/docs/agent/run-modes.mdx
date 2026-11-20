@@ -25,12 +25,11 @@ because the CLI does not sandbox commands by default.
 
 Add `--sandbox` to run them under OS confinement (bubblewrap on Linux, Seatbelt on macOS,
 AppContainer on Windows), confined to the project directory; with it on, if no sandbox can be
-established the `bash` tool refuses to run at all. It can also be turned on permanently - see
+established the `shell` tool refuses to run at all. It can also be turned on permanently - see
 [the shell sandbox](/docs/agent/permissions#the-shell-sandbox).
 
 Some things are denied outright and no mode lifts them:
 
-- `.jan/agent/` internals, so the agent cannot rewrite its own permissions
 - anything listed in `[tools] deny` in `agent.toml`
 - every write and command while plan mode is on
 
@@ -62,7 +61,10 @@ the prompt, so it is denied and the run stalls on its first write.
 
 ## Plan mode
 
-Read-only. The agent investigates and proposes, but every write and command is blocked.
+Read-only. The agent investigates and proposes, but every write and command is blocked. That
+includes memory: the agent can `view` and `search` its notes, but writing, editing, moving or
+deleting one is refused until you leave plan mode, an automatic memory tidy waits, and
+`/memory tidy` is refused too. A tidy already running when you enter plan mode is stopped.
 
 ```bash
 jan --plan

@@ -51,6 +51,7 @@ pub fn logout(provider: &str) -> Result<(), LoginError> {
     remove_provider(provider).map_err(|e| {
         LoginError::Persist(format!("could not clear the provider configuration: {e}"))
     })?;
+    crate::core::cli::model_catalog::forget(provider);
     Ok(())
 }
 
@@ -68,6 +69,11 @@ pub(crate) async fn discover_models(
         definition.default_base_url.trim_end_matches('/')
     );
     let mut request = client.get(&url);
+    // The provider's configured headers, as inference sends them: a gateway
+    // that requires one for inference usually requires it to list models too.
+    for (name, value) in crate::core::cli::providers::listing_headers_for(definition.id) {
+        request = request.header(name, value);
+    }
     request = match definition.transport {
         // An API-key credential identifies itself with `x-api-key`; an OAuth
         // access token must go as `Authorization: Bearer` (with the oauth beta
@@ -101,6 +107,7 @@ pub(crate) async fn discover_models(
             definition.name
         ))
     })?;
+    crate::core::cli::model_catalog::cache_listing(definition.id, &parsed);
     Ok(parse_models(&parsed))
 }
 
@@ -256,11 +263,16 @@ fn failure_for(definition: &ProviderDefinition, status: u16, _body: &str) -> Log
     }
 }
 
-/// Model ids from a `/models` payload, sorted and deduped so a config write
-/// and the "N models" report are stable across calls. Accepts the OpenAI shape
+/// Model ids in the order the endpoint listed them, trimmed and deduped but
+/// deliberately **not** sorted. Accepts the OpenAI shape
 /// (`{"data":[{"id":...}]}`) plus the bare-array and array-of-strings variants
 /// smaller gateways serve. Anthropic's `/models` uses the same `data` shape.
-pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
+///
+/// Wire order is kept because it is the only signal a provider has about which
+/// model it would lead with; a router-style gateway can rank its listing.
+/// Sorting is applied separately by [`parse_models`], for the stored roster
+/// where a stable order is what matters.
+pub(crate) fn listed_model_ids(value: &serde_json::Value) -> Vec<String> {
     let entries = value
         .get("data")
         .and_then(|d| d.as_array())
@@ -268,17 +280,29 @@ pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
     let Some(entries) = entries else {
         return Vec::new();
     };
-    let mut ids: Vec<String> = entries
-        .iter()
-        .filter_map(|entry| {
-            entry
-                .as_str()
-                .or_else(|| entry.get("id").and_then(|id| id.as_str()))
-        })
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(String::from)
-        .collect();
+    let mut ids: Vec<String> = Vec::new();
+    for entry in entries {
+        let Some(id) = entry
+            .as_str()
+            .or_else(|| entry.get("id").and_then(|id| id.as_str()))
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else {
+            continue;
+        };
+        // Deduped in place rather than by sort+dedup, which would lose the
+        // order this function exists to preserve.
+        if !ids.iter().any(|seen| seen == id) {
+            ids.push(id.to_string());
+        }
+    }
+    ids
+}
+
+/// Model ids from a `/models` payload, sorted and deduped so a config write
+/// and the "N models" report are stable across calls.
+pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
+    let mut ids = listed_model_ids(value);
     ids.sort();
     ids.dedup();
     ids
@@ -412,15 +436,14 @@ mod tests {
         definition: &ProviderDefinition,
         key: &str,
     ) -> Result<LoginResult, LoginError> {
-        let definition = definition.clone();
-        let key = key.to_string();
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(login_with_api_key(&definition, &key))
-        })
-        .join()
-        .expect("verification thread must not panic")
+        // Stay on the fixture-owning OS thread: global config resolution is
+        // thread-local in unit tests, so a spawned login would write into a
+        // different scratch home from the caller's assertions.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(login_with_api_key(definition, key))
     }
 
     #[test]
@@ -515,8 +538,8 @@ mod tests {
         assert!(matches!(result, Err(LoginError::Unavailable(_))));
     }
 
-    #[tokio::test]
-    async fn valid_key_persists_secret_and_non_secret_config() {
+    #[test]
+    fn valid_key_persists_secret_and_non_secret_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let body = r#"{"data":[{"id":"deepseek-chat"},{"id":"deepseek-reasoner"}]}"#;
@@ -550,8 +573,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn logout_removes_credential_and_config() {
+    #[test]
+    fn logout_removes_credential_and_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let body = r#"{"data":[{"id":"deepseek-chat"}]}"#;
@@ -568,8 +591,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn legacy_plaintext_key_is_cleared_by_login() {
+    #[test]
+    fn legacy_plaintext_key_is_cleared_by_login() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             // Simulate a pre-existing legacy entry with a plaintext key.

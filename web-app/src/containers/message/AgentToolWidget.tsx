@@ -9,6 +9,7 @@ import {
   IconBook,
   IconLock,
   IconFilePencil,
+  IconAlertTriangle,
 } from '@tabler/icons-react'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -138,7 +139,7 @@ export type TerminalWidgetProps = {
 }
 
 /**
- * `bash` rendered as a terminal: the command streams in after a prompt, then its
+ * `shell` rendered as a terminal: the command streams in after a prompt, then its
  * output fills the scrollback below. The trailing `[exit N]` marker becomes a
  * status chip rather than staying in the text.
  *
@@ -168,9 +169,11 @@ export const TerminalWidget = memo(
             <span
               className={cn(
                 'ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono',
+                // Success is neutral rather than `primary`: the default accent
+                // is an orange-red that read as a failure next to `exit 0`.
                 failed
                   ? 'bg-destructive/10 text-destructive'
-                  : 'bg-primary/10 text-primary'
+                  : 'bg-muted text-muted-foreground'
               )}
             >
               {t('tools:toolCall.exitCode', { code: result.exit })}
@@ -188,9 +191,7 @@ export const TerminalWidget = memo(
               $
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word text-foreground">
-              {bar.jobId && !bar.command
-                ? t('tools:toolCall.pollingJob', { id: bar.jobId })
-                : bar.command}
+              {bar.command}
               {running && <Caret />}
             </span>
           </div>
@@ -212,6 +213,17 @@ export const TerminalWidget = memo(
               <span>{result.sandboxNote}</span>
             </p>
           )}
+          {/* A stale hook matcher no longer guards this very call, so the user
+              hears it here rather than only through the model. */}
+          {result?.configNotes.map((note) => (
+            <p
+              key={note}
+              className="mt-1 flex items-start gap-1.5 text-muted-foreground/70"
+            >
+              <IconAlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>{note}</span>
+            </p>
+          ))}
         </div>
       </div>
     )
@@ -227,29 +239,51 @@ const TOOL_ICONS: Record<string, typeof IconFile> = {
   grep: IconSearch,
   write: IconFilePencil,
   edit: IconFilePencil,
-  memory_list: IconNotebook,
-  memory_read: IconNotebook,
-  memory_write: IconNotebook,
+  memory: IconNotebook,
   skill_list: IconBook,
   skill_read: IconBook,
   skill_write: IconBook,
 }
 
 /** Tools whose whole call is the verb: there is no argument worth a bar. */
-const LISTING_TOOLS = new Set(['memory_list', 'skill_list', 'ls'])
+const LISTING_TOOLS = new Set(['skill_list', 'ls'])
 
 // A workspace call is not always a read: `Reading...` under a `write` is simply
 // wrong, and the verb is the only progress signal the widget has.
 const RUNNING_KEYS: Record<string, string> = {
   write: 'tools:toolCall.writing',
-  memory_write: 'tools:toolCall.writing',
   skill_write: 'tools:toolCall.writing',
   edit: 'tools:toolCall.editing',
   find: 'tools:toolCall.searching',
   grep: 'tools:toolCall.searching',
   ls: 'tools:toolCall.listing',
-  memory_list: 'tools:toolCall.listing',
   skill_list: 'tools:toolCall.listing',
+}
+
+type WorkspaceBar = Extract<ToolCallBar, { variant: 'workspace' }>
+
+/** A bare `view` lists the whole store, like `ls` with no path. */
+const isMemoryListing = (bar: WorkspaceBar) =>
+  bar.tool === 'memory' && bar.op === 'view' && !bar.target
+
+// `memory` is one tool for reads and changes alike, so its op picks the verb.
+const runningKey = (bar: WorkspaceBar): string => {
+  if (bar.tool !== 'memory') {
+    return RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading'
+  }
+  switch (bar.op) {
+    case 'write':
+    case 'edit':
+    case 'delete':
+    case 'move':
+      return 'tools:toolCall.writing'
+    case 'search':
+      return 'tools:toolCall.searching'
+    default:
+      return isMemoryListing(bar)
+        ? 'tools:toolCall.listing'
+        : 'tools:toolCall.reading'
+  }
 }
 
 // find/grep bars carry a pattern and memory/skill an entry name, so `path` is
@@ -257,14 +291,13 @@ const RUNNING_KEYS: Record<string, string> = {
 const PLACEHOLDER_KEYS: Record<string, string> = {
   find: 'tools:toolCall.patternPlaceholder',
   grep: 'tools:toolCall.patternPlaceholder',
-  memory_read: 'tools:toolCall.namePlaceholder',
-  memory_write: 'tools:toolCall.namePlaceholder',
+  memory: 'tools:toolCall.namePlaceholder',
   skill_read: 'tools:toolCall.namePlaceholder',
   skill_write: 'tools:toolCall.namePlaceholder',
 }
 
 export type AgentToolWidgetProps = {
-  bar: Extract<ToolCallBar, { variant: 'workspace' }>
+  bar: WorkspaceBar
   state: ToolUIPart['state']
   output?: ToolUIPart['output']
   errorText?: string
@@ -286,11 +319,16 @@ export const AgentToolWidget = memo(
     )
     const Icon = TOOL_ICONS[bar.tool] ?? IconFile
     const body = asText(output)
-    // `ls` with no path lists the workspace root; show that rather than a bar
-    // that reads as though an argument failed to stream.
+    // `ls` with no path lists the workspace root, and a bare memory view the
+    // whole store; show that rather than a bar that reads as though an
+    // argument failed to stream.
     const value =
       bar.target ||
-      (LISTING_TOOLS.has(bar.tool) ? t('tools:toolCall.workspaceRoot') : '')
+      (LISTING_TOOLS.has(bar.tool)
+        ? t('tools:toolCall.workspaceRoot')
+        : isMemoryListing(bar)
+          ? t('settings:cowork.memories')
+          : '')
 
     return (
       <div className="space-y-1.5">
@@ -328,7 +366,7 @@ export const AgentToolWidget = memo(
           !errorText && (
             <div className="px-2 text-sm">
               <Shimmer duration={1}>
-                {t(RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading')}
+                {t(runningKey(bar))}
               </Shimmer>
             </div>
           )

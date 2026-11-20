@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    globalSetup: ['./vitest.global-setup.mjs'],
     globals: true,
     css: true,
     testTimeout: 30000,
@@ -28,7 +29,6 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@janhq/assistant-extension': path.resolve(__dirname, '../extensions/assistant-extension/dist/index.js'),
-      '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/dist/index.js'),
       '@janhq/download-extension': path.resolve(__dirname, '../extensions/download-extension/dist/index.js'),
       '@janhq/llamacpp-extension': path.resolve(__dirname, '../extensions/llamacpp-extension/dist/index.js'),
       '@janhq/mlx-extension': path.resolve(__dirname, '../extensions/mlx-extension/dist/index.js'),
@@ -37,6 +37,8 @@ export default defineConfig({
       // Resolve the plugin to guest-js source, not its built dist-js, so
       // tests exercise the wrappers the app actually calls.
       '@janhq/tauri-plugin-llamacpp-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index.ts'),
+      '@janhq/tauri-plugin-extensions-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-extensions/guest-js/index.ts'),
+      '@janhq/tauri-plugin-hardware-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-hardware/guest-js/index.ts'),
       // The plugin ships its own @tauri-apps/api install; without this the
       // aliased guest-js would get a second module instance that
       // vi.mock('@tauri-apps/api/core') cannot intercept.

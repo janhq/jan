@@ -25,7 +25,10 @@ use sha2::{Digest, Sha256};
 use crate::core::updater::custom_updater::SECRET_KEY;
 use crate::core::updater::hmac_client::SignedRequestHeaders;
 
+/// Silent startup check: must never hold up the CLI.
 const CHECK_TIMEOUT: Duration = Duration::from_millis(1500);
+/// Explicit `jan update`: the user is waiting on it, so be patient.
+pub const MANUAL_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const BINARY_NAME: &str = if cfg!(windows) { "jan.exe" } else { "jan" };
 
@@ -372,7 +375,7 @@ fn extract_from_zip(archive: &Path, out: &mut impl Write) -> Result<bool, String
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let matches = entry.enclosed_name().map(is_binary_entry).unwrap_or(false);
+        let matches = entry.enclosed_name().is_some_and(|p| is_binary_entry(&p));
         if matches {
             io::copy(&mut entry, out).map_err(|e| e.to_string())?;
             return Ok(true);
@@ -470,7 +473,7 @@ fn is_stale(entry: &fs::DirEntry) -> bool {
 /// Download the newest build for this channel and replace the running binary
 /// in place. `force` reinstalls even when the versions already match.
 pub async fn self_update(force: bool) -> Result<UpdateOutcome, String> {
-    let update = check_for_update(CHECK_TIMEOUT).await?;
+    let update = check_for_update(MANUAL_CHECK_TIMEOUT).await?;
     if !update.is_newer() && !force {
         return Ok(UpdateOutcome::UpToDate {
             version: update.current,
@@ -659,7 +662,7 @@ mod tests {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         zip.start_file(
             format!("src-tauri/target/release/{BINARY_NAME}"),
-            zip::write::FileOptions::default(),
+            zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
         zip.write_all(b"MZ-payload").unwrap();

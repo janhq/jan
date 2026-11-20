@@ -6,6 +6,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import {
+  coworkAllowsProvider,
   coworkModelContext,
   increaseCoworkContext,
   nextCoworkContextSize,
@@ -78,6 +79,20 @@ beforeEach(() => {
   selectProvider(providerFixture())
   useCoworkSessions.setState({ sessions: [], currentId: null })
   useCoworkRun.setState({ runId: {} })
+})
+
+// janhq/jan-internal#517: Cowork runs tools without asking, so a model an
+// extension serves could reach any host through them.
+describe('Cowork providers', () => {
+  it('refuses a provider an extension contributed', () => {
+    expect(coworkAllowsProvider(undefined)).toBe(true)
+    expect(coworkAllowsProvider({})).toBe(true)
+    expect(
+      coworkAllowsProvider({
+        source: { extensionId: 'acme.provider', extensionName: 'Acme' },
+      })
+    ).toBe(false)
+  })
 })
 
 describe('Cowork context recovery settings', () => {

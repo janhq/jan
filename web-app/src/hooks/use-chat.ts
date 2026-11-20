@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { observeChatWork, trackChat } from '@/lib/chatClose'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
@@ -31,6 +32,10 @@ export function useChat(
   options?: CustomChatOptions
 ) {
   const transportRef = useRef<CustomChatTransport | undefined>(undefined) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
+  // The session transportRef belongs to. The hook outlives a session switch (the
+  // thread route is reused), and a turn left running in the background keeps
+  // using its own transport, so a session must never inherit another's.
+  const transportSessionRef = useRef<string | undefined>(undefined)
   const {
     sessionId,
     sessionTitle,
@@ -45,34 +50,34 @@ export function useChat(
   // Get serviceHub and model metadata from app state
   const mcpToolNames = useAppState((state) => state.mcpToolNames)
   const ragToolNames = useAppState((state) => state.ragToolNames)
+  const extensionTools = useAppState((state) => state.extensionTools)
 
   const existingSessionTransport = sessionId
     ? useChatSessions.getState().sessions[sessionId]?.transport
     : undefined
 
   // Create transport immediately with modelId and provider
-  if (!transportRef.current) {
-    transportRef.current =
-      existingSessionTransport ?? new CustomChatTransport(systemMessage, sessionId)
-  } else if (
-    existingSessionTransport &&
-    transportRef.current !== existingSessionTransport
-  ) {
+  if (existingSessionTransport) {
     transportRef.current = existingSessionTransport
+  } else if (
+    !transportRef.current ||
+    transportSessionRef.current !== sessionId
+  ) {
+    transportRef.current = new CustomChatTransport(systemMessage, sessionId)
   }
+  transportSessionRef.current = sessionId
+  const transport = transportRef.current
 
+  // Keyed by transport too, so a session switch hands the instructions and
+  // callback to the new session's transport.
   useEffect(() => {
-    if (transportRef.current) {
-      transportRef.current.updateSystemMessage(systemMessage)
-    }
-  }, [systemMessage])
+    transport.updateSystemMessage(systemMessage)
+  }, [transport, systemMessage])
 
   // Update the token usage callback when it changes
   useEffect(() => {
-    if (transportRef.current) {
-      transportRef.current.setOnTokenUsage(onTokenUsage)
-    }
-  }, [onTokenUsage])
+    transport.setOnTokenUsage(onTokenUsage)
+  }, [transport, onTokenUsage])
 
   // Memoize to prevent calling ensureSession (which has side effects) on every render
   const chat = useMemo(() => {
@@ -81,7 +86,19 @@ export function useChat(
     return ensureSession(
       sessionId,
       transportRef.current,
-      () => new Chat({ ...chatInitOptions, transport: transportRef.current }),
+      () => {
+        // The close barrier stops this chat and waits for its onFinish work
+        // (message persistence) before the window may go away.
+        const pending = new Set<Promise<unknown>>()
+        const instance = new Chat({
+          ...chatInitOptions,
+          transport: transportRef.current,
+          onFinish: (event) =>
+            observeChatWork(pending, () => chatInitOptions.onFinish?.(event)),
+        })
+        trackChat(instance, pending)
+        return instance
+      },
       sessionTitle
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,14 +124,15 @@ export function useChat(
     }
   }, [sessionId, chatResult.status, updateStatus])
 
-  // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
+  // Refresh tools when MCP, RAG or extension tools change (e.g., when MCP
+  // servers start/stop or an extension is loaded)
   useEffect(() => {
     if (transportRef.current) {
       // Use forceRefreshTools to update the transport's tool cache
       // This ensures the transport has the latest tools when MCP server status changes
       transportRef.current.refreshTools()
     }
-  }, [mcpToolNames, ragToolNames])
+  }, [mcpToolNames, ragToolNames, extensionTools])
 
   const setContinueFromContent = useCallback(
     (content: string | ContinuationContent) => {
@@ -123,22 +141,21 @@ export function useChat(
     []
   )
 
-  // Expose method to update RAG tools availability
+  // Expose method to update RAG tools availability. A new identity per
+  // transport, so a caller's effect re-runs for a newly opened session's.
   const updateRagToolsAvailability = useCallback(
     async (
       hasDocuments: boolean,
       modelSupportsTools: boolean,
       ragFeatureAvailable: boolean
     ) => {
-      if (transportRef.current) {
-        await transportRef.current.updateRagToolsAvailability(
-          hasDocuments,
-          modelSupportsTools,
-          ragFeatureAvailable
-        )
-      }
+      await transport.updateRagToolsAvailability(
+        hasDocuments,
+        modelSupportsTools,
+        ragFeatureAvailable
+      )
     },
-    []
+    [transport]
   )
 
   return {

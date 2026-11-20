@@ -30,7 +30,8 @@
           ],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "backgroundThrottling": "disabled"
       }
     ]
   },

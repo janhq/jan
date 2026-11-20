@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,8 @@ import { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+
+import { normalizeAppError } from '@/utils/appError'
 
 type MCPConfigJson =
   | MCPServerConfig
@@ -25,7 +27,7 @@ interface EditJsonMCPserverProps {
   onOpenChange: (open: boolean) => void
   serverName: string | null // null means editing all servers
   initialData: MCPConfigJson
-  onSave: (data: MCPConfigJson) => void
+  onSave: (data: MCPConfigJson) => void | Promise<void>
 }
 
 export default function EditJsonMCPserver({
@@ -39,6 +41,9 @@ export default function EditJsonMCPserver({
   const [jsonContent, setJsonContent] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  const savePending = useRef(false)
+  const [saving, setSaving] = useState(false)
+
   // Initialize the editor with the provided data
   useEffect(() => {
     if (open && initialData) {
@@ -49,39 +54,50 @@ export default function EditJsonMCPserver({
         setError(t('mcp-servers:editJson.errorParse'))
       }
     }
-  }, [open, initialData, t])
+    // Reinitialize only for a new editor session/data, not translation identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialData])
 
   const handlePaste = () => {
     // Clear any existing errors when pasting
     setError(null)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (savePending.current) return
+    savePending.current = true
+    setSaving(true)
+    setError(null)
     try {
       const parsedData = JSON.parse(jsonContent) as MCPConfigJson
-      onSave(parsedData)
+      await onSave(parsedData)
       onOpenChange(false)
-      setError(null)
-    } catch {
-      setError(t('mcp-servers:editJson.errorFormat'))
+    } catch (error) {
+      setError(error instanceof SyntaxError
+        ? t('mcp-servers:editJson.errorFormat')
+        : normalizeAppError(error))
+    } finally {
+      savePending.current = false
+      setSaving(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!savePending.current) onOpenChange(value) }}>
       <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden"
         onInteractOutside={(e) => {
           e.preventDefault()
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {serverName
               ? t('mcp-servers:editJson.title', { serverName })
               : t('mcp-servers:editJson.titleAll')}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
+        <div data-testid="mcp-dialog-scroll-content" className="min-h-0 overflow-y-auto space-y-2">
           <div className="border  rounded-md overflow-hidden!">
             <style>{`
               .w-tc-editor textarea {
@@ -109,11 +125,11 @@ export default function EditJsonMCPserver({
               className="w-full text-sm! overflow-hidden break-all! font-mono!"
             />
           </div>
-          {error && <div className="text-destructive text-sm">{error}</div>}
+          {error && <div role="alert" className="text-destructive text-sm max-h-32 overflow-y-auto [overflow-wrap:anywhere]">{error}</div>}
         </div>
 
-        <DialogFooter>
-          <Button size="sm" onClick={handleSave}>{t('mcp-servers:editJson.save')}</Button>
+        <DialogFooter className="shrink-0">
+          <Button size="sm" disabled={saving} onClick={handleSave}>{t('mcp-servers:editJson.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -84,14 +84,29 @@ export function parsePromptForReferences(text: string): string[] {
 }
 
 /**
- * Remove qualified @path references from `text`, leaving non-reference `@`
- * tokens (ssh/email addresses, bare IPs) intact, and normalise whitespace.
+ * Remove the `@path` references in `resolved` from `text`, leaving every other
+ * `@token` (decorators, ssh/email addresses, bare IPs) and all other
+ * whitespace untouched. A removed token also takes one adjacent space so
+ * `see @a and b` becomes `see and b`, not `see  and b`.
  */
-export function stripPromptReferences(text: string): string {
-  const cleaned = text.replace(REFERENCE_PATTERN, (match, raw: string) =>
-    isReferenceToken(raw) ? '' : match
+export function stripPromptReferences(
+  text: string,
+  resolved: ReadonlySet<string>
+): string {
+  if (resolved.size === 0) return text
+  const pattern = new RegExp(
+    `([ \\t]?)${REFERENCE_PATTERN.source}([ \\t]?)`,
+    'g'
   )
-  return cleaned.replace(/\s+/g, ' ').trim()
+  return text.replace(
+    pattern,
+    (match, lead: string, raw: string, trail: string) =>
+      isReferenceToken(raw) && resolved.has(raw)
+        ? lead && trail
+          ? ' '
+          : ''
+        : match
+  )
 }
 
 /**
@@ -154,6 +169,20 @@ export async function searchFiles(
 
 // ── Resolving a single reference content ─────────────────────────────────────
 
+export type ResolvedReference =
+  | {
+      kind: 'file' | 'directory'
+      absolutePath: string
+      content: string
+      isImage: boolean
+      imageBase64?: string
+      imageMimeType?: string
+    }
+  // The path exists but is over the size cap, so it cannot be inlined. Kept
+  // apart from `null` so the user is still told, instead of the `@path`
+  // silently turning into nothing.
+  | { kind: 'too-large'; absolutePath: string }
+
 /**
  * Resolve a @path reference and return the content to inject into the message.
  *
@@ -162,14 +191,7 @@ export async function searchFiles(
 export async function resolvePathReference(
   rawPath: string,
   workingDir?: string
-): Promise<{
-  kind: 'file' | 'directory'
-  absolutePath: string
-  content: string
-  isImage: boolean
-  imageBase64?: string
-  imageMimeType?: string
-} | null> {
+): Promise<ResolvedReference | null> {
   const absolutePath = rawPath.startsWith('/')
     ? rawPath
     : workingDir
@@ -200,7 +222,7 @@ export async function resolvePathReference(
     // File
     const size = stat.size ? Number(stat.size) : 0
     if (size > MAX_FILE_BYTES) {
-      return null // too large — caller handles
+      return { kind: 'too-large', absolutePath }
     }
 
     const ext = rawPath.split('.').pop()?.toLowerCase()
@@ -230,6 +252,44 @@ export async function resolvePathReference(
     return { kind: 'file', absolutePath, content: header + truncated + footer, isImage: false }
   } catch {
     return null
+  }
+}
+
+/**
+ * Expand the `@path` references in a prompt that resolve to a file or folder
+ * in the working directory. Anything else that merely starts with `@` (Python
+ * decorators, `@mentions`) is left in the text exactly as typed.
+ *
+ * `resolvedContents` is the text to append after the prompt; `text` is the
+ * prompt with the expanded references removed.
+ */
+export async function expandPromptReferences(
+  text: string,
+  workingDir?: string
+): Promise<{ text: string; resolvedContents: string }> {
+  const refs = parsePromptForReferences(text)
+  if (refs.length === 0) return { text, resolvedContents: '' }
+
+  const parts: string[] = []
+  const expanded = new Set<string>()
+  for (const ref of refs) {
+    const resolved = await resolvePathReference(ref, workingDir)
+    if (!resolved) continue
+    expanded.add(ref)
+    if (resolved.kind === 'too-large') {
+      parts.push(`[File too large to include: ${ref}]`)
+    } else if (resolved.kind === 'file') {
+      parts.push(`--- File: ${resolved.absolutePath} ---\n${resolved.content}`)
+    } else {
+      parts.push(
+        `--- Directory: ${resolved.absolutePath} ---\n${resolved.content}`
+      )
+    }
+  }
+
+  return {
+    text: stripPromptReferences(text, expanded),
+    resolvedContents: parts.join('\n\n'),
   }
 }
 

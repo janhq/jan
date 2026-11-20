@@ -16,7 +16,7 @@ from reportportal_client.helpers import timestamp
 logger = logging.getLogger(__name__)
 
 async def run_single_test_with_timeout(computer, test_data, rp_client, launch_id, max_turns=30, 
-                                     jan_app_path=None, jan_process_name="Jan.exe", agent_config=None, 
+                                     jan_app_path=None, jan_process_name="Jan-Desktop", agent_config=None, 
                                      enable_reportportal=False):
     """
     Run a single test case with turn count monitoring, forced stop, and screen recording

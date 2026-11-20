@@ -1,6 +1,7 @@
 import { expect, afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import * as matchers from '@testing-library/jest-dom/matchers'
+import { DefaultExtensionsService } from '@/services/extensions/default'
 
 // extends Vitest's expect method with methods from react-testing-library
 expect.extend(matchers)
@@ -132,6 +133,7 @@ const mockServiceHub = {
     stopCore: vi.fn().mockResolvedValue(undefined),
     getCoreStatus: vi.fn().mockResolvedValue('stopped'),
   }),
+  extensions: () => new DefaultExtensionsService(),
   deeplink: () => ({ // cspell: disable-line
     register: vi.fn().mockResolvedValue(undefined),
     handle: vi.fn().mockResolvedValue(undefined),

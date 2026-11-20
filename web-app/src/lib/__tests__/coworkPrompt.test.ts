@@ -64,7 +64,7 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('Exit plan mode')
   })
 
-  // Progressive disclosure: one line per note, `memory_read` for the rest. An
+  // Progressive disclosure: one line per note, the memory tool for the rest. An
   // empty store adds nothing, so the prompt prefix is unchanged for users who
   // never recorded a memory.
   it('lists memory notes with summaries only when the store has any', () => {
@@ -79,7 +79,7 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('# Available Memories')
     expect(p).toContain('- `decisions` - We use Yarn not npm.')
     expect(p).toContain('- `empty-note` - no summary')
-    expect(p).toContain('memory_read')
+    expect(p).toContain('`memory` tool')
     expect(buildCoworkSystemPrompt(opts())).not.toContain(
       '# Available Memories'
     )
@@ -129,6 +129,13 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toMatch(/prefer a subagent for long or repetitive jobs/i)
   })
 
+  // Parity with the CLI's SUBAGENT_GUIDE: a delegated task is the child's, so
+  // the dispatcher must be told not to redo it while the child runs.
+  it('tells the dispatcher a handed-off task is the subagent to do, not itself', () => {
+    const p = buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
+    expect(p).toMatch(/do not do that same\s+work yourself/i)
+  })
+
   it('describes subagents only when some are available and not planning', () => {
     expect(
       buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
@@ -169,6 +176,16 @@ describe('buildSubagentSystemPrompt', () => {
     expect(out).toContain('cannot see the conversation')
     expect(out).toContain('cannot ask the user')
     expect(out).toContain('cannot dispatch')
+  })
+
+  // Parity with the CLI's child_system_prompt: a named child knows it is a lone
+  // agent on one errand, not a worker that waits on the shared queue.
+  it('names the child in its scope when a name is given', () => {
+    const named = buildSubagentSystemPrompt('p', opts, 'kv-review')
+    expect(named).toContain('subagent `kv-review`, running one errand')
+    const anon = buildSubagentSystemPrompt('p', opts)
+    expect(anon).toContain('a subagent running one errand')
+    expect(anon).not.toContain('subagent `')
   })
 
   it('never leaks plan mode, a subagent roster, or memory into a child', () => {

@@ -8,7 +8,7 @@ import type { MonitorView } from '@/types/coworkSession'
  *
  * The watcher itself runs in Rust (`tools/monitor.rs`, reached through the
  * plugin's guest-js): it tails the file, evaluates the condition scripts under
- * the same OS sandbox `bash` gets, and streams every match back as a
+ * the same OS sandbox `shell` gets, and streams every match back as a
  * `MonitorUpdate`. What lives here is the client half: the transcribed schema
  * (like `task`/`todo`), and the bookkeeping that turns updates into inbox pings
  * so a match reaches the model as the same `<SYSTEM>` note a finished subagent

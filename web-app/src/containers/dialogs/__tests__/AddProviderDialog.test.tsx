@@ -1,12 +1,14 @@
+import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import '@testing-library/jest-dom'
-import { AddProviderDialog } from '../AddProviderDialog'
 
+const t = (key: string) => key
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({ t }),
 }))
+
+import { AddProviderDialog } from '../AddProviderDialog'
 
 const openDialog = async () => {
   const user = userEvent.setup()
@@ -34,6 +36,18 @@ const fillNameAndUrl = (
 
 describe('AddProviderDialog', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('labels the name field like the other fields', () => {
+    render(
+      <AddProviderDialog onCreateProvider={vi.fn()}>
+        <button>open</button>
+      </AddProviderDialog>
+    )
+    fireEvent.click(screen.getByText('open'))
+    expect(screen.getByLabelText('provider:nameLabel')).toBe(
+      screen.getByTestId('provider-name-input')
+    )
+  })
 
   it('enables Create for an OpenAI-compatible provider with no API key', async () => {
     await openDialog()

@@ -4,12 +4,19 @@
   "version": "0.1.0",
   "description": "Vector DB integration using sqlite-vec if available with linear fallback",
   "main": "dist/index.js",
-  "module": "dist/module.js",
+  "jan": {
+    "id": "jan.vector-db",
+    "displayName": "Vector DB",
+    "description": "Vector DB integration using sqlite-vec if available with linear fallback",
+    "publisher": "Jan",
+    "apiVersion": "^1.0.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "author": "Jan <service@jan.ai>",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "test": "vitest run"
   },
   "devDependencies": {
@@ -18,7 +25,7 @@
     "rimraf": "6.0.1",
     "rolldown": "1.0.0-beta.1",
     "typescript": "5.9.2",
-    "vitest": "3.2.4"
+    "vitest": "3.2.7"
   },
   "dependencies": {
     "@janhq/core": "workspace:*",

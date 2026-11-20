@@ -56,13 +56,72 @@ Context share is the one to watch: an agent climbing toward 100% is about to run
 
 | Tool | Purpose |
 | --- | --- |
-| `dispatch_subagent` | Start a subagent on a task and return immediately with a `run_id` |
-| `await_subagent` | Block until a dispatched run finishes and return its answer |
+| `dispatch_subagent` | Start one or more subagents and return immediately, listing each one's name, `run_id` and answer file |
+| `message_subagent` | Send a running subagent a correction or extra context, by its worker name |
+| `stop_subagent` | Stop one running subagent by name; its work in progress is discarded |
 | `create_subagent` | Save a reusable subagent definition |
 | `list_subagents` | List the subagents available here |
 
 Dispatch is non-blocking, which is what makes parallel fan-out possible: the main agent dispatches
-several, then awaits each one. Each `run_id` can be awaited once.
+several and keeps working. Each subagent's answer arrives in a note the moment it finishes, so
+there is nothing to wait on.
+
+## Steering a running subagent
+
+A subagent that misread its task doesn't have to run to the end. `message_subagent` queues a message
+and returns straight away. The subagent reads it at its next step, after any tool call in flight has
+finished, as an ordinary user message: to a subagent, the agent that dispatched it is its user.
+Several messages are delivered together, in order.
+
+- A subagent still waiting for a free slot can be messaged too; the message is waiting when it starts.
+- A subagent that already finished is reported as such: dispatch a follow-up instead.
+- A message is only text. It cannot widen the subagent's tools, answer a permission prompt, or change
+  its sandbox or model.
+- Workers are named after their agent, numbered on repeat (`explore`, `explore-2`), and a name is
+  never handed out twice in a session, so each name addresses one worker.
+
+`stop_subagent` ends one subagent without touching the others. Esc still stops all of them along
+with the turn.
+
+You can do both yourself from `/agents`: select a subagent and press `m` to message it or `x` to stop
+it.
+
+## Watching subagents
+
+Subagents read the same way everywhere the console shows them: the name, then a stats line, then a
+status.
+
+- **Stats**: `4 tools · 4 req · 50% ctx · 75% cached` - tool calls made, requests sent, how full the
+  subagent's context window is, and its prompt-cache hit rate. A part is left out until it is known,
+  and a `0% cached` rate is drawn in the warning colour. The panel docked above the input uses the
+  short form `4t · 4r · 50% ctx · 75% cached`.
+- **Status**: `Running`, `Queued (N)`, `Waiting (phase N)`, `Completed - <first line of its reply>`,
+  `Interrupted`, or `Error - <reason>`.
+- **Activity**: what a running subagent is doing, worded like a conversation row (`Read kv.rs`,
+  `Running cargo test`). The same call repeated shows a count (`Read kv.rs ×2`); repeated 4 times in a
+  row with the same arguments it turns into `⚠ looping ×4`, since that usually means it is stuck.
+
+In the conversation, a dispatch is one row naming every subagent with each brief under it
+(`• Dispatched explore, general`), and each subagent that ends leaves a row such as
+`• Finished explore · 3 tools` with its status under it.
+
+## Watching a subagent with `/agents`
+
+`/agents` lists the subagents running now (green bullet), with their stats, status and current
+activity, followed by the ones that have finished this session (dim bullet). Press Enter on one to
+open its run.
+
+The run is drawn the same way as your own conversation: its answers, its reasoning folded to a
+`Thought` row, its tool calls as bulleted rows (reads and searches grouped under `Explored`, shell
+output, edit diffs), and any message you sent it with `m` as your own message. A header above it
+shows the subagent's name, run id, stats, status and brief.
+
+The view follows the subagent as it works. PgUp/PgDn scroll back through the run, Home jumps to its
+start and End returns to following it. Esc goes back to the list.
+
+A finished subagent stays readable. Its summary row in the conversation (`Finished NAME`)
+expands with Ctrl-O to the same run, and `/agents` still opens it. The console keeps the most recent
+400 rows of each subagent's run.
 
 ## Parallelism and queueing
 
@@ -70,11 +129,10 @@ Up to `max_parallel_subagents` subagents run at the same time (default `10`, min
 `agent.toml` under `[agent]` - or from the console with `/settings max_parallel_subagents N`).
 Dispatches beyond the cap are queued FIFO and start as a running child finishes.
 
-A queued run still returns a `run_id` immediately, and `await_subagent` on it simply blocks until a
-slot frees and the run completes - no deadlock, no premature promotion. `abort_all` cancels queued
-runs too.
+A queued run still gets a `run_id` immediately, and its answer arrives in a note once a slot frees
+and it completes - no deadlock, no premature promotion. Esc cancels queued runs too.
 
-In the console, a queued subagent shows as `queued (N waiting)` in its panel, where `N` is its
+In the console, a queued subagent shows as `Queued (N)` in its panel, where `N` is its
 position in line (`1` = next to start). The panel turns into a normal running row once its slot
 opens.
 
@@ -94,26 +152,192 @@ Subagents also cannot:
 - dispatch subagents of their own (no recursion)
 - read or change the main agent's todo list
 - ask you an interactive question
+- use [memory](/docs/agent/memory): they get no `memory` tool and no memory index in their prompt
+
+Memory stays with the main agent. When a subagent needs something the main agent remembers, the main
+agent puts that fact in the task, and it records anything worth keeping from the subagent's answer
+itself. That keeps one curator for memory instead of several writers it never sees.
 
 They *can* request permission for a write or a command. Those prompts surface in your console,
 labelled with which subagent asked.
+
+## Where a subagent works
+
+This applies to the `jan` CLI and TUI; in the desktop app a subagent works in its parent's
+workspace as before.
+
+Each subagent's working directory is decided when it is dispatched. There is no tool for it: the
+dispatch result says where each one works, for example
+`working in worktree ~/.jan/worktrees/jan-582afba2/general-3f2a (branch jan/agent/general-3f2a, from 587e06393); uncommitted changes in your checkout are not in it`
+or `working read-only in /home/you/src/jan`.
+
+- **Writers share your checkout, unless worktrees are on.** A subagent whose tools include `write`
+  or `edit` works in your checkout, as you do, so writers dispatched together can overwrite each
+  other's edits: give parallel writers disjoint files, or ask for `workspace: "new"`. Nothing
+  serializes them. Set `subagent_worktrees = true` under `[agent]` in `agent.toml`, or pass
+  `--subagent-worktrees` (`--no-subagent-worktrees` overrides the file), to give each its own
+  checkout instead, as described next.
+- **With subagent worktrees on, writers get their own checkout.** A subagent whose tools include
+  `write` or `edit` gets a fresh
+  checkout on a `jan/agent/<name>-<id>` branch, started from `HEAD`, under
+  `~/.jan/worktrees/<project>/`. It is a repository of its own (a `git clone --shared`, not a linked
+  worktree), so two writers dispatched together never edit the same checkout, none of them sees your
+  uncommitted changes, and none of them can write your `.git`. When the writer finishes, its branch
+  is fetched into your repository and its final answer names it; merging it is up to you or the main
+  agent. If the branch could not be brought over (the checkout's `.git` or config was tampered with,
+  or you have since moved a branch of that name), the answer and the session-end note say so and
+  the branch stays in the checkout. When your session runs in a subdirectory of the repository, the subagent
+  starts in the same subdirectory of its worktree; if that directory is not in the worktree
+  (untracked or ignored in your checkout, or absent at the `ref`), it starts at the worktree's top
+  level instead and the dispatch result says so.
+- **Readers are read-only.** Any other subagent (`explore`, `review`, `research`, ...) works in
+  your checkout with it read-only: `write` and `edit` refuse paths in it, and its shell always runs
+  in the sandbox with the checkout (including `.git`) mounted read-only, even when your own session
+  runs unsandboxed. If no sandbox can start on the machine, a reader gets no shell at all. The
+  session scratch stays writable, and package caches (`YARN_CACHE_FOLDER`, `COREPACK_HOME`) point
+  into it.
+- Not a git repository, or no commits yet: every subagent works in your checkout (readers still
+  read-only), and the dispatch result says so.
+
+The first writer bullet is the default. The rest of this page, from the checkout's branch to the
+session-end sweep, applies to a checkout a subagent has: one made by subagent worktrees, `"new"`
+or a `ref`.
+
+A dispatch entry can choose with its optional `workspace` field:
+
+| `workspace` | Meaning |
+| --- | --- |
+| omitted | The default above |
+| `"new"` | A fresh checkout, whether or not subagent worktrees are on |
+| `"shared"` | Your checkout (read-only for a reader) |
+| `"<earlier subagent name>"` | That subagent's workspace, for follow-ups or a reviewer of its work. Only one writer may be in a worktree at a time: a writer naming one that another writer is still in is refused, not queued, so dispatch it again once that one has finished |
+| `{"ref": "<git ref>"}` | A fresh checkout at that ref, fetched from `origin` when it is not local (for example `pull/9486/head`). A fetch that has not finished within 60 seconds is stopped and the dispatch fails with that error |
+
+Saved subagent definitions cannot set a workspace; it is chosen per dispatch.
+
+Checkouts share one `CARGO_TARGET_DIR` per project, so a new one does not start with a cold Rust
+build. A writer's sandbox can write its checkout (its own `.git` included) and that build
+directory, and can read your repository's objects, which its checkout borrows (`objects/info/
+alternates`); it cannot write any of your `.git`. Every git operation works there, `git branch -d`,
+`git stash drop`, `git gc` and `git repack` included. Because the checkout is the child's to
+change, Jan's own git never trusts it: before it reads a checkout (to list, sweep or fetch it) it
+checks that its `.git` is still a plain directory without a `commondir`, that its object alternates
+still name only your objects and that its config does not include another file; it then runs with
+the checkout's other config emptied or overridden (`core.fsmonitor`, hooks, filters, transports),
+ignoring `replace` refs and nested repositories. A checkout that fails the check is neither read
+nor removed, and the session-end note says why.
+
+Because a checkout borrows your objects instead of copying them, avoid `git gc --prune=now` in your
+repository while a child is running or a checkout is kept: it can delete objects only a checkout
+still uses (the base of a `{ "ref": ... }` workspace fetched for the run, for instance) and break
+that checkout. A plain `git gc` keeps unreferenced objects for two weeks and is safe.
+
+The main agent can read its subagents' checkouts with the file tools (`read`, `ls`,
+`find`, `grep`), and from its shell only while that shell is sandboxed, where they are mounted
+read-only (`git -C <checkout> diff` works; an escalated command naming them is refused).
+
+When the session ends, a checkout with no uncommitted work whose commits (if any) are all on its
+branch in your repository is moved to the trash under `~/.jan/worktrees/<project>/.trash`, kept 7
+days and emptied at a later start. Uncommitted work includes untracked files and ignored files
+that are not build output (`target/`, `node_modules/`, `dist/`, `build/`, `.next/`,
+`__pycache__/`, `.venv/`, `.gradle/`, `*.o`, `*.pyc`, `*.class`), whatever ignore rule hides them,
+the checkout's own `.git/info/exclude` included: an ignored `.env` keeps its checkout. The rest are
+kept and named (their branches already fetched into your repository), and so is any checkout git
+cannot read; `/worktree` lists them while the session runs, and `/worktrees` lists every checkout
+of the project.
+
+A subagent given the shared build directory holds a shared lock on
+`~/.jan/worktrees/<project>/.meta/cargo-target.lock` while it runs, a reader in your own checkout
+included, so no session clears the directory under a running build: the size cap and **Clear
+build cache** both skip while any such lock is held.
 
 <Callout type="info">
 Because a subagent's context is separate, a long research task that would have crowded your session
 costs you only its final answer.
 </Callout>
 
+## Built-in subagents
+
+Jan ships five subagents, ready to dispatch with no setup:
+
+| Name | Model | What it does |
+| --- | --- | --- |
+| `explore` | `smol` | Codebase exploration: finds where things are and reports `path:line` evidence. Read-only: `read`, `ls`, `find`, `grep` only |
+| `research` | `smol` | Answers a question from current web sources, with citations |
+| `review` | `inherit` | Reviews a change for correctness, risk and missing tests, and reports instead of editing |
+| `debug` | `inherit` | Reproduces a failure, finds the root cause, makes the smallest fix and verifies it |
+| `general` | `inherit` | Any task no other agent fits |
+
+`explore` is read-only by construction: it is offered only `read`, `ls`, `find` and `grep`, with no
+shell and no write tools, so even on the cheap `smol` model under an auto-approving policy it cannot
+change anything. Every other built-in has the session's full toolset; its role is its prompt and
+model. To widen or narrow any of them, give it a definition of your own (see below) with the
+`allowed_tools` you want.
+
+Each dispatch entry names an `agent`, one of the predefined agents, and the task. Workers are named
+after their agent, numbered when one agent runs more than once (`explore`, `explore-2`); the
+dispatch result lists each name, which is what `message_subagent`, `stop_subagent` and the answer
+file `blackboard/<name>.md` use:
+
+```json
+{ "subagents": [
+  { "agent": "explore", "task": "Where is request auth checked?" },
+  { "agent": "explore", "task": "Which tables does the migration touch?" }
+] }
+```
+
+The main agent sees each agent with its model and purpose in its system prompt, so it can send
+lookups to `explore` and keep your main model for the work that needs it. An `agent` that is not one
+of the predefined agents is refused, with the valid ones listed.
+
+A saved subagent with the same name replaces a built-in one (see below), and the model of any of them
+can be changed per project.
+
+## Choosing a subagent's model
+
+A subagent definition's `model` is one of:
+
+- `smol`: the cheap model set as `smol_model` in `~/.jan/config.toml`. When `smol_model` is unset,
+  the session's model is used.
+- `inherit` (or no `model`): the session's model.
+- A model id, such as `gpt-5-mini`. This ties the definition to one provider's naming, so prefer a
+  role.
+
+To change it without editing the definition, set an override in the project's `agent.toml`:
+
+```toml
+[subagents.review]
+model = "smol"
+```
+
+Or do it from the console. `/settings` has two rows for this:
+
+- **`smol_model`** opens the model picker and sets the cheap model for every `smol` subagent (and for
+  `/goal` checks).
+- **`subagents`** lists every subagent with the model it runs on. Enter opens the model picker, with
+  the `smol` and `inherit` roles at the top. `x` clears the override, so the definition's own model
+  applies again.
+
+The model is read each time a subagent is dispatched, so a change applies to the next one without a
+restart. A cost ceiling is enforced at the subagent's own model's prices; a model with no published
+price is refused under a ceiling rather than metered at the wrong rate.
+
+The agent cannot pick a model itself: `create_subagent` saves a new definition without one, so it
+runs on the session's model until you choose otherwise. When the agent overwrites an existing
+definition (to change its prompt, say), the model you set on it is kept.
+
 ## Reusable subagents
 
 Definitions are TOML files, merged from two scopes:
 
 ```
-~/.jan/agent/subagents/<name>.toml          # user scope, available everywhere
-<project>/.jan/agent/subagents/<name>.toml  # project scope, shareable via git
+~/.jan/agent/subagents/<name>.toml            # user scope, available everywhere
+~/.jan/projects/<slug>/subagents/<name>.toml  # project scope, this project only
 ```
 
 The two are merged, and the project scope shadows the user scope by name - so a project can
-override one of your personal subagents without renaming it.
+override one of your personal subagents without renaming it. Either scope also shadows a built-in
+subagent of the same name.
 
 Plugins can also ship subagents as markdown agent files (`agents/*.md` in an installed plugin, the
 Claude Code convention). They load as a third, read-only scope:
@@ -122,42 +346,42 @@ Claude Code convention). They load as a third, read-only scope:
   same name.
 - Plugin agents cannot be created or edited through `create_subagent` - they are managed by
   installing or removing the plugin.
-- Claude-runtime frontmatter is translated: `model` and `color` are ignored (the agent runs on the
-  session's model), and `tools` is mapped onto Jan's tool names (`Read` -> `read`, `Glob` -> `glob`,
+- Claude-runtime frontmatter is translated: `model: haiku` runs the agent on the `smol` role and any
+  other `model` on the session's model, `color` is ignored, and `tools` is mapped onto Jan's tool names (`Read` -> `read`, `Glob` -> `glob`,
   `Grep` -> `grep`, `WebSearch` -> `web_search`, `WebFetch` -> `web_fetch`, `TodoWrite` -> `todo`).
   Names with no Jan equivalent are dropped; an agent listing only unknown tools inherits the
   parent's full tool policy.
 
 See [Plugins](/docs/agent/plugins#plugin-agents) for how plugin agents are discovered.
 
-Each definition carries a name, a one-line description, a system prompt, and an optional default
-tool allowlist. The agent can write one for you:
+Each definition carries a name, a one-line description, a system prompt, an optional default tool
+allowlist, and an optional `model` (see above). The agent can write one for you:
 
 ```
 Create a subagent called "reviewer" that reviews diffs for correctness
 and never edits files.
 ```
 
-That writes to the project scope by default, so it can be committed and shared. Ask for the user
-scope to keep it to yourself.
+That writes to the project scope by default, so it applies only in this project. Ask for the user
+scope to use it everywhere.
 
-Once saved, refer to it by name and it picks up its stored prompt and permissions.
-
-## One-off subagents
-
-A subagent doesn't need a saved definition. The agent can invent one for a single task by supplying
-a name and a system prompt together in the same call. Useful for a fan-out where each worker differs
-only slightly.
+Once saved, it is dispatched with `agent` set to its name and picks up its stored prompt,
+permissions and model. Names are at most 64 characters of letters, digits, `-` and `_`.
 
 ## Tool permissions
 
-A subagent's tools are narrowed, never widened:
+A subagent gets the session's full toolset unless something narrows it, and it is never widened:
 
-- For a **saved** subagent, the allowlist further restricts its own stored allowlist.
-- For a **one-off**, the allowlist is its toolset.
+- A definition's own `allowed_tools` restricts every dispatch of it.
+- A dispatch entry's `allowed_tools` restricts that one worker further. Its values are limited to
+  the tools the session can actually hand a subagent.
 
 Either way it can only ever reach a subset of what the parent could reach, so delegation cannot be
 used to escape your project's [tool policy](/docs/agent/permissions#project-policy).
+
+`memory` is never a tool a subagent can be given: it is left out of the `allowed_tools` choices, and a
+definition or dispatch that names it still gets a subagent without it. The only subagent with memory
+is Jan's own [tidy](/docs/agent/memory#tidying) run, which cannot be dispatched by the agent.
 
 One exception: `skill_list` and `skill_read` are always available to a subagent, whatever its
 allowlist says. Skills are how a subagent executes its procedure, and plugin `agents/*.md` files

@@ -1,4 +1,5 @@
 import type { CoworkTurn } from '@/types/coworkSession'
+import { isRecordedShellCall } from '@/lib/agentTools'
 
 const MAX_COMMAND_LEN = 60
 
@@ -27,33 +28,37 @@ function humanizeToolName(name: string): string {
 const VERB_BY_TOOL: Record<string, string> = {
   write: 'Writing',
   edit: 'Editing',
-  bash: 'Running',
+  shell: 'Running',
   read: 'Reading',
   ls: 'Listing',
   find: 'Finding',
   grep: 'Searching',
 }
 
-const NO_DETAIL_TOOLS: Record<string, string> = {
-  memory_write: 'Saving memory',
-  memory_read: 'Reading memory',
-  memory_list: 'Reading memory',
+/** One phrase per `memory` op; a read-style op is the fallback. */
+const MEMORY_ACTIVITY: Record<string, string> = {
+  write: 'Saving memory',
+  edit: 'Saving memory',
+  delete: 'Saving memory',
+  move: 'Saving memory',
+  search: 'Searching memory',
 }
 
 /** Text for one tool call, given its name and args. Pure formatting, no timestamp. */
 export function toolActivityText(toolName: string, input: unknown): string {
-  const fixed = NO_DETAIL_TOOLS[toolName]
-  if (fixed) return fixed
+  if (toolName === 'memory') {
+    return MEMORY_ACTIVITY[stringArg(input, 'op') ?? ''] ?? 'Reading memory'
+  }
 
   if (toolName === 'skill_read') {
     const name = stringArg(input, 'name')
     return name ? `Reading ${name}` : 'Reading skill'
   }
 
-  const verb = VERB_BY_TOOL[toolName]
+  const verb = VERB_BY_TOOL[isRecordedShellCall(toolName) ? 'shell' : toolName]
   if (!verb) return humanizeToolName(toolName)
 
-  if (toolName === 'bash') {
+  if (isRecordedShellCall(toolName)) {
     const command = stringArg(input, 'command')
     return command ? `${verb} ${truncate(command, MAX_COMMAND_LEN)}` : verb
   }

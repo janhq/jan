@@ -7,6 +7,7 @@ import {
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
   ASK_TOOL_NAME,
+  PLAN_DENIED_MEMORY_OPS,
   PLAN_DENIED_TOOLS,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
@@ -63,6 +64,16 @@ function planRefusal(toolName: string): ToolOutcome {
   }
 }
 
+/** Refusal text for a `memory` op that changes the store in plan mode. */
+function planMemoryRefusal(op: string): ToolOutcome {
+  return {
+    output:
+      `The \`memory\` op \`${op}\` is disabled in plan mode, which is read-only. ` +
+      'Only `view` and `search` work; stage the memory change in the plan.',
+    isError: true,
+  }
+}
+
 // A model may try to create a missing file through `read` when write is
 // withheld. Keep the filesystem error, but explain the approval path at the
 // failure itself so the next step can recover instead of repeating the read.
@@ -109,6 +120,12 @@ async function toolFailure(
     }
   }
   return { output, isError: true }
+}
+
+function memoryOp(input: unknown): string {
+  if (!input || typeof input !== 'object') return ''
+  const op = (input as { op?: unknown }).op
+  return typeof op === 'string' ? op : ''
 }
 
 function readPath(input: unknown): string | undefined {
@@ -174,6 +191,10 @@ export async function dispatchCoworkTool(
   if (ctx.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
     return planRefusal(toolName)
   }
+  if (ctx.planMode && toolName === 'memory') {
+    const op = memoryOp(call.input)
+    if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
+  }
 
   try {
     if (toolName === TODO_TOOL_NAME) return await ctx.onTodo(call.input)
@@ -206,9 +227,10 @@ export async function dispatchCoworkTool(
       }
     }
 
-    // `'session'`, not the default `'thread'`: a Cowork session id lives in its
-    // own namespace, and the thread sweep would otherwise delete this sandbox
-    // because no chat thread claims it. The network flag follows Cowork's own
+    // `'thread'`: a Cowork conversation is a thread, and the migration copied
+    // its sandbox to threads/<id>, so that is where its files live and what the
+    // thread sweep keeps. (Spelled out because `scope` precedes the arguments
+    // after it.) The network flag follows Cowork's own
     // setting (on by default), read per call so a toggle in Settings applies to
     // the next command; chat's shell stays network-closed regardless.
     // The attached folder is writable on this surface: Cowork's shared folder
@@ -220,7 +242,7 @@ export async function dispatchCoworkTool(
       call.input,
       ctx.sessionId,
       ctx.readOnlyFolder,
-      'session',
+      'thread',
       useCoworkConfig.getState().networkEnabled,
       true,
       ctx.readOnlyFolder

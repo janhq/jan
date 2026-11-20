@@ -58,5 +58,25 @@
   },
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",
-  "enterNameForProvider": "输入提供商名称"
+  "enterNameForProvider": "键入提供商名称",
+  "baseUrl": {
+    "title": "Base URL",
+    "azureDescription": "您的 Azure OpenAI 端点。将 YOUR-RESOURCE-NAME 替换为自己的 Azure 资源名。"
+  },
+  "apiKeys": {
+    "title": "API keys",
+    "description": "键入您的 API key。可于高级设定添加更多 keys，Jan 在一个 key 不可用时，将自动尝试下一个 key。",
+    "placeholder": "sk-…\nsk-…",
+    "primaryPlaceholder": "键入首选 API key",
+    "keyPlaceholder": "键入 API key",
+    "primaryBadge": "首选",
+    "test": "测试 keys",
+    "testing": "测试中...",
+    "testHint": "检查并显示每个 key 的 /models 接口状态。",
+    "advanced": "高级",
+    "hideAdvanced": "隐藏高级设定",
+    "oneKeyHint": "（可选）于高级设定中添加备用 keys。",
+    "addKey": "添加 key",
+    "removeKey": "移除 key"
+  }
 }

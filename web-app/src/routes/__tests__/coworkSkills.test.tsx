@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type { UIMessage } from 'ai'
 import type * as CoworkRunner from '@/lib/coworkRunner'
@@ -112,7 +112,7 @@ vi.mock('@/lib/coworkSubagentRegistry', () => ({
 }))
 vi.mock('@/lib/model-factory', () => ({ ModelFactory: {} }))
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
-  sessionWorkspacePath: async () => '/sandbox',
+  threadWorkspacePath: async () => '/sandbox',
 }))
 vi.mock('@/containers/ChatInput', () => ({
   default: ({
@@ -120,13 +120,32 @@ vi.mock('@/containers/ChatInput', () => ({
     onStop,
     chatStatus,
     scopeKey,
+    model,
+    onModelChange,
   }: {
     onSubmit: (text: string) => void
     onStop: () => void
     chatStatus: string
     scopeKey: string
+    model?: ThreadModel
+    onModelChange?: (model: ThreadModel) => void
   }) => (
     <>
+      <div data-testid="composer-model">
+        {model?.id}
+        <button
+          onClick={() =>
+            onModelChange?.({ id: 'second-model', provider: 'test' })
+          }
+        >
+          second-model
+        </button>
+        <button
+          onClick={() => onModelChange?.({ id: 'test-model', provider: 'test' })}
+        >
+          test-model
+        </button>
+      </div>
       <output aria-label="Composer status">{chatStatus}</output>
       <button
         onClick={() => {
@@ -212,8 +231,9 @@ vi.mock('@/containers/CoworkFilesPanel', () => ({
 vi.mock('@/containers/CoworkTodoChip', () => ({ CoworkTodoChip: () => null }))
 vi.mock('@/containers/CoworkTasksChip', () => ({ CoworkTasksChip: () => null }))
 vi.mock('@/containers/CoworkModelChip', () => ({ CoworkModelChip: () => null }))
-vi.mock('@/containers/CoworkModelPanel', () => ({
-  CoworkModelPanel: () => null,
+vi.mock('@/containers/ModelSetting', () => ({
+  ModelSetting: () => null,
+  ModelSettingSheet: () => null,
 }))
 vi.mock('@/containers/CoworkSandboxChip', () => ({
   CoworkSandboxChip: () => null,
@@ -230,18 +250,21 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({
   CoworkParkedNotice: () => null,
 }))
 
-import { Route } from '../cowork'
+import { CoworkPage } from '@/containers/CoworkPage'
 import { useSkills } from '@/hooks/useSkills'
 import { usePrompt } from '@/hooks/usePrompt'
-import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { answerAsk } from '@/lib/coworkRunner'
+import {
+  sessionFromThread,
+  sessionToThreadRecord,
+} from '@/lib/coworkPersistence'
+import { sessionToSidecar } from '@/lib/migrateCoworkSessions'
 import { localStorageKey } from '@/constants/localStorage'
 // The router mock returns the supplied component options directly.
-const routeOptions = Route as unknown as { component: () => ReactNode }
-const CoworkPage = routeOptions.component
 function Manager() {
   const { write } = useSkills(null)
   return (
@@ -363,6 +386,14 @@ it('invokes the project skill when it shadows a global skill', async () => {
   )
 })
 
+/** A second session while the first one is still streaming: the in-flight
+ * session has no committed turns, so it must be deselected for createSession
+ * not to hand it back as the untouched blank one. */
+const openOtherSession = (): string => {
+  useCoworkSessions.setState({ currentId: null })
+  return useCoworkSessions.getState().createSession()
+}
+
 it('isolates concurrent session streams and stops only the viewed session', async () => {
   backend.hold = true
   const a = useCoworkSessions.getState().createSession()
@@ -372,7 +403,7 @@ it('isolates concurrent session streams and stops only the viewed session', asyn
   await waitFor(() => expect(backend.runs).toHaveLength(1))
   let b = ''
   act(() => {
-    b = startNewSession(Object.keys(useCoworkRun.getState().runId))
+    b = openOtherSession()
   })
   expect(screen.getByLabelText('Composer status')).toHaveTextContent('ready')
   act(() => usePrompt.getState().setPrompt('Question B'))
@@ -472,28 +503,33 @@ it('restores each session model after switching and persisted-store rehydration'
   useCoworkSessions.getState().selectSession(a)
   const view = render(<CoworkPage />)
   const choose = async (name: string) => {
-    fireEvent.click(document.querySelector('header button')!)
-    fireEvent.click(await screen.findByText(name))
+    fireEvent.click(screen.getByRole('button', { name }))
   }
   await choose('second-model')
   act(() => useCoworkSessions.getState().selectSession(b))
   await choose('test-model')
   act(() => useCoworkSessions.getState().selectSession(a))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   view.unmount()
-  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  // A restart: every session goes through the record it is stored as (thread
+  // record + sidecar) and back, which is what write-through hydration does.
+  const restored = useCoworkSessions.getState().sessions.map((session) =>
+    sessionFromThread(
+      sessionToThreadRecord(session),
+      sessionToSidecar(session)
+    )
+  )
   useCoworkSessions.setState({ sessions: [], currentId: null })
-  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
-  await useCoworkSessions.persist.rehydrate()
+  useCoworkSessions.setState({ sessions: restored, currentId: a })
   render(<CoworkPage />)
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   act(() => useCoworkSessions.getState().selectSession(b))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('test-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('test-model')
   )
 })
 
@@ -531,7 +567,7 @@ it('requires plan approval before a failed-read loop can create the requested fi
   ).toBe(true)
   let other = ''
   act(() => {
-    other = startNewSession(Object.keys(useCoworkRun.getState().runId))
+    other = openOtherSession()
     useCoworkSessions.getState().setPlanMode(other, true)
   })
   act(() => {

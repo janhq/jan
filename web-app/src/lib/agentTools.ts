@@ -3,11 +3,13 @@ import {
   executeTool,
   sandboxStatus,
   threadWorkspaceDelete,
+  sessionWorkspaceCopyToThread,
   threadWorkspaceSweep,
   memoryCatalog,
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
+  blackboardWrite,
   attachmentImport,
   startMonitor,
   stopMonitor,
@@ -21,6 +23,7 @@ import {
   type ToolImage,
   type ToolSchema,
   type WorkspaceScope,
+  type WorkspaceCopy,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
 
@@ -29,7 +32,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
  *
  * `write` and `edit` are included: they can only touch the thread's ephemeral
  * sandbox, which is deleted with the conversation, so `execute_tool` allows them
- * without a prompt. Withholding them while `bash` can write the same files would
+ * without a prompt. Withholding them while `shell` can write the same files would
  * be a restriction a sibling tool trivially bypasses.
  *
  * `web_search`/`web_fetch` are also built-ins but are already advertised through
@@ -42,10 +45,9 @@ export const AGENT_TOOL_NAMES = new Set([
   'grep',
   'write',
   'edit',
-  'bash',
-  'memory_list',
-  'memory_read',
-  'memory_write',
+  'shell',
+  // One tool for every memory op (view/search/write/edit/delete/move).
+  'memory',
   'skill_list',
   'skill_read',
   'skill_write',
@@ -55,25 +57,34 @@ export const AGENT_TOOL_NAMES = new Set([
 ])
 
 /**
+ * Whether a recorded tool call ran the shell, for *displaying saved history*
+ * only. Turns saved before the tool was renamed carry its old name `bash`; they
+ * keep their terminal view and artifacts. Nothing dispatches or allows `bash`:
+ * the sets above and below name only `shell`.
+ */
+export const isRecordedShellCall = (toolName: string): boolean =>
+  toolName === 'shell' || toolName === 'bash'
+
+/**
  * The subset the main chat surface advertises and dispatches: the sandboxed
  * shell alone, with no network. The full toolset above is Cowork's — chat is a
  * conversation that occasionally runs a command, not an agent surface.
  */
-export const CHAT_AGENT_TOOL_NAMES = new Set(['bash'])
+export const CHAT_AGENT_TOOL_NAMES = new Set(['shell'])
 
 /**
  * Tools that only run under an enforcing OS sandbox. They stay in
  * `AGENT_TOOL_NAMES` -- the desktop still owns dispatching them -- but are held
  * back from the advertised schemas when no backend can confine them.
  */
-const SANDBOX_REQUIRED_TOOLS = new Set(['bash'])
+const SANDBOX_REQUIRED_TOOLS = new Set(['shell'])
 
 let schemaCache: ToolSchema[] | null = null
 let statusCache: Promise<SandboxStatus> | null = null
 
 /**
  * The sandbox backend for this machine, fetched once. A failure is treated as
- * "no sandbox", which withholds `bash` rather than offering something that
+ * "no sandbox", which withholds `shell` rather than offering something that
  * cannot run.
  */
 export function getSandboxStatus(): Promise<SandboxStatus> {
@@ -94,7 +105,7 @@ let enforcesNow = false
 /**
  * Re-probe the sandbox, dropping both caches. Installing a backend (bubblewrap
  * on Linux) cannot take effect otherwise: `statusCache` is module-level, and
- * leaving `schemaCache` behind would keep `bash` withheld even once a backend
+ * leaving `schemaCache` behind would keep `shell` withheld even once a backend
  * enforces.
  */
 export function refreshSandboxStatus(): Promise<SandboxStatus> {
@@ -114,7 +125,7 @@ export function sandboxEnforces(): boolean {
 
 /**
  * Schemas for the advertised subset. Rust's `schema.rs` is the only source, and
- * the sandbox decides whether `bash` is among them.
+ * the sandbox decides whether `shell` is among them.
  */
 export async function getAgentToolSchemas(): Promise<ToolSchema[]> {
   if (schemaCache) return schemaCache
@@ -145,7 +156,7 @@ let digestNow = ''
 
 /**
  * Drop the cached snapshot so the next run/send re-reads the store. Called from
- * every in-app write path (the `memory_write` tool, the settings editors, the
+ * every in-app write path (a `memory` tool change, the settings editors, the
  * chat Remember action); an edit made outside the app is picked up on restart.
  */
 export function invalidateMemory(): void {
@@ -162,7 +173,7 @@ async function loadMemorySnapshot(): Promise<MemorySnapshot> {
 
   // The digest is self-contained: whole notes only, newest first, under a
   // strict budget. A note that does not fit is simply absent -- chat has no
-  // memory_read to dereference a truncated one with.
+  // memory tool to dereference a truncated one with.
   let remaining = MEMORY_DIGEST_BUDGET
   const parts: string[] = []
   for (const entry of newestFirst) {
@@ -238,7 +249,7 @@ const messageOf = (e: unknown): string =>
  * the desktop has no project picker yet, so the plugin uses the permanent store
  * in the Jan data folder.
  *
- * `bash` additionally runs under an OS sandbox whose network access is closed
+ * `shell` additionally runs under an OS sandbox whose network access is closed
  * unless the caller opens it. Chat never does; Cowork passes its own setting.
  */
 export async function executeAgentTool(
@@ -264,13 +275,18 @@ export async function executeAgentTool(
    * folder). Off by default, so chat's attachment stays read-only. */
   projectWritable = false,
   /**
-   * A project folder whose co-located skills (`<folder>/.jan/agent/skills`)
+   * A project folder whose project-store skills (`~/.jan/projects/<slug>/skills`)
    * layer on top of the permanent store for `skill_list`/`skill_read`, so an
    * attached folder's skills reach the agent alongside the global ones (#8879).
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills
    * global-only. Memory and skill writes stay on the permanent store regardless.
    */
-  skillProject?: string | null
+  skillProject?: string | null,
+  /**
+   * The model's tool call id. A chat call that changes an attached folder runs
+   * only on the user's approval of this id (agent-tools `consent`).
+   */
+  callId?: string
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -289,12 +305,13 @@ export async function executeAgentTool(
       allowNetwork,
       readOnlyProject ?? undefined,
       projectWritable,
-      scope
+      scope,
+      callId
     )
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the
     // snapshot taken before this note existed.
-    if (toolName === 'memory_write') invalidateMemory()
+    if (toolName === 'memory' && isMemoryChange(args)) invalidateMemory()
     return {
       content: result.content,
       diff: result.diff ?? undefined,
@@ -305,10 +322,15 @@ export async function executeAgentTool(
   }
 }
 
+/** Whether a `memory` call changes the store (anything but view/search). */
+function isMemoryChange(args: Record<string, unknown>): boolean {
+  return args.op !== 'view' && args.op !== 'search'
+}
+
 export type { MonitorUpdate }
 
 /**
- * Start a file monitor for a Cowork session. `onUpdate` receives every match
+ * Start a file monitor for a Cowork conversation (a thread). `onUpdate` receives every match
  * (and the terminal all-met/timeout update) as it happens; the returned string
  * is the model-facing `monitor` tool result. An error comes back as an
  * `ERROR:`-prefixed output rather than a throw, matching the tool contract.
@@ -330,7 +352,7 @@ export async function startAgentMonitor(
       allowNetwork,
       readOnlyProject: readOnlyProject ?? undefined,
       projectWritable,
-      scope: 'session',
+      scope: 'thread',
     })
     return { output }
   } catch (e) {
@@ -387,7 +409,7 @@ export async function stopAgentSessionMonitors(sessionId: string): Promise<void>
 }
 
 /**
- * Kill every `bash` tree this session started when the user presses Stop.
+ * Kill every `shell` tree this session started when the user presses Stop.
  * Best-effort: aborting the JS run already unwinds the turn, so a failure here
  * only means a shell keeps running, not user-visible damage.
  */
@@ -395,13 +417,19 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   try {
     await cancelThreadBash(sessionId)
   } catch (e) {
-    console.warn('[agentTools] Failed to cancel session bash:', messageOf(e))
+    console.warn('[agentTools] Failed to cancel session shells:', messageOf(e))
   }
 }
 
-/** A file claimed for a subagent's answer: the name to fill it by, and the
- * model-visible path (`/tmp/subagents/<id>.md`, where the scratch is mounted
- * over `/tmp`) the parent agent can `read`. */
+/** Close must confirm native teardown rather than treating it as best-effort. */
+export async function cancelAgentThreadBashStrict(
+  sessionId: string
+): Promise<void> {
+  await cancelThreadBash(sessionId)
+}
+
+/** A file claimed for a subagent's answer: the name to fill it by, and its
+ * real path in the session scratch, which the parent agent can `read`. */
 export type SubagentResultFile = { file: string; path: string }
 
 /**
@@ -440,6 +468,25 @@ export async function fillSubagentResult(
 }
 
 /**
+ * Write a finished subagent's answer to `blackboard/<name>.md` in the session
+ * scratch -- the name-keyed coordination file a phased dispatch's next phase
+ * reads. Returns the model-visible path, or `null` when no scratch is reachable
+ * (the web build), so the caller can fall back to delivering the answer inline.
+ */
+export async function writeBlackboard(
+  sessionId: string,
+  name: string,
+  content: string
+): Promise<string | null> {
+  try {
+    return await blackboardWrite(sessionId, name, content)
+  } catch (e) {
+    console.warn('[agentTools] Failed to write the blackboard:', messageOf(e))
+    return null
+  }
+}
+
+/**
  * Copy a user attachment into the session workspace, with its extracted text
  * beside it. `null` when it could not be copied, so the caller can tell the
  * agent instead of naming a path that is not there.
@@ -452,7 +499,8 @@ export async function importAttachment(
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
     if (!dataFolder) return null
-    return await attachmentImport(dataFolder, sessionId, source, text)
+    // Thread scope: the sandbox the conversation's tools run in.
+    return await attachmentImport(dataFolder, sessionId, source, text, 'thread')
   } catch (e) {
     console.warn('[agentTools] Failed to import attachment:', messageOf(e))
     return null
@@ -475,6 +523,26 @@ export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
       messageOf(e)
     )
   }
+}
+
+/**
+ * Copy a Cowork session's sandbox into the thread workspace of the same id
+ * (Cowork migration). Unlike the cleanup helpers this THROWS: the migration
+ * must not commit a thread whose files did not arrive.
+ *
+ * The data folder comes from the backend command, not `window.core.api`: the
+ * migration starts before the extension API is installed, and reading the
+ * folder there returned nothing, which skipped the copy and committed threads
+ * without their files.
+ */
+export async function copySessionWorkspaceToThread(
+  sessionId: string
+): Promise<WorkspaceCopy> {
+  const dataFolder = await getServiceHub()
+    .core()
+    .invoke<string>('get_jan_data_folder_path')
+  if (!dataFolder) throw new Error('the Jan data folder is not known yet')
+  return await sessionWorkspaceCopyToThread(dataFolder, sessionId)
 }
 
 /**

@@ -1,23 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: vi.fn(),
-  },
+const mockGet = vi.fn()
+
+// The RAG service as the host's service registry returns it.
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({ services: { get: mockGet } }),
 }))
 
 vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'mock-ulid-123'),
 }))
 
-import { ExtensionManager } from '@/lib/extension'
 import { DefaultUploadsService } from '../default'
 import type { Attachment } from '@/types/attachment'
 
-const mockGet = vi.fn()
-
 beforeEach(() => {
-  vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: mockGet } as any)
   mockGet.mockReset()
   vi.useFakeTimers()
 })
@@ -103,11 +100,11 @@ describe('DefaultUploadsService.ingestFileAttachmentForProject', () => {
     await expect(svc.ingestFileAttachmentForProject('p1', imageAttachment)).rejects.toThrow('not document')
   })
 
-  it('throws when ext lacks ingestAttachmentsForProject', async () => {
+  it('throws when RAG service not available', async () => {
     vi.useRealTimers()
-    mockGet.mockReturnValue({})
+    mockGet.mockReturnValue(undefined)
     const svc = new DefaultUploadsService()
-    await expect(svc.ingestFileAttachmentForProject('p1', docAttachment)).rejects.toThrow('does not support')
+    await expect(svc.ingestFileAttachmentForProject('p1', docAttachment)).rejects.toThrow('RAG extension not available')
   })
 
   it('throws when no id returned', async () => {

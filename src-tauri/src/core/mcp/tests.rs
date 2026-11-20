@@ -1,5 +1,7 @@
 use super::commands::is_extension_not_connected_error;
-use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
+use super::helpers::{
+    add_server_config, add_server_config_with_path, jan_client_info, run_mcp_commands,
+};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
 use std::collections::HashMap;
@@ -365,6 +367,7 @@ async fn test_get_tools_falls_back_to_last_known_when_server_enabled_but_disconn
                 description: Some("search the web".to_string()),
                 input_schema: serde_json::json!({}),
                 server: "exa".to_string(),
+                generation: 0,
             }],
         );
     }
@@ -402,6 +405,7 @@ async fn test_get_tools_omits_disabled_server_even_with_stale_last_known_entry()
                 description: None,
                 input_schema: serde_json::json!({}),
                 server: "old_server".to_string(),
+                generation: 0,
             }],
         );
     }
@@ -777,6 +781,7 @@ fn test_tool_with_server_serialization_uses_input_schema_camel_case() {
         description: Some("d".into()),
         input_schema: serde_json::json!({"type": "object"}),
         server: "srv".into(),
+        generation: 0,
     };
     let json = serde_json::to_string(&t).unwrap();
     assert!(json.contains("\"inputSchema\":"));
@@ -1037,4 +1042,136 @@ async fn terminate_browser_mcp_reaps_process_group() {
         !status.success(),
         "group leader should have been signalled, got {status:?}"
     );
+}
+
+/// What a server sees in `initialize.clientInfo` when Jan connects: Jan and its
+/// app version, not the `rmcp` crate's own default.
+#[tokio::test]
+async fn initialize_identifies_the_client_as_jan() {
+    use rmcp::{ServerHandler, ServiceExt};
+
+    #[derive(Clone)]
+    struct Recorder;
+    impl ServerHandler for Recorder {}
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server_task = tokio::spawn(async move {
+        let running = Recorder.serve(server_io).await.expect("server starts");
+        let seen = running
+            .peer_info()
+            .expect("client info")
+            .client_info
+            .clone();
+        let _ = running.waiting().await;
+        seen
+    });
+
+    let client = jan_client_info()
+        .serve(client_io)
+        .await
+        .expect("client initializes");
+    client.cancel().await.expect("client closes");
+
+    let seen = server_task.await.expect("server task");
+    assert_eq!(seen.name, "Jan");
+    assert_eq!(seen.version, env!("CARGO_PKG_VERSION"));
+}
+
+/// A stand-in for a connected server: the tools it lists, or a listing error.
+struct FakeServer(Result<Vec<&'static str>, &'static str>);
+
+#[async_trait::async_trait]
+impl super::commands::McpToolSource for FakeServer {
+    async fn tool_names(&self) -> Result<Vec<String>, String> {
+        self.0
+            .clone()
+            .map(|names| names.into_iter().map(String::from).collect())
+            .map_err(String::from)
+    }
+}
+
+fn listing(names: &[&'static str]) -> FakeServer {
+    FakeServer(Ok(names.to_vec()))
+}
+
+async fn route_call(
+    servers: &HashMap<String, FakeServer>,
+    tool: &str,
+    server: Option<&str>,
+    generation: Option<u64>,
+) -> Result<String, String> {
+    use super::commands::{resolve_call_target, CallTargetError};
+    match resolve_call_target(servers, tool, server, generation).await {
+        Ok((name, _)) => Ok(name.to_string()),
+        Err(CallTargetError::Refused(e)) => Err(e),
+        Err(CallTargetError::Disconnected(names)) => Err(format!("disconnected: {names:?}")),
+    }
+}
+
+/// A server restarted under the same name gets a new generation, so a call
+/// listed from the old connection is refused instead of reaching the new one.
+#[tokio::test]
+async fn a_call_listed_before_a_reconnect_is_refused() {
+    use super::identity::insert_server;
+    let mut servers = HashMap::new();
+    let old = insert_server(&mut servers, "route-reconnect", listing(&["search"]));
+    let new = insert_server(&mut servers, "route-reconnect", listing(&["search"]));
+
+    let stale = route_call(&servers, "search", Some("route-reconnect"), Some(old)).await;
+    assert!(stale.unwrap_err().contains("restarted"));
+
+    let current = route_call(&servers, "search", Some("route-reconnect"), Some(new)).await;
+    assert_eq!(current.unwrap(), "route-reconnect");
+}
+
+/// While the named server is gone (a reload window), the call is refused even
+/// though another server offers a tool of the same name.
+#[tokio::test]
+async fn a_call_to_a_missing_server_is_not_rerouted() {
+    use super::identity::insert_server;
+    let mut servers = HashMap::new();
+    insert_server(&mut servers, "route-other", listing(&["search"]));
+
+    let result = route_call(&servers, "search", Some("route-reloading"), None).await;
+    assert!(result.unwrap_err().contains("not connected"));
+}
+
+/// A named server that dropped the tool since it was offered does not run it.
+#[tokio::test]
+async fn a_named_server_must_still_offer_the_tool() {
+    use super::identity::insert_server;
+    let mut servers = HashMap::new();
+    let generation = insert_server(&mut servers, "route-dropped", listing(&["read"]));
+
+    let result = route_call(&servers, "search", Some("route-dropped"), Some(generation)).await;
+    assert!(result.unwrap_err().contains("no longer offers"));
+}
+
+/// Without a server name, a tool two servers offer is ambiguous and refused;
+/// one only a single server offers still resolves to it.
+#[tokio::test]
+async fn an_unnamed_call_to_a_duplicate_tool_name_is_refused() {
+    use super::identity::insert_server;
+    let mut servers = HashMap::new();
+    insert_server(&mut servers, "route-a", listing(&["search", "read"]));
+    insert_server(&mut servers, "route-b", listing(&["search"]));
+
+    let ambiguous = route_call(&servers, "search", None, None).await;
+    assert!(ambiguous.unwrap_err().contains("more than one MCP server"));
+
+    let unique = route_call(&servers, "read", None, None).await;
+    assert_eq!(unique.unwrap(), "route-a");
+}
+
+/// A server that cannot be asked is reported as disconnected rather than the
+/// tool as missing, so the caller retries after the reconnect.
+#[tokio::test]
+async fn an_unreachable_server_reports_a_disconnect() {
+    use super::identity::insert_server;
+    let mut servers = HashMap::new();
+    let down = FakeServer(Err("transport closed"));
+    insert_server(&mut servers, "route-down", down);
+
+    let result = route_call(&servers, "search", None, None).await;
+    assert!(result.unwrap_err().starts_with("disconnected"));
 }

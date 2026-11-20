@@ -1,54 +1,26 @@
-# React + TypeScript + Vite
+# @janhq/web-app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React frontend of Jan Desktop: TypeScript, TanStack Router, Radix UI, Tailwind CSS,
+and Zustand. It is a Yarn workspace package, not a standalone app - it renders inside the
+Tauri shell and calls the Rust backend over Tauri IPC.
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+From this directory:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+yarn dev        # Vite dev server on port 1420
+yarn build      # tsc -b, then vite build
+yarn test       # vitest
+yarn lint       # eslint
+yarn preview    # serve a local build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+From the repo root, `yarn dev:web` runs the dev server alone and `yarn build:web` builds
+this package. The Vite server has no proxy to the backend, so a browser-only session has
+no working Tauri commands; use `yarn dev` at the repo root to run the desktop shell.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Contributing
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the directory layout, routing, Tauri
+integration, state management, and debugging notes.

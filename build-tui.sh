@@ -14,7 +14,8 @@ set -euo pipefail
 # ────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CRATE_DIR="$SCRIPT_DIR/src-tauri"
+APP_DIR="$SCRIPT_DIR/src-tauri"        # the app_lib library crate (check/test)
+CLI_DIR="$SCRIPT_DIR/src-tauri/jan-cli" # the standalone `jan` CLI crate (build)
 INSTALL_DIR="${HOME}/.local/bin"
 BIN_NAME="jan"
 
@@ -32,9 +33,10 @@ build() {
     fi
 
     echo "==> Building CLI binary (${profile})..."
-    (cd "$CRATE_DIR" && cargo build $flag --no-default-features --features cli --bin jan)
+    (cd "$CLI_DIR" && cargo build $flag --no-default-features --features cli)
 
-    local artifact="$CRATE_DIR/target/$target_dir/jan"
+    # jan-cli's .cargo/config.toml redirects output into the app's target dir.
+    local artifact="$APP_DIR/target/$target_dir/jan"
     if [ ! -f "$artifact" ]; then
         echo "ERROR: build artifact not found at $artifact"
         exit 1
@@ -51,12 +53,12 @@ build() {
 case "${1:-debug}" in
     check)
         echo "==> cargo check (no binary produced)..."
-        (cd "$CRATE_DIR" && cargo check --no-default-features --features cli --lib)
+        (cd "$APP_DIR" && cargo check --no-default-features --features cli --lib)
         echo "==> OK"
         ;;
     test)
         echo "==> Running TUI tests..."
-        (cd "$CRATE_DIR" && cargo test --no-default-features --features cli --lib -- core::cli::tui)
+        (cd "$APP_DIR" && cargo test --no-default-features --features cli --lib -- core::cli::tui)
         echo "==> All TUI tests passed"
         ;;
     release)

@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
+import { relaunchAfterSave } from '@/lib/coworkSync'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,6 +44,8 @@ function General() {
     setSpellCheckChatInput,
     autoUpdateCheck,
     setAutoUpdateCheck,
+    closeToTray,
+    setCloseToTray,
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
@@ -58,7 +61,7 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
-  const { pausePolling } = useHardware()
+  const { pausePolling, resumePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -81,7 +84,18 @@ function General() {
       return
     }
     pausePolling()
-    await serviceHub.app().factoryReset(options)
+    try {
+      await serviceHub.app().factoryReset(options)
+    } catch (error) {
+      // Model unloads and the backend can both fail here; the backend also
+      // refuses data folders the isRootDir check above does not list. Its
+      // message says why, so show that rather than guessing a cause.
+      console.error('Factory reset failed:', error)
+      resumePolling()
+      toast.error(t('settings:general.factoryResetFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const handleOpenLogs = async () => {
@@ -129,7 +143,7 @@ function General() {
             await serviceHub.app().relocateJanDataFolder(selectedNewPath)
             setJanDataFolder(selectedNewPath)
             // Only relaunch if relocation was successful
-            window.core?.api?.relaunch()
+            await relaunchAfterSave(() => window.core?.api?.relaunch())
             setSelectedNewPath(null)
             setIsDialogOpen(false)
           } catch (error) {
@@ -223,6 +237,19 @@ function General() {
                   />
                 </>
               )}
+              {IS_TAURI && !IS_MACOS && (
+                <CardItem
+                  title={t('settings:general.closeToTray')}
+                  description={t('settings:general.closeToTrayDesc')}
+                  className="items-center flex-row gap-y-2"
+                  actions={
+                    <Switch
+                      checked={closeToTray}
+                      onCheckedChange={(e) => setCloseToTray(e)}
+                    />
+                  }
+                />
+              )}
               <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
@@ -248,6 +275,7 @@ function General() {
                     <div className="flex items-center gap-2 mt-1">
                       <div className="max-w-100 bg-secondary rounded-sm px-1 py-0.5">
                         <span
+                          data-testid="app-data-folder-path"
                           title={janDataFolder}
                           className="text-xs line-clamp-1 break-all"
                         >

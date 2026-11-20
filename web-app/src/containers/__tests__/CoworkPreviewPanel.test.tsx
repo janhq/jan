@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { act, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -13,13 +14,16 @@ const convertFileSrc = vi.fn((p: string, protocol?: string) =>
 )
 const previewRegisterRoot = vi.fn(async () => {})
 const previewUnregisterRoot = vi.fn(async () => {})
+const openArtifact = vi.fn(async () => {})
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   previewRegisterRoot: (...a: unknown[]) => previewRegisterRoot(...a),
   previewUnregisterRoot: (...a: unknown[]) => previewUnregisterRoot(...a),
+  openArtifact: (...a: unknown[]) => openArtifact(...a),
 }))
 const openPath = vi.fn()
 const revealItemInDir = vi.fn()
 const hub = {
+  app: () => ({ getJanDataFolder: async () => '/data' }),
   core: () => ({ convertFileSrc }),
   opener: () => ({ openPath, revealItemInDir }),
 }
@@ -52,6 +56,12 @@ const respondWith = (body: string) => {
 
 const view = (path: string, roots: Array<string | null> = [ROOT]) =>
   render(<CoworkPreviewPanel roots={roots} path={path} onClose={vi.fn()} />)
+
+const selectAction = async (name: string, checkbox = false) => {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'common:artifactMoreActions' }))
+  await user.click(screen.getByRole(checkbox ? 'menuitemcheckbox' : 'menuitem', { name }))
+}
 
 describe('CoworkPreviewPanel', () => {
   beforeEach(() => {
@@ -121,7 +131,7 @@ describe('CoworkPreviewPanel', () => {
     view('game.html')
 
     await screen.findByText('common:preview.externalRefs#1')
-    fireEvent.click(screen.getByLabelText('common:preview.allowNetwork'))
+    await selectAction('common:preview.allowNetwork', true)
     await waitFor(() =>
       expect(screen.queryByText('common:preview.externalRefs#1')).toBeNull()
     )
@@ -190,7 +200,7 @@ describe('CoworkPreviewPanel', () => {
     const { unmount } = view('game.html')
     await screen.findByTitle('game.html')
 
-    fireEvent.click(screen.getByLabelText('common:preview.unsandboxed'))
+    await selectAction('common:preview.unsandboxed', true)
     const frame = (await waitFor(() => {
       const f = screen.getByTitle('game.html') as HTMLIFrameElement
       expect(f.getAttribute('src')).toBeTruthy()
@@ -203,7 +213,7 @@ describe('CoworkPreviewPanel', () => {
       expect(previewRegisterRoot).toHaveBeenLastCalledWith(ROOT, false)
     )
 
-    fireEvent.click(screen.getByLabelText('common:preview.allowNetwork'))
+    await selectAction('common:preview.allowNetwork', true)
     await waitFor(() =>
       expect(previewRegisterRoot).toHaveBeenLastCalledWith(ROOT, true)
     )
@@ -234,13 +244,76 @@ describe('CoworkPreviewPanel', () => {
     view(`${folder}/game.html`, [ROOT, folder])
     await screen.findByTitle(`${folder}/game.html`)
 
-    fireEvent.click(screen.getByLabelText('common:preview.unsandboxed'))
+    await selectAction('common:preview.unsandboxed', true)
     await waitFor(() =>
       expect(previewRegisterRoot).toHaveBeenLastCalledWith(folder, false)
     )
   })
 
-  it('registers nothing while the sandbox is in use', async () => {
+  // On Windows the unsandboxed frame would reach the app's IPC, so the
+  // toggle is not offered and the page stays in the srcdoc sandbox.
+  it('offers no unsandboxed mode on Windows', async () => {
+    vi.stubGlobal('IS_WINDOWS', true)
+    respondWith('<canvas></canvas><script>run()</script>')
+    view('game.html')
+
+    const frame = (await screen.findByTitle('game.html')) as HTMLIFrameElement
+    await userEvent.click(screen.getByRole('button', { name: 'common:artifactMoreActions' }))
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'common:preview.unsandboxed' })).toBeNull()
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame.getAttribute('src')).toBeNull()
+    expect(previewRegisterRoot).not.toHaveBeenCalled()
+  })
+
+  // "Open" goes through the host, which checks the file and not just its
+  // name; a refusal shows the file in its folder instead.
+  it('opens through the host check and reveals what it refuses', async () => {
+    respondWith('<p>ok</p>')
+    view('page.html')
+    await screen.findByTitle('page.html')
+
+    await selectAction('common:artifactOpenExternal')
+    await waitFor(() =>
+      expect(openArtifact).toHaveBeenCalledWith('/data', [ROOT], `${ROOT}/page.html`)
+    )
+    expect(openPath).not.toHaveBeenCalled()
+    expect(revealItemInDir).not.toHaveBeenCalled()
+
+    openArtifact.mockRejectedValueOnce(new Error('is a link'))
+    await selectAction('common:artifactOpenExternal')
+    await waitFor(() =>
+      expect(revealItemInDir).toHaveBeenCalledWith(`${ROOT}/page.html`)
+    )
+    expect(openPath).not.toHaveBeenCalled()
+  })
+
+  it('keeps secondary actions in a keyboard-accessible checked menu', async () => {
+    respondWith('<p>ok</p>')
+    view('page.html')
+    await screen.findByTitle('page.html')
+    expect(screen.queryByRole('button', { name: 'common:artifactOpenExternal' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'common:preview.reload' })).toBeInTheDocument()
+    const user = userEvent.setup()
+    screen.getByRole('button', { name: 'common:artifactMoreActions' }).focus()
+    await user.keyboard('{Enter}')
+    const network = await screen.findByRole('menuitemcheckbox', { name: 'common:preview.allowNetwork' })
+    expect(network).toHaveAttribute('aria-checked', 'false')
+    expect(network).toHaveClass('pl-2', 'pr-8')
+    expect(network.firstElementChild).toHaveClass('right-2', 'text-primary')
+    expect(screen.getByRole('menu')).toHaveClass('w-80', 'max-w-[calc(100vw-24px)]')
+    await user.click(network)
+    await user.click(screen.getByRole('button', { name: 'common:artifactMoreActions' }))
+    expect(screen.getByRole('menuitemcheckbox', { name: 'common:preview.allowNetwork' })).toHaveAttribute('aria-checked', 'true')
+    const unsandboxed = screen.getByRole('menuitemcheckbox', { name: 'common:preview.unsandboxed' })
+    expect(unsandboxed).toHaveClass('pl-2', 'pr-8')
+    expect(unsandboxed.firstElementChild).toHaveClass('right-2', 'text-primary')
+    const label = screen.getByText('common:preview.unsandboxed')
+    expect(label).toHaveClass('min-w-0', 'whitespace-normal')
+    await user.click(screen.getByRole('menuitem', { name: 'common:artifactShowInFolder' }))
+    expect(revealItemInDir).toHaveBeenCalledWith(`${ROOT}/page.html`)
+  })
+
+  it('registers nothing while the sandbox is in use' , async () => {
     respondWith('<p>ok</p>')
     view('page.html')
     await screen.findByTitle('page.html')

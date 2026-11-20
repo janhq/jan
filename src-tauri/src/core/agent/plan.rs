@@ -1,7 +1,7 @@
 //! Read-only plan mode. A first-class run mode for safe repository exploration
 //! and plan review: the agent may read/search/list/read-file, do web research,
 //! and read memory/skills, but every mutation-capable tool (write/edit/bash,
-//! memory_write/skill_write, MCP, subagent dispatch) is blocked at the core
+//! skill_write, MCP, subagent dispatch) is blocked at the core
 //! dispatcher and never advertised to the model. Enforcement is authoritative;
 //! the prompt addendum below is only defense in depth.
 

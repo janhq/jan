@@ -6,9 +6,22 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 // llamacpp generation. At launch/idle the router can emit startup noise with no
 // active request — surfacing it would banner a provider the user never invoked
 // (e.g. MLX selected on macOS).
-export function hasActiveLlamacppRequest(): boolean {
-  if (useModelProvider.getState().selectedProvider !== 'llamacpp') return false
-  const app = useAppState.getState()
+/**
+ * Whether the app has engine work in flight, independent of which provider is
+ * selected. Separate from [`hasActiveLlamacppRequest`] so a caller that
+ * already knows it is on llama.cpp -- the provider settings page -- can use it
+ * as a zustand selector and re-render when the answer changes.
+ */
+export function isEngineWorkInFlight(
+  app: Pick<
+    ReturnType<typeof useAppState.getState>,
+    | 'currentStreamThreadId'
+    | 'abortControllers'
+    | 'busyThreads'
+    | 'loadingModels'
+    | 'streamingContents'
+  >
+): boolean {
   return (
     // A token stream is the common case and sets none of the slots below;
     // currentStreamThreadId is the reliable "request in flight" signal.
@@ -18,6 +31,11 @@ export function hasActiveLlamacppRequest(): boolean {
     Object.keys(app.loadingModels).length > 0 ||
     Object.keys(app.streamingContents).length > 0
   )
+}
+
+export function hasActiveLlamacppRequest(): boolean {
+  if (useModelProvider.getState().selectedProvider !== 'llamacpp') return false
+  return isEngineWorkInFlight(useAppState.getState())
 }
 
 export function stampErrorOnLastUserMessage(

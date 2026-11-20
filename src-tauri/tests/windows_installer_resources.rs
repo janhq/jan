@@ -15,6 +15,65 @@
 
 use std::path::PathBuf;
 
+/// The body of `Function <name>` or `Section <name>` up to its terminator.
+///
+/// Located by byte search rather than by summing line lengths: a Windows
+/// checkout has CRLF endings, which `lines()` strips without saying how many
+/// bytes it dropped.
+fn nsis_block<'a>(template: &'a str, opener: &str, end: &str) -> &'a str {
+    let offset = template
+        .match_indices(opener)
+        .map(|(i, _)| i)
+        .find(|&i| {
+            let at_line_start = i == 0 || template.as_bytes()[i - 1] == b'\n';
+            let after = &template[i + opener.len()..];
+            at_line_start && after.trim_start_matches([' ', '\t']).starts_with(['\r', '\n'])
+        })
+        .unwrap_or_else(|| panic!("`{opener}` not found in the NSIS template"));
+    let rest = &template[offset..];
+    let stop = rest
+        .find(end)
+        .unwrap_or_else(|| panic!("`{opener}` has no `{end}`"));
+    &rest[..stop]
+}
+
+/// The shortcut retarget on a main-binary rename (`jan.exe` -> `Jan-Desktop.exe`
+/// in 0.8.5, #9125) needs the previous name from the uninstall key. A passive
+/// upgrade runs the old uninstaller from `PageLeaveReinstall`, which deletes that
+/// key before `Section Install` runs, so the name has to be captured in
+/// `.onInit`, while the key still exists. Reading it in `Section Install` finds
+/// nothing and leaves every shortcut pointing at the deleted exe.
+#[test]
+fn the_previous_main_binary_name_is_read_before_the_old_uninstaller_runs() {
+    let template = repo_file("tauri.bundle.windows.nsis.template");
+    let read = "ReadRegStr $OldMainBinaryName SHCTX \"${UNINSTKEY}\" \"MainBinaryName\"";
+
+    let on_init = nsis_block(&template, "Function .onInit", "FunctionEnd");
+    let read_at = on_init
+        .find(read)
+        .expect("`.onInit` must read MainBinaryName into $OldMainBinaryName");
+    // SHCTX names a hive only once MULTIUSER_INIT has picked the install mode
+    // (INSTALLMODE "both"); read before it, the lookup can hit the wrong hive.
+    let context_at = on_init
+        .find("!insertmacro MULTIUSER_INIT")
+        .expect("`.onInit` no longer calls MULTIUSER_INIT; re-check where SHCTX is set");
+    assert!(
+        read_at > context_at,
+        "`.onInit` must read MainBinaryName after MULTIUSER_INIT sets SHCTX"
+    );
+
+    let install = nsis_block(&template, "Section Install", "SectionEnd");
+    assert!(
+        !install.contains("ReadRegStr $OldMainBinaryName"),
+        "`Section Install` must not re-read MainBinaryName: by then a passive \
+         upgrade has run the old uninstaller, which deleted the key"
+    );
+    assert!(
+        install.contains("WriteRegStr SHCTX \"${UNINSTKEY}\" \"MainBinaryName\""),
+        "`Section Install` must still record MainBinaryName for the next update"
+    );
+}
+
 fn repo_file(rel: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
     std::fs::read_to_string(&path)

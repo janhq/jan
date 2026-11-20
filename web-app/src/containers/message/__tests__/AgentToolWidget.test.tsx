@@ -11,7 +11,7 @@ vi.mock('@/hooks/useToolCallRuntime', () => ({
     selector({ diffs: {} }),
 }))
 
-import { AgentToolWidget } from '../AgentToolWidget'
+import { AgentToolWidget, TerminalWidget } from '../AgentToolWidget'
 
 const renderRunning = (tool: string, target = '') =>
   render(
@@ -89,6 +89,59 @@ describe('AgentToolWidget', () => {
       />
     )
     expect(screen.getByText('tools:toolCall.writing')).toBeInTheDocument()
+  })
+
+  /// The notice rides after the exit marker, where the body is cut; it must
+  /// still reach the user, since the stale hook no longer guards this call.
+  it('shows a hook config notice under a finished shell call', () => {
+    render(
+      <TerminalWidget
+        bar={{ variant: 'terminal', command: 'ls' }}
+        state="output-available"
+        output={
+          'ok\n[exit 0]\n[hook config: Hook pre_tool_use matcher names `bash`]'
+        }
+      />
+    )
+    expect(screen.getByText('ok')).toBeInTheDocument()
+    expect(
+      screen.getByText('Hook pre_tool_use matcher names `bash`')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/\[hook config/)).not.toBeInTheDocument()
+  })
+
+  // One `memory` tool covers reads and changes alike, so its op, not the tool
+  // name, decides the verb.
+  it.each([
+    ['write', 'prefs', 'tools:toolCall.writing'],
+    ['edit', 'prefs', 'tools:toolCall.writing'],
+    ['delete', 'prefs', 'tools:toolCall.writing'],
+    ['move', 'prefs', 'tools:toolCall.writing'],
+    ['search', 'cuda', 'tools:toolCall.searching'],
+    ['view', '', 'tools:toolCall.listing'],
+    ['view', 'prefs', 'tools:toolCall.reading'],
+  ])('names what memory %s (%s) is doing while it runs', (op, target, key) => {
+    render(
+      <AgentToolWidget
+        bar={{ variant: 'workspace', tool: 'memory', target, op }}
+        state="input-available"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.getByText(key)).toBeInTheDocument()
+  })
+
+  // A bare view lists the whole store; say so rather than leave an empty bar
+  // that reads as though the name failed to stream.
+  it('names the store on a memory view with no name', () => {
+    render(
+      <AgentToolWidget
+        bar={{ variant: 'workspace', tool: 'memory', target: '', op: 'view' }}
+        state="input-available"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.getByText('settings:cowork.memories')).toBeInTheDocument()
   })
 
   it('prompts for a pattern rather than a path on grep', () => {

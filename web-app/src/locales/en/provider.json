@@ -1,6 +1,7 @@
 {
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add Custom Provider",
+  "nameLabel": "Name",
   "enterNameForProvider": "Provider name (e.g. my-llm-server)",
   "apiTypeLabel": "API format",
   "apiTypeOpenAI": "OpenAI-compatible",

@@ -174,6 +174,134 @@ export function coworkTurnsToUIMessages(
   return messages
 }
 
+/** A tool part's output as the single string a `tool` row carries. */
+function toolResultText(output: unknown): string {
+  if (typeof output === 'string') return output
+  if (output == null) return ''
+  // MCP results: `{ content: [{ type: 'text', text }] }`.
+  const content =
+    typeof output === 'object' && 'content' in output ? output.content : null
+  if (Array.isArray(content)) {
+    const texts = content
+      .filter((c: any) => c?.type === 'text' && typeof c.text === 'string')
+      .map((c: any) => c.text as string)
+    if (texts.length) return texts.join('\n')
+  }
+  return JSON.stringify(output)
+}
+
+const isToolPart = (part: any): boolean =>
+  typeof part?.type === 'string' &&
+  (part.type.startsWith('tool-') || part.type === 'dynamic-tool')
+
+/**
+ * Ends every tool call a chat left without a result (stopped, or still waiting
+ * on approval) as an error. The model must see a result for each call it made,
+ * and the task that inherits the conversation will not run the chat's calls.
+ */
+export function closeUnfinishedToolCalls(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message
+    const parts = message.parts as any[]
+    if (
+      !parts.some(
+        (p) =>
+          isToolPart(p) &&
+          p.state !== 'output-available' &&
+          p.state !== 'output-error'
+      )
+    )
+      return message
+    return {
+      ...message,
+      parts: parts.map((p) =>
+        isToolPart(p) &&
+        p.state !== 'output-available' &&
+        p.state !== 'output-error'
+          ? {
+              ...p,
+              state: 'output-error',
+              errorText: 'Not run: the chat ended before this call finished.',
+            }
+          : p
+      ),
+    } as UIMessage
+  })
+}
+
+/**
+ * The inverse of `coworkTurnsToUIMessages`, for a chat transcript that
+ * continues as a task: each message's parts become rows in order. Text and
+ * reasoning that precede a tool call share one assistant row, as a run step
+ * writes them; the message's metadata rides its first row.
+ */
+export function uiMessagesToCoworkTurns(messages: UIMessage[]): CoworkTurn[] {
+  const turns: CoworkTurn[] = []
+  for (const message of messages) {
+    const parts = (message.parts ?? []) as any[]
+    if (message.role === 'user' || message.role === 'system') {
+      const text = parts
+        .filter((p) => p.type === 'text')
+        .map((p) => p.text as string)
+        .join('\n')
+      const media = parts
+        .filter((p) => p.type === 'file' && p.mediaType && p.url)
+        .map((p) => ({ type: 'file', mediaType: p.mediaType, url: p.url }))
+      turns.push(
+        message.role === 'user'
+          ? userTurn(text, media as CoworkMediaPart[])
+          : { role: 'system', content: text }
+      )
+      continue
+    }
+    if (message.role !== 'assistant') continue
+    const first = turns.length
+    let text = ''
+    let reasoning = ''
+    const flush = () => {
+      if (!text && !reasoning) return
+      turns.push({
+        role: 'assistant',
+        content: text,
+        ...(reasoning && { reasoning }),
+      })
+      text = ''
+      reasoning = ''
+    }
+    for (const part of parts) {
+      if (part.type === 'text' && part.text) {
+        text += part.text
+      } else if (part.type === 'reasoning' && part.text) {
+        reasoning += part.text
+      } else if (isToolPart(part)) {
+        flush()
+        const isError = part.state !== 'output-available'
+        turns.push({
+          role: 'tool',
+          content: '',
+          callId: part.toolCallId,
+          name:
+            part.type === 'dynamic-tool' ? part.toolName : part.type.slice(5),
+          args: part.input,
+          result: isError
+            ? (part.errorText ?? '')
+            : toolResultText(part.output),
+          ...(isError && { isError: true }),
+          status: 'done',
+        })
+      }
+    }
+    flush()
+    if (message.metadata && turns.length > first) {
+      turns[first] = {
+        ...turns[first],
+        metadata: message.metadata as Record<string, unknown>,
+      }
+    }
+  }
+  return turns
+}
+
 /**
  * The committed transcript followed by the rows a run is still producing.
  *

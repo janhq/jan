@@ -30,15 +30,6 @@ vi.mock('token.js', () => ({
   models: {}
 }))
 
-// Mock ExtensionManager to avoid initialization issues
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: vi.fn(() => ({
-      getEngine: vi.fn()
-    }))
-  }
-}))
-
 // Mock dynamic imports for web services
 vi.mock('../theme/web', () => ({
   WebThemeService: vi.fn().mockImplementation(() => ({

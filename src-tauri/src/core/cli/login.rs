@@ -100,7 +100,7 @@ async fn device_login_interactive() -> Result<(), DeviceLogin> {
 async fn login_by_paste() -> Result<(), String> {
     println!();
     println!("Sign in to Tokamak and create an API key:");
-    println!("  {}", tokamak::API_KEYS_URL);
+    println!("  {}", tokamak::api_keys_url());
     match tokamak::open_api_keys_page() {
         Ok(()) => println!("  (opening that page in your browser)"),
         Err(e) => println!("  (open that URL yourself: {e})"),
@@ -206,7 +206,13 @@ fn report(login: &tokamak::Login) {
     }
     println!("  key saved to {}", login.config_path.display());
     if let Some(model) = &login.default_model {
-        println!("  default model: {model}");
+        if login.replaced_default {
+            // The previous default survives in no roster, so leaving it in
+            // place would 404 every run. Reported rather than applied quietly.
+            println!("  default model: {model} (replaced one no longer offered)");
+        } else {
+            println!("  default model: {model}");
+        }
     }
     println!();
 }
@@ -238,12 +244,15 @@ mod tests {
             vec!["a".into(), "b".into()],
         ] {
             for account in [None, Some("a@b.c".to_string())] {
-                report(&tokamak::Login {
-                    models: models.clone(),
-                    config_path: std::path::PathBuf::from("/tmp/config.toml"),
-                    default_model: Some("a".to_string()),
-                    account,
-                });
+                for replaced_default in [false, true] {
+                    report(&tokamak::Login {
+                        models: models.clone(),
+                        config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                        default_model: Some("a".to_string()),
+                        replaced_default,
+                        account: account.clone(),
+                    });
+                }
             }
         }
     }

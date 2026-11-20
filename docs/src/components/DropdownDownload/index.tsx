@@ -5,6 +5,7 @@ import { IoChevronDownOutline } from 'react-icons/io5'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { twMerge } from 'tailwind-merge'
 import { formatFileSize } from '@/utils/format'
+import { isWindowsArm } from '@/utils/platform'
 
 type Props = {
   lastRelease: any
@@ -31,9 +32,14 @@ const systemsTemplate: SystemType[] = [
     fileFormat: 'Jan_{tag}_universal.dmg',
   },
   {
-    name: 'Download for Windows',
+    name: 'Download for Windows (x64)',
     logo: FaWindows,
     fileFormat: 'Jan_{tag}_x64-setup.exe',
+  },
+  {
+    name: 'Download for Windows (ARM64)',
+    logo: FaWindows,
+    fileFormat: 'Jan_{tag}_arm64-setup.exe',
   },
   {
     name: 'Download for Linux (Flatpak)',
@@ -70,7 +76,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
       setDefaultSystem(systems[1])
     } else if (userAgent.includes('Linux')) {
       // linux user - prefer Flatpak (Flathub)
-      setDefaultSystem(systems[2])
+      setDefaultSystem(systems[3])
     } else if (userAgent.includes('Mac OS')) {
       setDefaultSystem(systems[0])
     } else {
@@ -129,6 +135,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
   }
 
   useEffect(() => {
+    let cancelled = false
     const updateDownloadLinks = async () => {
       try {
         const tag = lastRelease.tag_name.startsWith('v')
@@ -154,6 +161,18 @@ const DropdownDownload = ({ lastRelease }: Props) => {
         })
         setSystems(updatedSystems)
         changeDefaultSystem(updatedSystems)
+
+        // The user agent can't tell Windows on ARM apart, so upgrade the
+        // Windows default to ARM64 only once Client Hints confirm it, and only
+        // when this release ships the ARM64 installer (else x64 still works).
+        const armSystem = updatedSystems[2]
+        const hasArmAsset = lastRelease.assets.some(
+          (asset: any) =>
+            asset.name === armSystem.fileFormat.replace('{tag}', tag)
+        )
+        if (hasArmAsset && (await isWindowsArm()) && !cancelled) {
+          setDefaultSystem(armSystem)
+        }
       } catch (error) {
         console.error('Failed to update download links:', error)
       }
@@ -163,8 +182,40 @@ const DropdownDownload = ({ lastRelease }: Props) => {
       detectGPU()
     }
     updateDownloadLinks()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpuInfo])
+
+  // Flatpak isn't a GitHub release asset, so its size can't come from
+  // lastRelease.assets like the others. Pull the download size from Flathub.
+  useEffect(() => {
+    let cancelled = false
+    const fetchFlatpakSize = async () => {
+      try {
+        const res = await fetch('https://flathub.org/api/v2/summary/ai.jan.Jan')
+        const data = await res.json()
+        const downloadSize =
+          data?.branches?.stable?.download_size ?? data?.download_size
+        if (!cancelled && typeof downloadSize === 'number') {
+          setSystems((prev) =>
+            prev.map((system) =>
+              system.href?.includes('flathub.org')
+                ? { ...system, size: formatFileSize(downloadSize) }
+                : system
+            )
+          )
+        }
+      } catch (error) {
+        console.error('Failed to fetch Flathub download size:', error)
+      }
+    }
+    fetchFlatpakSize()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const [menu, setMenu] = useState<HTMLButtonElement | null>(null)
 

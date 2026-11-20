@@ -262,6 +262,14 @@ type CoworkRunState = {
   /** Empty a session's subagent lanes at the start of a run, so the panel shows
    * this run's children rather than every child the session ever had. */
   resetSubagents: (sid: string) => void
+  /** Register later-phase subagents up front as `waiting`, so the panel shows
+   * them queued behind the phase in flight. Each is promoted in place (matched
+   * by runId) by its own `queueSubagent`/`startSubagent` when its phase begins.
+   * Mirrors the Rust `StreamEvent::SubagentPlan`. */
+  planSubagents: (
+    sid: string,
+    pending: { runId: string; name: string; phase: number }[]
+  ) => void
   startSubagent: (sid: string, runId: string, name: string) => void
   // `subagent_queued`: mark a child as waiting for a concurrency slot.
   queueSubagent: (
@@ -374,14 +382,34 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   resetSubagents: (sid) =>
     set((s) => ({ subagents: { ...s.subagents, [sid]: [] } })),
 
+  planSubagents: (sid, pending) =>
+    set((s) => {
+      const runs = s.subagents[sid] ?? []
+      const known = new Set(runs.map((r) => r.runId))
+      const added = pending
+        .filter((p) => !known.has(p.runId))
+        .map((p) => ({
+          runId: p.runId,
+          name: p.name,
+          status: 'waiting' as const,
+          phase: p.phase,
+          startedAt: Date.now(),
+          turns: [],
+        }))
+      return added.length
+        ? { subagents: { ...s.subagents, [sid]: [...runs, ...added] } }
+        : {}
+    }),
+
   startSubagent: (sid, runId, name) =>
     set((s) => {
       const runs = s.subagents[sid] ?? []
-      // Promote a queued child the moment its slot frees; otherwise create it.
+      // Promote a waiting/queued child in place the moment it starts (preserving
+      // its phase); otherwise create it.
       const idx = runs.findIndex((r) => r.runId === runId)
       if (idx !== -1) {
         const existing = runs[idx]
-        if (existing.status === 'queued') {
+        if (existing.status === 'waiting' || existing.status === 'queued') {
           return {
             subagents: {
               ...s.subagents,
@@ -420,7 +448,30 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   queueSubagent: (sid, runId, name, waiting) =>
     set((s) => {
       const runs = s.subagents[sid] ?? []
-      if (runs.some((r) => r.runId === runId)) return {}
+      // Promote a waiting later-phase child to queued in place (keeping its
+      // phase) once its phase dispatches and it lands on the concurrency gate.
+      const idx = runs.findIndex((r) => r.runId === runId)
+      if (idx !== -1) {
+        const existing = runs[idx]
+        if (existing.status === 'waiting') {
+          return {
+            subagents: {
+              ...s.subagents,
+              [sid]: [
+                ...runs.slice(0, idx),
+                {
+                  ...existing,
+                  status: 'queued' as const,
+                  waiting,
+                  startedAt: Date.now(),
+                },
+                ...runs.slice(idx + 1),
+              ],
+            },
+          }
+        }
+        return {}
+      }
       return {
         subagents: {
           ...s.subagents,
@@ -652,3 +703,48 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
 // changes, not on every other session's.
 export const useIsSessionActive = (sid: string | undefined) =>
   useCoworkRun((s) => (sid ? s.runId[sid] != null : false))
+
+// Run closures own their transcript and wire history until their finally block
+// commits them. Keep this registry outside React so background/unmounted runs
+// participate in close just like the session currently on screen.
+const closeParticipants = new Set<() => Promise<void>>()
+let closing = false
+let quiescePromise: Promise<void> | null = null
+
+export function isCoworkClosing(): boolean {
+  return closing
+}
+
+/** Register synchronously when a run is claimed; unregister AFTER its commit. */
+export function registerCoworkRunForClose(stopAndCommit: () => Promise<void>): () => void {
+  closeParticipants.add(stopAndCommit)
+  return () => { closeParticipants.delete(stopAndCommit) }
+}
+
+/** Stop every run before waiting, then await all final commits (even on error). */
+export function quiesceCoworkRuns(): Promise<void> {
+  closing = true
+  quiescePromise ??= (async () => {
+    const settled = await Promise.allSettled(
+      [...closeParticipants].map(async (stopAndCommit) => stopAndCommit())
+    )
+    const failed = settled.find((result) => result.status === 'rejected')
+    if (failed?.status === 'rejected') {
+      quiescePromise = null
+      throw failed.reason
+    }
+  })()
+  return quiescePromise
+}
+
+/** A prevented close leaves the application usable and the next close retries. */
+export function resumeCoworkAfterPreventedClose(): void {
+  closing = false
+  quiescePromise = null
+}
+
+export function __resetCoworkRunCloseForTests(): void {
+  closeParticipants.clear()
+  closing = false
+  quiescePromise = null
+}

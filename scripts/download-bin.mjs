@@ -4,7 +4,7 @@ import fs, { copyFile, mkdirSync } from 'fs'
 import os from 'os'
 import path from 'path'
 import unzipper from 'unzipper'
-import tar from 'tar'
+import * as tar from 'tar'
 import { copySync } from 'cpx'
 
 function download(url, dest) {

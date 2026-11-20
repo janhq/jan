@@ -64,7 +64,7 @@ runs:
     # upload on every run and churn the repo's 10 GB quota.
     - name: Restore the ccache directory
       if: runner.environment == 'github-hosted'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         key: ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}
@@ -74,6 +74,12 @@ runs:
     # templates default to the vulkan variant on one. Guarded on glslc rather
     # than on the runner label so a self-hosted image that carries the SDK does
     # no apt or installer work at all.
+    #
+    # Pinned, not `latest`: glslc's version is in the engine-prebuilt.sh key,
+    # so each LunarG release would silently send every desktop build back to a
+    # full CUDA compile. To bump, change both versions below and the ARM64 one
+    # in template-tauri-build-windows-arm64.yml and engine-build.yml; the push
+    # of this file to main re-warms the prebuilts (engine-build.yml).
     - name: Provision the Vulkan SDK
       if: contains(format('-{0}-', inputs.variant), '-vulkan-')
       shell: bash
@@ -89,8 +95,9 @@ runs:
           codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
             | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          # The per-version repo; LunarG's last Ubuntu packages are 1.4.313.
           sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-$codename.list" \
-            "https://packages.lunarg.com/vulkan/lunarg-vulkan-$codename.list"
+            "https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-$codename.list"
           sudo apt-get update
           sudo apt-get install -y vulkan-sdk
           ;;
@@ -101,7 +108,7 @@ runs:
             echo "engine toolchain: reusing the Vulkan SDK in C:\VulkanSDK"
           else
             curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-              https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
+              https://sdk.lunarg.com/sdk/download/1.4.363.0/windows/vulkan_sdk.exe
             "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
               --accept-licenses --default-answer --confirm-command install
           fi
@@ -117,7 +124,7 @@ runs:
     # For the CUDA manifest below.
     - name: Install jq
       if: contains(inputs.variant, 'cuda') && runner.environment == 'github-hosted'
-      uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+      uses: dcarbone/install-jq-action@v3.2.0
 
     # Redist archives, not the vendor installer: 1.1 GB of compiler, runtime
     # and cuBLAS against 3-4 GB that is mostly display driver and Nsight.
@@ -286,7 +293,7 @@ runs:
     # nvcc on Windows accepts only cl as its host compiler and finds it on PATH.
     - name: Enter the MSVC developer environment for nvcc
       if: runner.os == 'Windows' && contains(inputs.variant, 'cuda')
-      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      uses: ilammy/msvc-dev-cmd@v1.13.0
 
     # Inside a VS developer environment rustc takes link.exe from PATH, and make
     # runs its recipes through Git's sh.exe, whose MSYS runtime prepends its own

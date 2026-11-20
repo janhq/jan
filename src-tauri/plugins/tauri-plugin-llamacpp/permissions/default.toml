@@ -21,7 +21,13 @@ permissions = [
     "allow-engine-devices",
     "allow-force-stop-engine",
     "allow-engine-slots-idle",
+    "allow-begin-engine-restart",
+    "allow-end-engine-restart",
     "allow-erase-thread-slot-state",
+
+    # The ggml op diagnostic
+    "allow-start-diagnostics",
+    "allow-cancel-diagnostics",
 
     # GGUF
     "allow-read-gguf-metadata",

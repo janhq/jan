@@ -116,7 +116,7 @@ const WallOfLove = ({ transparent }: Props) => {
             />
           </div>
           <div>
-            <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+            <h1 className="text-5xl !font-semibold leading-tight lg:leading-tight mt-2 font-serif">
               People Say Nice Things
             </h1>
             <p className="leading-relaxed mt-2 text-black/60 dark:text-white/60 flex gap-x-2 justify-center">

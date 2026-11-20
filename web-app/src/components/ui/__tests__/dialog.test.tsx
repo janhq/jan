@@ -140,7 +140,7 @@ describe('Dialog Components', () => {
       'fixed',
       'top-[50%]',
       'left-[50%]',
-      'z-50',
+      'z-(--layer-modal)',
       'grid',
       'w-full',
       'max-w-[calc(100%-2rem)]',

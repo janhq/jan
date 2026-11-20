@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• Collected explore
+  └ The parser starts at parse_command.
+    It lives in tui.rs.
+-- collapsed
+
+• Collected explore
+  └ The parser starts at parse_command.
+-- narrow (28)
+
+• Collected explore
+  └ The parser starts at
+    parse_command.

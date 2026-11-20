@@ -134,6 +134,15 @@ const agent = { kind: 'agent' } as const
 
 describe('describeNativeToolCall for agent tools', () => {
   it('builds a terminal from the command', () => {
+    expect(describeNativeToolCall(agent, 'shell', { command: 'ls -la' })).toEqual({
+      variant: 'terminal',
+      command: 'ls -la',
+    })
+  })
+
+  // Threads saved before the rename carry calls under the old `bash` name;
+  // they still render as a terminal.
+  it('renders a saved bash call as a terminal', () => {
     expect(describeNativeToolCall(agent, 'bash', { command: 'ls -la' })).toEqual({
       variant: 'terminal',
       command: 'ls -la',
@@ -142,18 +151,9 @@ describe('describeNativeToolCall for agent tools', () => {
 
   // The command streams in like any other argument, so a partial one must show.
   it('accepts a partially streamed command', () => {
-    expect(describeNativeToolCall(agent, 'bash', { command: 'git pu' })).toEqual({
+    expect(describeNativeToolCall(agent, 'shell', { command: 'git pu' })).toEqual({
       variant: 'terminal',
       command: 'git pu',
-    })
-  })
-
-  // Polling a backgrounded run sends only job_id, so there is no command to show.
-  it('marks a job poll', () => {
-    expect(describeNativeToolCall(agent, 'bash', { job_id: 'bash-0' })).toEqual({
-      variant: 'terminal',
-      command: '',
-      jobId: 'bash-0',
     })
   })
 
@@ -182,11 +182,29 @@ describe('describeNativeToolCall for agent tools', () => {
   })
 
   it('leads with the name for memory and skill tools', () => {
-    expect(describeNativeToolCall(agent, 'memory_read', { name: 'prefs' })).toEqual({
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view', name: 'prefs' })).toEqual({
       variant: 'workspace',
-      tool: 'memory_read',
+      tool: 'memory',
       target: 'prefs',
+      op: 'view',
     })
+  })
+
+  // `memory` is one tool with many ops: the op decides the verb, and a search
+  // is about its query, not a name it does not have.
+  it('carries the memory op and leads a search with its query', () => {
+    expect(
+      describeNativeToolCall(agent, 'memory', { op: 'search', query: 'cuda' })
+    ).toEqual({ variant: 'workspace', tool: 'memory', target: 'cuda', op: 'search' })
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view' })).toEqual({
+      variant: 'workspace',
+      tool: 'memory',
+      target: '',
+      op: 'view',
+    })
+    expect(
+      describeNativeToolCall(agent, 'memory', { op: 'move', name: 'a', to: 'b' })
+    ).toEqual({ variant: 'workspace', tool: 'memory', target: 'a', op: 'move' })
   })
 })
 
@@ -230,6 +248,18 @@ describe('parseBashOutput', () => {
     expect(r.text).toBe('tail lines')
   })
 
+  // The current order: notices above the exit marker, which is the final line.
+  it('strips notices that come before a final exit marker', () => {
+    const r = parseBashOutput(
+      'tail lines\n[output truncated at 100 of 900 bytes]\n' +
+        '[sandbox: writes are limited to X.]\n[exit 2]'
+    )
+    expect(r.exit).toBe(2)
+    expect(r.truncated).toBe(true)
+    expect(r.sandboxNote).toBe('writes are limited to X.')
+    expect(r.text).toBe('tail lines')
+  })
+
   it('surfaces the sandbox hint separately from the body', () => {
     const r = parseBashOutput(
       "touch: cannot touch '/etc/x': Read-only file system\n[exit 1]\n" +
@@ -240,6 +270,19 @@ describe('parseBashOutput', () => {
     expect(r.text).toBe("touch: cannot touch '/etc/x': Read-only file system")
     expect(r.sandboxNote).toContain('writes are limited to the workspace')
     expect(r.sandboxNote).toContain('Network access is disabled')
+  })
+
+  it('surfaces hook config notices separately from the body', () => {
+    const r = parseBashOutput(
+      'ok\n[exit 0]\n[hook config: Hook pre_tool_use matcher in /cfg/[x]/hooks.json ' +
+        'names `bash`, which matches nothing]\n[hook config: second]'
+    )
+    expect(r.exit).toBe(0)
+    expect(r.text).toBe('ok')
+    expect(r.configNotes).toEqual([
+      'Hook pre_tool_use matcher in /cfg/[x]/hooks.json names `bash`, which matches nothing',
+      'second',
+    ])
   })
 
   it('has no sandbox note on an ordinary run', () => {

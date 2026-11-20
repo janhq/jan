@@ -12,6 +12,7 @@ import {
   withActiveChild,
   repairDetachedAssistants,
   planContinuation,
+  activePathTokens,
 } from '../message-branching'
 
 let clock = 1000
@@ -61,6 +62,17 @@ describe('message-branching', () => {
     expect(sib.id).toBe('a2')
     expect(sib.content[0].text?.value).toBe('edited')
     expect((sib.metadata as Record<string, unknown>).activeChildId).toBeUndefined()
+  })
+
+  it('activePathTokens counts only the visible branch', () => {
+    // b1 is a long inactive version; only a -> b2 is sent to the model.
+    const a = msg('a', 'user', 'q', { parentId: null })
+    const b1 = msg('b1', 'assistant', 'x'.repeat(3500), { parentId: 'a' })
+    const b2 = msg('b2', 'assistant', 'second', { parentId: 'a' })
+    const all = activePathTokens([a, b1, b2])
+    const visible = activePathTokens([a, b2])
+    expect(all).toBe(visible)
+    expect(activePathTokens(undefined)).toBe(0)
   })
 
   it('newest sibling is active by default; activeChildId overrides', () => {

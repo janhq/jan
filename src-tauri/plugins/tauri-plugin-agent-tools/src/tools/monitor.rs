@@ -58,12 +58,15 @@ pub struct MonitorSpec {
 pub struct MonitorCtx {
     pub project_root: PathBuf,
     pub scratch_root: Option<PathBuf>,
+    pub pkg_cache: Option<crate::workspace::PkgCache>,
     pub mask_root: Option<PathBuf>,
+    pub hidden_root: Option<PathBuf>,
     pub read_roots: Vec<PathBuf>,
     pub write_roots: Vec<PathBuf>,
     pub allow_network: bool,
     pub home_readonly: bool,
     pub sandbox: bool,
+    pub workspace_readonly: bool,
 }
 
 impl MonitorCtx {
@@ -71,12 +74,15 @@ impl MonitorCtx {
         Self {
             project_root: ctx.project_root.to_path_buf(),
             scratch_root: ctx.scratch_root.map(Path::to_path_buf),
+            pkg_cache: ctx.pkg_cache.cloned(),
             mask_root: ctx.mask_root.map(Path::to_path_buf),
+            hidden_root: ctx.hidden_root.map(Path::to_path_buf),
             read_roots: ctx.read_roots.to_vec(),
             write_roots: ctx.write_roots.to_vec(),
             allow_network: ctx.allow_network,
             home_readonly: ctx.home_readonly,
             sandbox: ctx.sandbox,
+            workspace_readonly: ctx.workspace_readonly,
         }
     }
 
@@ -89,14 +95,16 @@ impl MonitorCtx {
             .with_home_readonly(self.home_readonly)
             .with_sandbox(self.sandbox)
             .with_read_roots(&self.read_roots)
-            .with_write_roots(&self.write_roots);
+            .with_write_roots(&self.write_roots)
+            .with_hidden_root(self.hidden_root.as_deref())
+            .with_workspace_readonly(self.workspace_readonly);
         if let Some(mask) = &self.mask_root {
             ctx = ctx.with_mask_root(mask);
         }
         if let Some(scratch) = &self.scratch_root {
             ctx = ctx.with_scratch_root(scratch);
         }
-        ctx
+        ctx.with_pkg_cache(self.pkg_cache.as_ref())
     }
 }
 
@@ -115,7 +123,9 @@ pub struct MonitorUpdate {
 }
 
 /// Display-only view of one active monitor, for a status panel.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorSnapshot {
     pub monitor_id: String,
@@ -440,7 +450,7 @@ async fn run_monitor(
             set.push_update(MonitorUpdate {
                 monitor_id: monitor_id.to_string(),
                 name: spec.name.clone(),
-                headline: format!("Monitor {monitor_id}: '{}' timed out", spec.name),
+                headline: headline(monitor_id, &spec.name, false),
                 text: format!(
                     "Monitor '{monitor_id}' ('{}') timed out after {}s and {} without a match. \
                      It has stopped.",
@@ -456,6 +466,24 @@ async fn run_monitor(
     }
 }
 
+/// Last word of a matched monitor's headline; a display classifies the
+/// headline by it, so it is shared rather than repeated as a literal.
+pub const MATCHED_OUTCOME: &str = "matched";
+
+/// Last words of a timed-out monitor's headline (see [`MATCHED_OUTCOME`]).
+pub const TIMED_OUT_OUTCOME: &str = "timed out";
+
+/// `Monitor mon-1: 'build' matched` (or `timed out`): the one producer of a
+/// monitor headline, so the display that styles it by outcome cannot drift.
+pub fn headline(monitor_id: &str, name: &str, matched: bool) -> String {
+    let outcome = if matched {
+        MATCHED_OUTCOME
+    } else {
+        TIMED_OUT_OUTCOME
+    };
+    format!("Monitor {monitor_id}: '{name}' {outcome}")
+}
+
 fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
     let body = if content.is_empty() {
         " (the script exited 0 with no output)".to_string()
@@ -465,7 +493,7 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
     MonitorUpdate {
         monitor_id: monitor_id.to_string(),
         name: name.to_string(),
-        headline: format!("Monitor {monitor_id}: '{name}' matched"),
+        headline: headline(monitor_id, name, true),
         text: format!("Monitor '{monitor_id}' ('{name}') matched{body}\n\nIt has stopped."),
         matched: true,
     }
@@ -477,14 +505,14 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
 /// "not yet" and are retried on the next poll.
 async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
     let tool_ctx = ctx.as_tool_context();
-    let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
+    let (shell, sandbox_env, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
     // A poll child is short-lived and re-spawned each interval; it is not tied
     // to a session's Stop, so it registers in the process-wide bucket.
     let mut child = crate::tools::proc::spawn(
         &shell,
         script,
         &ctx.project_root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         tool_ctx.shell_env(),
         None,
     )
@@ -586,13 +614,16 @@ mod tests {
         MonitorCtx {
             project_root: root.to_path_buf(),
             scratch_root: None,
+            pkg_cache: None,
             mask_root: None,
+            hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             allow_network: false,
             home_readonly: false,
             // Bare shell: these tests exercise the monitor loop, not the jail.
             sandbox: false,
+            workspace_readonly: false,
         }
     }
 
@@ -655,6 +686,8 @@ mod tests {
         assert_eq!(spec.interval, Duration::from_secs(MAX_INTERVAL_SECS));
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_script_matching_at_start_reports_its_output_and_stops() {
         let dir = unique_root();
@@ -684,6 +717,8 @@ mod tests {
         panic!("the set still reports pending work after the match");
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_later_change_is_caught_by_a_following_poll() {
         let dir = unique_root();
@@ -707,6 +742,8 @@ mod tests {
         assert!(update.text.contains("phase two done"), "{}", update.text);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn snapshot_lists_active_monitors_with_their_poll_count() {
         let dir = unique_root();
@@ -771,6 +808,8 @@ mod tests {
         assert!(!set.has_pending_work());
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn wait_for_notice_wakes_on_a_match() {
         let dir = unique_root();
@@ -795,6 +834,8 @@ mod tests {
         assert!(notices[0].text.contains("a hit at last"));
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_subscriber_gets_updates_instead_of_the_queue() {
         let dir = unique_root();
