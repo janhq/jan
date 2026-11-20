@@ -23,6 +23,9 @@
   "huggingface": {
     "title": "Hugging Face"
   },
+  "phase-router": {
+    "title": "Phase Router"
+  },
   "custom-endpoint": {
     "title": "Custom Endpoints"
   }

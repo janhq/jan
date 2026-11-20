@@ -1,0 +1,77 @@
+---
+title: Phase Router
+description: A step-by-step guide on integrating Jan with Phase Router.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    conversational AI,
+    large language models,
+    Phase Router integration,
+    Phase Router,
+    OpenAI-compatible,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# Phase Router
+
+[Phase Router](https://router.phase.xyz) is an OpenAI-compatible model router: one base URL and one
+API key give access to about 400 models (DeepSeek, Qwen, Llama, gpt-oss, Kimi, GLM and others), billed
+per call. Every response reports the model that ran and its price (`usage.cost`).
+
+Jan connects to Phase Router as a [custom endpoint](./custom-endpoint).
+
+## Integrate Phase Router with Jan
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit [Phase Router](https://router.phase.xyz) and sign in
+2. Create and copy an API key
+
+### Step 2: Add Phase Router as a provider
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Providers**
+2. Click **Add Provider** (<Plus width={16} height={16} style={{display:"inline"}}/>)
+3. Choose **OpenAI-compatible** as the API format
+4. Fill in the fields:
+
+| Field | Value |
+| --- | --- |
+| **Provider name** | `Phase Router` |
+| **Base URL** | `https://router.phase.xyz/v1` |
+| **API key** | your Phase Router API key |
+
+5. Click **Create**
+
+### Step 3: Start Using Phase Router Models
+
+1. Pick any existing **Chat** or create a new one
+2. Select a model under **Phase Router** in the model selector
+3. Start chatting
+</Steps>
+
+## Available Models
+
+Jan fetches the model list from `https://router.phase.xyz/v1/models`. The full list with prices is at
+[router.phase.xyz/models](https://router.phase.xyz/models).
+
+**Examples of Model IDs:**
+- Automatic routing to the cheapest capable model: `auto`
+- DeepSeek V3.2: `deepseek-v3.2`
+- gpt-oss 120B: `gpt-oss-120b`
+- Qwen3 Coder 480B: `qwen3-coder-480b`
+
+## Troubleshooting
+
+**1. API Key Issues**
+- Verify your API key is correct and has a positive balance
+
+**2. Connection Problems**
+- Make sure the Base URL ends with `/v1`
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+Need more help? See the [Phase Router documentation](https://router.phase.xyz/docs).
