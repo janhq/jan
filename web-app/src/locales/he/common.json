@@ -1,0 +1,540 @@
+{
+  "htmlArtifact": {
+    "code": "קוד",
+    "preview": "תצוגה מקדימה",
+    "previewStreaming": "זמין כשהיצירה מסתיימת"
+  },
+  "assistants": "עוזרים",
+  "hardware": "חומרה",
+  "mcp-servers": "שרתי MCP",
+  "local_api_server": "שרת API מקומי",
+  "remote_access": "גישה מרחוק",
+  "integrations": "אינטגרציות",
+  "experimental": "ניסיוני",
+  "claude_code": "Claude Code",
+  "https_proxy": "פרוקסי HTTPS",
+  "web_search": "חיפוש באינטרנט",
+  "extensions": "תוספים",
+  "attachments": "קבצים מצורפים",
+  "general": "כללי",
+  "settings": "הגדרות",
+  "modelProviders": "ספקי מודלים",
+  "localProviders": "מקומיים",
+  "remoteProviders": "מרוחקים",
+  "manageProviders": "ניהול ספקים",
+  "hiddenProviders": "{{count}} מושבתים",
+  "hideProvider": "הסתרת ספק",
+  "showProvider": "הצגת ספק",
+  "interface": "ממשק",
+  "appearance": "מראה",
+  "privacy": "פרטיות",
+  "keyboardShortcuts": "קיצורי מקלדת",
+  "newChat": "צ'אט חדש",
+  "newAgentChat": "צ'אט סוכן חדש",
+  "chats": "צ'אטים",
+  "favorites": "מועדפים",
+  "recents": "אחרונים",
+  "hub": "האב",
+  "helpSupport": "עזרה ותמיכה",
+  "helpUsImproveJan": "עזרו לנו לשפר את Jan",
+  "unstarAll": "הסרת כוכב מהכול",
+  "unstar": "הסרת כוכב",
+  "deleteAll": "מחיקת הכול",
+  "star": "סימון בכוכב",
+  "rename": "שינוי שם",
+  "delete": "מחיקה",
+  "copied": "הועתק!",
+  "dataFolder": "תיקיית נתונים",
+  "others": "אחר",
+  "language": "שפה",
+  "login": "התחברות",
+  "loginWith": "התחברות עם {{provider}}",
+  "loginFailed": "ההתחברות נכשלה",
+  "logout": "התנתקות",
+  "loggingOut": "מתנתקים...",
+  "loggedOut": "ההתנתקות בוצעה בהצלחה",
+  "logoutFailed": "ההתנתקות נכשלה",
+  "profile": "פרופיל",
+  "reset": "איפוס",
+  "search": "חיפוש",
+  "searchThreads": "חיפוש שיחות...",
+  "toNavigate": "לניווט",
+  "toSelect": "לבחירה",
+  "toClose": "לסגירה",
+  "clearRecent": "ניקוי",
+  "name": "שם",
+  "cancel": "ביטול",
+  "dismiss": "התעלמות",
+  "create": "יצירה",
+  "save": "שמירה",
+  "edit": "עריכה",
+  "copy": "העתקה",
+  "back": "חזרה",
+  "close": "סגירה",
+  "done": "בוצע",
+  "next": "הבא",
+  "finish": "סיום",
+  "skip": "דילוג",
+  "allow": "אפשור",
+  "deny": "דחייה",
+  "start": "התחלה",
+  "stop": "עצירה",
+  "preview": "תצוגה מקדימה",
+  "compactWidth": "רוחב קומפקטי",
+  "fullWidth": "רוחב מלא",
+  "dark": "כהה",
+  "light": "בהיר",
+  "system": "מערכת",
+  "auto": "אוטומטי",
+  "english": "אנגלית",
+  "medium": "בינוני",
+  "newThread": "שיחה חדשה",
+  "noResultsFound": "לא נמצאו תוצאות",
+  "noThreadsYet": "אין עדיין שיחות",
+  "noThreadsYetDesc": "התחילו שיחה חדשה כדי לראות כאן את היסטוריית השיחות שלכם.",
+  "downloads": "הורדות",
+  "downloading": "מוריד",
+  "uploadingAttachments": "מעלה קבצים מצורפים…",
+  "cancelDownload": "ביטול הורדה",
+  "downloadCancelled": "ההורדה בוטלה",
+  "downloadComplete": "ההורדה הושלמה",
+  "thinking": "חושב...",
+  "thought": "מחשבה",
+  "callingTool": "קורא לכלי",
+  "completed": "הושלם",
+  "image": "תמונה",
+  "vision": "ראייה",
+  "multimodal": "רב-מודלי",
+  "embeddings": "הטמעות",
+  "tools": "כלים",
+  "webSearch": "חיפוש באינטרנט",
+  "reasoning": "היגיון",
+  "proactive": "יזום",
+  "selectAModel": "בחרו מודל",
+  "noToolsAvailable": "אין כלים זמינים",
+  "noModelsFoundFor": "לא נמצאו מודלים עבור \"{{searchValue}}\"",
+  "failedToLoadModels": "טעינת המודלים נכשלה",
+  "noModels": "לא נמצאו מודלים",
+  "noAssistant": "אין עוזר",
+  "customAvatar": "אווטאר מותאם אישית",
+  "editAssistant": "עריכת עוזר",
+  "jan": "Jan",
+  "metadata": "מטא-נתונים",
+  "regenerate": "יצירה מחדש",
+  "threadImage": "תמונת שיחה",
+  "editMessage": "עריכת הודעה",
+  "deleteMessage": "מחיקת הודעה",
+  "deleteThread": "מחיקת שיחה",
+  "renameThread": "שינוי שם לשיחה",
+  "threadTitle": "כותרת השיחה",
+  "deleteAllThreads": "מחיקת כל השיחות",
+  "allThreadsUnfavorited": "כל השיחות הוסרו מהמועדפים",
+  "deleteAllThreadsConfirm": "האם אתם בטוחים שברצונכם למחוק את כל השיחות? לא ניתן לבטל פעולה זו.",
+  "addProvider": "הוספת ספק",
+  "addOpenAIProvider": "הוספת ספק OpenAI",
+  "enterNameForProvider": "הזינו שם לספק שלכם",
+  "providerAlreadyExists": "ספק בשם \"{{name}}\" כבר קיים. בחרו שם אחר.",
+  "adjustFontSize": "התאמת גודל גופן",
+  "changeLanguage": "שינוי שפה",
+  "editTheme": "עריכת ערכת נושא",
+  "editCodeBlockStyle": "עריכת סגנון בלוק קוד",
+  "editServerHost": "עריכת מארח השרת",
+  "pickColorWindowBackground": "בחירת צבע לרקע החלון",
+  "pickColorAppMainView": "בחירת צבע לתצוגה הראשית של האפליקציה",
+  "pickColorAppPrimary": "בחירת הצבע הראשי של האפליקציה",
+  "pickColorAppAccent": "בחירת צבע ההדגשה של האפליקציה",
+  "pickColorAppDestructive": "בחירת צבע לפעולות הרסניות",
+  "apiKeyRequired": "נדרש מפתח API",
+  "enterTrustedHosts": "הזינו מארחים מהימנים",
+  "placeholder": {
+    "chatInput": "שאלו אותי כל דבר..."
+  },
+  "confirm": "אישור",
+  "continue": "המשך",
+  "loading": "טוען...",
+  "settingUpJan": "מאתחלים את Jan…",
+  "registeringExtensions": "רושמים תוספים…",
+  "loadingExtensions": "טוען תוספים… ({{done}}/{{total}})",
+  "error": "שגיאה",
+  "success": "הצלחה",
+  "warning": "אזהרה",
+  "conversationNotAvailable": "השיחה אינה זמינה",
+  "conversationNotAvailableDescription": "השיחה שאתם מנסים לגשת אליה אינה זמינה או שנמחקה.",
+  "temporaryChat": "צ'אט זמני",
+  "temporaryChatTooltip": "צ'אט זמני לא יופיע בהיסטוריה שלכם",
+  "noResultsFoundDesc": "לא הצלחנו למצוא צ'אטים שתואמים לחיפוש שלכם. נסו מילת מפתח אחרת.",
+  "searchModels": "חיפוש מודלים...",
+  "searchStyles": "חיפוש סגנונות...",
+  "createAssistant": "יצירת עוזר",
+  "enterApiKey": "הזינו מפתח API",
+  "scrollToBottom": "גלילה לתחתית",
+  "generateAiResponse": "יצירת תגובת AI",
+  "continueAiResponse": "המשך עם תגובת AI",
+  "addModel": {
+    "title": "הוספת מודל",
+    "modelId": "מזהה מודל",
+    "enterModelId": "הזינו מזהה מודל",
+    "addModel": "הוספת מודל",
+    "description": "הוספת מודל חדש לספק",
+    "exploreModels": "צפו ברשימת המודלים מהספק"
+  },
+  "mcpServers": {
+    "editServer": "עריכת שרת",
+    "addServer": "הוספת שרת",
+    "serverName": "שם השרת",
+    "enterServerName": "הזינו שם שרת",
+    "command": "פקודה",
+    "enterCommand": "הזינו פקודה",
+    "arguments": "ארגומנטים",
+    "argument": "ארגומנט {{index}}",
+    "envVars": "משתני סביבה",
+    "key": "מפתח",
+    "value": "ערך",
+    "save": "שמירה"
+  },
+  "deleteServer": {
+    "title": "מחיקת שרת",
+    "delete": "מחיקה"
+  },
+  "editJson": {
+    "errorParse": "פענוח ה-JSON נכשל",
+    "errorPaste": "הדבקת ה-JSON נכשלה",
+    "errorFormat": "פורמט JSON לא תקין",
+    "titleAll": "עריכת התצורה של כל השרתים",
+    "placeholder": "הזינו תצורת JSON...",
+    "save": "שמירה"
+  },
+  "editModel": {
+    "title": "עריכת מודל: {{modelId}}",
+    "description": "הגדירו את יכולות המודל על ידי הפעלה וכיבוי של האפשרויות למטה.",
+    "capabilities": "יכולות",
+    "tools": "כלים",
+    "vision": "ראייה",
+    "embeddings": "הטמעות",
+    "notAvailable": "עדיין לא זמין"
+  },
+  "outOfContextError": {
+    "truncateInput": "קיצוץ הקלט",
+    "title": "שגיאת חריגה מההקשר",
+    "description": "הצ'אט הזה מתקרב למגבלת הזיכרון של ה-AI, כמו לוח שמתמלא. אפשר להגדיל את חלון הזיכרון (הנקרא גודל ההקשר) כדי שהוא יזכור יותר, אבל זה עשוי להשתמש ביותר זיכרון מהמחשב שלכם. אפשר גם לקצץ את הקלט, כלומר הוא ישכח חלק מהיסטוריית הצ'אט כדי לפנות מקום להודעות חדשות.",
+    "increaseContextSizeDescription": "האם ברצונכם להגדיל את גודל ההקשר?",
+    "increaseContextSize": "הגדלת גודל ההקשר"
+  },
+  "toolApproval": {
+    "title": "בקשת הרשאה לכלי",
+    "description": "העוזר מבקש להשתמש ב-<strong>{{toolName}}</strong>",
+    "securityNotice": "אשרו רק כלים שאתם סומכים עליהם. לכלים יש גישה למערכת ולנתונים שלכם.",
+    "deny": "דחייה",
+    "allowOnce": "אישור חד-פעמי",
+    "alwaysAllow": "אישור תמידי"
+  },
+  "deleteModel": {
+    "title": "מחיקת מודל: {{modelId}}",
+    "description": "האם אתם בטוחים שברצונכם למחוק את המודל הזה? לא ניתן לבטל פעולה זו.",
+    "success": "המודל {{modelId}} נמחק לצמיתות.",
+    "cancel": "ביטול",
+    "delete": "מחיקה"
+  },
+  "deleteProvider": {
+    "title": "מחיקת ספק",
+    "description": "מחיקת הספק הזה וכל המודלים שלו. לא ניתן לבטל פעולה זו.",
+    "success": "הספק {{provider}} נמחק לצמיתות.",
+    "confirmTitle": "מחיקת ספק: {{provider}}",
+    "confirmDescription": "האם אתם בטוחים שברצונכם למחוק את הספק הזה? לא ניתן לבטל פעולה זו.",
+    "cancel": "ביטול",
+    "delete": "מחיקה"
+  },
+  "modelSettings": {
+    "title": "הגדרות מודל - {{modelId}}",
+    "description": "הגדירו את הגדרות המודל כדי לייעל את הביצועים וההתנהגות.",
+    "nglDisabledByFit": "ההתאמה האוטומטית (Auto-fit) בוחרת את שכבות ה-GPU. כבו את ההתאמה האוטומטית כדי להגדיר זאת ידנית.",
+    "samplingDefaults": {
+      "title": "פרמטרי דגימה ברירת מחדל",
+      "description": "הגדרות דגימה ברירת מחדל עבור המודל הזה. ישמשו אלא אם כן נדרסים על ידי ערכים ברמת העוזר או הבקשה."
+    },
+    "mtp": {
+      "section": "חיזוי מרובה טוקנים (MTP)",
+      "enable": "הפעלת MTP",
+      "enableDescription": "השתמשו בראשי ה-MTP המובנים של המודל כדי לנסח כמה טוקנים בכל צעד. מאיץ את היצירה כשלמודל יש משקלי MTP (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, ...).",
+      "needsUpgrade": "עדכנו את ה-backend של llama.cpp לגרסת build b9193 ומעלה כדי להפעיל MTP.",
+      "nMax": "מקסימום טוקני טיוטה",
+      "nMaxDescription": "המספר המקסימלי של טוקנים לנסח בכל צעד. ברירת המחדל היא 16.",
+      "nMin": "מינימום טוקני טיוטה",
+      "nMinDescription": "המספר המינימלי של טוקנים לנסח בכל צעד. ברירת המחדל היא 0.",
+      "pMin": "הסתברות מינימלית לטיוטה",
+      "pMinDescription": "ההסתברות המינימלית לניסוח חמדני (0–1). ברירת המחדל היא 0.75."
+    },
+    "templateKwargs": {
+      "section": "אפשרויות תבנית הצ'אט",
+      "description": "אפשרויות נוספות שתבנית הצ'אט של המודל הזה תומכת בהן. נשלחות כ-chat_template_kwargs בכל בקשה; השאירו ערך בברירת המחדל שלו כדי לתת לתבנית להחליט.",
+      "addCustom": "הוספת אפשרות מותאמת אישית",
+      "keyPlaceholder": "שם",
+      "valuePlaceholder": "ערך",
+      "add": "הוספה",
+      "cancel": "ביטול",
+      "remove": "הסרה"
+    }
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "שינוי מיקום תיקיית הנתונים",
+      "description": "האם אתם בטוחים שברצונכם לשנות את מיקום תיקיית הנתונים? פעולה זו תעביר את כל הנתונים שלכם למיקום החדש ותפעיל מחדש את האפליקציה.",
+      "currentLocation": "מיקום נוכחי:",
+      "newLocation": "מיקום חדש:",
+      "cancel": "ביטול",
+      "changeLocation": "שינוי מיקום"
+    },
+    "deleteAllThreads": {
+      "title": "מחיקת כל השיחות",
+      "description": "כל השיחות יימחקו. לא ניתן לבטל פעולה זו."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "מחיקת כל הצ'אטים",
+      "description": "{{count}} צ'אטים בפרויקט \"{{projectName}}\" יימחקו. לא ניתן לבטל פעולה זו."
+    },
+    "deleteThread": {
+      "description": "האם אתם בטוחים שברצונכם למחוק את השיחה הזו? לא ניתן לבטל פעולה זו."
+    },
+    "editMessage": {
+      "title": "עריכת הודעה"
+    },
+    "messageMetadata": {
+      "title": "מטא-נתוני ההודעה"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "משהו השתבש",
+    "details": "פרטים"
+  },
+  "missingDependenciesDialog": {
+    "title": "חסרות ספריות מערכת",
+    "description": "ה-{{backend}} הותקן, אך חלק מספריות המערכת הנדרשות לא נמצאו. ייתכן שהוא יעבור למעבד (CPU) או לא יפעל כראוי.",
+    "installLabel": "כדי לתקן את זה, התקינו את הבאים:",
+    "download": "הורדה",
+    "additionalLibraries": "ספריות חסרות נוספות:",
+    "missingLibraries": "ספריות חסרות:",
+    "showRawLibraries": "הצגת {{count}} שמות ספריות חסרות"
+  },
+  "projects": {
+    "title": "פרויקטים",
+    "new": "פרויקט חדש",
+    "addProject": "הוספת פרויקט",
+    "addToProject": "הוספה לפרויקט",
+    "removeFromProject": "הסרה מהפרויקט",
+    "createNewProject": "יצירת פרויקט חדש",
+    "editProject": "עריכת פרויקט",
+    "deleteProject": "מחיקת פרויקט",
+    "projectName": "שם הפרויקט",
+    "enterProjectName": "הזינו שם פרויקט...",
+    "noProjectsAvailable": "אין פרויקטים זמינים",
+    "noProjectsYet": "אין עדיין פרויקטים",
+    "noProjectsYetDesc": "התחילו פרויקט חדש בלחיצה על כפתור הוספת פרויקט.",
+    "projectNotFound": "הפרויקט לא נמצא",
+    "projectNotFoundDesc": "הפרויקט שאתם מחפשים אינו קיים או שנמחק.",
+    "selectAssistant": "בחרו עוזר",
+    "noAssistantAssigned": "לא הוקצה עוזר לפרויקט הזה",
+    "files": "קבצים",
+    "filesDescription": "הוסיפו קובצי PDF, מסמכים או טקסט אחר כדי להפנות אליהם בפרויקט הזה.",
+    "uploadingFiles": "מעבד קבצים…",
+    "processButton": "הוספה",
+    "deleteProjectDialog": {
+      "title": "מחיקת פרויקט",
+      "permanentDelete": "פעולה זו תמחק לצמיתות את כל השיחות.",
+      "permanentDeleteWarning": "פעולה זו תמחק לצמיתות את כל השיחות בפרויקט!",
+      "deleteEmptyProject": "פעולה זו תמחק את הפרויקט \"{{projectName}}\".",
+      "saveThreadsAdvice": "כדי לשמור שיחות, העבירו אותן לרשימת השיחות שלכם או לפרויקט אחר לפני המחיקה.",
+      "starredWarning": "עדיין יש לכם שיחות מסומנות בכוכב בתוך הפרויקט.",
+      "deleteButton": "מחיקה",
+      "successWithName": "הפרויקט \"{{projectName}}\" נמחק בהצלחה",
+      "successWithoutName": "הפרויקט נמחק בהצלחה",
+      "error": "מחיקת הפרויקט נכשלה. נסו שוב.",
+      "ariaLabel": "מחיקת {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "יצירת פרויקט חדש",
+      "editTitle": "עריכת פרויקט",
+      "nameLabel": "שם הפרויקט",
+      "namePlaceholder": "הזינו שם פרויקט...",
+      "assistant": "עוזר",
+      "selectAssistant": "בחרו עוזר (אופציונלי)",
+      "noAssistant": "אין עוזר",
+      "addAssistant": "הוספת עוזר",
+      "createButton": "יצירה",
+      "updateButton": "עדכון",
+      "alreadyExists": "הפרויקט \"{{projectName}}\" כבר קיים",
+      "createSuccess": "הפרויקט \"{{projectName}}\" נוצר בהצלחה",
+      "updateSuccess": "הפרויקט \"{{projectName}}\" עודכן בהצלחה"
+    },
+    "noConversationsIn": "אין שיחות ב-{{projectName}}",
+    "startNewConversation": "התחילו שיחה חדשה עם {{projectName}} למטה",
+    "conversationsIn": "שיחות ב-{{projectName}}",
+    "conversationsDescription": "לחצו על כל שיחה כדי להמשיך לשוחח, או התחילו שיחה חדשה למטה.",
+    "conversation": "שיחה",
+    "instructions": "הנחיות",
+    "setup": "הגדרה",
+    "instructionsDescription": "התאימו אישית את הטון והסגנון של התגובה",
+    "manageInstructions": "ניהול הנחיות",
+    "thread": "שיחה",
+    "threads": "שיחות",
+    "updated": "עודכן:",
+    "collapseProject": "כיווץ הפרויקט",
+    "expandProject": "הרחבת הפרויקט",
+    "update": "עדכון",
+    "searchProjects": "חיפוש פרויקטים...",
+    "noProjectsFound": "לא נמצאו פרויקטים",
+    "tryDifferentSearch": "נסו מונח חיפוש אחר"
+  },
+  "attachmentsIngestion": {
+    "title": "בחרו כיצד לקלוט קבצים מצורפים",
+    "description": "בחרו אם לכלול את הקבצים האלה ישירות בצ'אט, או לאנדקס אותם כהטמעות.",
+    "inline": "הזרקה לצ'אט",
+    "embeddings": "שימוש בהטמעות"
+  },
+  "attachmentInjectedIndicator": "הוזרק לצ'אט",
+  "attachmentEmbeddedIndicator": "הוטמע עבור RAG",
+  "viewInjectedContent": "הצגת התוכן שהוזרק",
+  "injectedContentTitle": "תוכן הקובץ שהוזרק",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "כל השיחות הוסרו מהמועדפים",
+      "description": "כל השיחות הוסרו מהמועדפים שלכם."
+    },
+    "deleteAllThreads": {
+      "title": "מחיקת כל השיחות",
+      "description": "כל השיחות נמחקו לצמיתות."
+    },
+    "renameThread": {
+      "title": "שינוי שם לשיחה",
+      "description": "כותרת השיחה שונתה ל-'{{title}}'"
+    },
+    "deleteThread": {
+      "title": "מחיקת שיחה",
+      "description": "השיחה הזו נמחקה לצמיתות."
+    },
+    "errorCopied": {
+      "title": "ההעתקה הצליחה",
+      "description": "פרטי השגיאה הועתקו ללוח"
+    },
+    "errorCopyFailed": {
+      "title": "ההעתקה נכשלה",
+      "description": "העתקת פרטי השגיאה ללוח נכשלה"
+    },
+    "editMessage": {
+      "title": "עריכת הודעה",
+      "description": "ההודעה נערכה בהצלחה. המתינו לתגובת המודל."
+    },
+    "appUpdateDownloaded": {
+      "title": "עדכון האפליקציה הורד",
+      "description": "עדכון האפליקציה הורד בהצלחה."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "הורדת עדכון האפליקציה נכשלה",
+      "description": "הורדת עדכון האפליקציה נכשלה. נסו שוב."
+    },
+    "downloadComplete": {
+      "title": "ההורדה הושלמה",
+      "description": "{{item}} הורד"
+    },
+    "downloadCancelled": {
+      "title": "ההורדה בוטלה",
+      "description": "תהליך ההורדה בוטל"
+    },
+    "downloadFailed": {
+      "title": "ההורדה נכשלה",
+      "description": "הורדת {{item}} נכשלה"
+    },
+    "modelValidationStarted": {
+      "title": "בודקים תקינות המודל",
+      "description": "המודל \"{{modelId}}\" הורד בהצלחה. מאמתים תקינות..."
+    },
+    "modelValidationFailed": {
+      "title": "אימות תקינות המודל נכשל",
+      "description": "המודל שהורד \"{{modelId}}\" נכשל באימות התקינות והוסר. ייתכן שהקובץ פגום או שנעשה בו שינוי."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "ההורדה הושלמה",
+      "description": "המודל \"{{item}}\" הורד ואומת בהצלחה"
+    },
+    "projectCreated": {
+      "title": "הפרויקט נוצר",
+      "description": "הפרויקט \"{{projectName}}\" נוצר בהצלחה"
+    },
+    "projectRenamed": {
+      "title": "שם הפרויקט שונה",
+      "description": "שם הפרויקט שונה מ-\"{{oldName}}\" ל-\"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "הפרויקט נמחק",
+      "description": "הפרויקט \"{{projectName}}\" נמחק בהצלחה"
+    },
+    "projectAlreadyExists": {
+      "title": "הפרויקט כבר קיים",
+      "description": "הפרויקט \"{{projectName}}\" כבר קיים"
+    },
+    "projectDeleteFailed": {
+      "title": "המחיקה נכשלה",
+      "description": "מחיקת הפרויקט נכשלה. נסו שוב."
+    },
+    "threadAssignedToProject": {
+      "title": "השיחה שויכה",
+      "description": "השיחה שויכה ל-\"{{projectName}}\" בהצלחה"
+    },
+    "threadRemovedFromProject": {
+      "title": "השיחה הוסרה",
+      "description": "השיחה הוסרה מ-\"{{projectName}}\" בהצלחה"
+    },
+    "fileUploaded": {
+      "title": "הקובץ עובד",
+      "description": "הקובץ עובד ואונדקס בהצלחה"
+    },
+    "uploadFailed": {
+      "title": "העיבוד נכשל",
+      "description": "עיבוד הקובץ נכשל",
+      "subjectThisFile": "הקובץ הזה",
+      "pdfMalformedXref": "ל-{{subject}} יש טבלת הפניות צולבות (cross-reference) פגומה של PDF, ולא ניתן היה לנתח אותו. נסו לפתוח אותו בתוכנת צפייה ב-PDF ולשמור אותו מחדש (קובץ ← הדפסה ← שמירה כ-PDF), ואז העלו שוב.",
+      "pdfScanned": "נראה ש-{{subject}} הוא PDF סרוק או מבוסס-תמונה. OCR עדיין לא נתמך - העלו PDF מבוסס-טקסט.",
+      "pdfEncrypted": "{{subject}} מוגן בסיסמה. הסירו את הסיסמה ונסו שוב.",
+      "pdfUnsupportedFeature": "{{subject}} משתמש בתכונת PDF ש-Jan עדיין לא יודעת לנתח (למשל פונקציות צבע/הצללה מסוג PostScript). נסו לשמור אותו מחדש (קובץ ← הדפסה ← שמירה כ-PDF) כדי לשטח אותו, ואז העלו שוב.",
+      "pdfGeneric": "לא ניתן היה לנתח את {{subject}} כקובץ PDF. ייתכן שהקובץ פגום או משתמש בתכונת PDF לא נתמכת.",
+      "fileTooLarge": "{{subject}} גדול מדי. {{message}}.",
+      "unsupportedType": "סוג הקובץ \"{{type}}\" אינו נתמך.",
+      "ioError": "לא ניתן היה לקרוא את {{subject}}: {{message}}",
+      "parseGeneric": "לא ניתן היה לנתח את {{subject}}: {{message}}",
+      "fallback": "עיבוד {{subject}} נכשל."
+    },
+    "fileDeleted": {
+      "title": "הקובץ נמחק",
+      "description": "הקובץ הוסר מהפרויקט"
+    },
+    "deleteFailed": {
+      "title": "המחיקה נכשלה",
+      "description": "מחיקת הקובץ נכשלה"
+    },
+    "fileAlreadyExists": {
+      "title": "הקובץ כבר קיים",
+      "description": "הקובץ כבר מצורף לפרויקט הזה"
+    },
+    "unsupportedFileType": {
+      "title": "סוג קובץ לא נתמך",
+      "description": "סיומת הקובץ \".{{extension}}\" אינה נתמכת עבור התייחסות בפרויקט."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "קבצים מצורפים מושבתים",
+      "description": "קבצים מצורפים מושבתים בהגדרות"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "הקובץ גדול מדי",
+    "fileTooLargeDescription": "{{fileName}} חורג מהמגבלה של {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} מקטעים"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp עדיין עסוקה",
+    "description": "מודל אחד או יותר לא נטענו מהזיכרון בזמן. יציאה בכפייה תסגור את llama.cpp ועלולה להפריע לתגובות פעילות.",
+    "forceQuit": "יציאה בכפייה",
+    "forcing": "יוצא בכפייה…",
+    "shuttingDown": "כובה…"
+  }
+}
