@@ -9,5 +9,8 @@
   "installConfig": {
     "hoistingLimits": "workspaces"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "yarn@4.5.3",
+  "optionalDependencies": {
+    "node-gyp": "^13.0.2"
+  }
 }
