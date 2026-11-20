@@ -23,6 +23,9 @@
   "huggingface": {
     "title": "Hugging Face"
   },
+  "runcrate": {
+    "title": "Runcrate"
+  },
   "custom-endpoint": {
     "title": "Custom Endpoints"
   }

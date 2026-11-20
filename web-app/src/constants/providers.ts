@@ -399,4 +399,59 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.runcrate.ai/v1',
+    explore_models_url: 'https://runcrate.ai/dashboard/models',
+    provider: 'runcrate',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Runcrate API uses API keys for authentication. Visit your [API Keys](https://runcrate.ai/dashboard/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        name: 'DeepSeek V4.1 Flash',
+        version: '1.0',
+        description:
+          'Fast DeepSeek model with reasoning, tool calling and a 1M token context window.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'moonshotai/Kimi-K2.6',
+        name: 'Kimi K2.6',
+        version: '1.0',
+        description:
+          'Moonshot agentic model with reasoning and tool calling, 262K context window.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'zai-org/GLM-5.3',
+        name: 'GLM 5.3',
+        version: '1.0',
+        description:
+          'Z.ai flagship model for coding and agent tasks, 1M token context window.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'openai/gpt-oss-120b',
+        name: 'gpt-oss 120B',
+        version: '1.0',
+        description: 'OpenAI open-weight reasoning model with tool calling.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
 ]

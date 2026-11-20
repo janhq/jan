@@ -159,6 +159,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/minimax.svg'
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
+    case 'runcrate':
+      return '/images/model-provider/runcrate.svg'
     default:
       return undefined
   }

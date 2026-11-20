@@ -135,6 +135,20 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  runcrate: {
+    models: [
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'moonshotai/Kimi-K2.6',
+      'zai-org/GLM-5.3',
+      'openai/gpt-oss-120b',
+    ],
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: ['deepseek-ai/DeepSeek-V4.1-Flash', 'moonshotai/Kimi-K2.6'],
+    supportsToolCalls: true,
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
