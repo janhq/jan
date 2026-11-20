@@ -1,0 +1,950 @@
+{
+  "htmlArtifact": {
+    "code": "Kod",
+    "preview": "Önizleme",
+    "previewStreaming": "Oluşturma tamamlanınca kullanılabilir",
+    "unresolvedAssets_one": "1 dosya başvurusu önizlemede yüklenemiyor. Göreli yolları çözümleyecek bir temel URL yok.",
+    "unresolvedAssets_other": "{{count}} dosya başvurusu önizlemede yüklenemiyor. Göreli yolları çözümleyecek bir temel URL yok."
+  },
+  "assistants": "Asistanlar",
+  "hardware": "Donanım",
+  "mcp-servers": "MCP sunucuları",
+  "local_api_server": "Yerel API sunucusu",
+  "remote_access": "Uzaktan erişim",
+  "integrations": "Entegrasyonlar",
+  "experimental": "Deneysel",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS proxy",
+  "web_search": "Web araması",
+  "shell": "Kabuk",
+  "browse": "Göz at",
+  "moreControls": "Diğer denetimler",
+  "starting": "Başlatılıyor...",
+  "activeSuffix": " (Etkin)",
+  "extensions": "Uzantılar",
+  "attachments": "Ekler",
+  "general": "Genel",
+  "settings": "Ayarlar",
+  "modelProviders": "Model sağlayıcıları",
+  "localProviders": "Yerel",
+  "remoteProviders": "Uzak",
+  "manageProviders": "Sağlayıcıları yönet",
+  "hiddenProviders": "{{count}} devre dışı",
+  "hideProvider": "Sağlayıcıyı gizle",
+  "showProvider": "Sağlayıcıyı göster",
+  "interface": "Arayüz",
+  "appearance": "Görünüm",
+  "privacy": "Gizlilik",
+  "keyboardShortcuts": "Kısayollar",
+  "home": "Ana sayfa",
+  "cowork": "Birlikte çalışma",
+  "newSession": "Yeni oturum",
+  "artifacts": "Çıktılar",
+  "customize": "Özelleştir",
+  "local": "Yerel",
+  "selectFolder": "Klasör seç",
+  "selectModel": "Önce model seçin",
+  "commands": "Komutlar",
+  "cmdHelp": "Kullanılabilir komutları listele",
+  "cmdClear": "Bu oturumu temizle",
+  "cmdModels": "Etkin modeli değiştir",
+  "cmdModelsHint": "/models yazıp listeden bir model seçin",
+  "cmdModelSwitched": "{{name}} modeline geçildi",
+  "cmdUnknown": "Bilinmeyen komut: {{name}}. /help komutunu deneyin",
+  "cmdBusy": "Ajan çalışırken bu işlem yapılamaz",
+  "cmdCompact": "Oturumun bağlamını bir özete sıkıştır",
+  "cmdCompacted": "{{before}} mesaj {{after}} mesaja sıkıştırıldı",
+  "cmdNothingToCompact": "Henüz sıkıştırılacak bir şey yok",
+  "cmdCompactFailed": "Sıkıştırma başarısız: {{error}}",
+  "cmdPlan": "Plan modunu aç/kapat (salt okunur: ajan yazmadan önerir)",
+  "cmdPlanOn": "Plan modu açık: ajan yazmadan okur ve önerir",
+  "cmdPlanOff": "Plan modu kapalı: normal çalışma",
+  "cmdTodo": "İlerleme panelini aç",
+  "cmdTasks": "Arka plan görevleri panelini aç",
+  "cmdInit": "Projeyi incele, beceriler ve anılar yaz",
+  "cmdInitRunning": "Proje tanınıyor",
+  "skills": "Beceriler",
+  "skillsInContext": "Bu çalıştırmada ajanın kullanabileceği beceriler",
+  "skillsTitle": "Becerileri yönet",
+  "skillsScopeProject": "{{folder}} becerileri",
+  "skillsScopeGlobal": "Her oturumda kullanılabilen genel beceriler",
+  "skillsScopeMerged": "{{folder}} becerileri ve tüm oturumların paylaştığı genel beceriler",
+  "skillOriginFolder": "klasör",
+  "skillOriginGlobal": "genel",
+  "skillsEmpty": "Henüz beceri yok",
+  "skillsPickOrNew": "Düzenlemek için bir beceri seçin veya yeni bir beceri oluşturun.",
+  "skillNew": "Yeni beceri",
+  "skillDelete": "Beceriyi sil",
+  "skillSave": "Kaydet",
+  "skillSaved": "Beceri kaydedildi",
+  "skillNameRequired": "Beceri adı gereklidir",
+  "skillNamePlaceholder": "beceri-adi",
+  "skillContentPlaceholder": "Yeniden kullanılabilir işlemi Markdown ile açıklayın…",
+  "skillHubImport": "Merkezden içe aktar",
+  "skillHubTitle": "Anthropic beceri merkezi",
+  "skillHubEmpty": "Merkezde beceri bulunamadı",
+  "skillImport": "İçe aktar",
+  "skillReimport": "Yeniden içe aktar",
+  "skillImported": "{{name}} içe aktarıldı",
+  "sessions": "Oturumlar",
+  "coworkSessionUnavailable": "Bu konuşmada henüz gösterilecek bir şey yok.",
+  "deleteSessionTitle": "Oturum silinsin mi?",
+  "deleteSessionBody": "“{{title}}” ve konuşma kaydı kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+  "newChat": "Yeni sohbet",
+  "newAgentChat": "Yeni ajan sohbeti",
+  "chats": "Sohbetler",
+  "favorites": "Favoriler",
+  "recents": "Son kullanılanlar",
+  "hub": "Model merkezi",
+  "helpSupport": "Yardım ve destek",
+  "helpUsImproveJan": "Jan'ı geliştirmemize yardımcı olun",
+  "analyticsConsentDetail": "Özellik kullanımını anlamak için anonim veriler toplarız. Sohbetleriniz ve kişisel bilgileriniz asla izlenmez. Bu ayarı istediğiniz zaman Ayarlar > Gizlilik bölümünden değiştirebilirsiniz.",
+  "analyticsConsentQuestion": "Jan'ı geliştirmemize yardımcı olmak ister misiniz?",
+  "unstarAll": "Tüm yıldızları kaldır",
+  "unstar": "Yıldızı kaldır",
+  "deleteAll": "Tümünü sil",
+  "star": "Yıldız ekle",
+  "rename": "Yeniden adlandır",
+  "delete": "Sil",
+  "copied": "Kopyalandı!",
+  "dataFolder": "Veri klasörü",
+  "others": "Diğer",
+  "language": "Dil",
+  "login": "Giriş yap",
+  "loginWith": "{{provider}} ile giriş yap",
+  "loginFailed": "Giriş yapılamadı",
+  "logout": "Çıkış yap",
+  "loggingOut": "Çıkış yapılıyor...",
+  "loggedOut": "Çıkış yapıldı",
+  "logoutFailed": "Çıkış yapılamadı",
+  "profile": "Profil",
+  "reset": "Sıfırla",
+  "search": "Ara",
+  "searchThreads": "Sohbetlerde ara...",
+  "toNavigate": "gezinmek için",
+  "toSelect": "seçmek için",
+  "toClose": "kapatmak için",
+  "clearRecent": "Temizle",
+  "name": "Ad",
+  "cancel": "İptal",
+  "dismiss": "Kapat",
+  "create": "Oluştur",
+  "save": "Kaydet",
+  "edit": "Düzenle",
+  "copy": "Kopyala",
+  "back": "Geri",
+  "close": "Kapat",
+  "done": "Tamam",
+  "next": "İleri",
+  "finish": "Bitir",
+  "skip": "Atla",
+  "allow": "İzin ver",
+  "deny": "Reddet",
+  "start": "Başlat",
+  "stop": "Durdur",
+  "preview": {
+    "loading": "Açılıyor…",
+    "unsupported": "Jan bu tür dosyaları gösteremiyor. Başka bir uygulamada görmek için açın.",
+    "outside": "Bu dosya artık oturumun çalışma alanında değil.",
+    "tooLarge": "Önizleme için çok büyük. Başka bir uygulamada görmek için açın.",
+    "reload": "Yeniden yükle",
+    "allowNetwork": "Ağa izin ver",
+    "unsandboxed": "Yalıtım olmadan çalıştır: kayıtlı veriler ve yerel dosyalar kullanılabilir",
+    "unresolvedRefs_one": "Bu sayfanın bağlantı verdiği 1 dosya önizlemede yüklenemiyor. Tarayıcıda görmek için açın.",
+    "unresolvedRefs_other": "Bu sayfanın bağlantı verdiği {{count}} dosya önizlemede yüklenemiyor. Tarayıcıda görmek için açın.",
+    "externalRefs_one": "Bu sayfanın web'den yüklediği 1 kaynak engellendi. Yüklemek için “Ağa izin ver” seçeneğini açın.",
+    "externalRefs_other": "Bu sayfanın web'den yüklediği {{count}} kaynak engellendi. Yüklemek için “Ağa izin ver” seçeneğini açın.",
+    "scriptErrors_one": "Sayfa bir hata bildirdi: {{message}}",
+    "scriptErrors_other": "Sayfa {{count}} hata bildirdi. İlki: {{message}}"
+  },
+  "changes": {
+    "title": "Ajan değişiklikleri",
+    "empty": "Ajanın yazdığı veya düzenlediği dosyalar burada görünür.",
+    "a11y": "Ajan değişiklikleri: {{files}} dosya, {{additions}} ekleme, {{deletions}} silme"
+  },
+  "modelPanel": {
+    "title": "Model ayarları",
+    "a11y": "Model ayarlarını aç"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "'{{name}}' becerisi kullanılamıyor",
+    "kind": {
+      "skill": "Beceri",
+      "command": "Komut",
+      "model": "Model"
+    }
+  },
+  "compactWidth": "Dar genişlik",
+  "fullWidth": "Tam genişlik",
+  "dark": "Koyu",
+  "light": "Açık",
+  "system": "Sistem",
+  "auto": "Otomatik",
+  "english": "İngilizce",
+  "medium": "Orta",
+  "newThread": "Yeni sohbet",
+  "noResultsFound": "Sonuç bulunamadı",
+  "noThreadsYet": "Henüz sohbet yok",
+  "noThreadsYetDesc": "Sohbet geçmişinizi burada görmek için yeni bir konuşma başlatın.",
+  "downloads": "İndirmeler",
+  "downloading": "İndiriliyor",
+  "uploadingAttachments": "Ekler yükleniyor…",
+  "cancelDownload": "İndirmeyi iptal et",
+  "downloadCancelled": "İndirme iptal edildi",
+  "downloadComplete": "İndirme tamamlandı",
+  "thinking": "Düşünüyor...",
+  "thought": "Düşünce",
+  "callingTool": "Araç çağrılıyor",
+  "completed": "Tamamlandı",
+  "image": "Görsel",
+  "vision": "Görüntü",
+  "multimodal": "Çok modlu",
+  "embeddings": "Gömmeler",
+  "tools": "Araçlar",
+  "webSearch": "Web araması",
+  "reasoning": "Akıl yürütme",
+  "proactive": "Proaktif",
+  "selectAModel": "Model seçin",
+  "noToolsAvailable": "Kullanılabilir araç yok",
+  "noModelsFoundFor": "“{{searchValue}}” için model bulunamadı",
+  "failedToLoadModels": "Modeller yüklenemedi",
+  "noModels": "Model bulunamadı",
+  "noAssistant": "Asistan yok",
+  "customAvatar": "Özel avatar",
+  "editAssistant": "Asistanı düzenle",
+  "jan": "Jan",
+  "metadata": "Üst veriler",
+  "regenerate": "Yeniden oluştur",
+  "threadImage": "Sohbet görseli",
+  "editMessage": "Mesajı düzenle",
+  "deleteMessage": "Mesajı sil",
+  "deleteThread": "Sohbeti sil",
+  "renameThread": "Sohbeti yeniden adlandır",
+  "threadTitle": "Sohbet başlığı",
+  "deleteAllThreads": "Tüm sohbetleri sil",
+  "allThreadsUnfavorited": "Tüm sohbetler favorilerden çıkarıldı",
+  "deleteAllThreadsConfirm": "Tüm sohbetleri silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+  "addProvider": "Sağlayıcı ekle",
+  "addOpenAIProvider": "OpenAI sağlayıcısı ekle",
+  "enterNameForProvider": "Sağlayıcınız için bir ad girin",
+  "providerAlreadyExists": "“{{name}}” adlı bir sağlayıcı zaten var. Lütfen farklı bir ad seçin.",
+  "adjustFontSize": "Yazı boyutunu ayarla",
+  "changeLanguage": "Dili değiştir",
+  "editTheme": "Temayı düzenle",
+  "editCodeBlockStyle": "Kod bloğu stilini düzenle",
+  "editServerHost": "Sunucu adresini düzenle",
+  "pickColorWindowBackground": "Pencere arka planı rengini seç",
+  "pickColorAppMainView": "Ana görünüm rengini seç",
+  "pickColorAppPrimary": "Birincil rengi seç",
+  "pickColorAppAccent": "Vurgu rengini seç",
+  "pickColorAppDestructive": "Yıkıcı işlem rengini seç",
+  "apiKeyRequired": "API anahtarı gereklidir",
+  "enterTrustedHosts": "Güvenilen sunucuları girin",
+  "placeholder": {
+    "chatInput": "Bana istediğinizi sorun..."
+  },
+  "confirm": "Onayla",
+  "continue": "Devam et",
+  "loading": "Yükleniyor...",
+  "settingUpJan": "Jan başlatılıyor…",
+  "registeringExtensions": "Uzantılar kaydediliyor…",
+  "error": "Hata",
+  "success": "Başarılı",
+  "warning": "Uyarı",
+  "conversationNotAvailable": "Konuşma kullanılamıyor",
+  "conversationNotAvailableDescription": "Erişmeye çalıştığınız konuşma kullanılamıyor veya silinmiş.",
+  "temporaryChat": "Geçici sohbet",
+  "temporaryChatTooltip": "Geçici sohbet geçmişinizde görünmez",
+  "noResultsFoundDesc": "Aramanızla eşleşen sohbet bulunamadı. Farklı bir anahtar sözcük deneyin.",
+  "searchModels": "Model ara...",
+  "searchStyles": "Stil ara...",
+  "createAssistant": "Asistan oluştur",
+  "enterApiKey": "API anahtarını girin",
+  "scrollToBottom": "En alta kaydır",
+  "generateAiResponse": "Yapay zekâ yanıtı oluştur",
+  "continueAiResponse": "Yapay zekâ yanıtıyla devam et",
+  "addModel": {
+    "title": "Model ekle",
+    "modelId": "Model kimliği",
+    "enterModelId": "Model kimliğini girin",
+    "addModel": "Model ekle",
+    "description": "Sağlayıcıya yeni bir model ekleyin",
+    "exploreModels": "Sağlayıcının model listesini görün"
+  },
+  "mcpServers": {
+    "editServer": "Sunucuyu düzenle",
+    "addServer": "Sunucu ekle",
+    "serverName": "Sunucu adı",
+    "enterServerName": "Sunucu adı girin",
+    "command": "Komut",
+    "enterCommand": "Komut girin",
+    "arguments": "Bağımsız değişkenler",
+    "argument": "Bağımsız değişken {{index}}",
+    "envVars": "Ortam değişkenleri",
+    "key": "Anahtar",
+    "value": "Değer",
+    "save": "Kaydet"
+  },
+  "deleteServer": {
+    "title": "Sunucuyu sil",
+    "delete": "Sil"
+  },
+  "editJson": {
+    "errorParse": "JSON ayrıştırılamadı",
+    "errorPaste": "JSON yapıştırılamadı",
+    "errorFormat": "Geçersiz JSON biçimi",
+    "titleAll": "Tüm sunucuların yapılandırmasını düzenle",
+    "placeholder": "JSON yapılandırmasını girin...",
+    "save": "Kaydet"
+  },
+  "editModel": {
+    "title": "Modeli düzenle: {{modelId}}",
+    "description": "Aşağıdaki seçeneklerle model yeteneklerini yapılandırın.",
+    "capabilities": "Yetenekler",
+    "tools": "Araçlar",
+    "vision": "Görüntü",
+    "embeddings": "Gömmeler",
+    "notAvailable": "Henüz kullanılamıyor"
+  },
+  "outOfContextError": {
+    "truncateInput": "Girdiyi kısalt",
+    "title": "Bağlam sınırı aşıldı",
+    "description": "Bu sohbet yapay zekânın bellek sınırına yaklaşıyor; dolan bir yazı tahtası gibi düşünebilirsiniz. Daha fazlasını hatırlaması için bağlam boyutu denen bellek penceresini genişletebiliriz, ancak bu işlem bilgisayarınızın belleğini daha fazla kullanabilir. Girdiyi kısaltmayı da seçebilirsiniz; bu durumda yeni mesajlara yer açmak için sohbet geçmişinin bir bölümü unutulur.",
+    "increaseContextSizeDescription": "Bağlam boyutunu artırmak ister misiniz?",
+    "increaseContextSize": "Bağlam boyutunu artır"
+  },
+  "toolApproval": {
+    "title": "Araç izni isteği",
+    "description": "Asistan <strong>{{toolName}}</strong> aracını kullanmak istiyor",
+    "securityNotice": "Yalnızca güvendiğiniz araçlara izin verin. Araçlar sisteminize ve verilerinize erişebilir.",
+    "deny": "Reddet",
+    "allowOnce": "Bir kez izin ver",
+    "alwaysAllow": "Her zaman izin ver"
+  },
+  "deleteModel": {
+    "title": "Modeli sil: {{modelId}}",
+    "description": "Bu modeli silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+    "success": "{{modelId}} modeli kalıcı olarak silindi.",
+    "cancel": "İptal",
+    "delete": "Sil"
+  },
+  "deleteProvider": {
+    "title": "Sağlayıcıyı sil",
+    "description": "Bu sağlayıcıyı ve tüm modellerini silin. Bu işlem geri alınamaz.",
+    "success": "{{provider}} sağlayıcısı kalıcı olarak silindi.",
+    "confirmTitle": "Sağlayıcıyı sil: {{provider}}",
+    "confirmDescription": "Bu sağlayıcıyı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+    "cancel": "İptal",
+    "delete": "Sil"
+  },
+  "modelSettings": {
+    "title": "Model ayarları - {{modelId}}",
+    "description": "Performansı ve davranışı iyileştirmek için model ayarlarını yapılandırın.",
+    "nglDisabledByFit": "Otomatik sığdırma GPU katmanlarını seçiyor. Elle ayarlamak için otomatik sığdırmayı kapatın.",
+    "samplingDefaults": {
+      "title": "Varsayılan örnekleme parametreleri",
+      "description": "Bu modelin varsayılan örnekleyici ayarları. Asistan veya istek düzeyindeki değerlerle değiştirilmediğinde kullanılır."
+    },
+    "specDraft": {
+      "section": "Spekülatif kod çözme",
+      "enable": "Spekülatif kod çözmeyi etkinleştir",
+      "enableDescription": "Her adımda birkaç taslak token oluşturup tek geçişte doğrulayarak üretimi hızlandırır. Modelin yerleşik MTP başlıklarını veya birlikte indirilen taslak modelini (MTP, Eagle3, DFlash veya DSpark) kullanır.",
+      "nMax": "En fazla taslak token",
+      "nMaxDescription": "Adım başına oluşturulacak en fazla taslak token sayısı. Varsayılan 16.",
+      "nMin": "En az taslak token",
+      "nMinDescription": "Adım başına oluşturulacak en az taslak token sayısı. Varsayılan 0.",
+      "pMin": "En düşük taslak olasılığı",
+      "pMinDescription": "Açgözlü taslak üretiminin en düşük olasılığı (0–1). Varsayılan 0,75.",
+      "probabilistic": "Olasılıksal taslak örnekleme",
+      "probabilisticDescription": "En olası tokenı seçmek yerine taslağı örnekler ve modelin reddetme örneklemesiyle doğrulamasını sağlar. Kapalıyken açgözlü taslak üretimi kullanılır (varsayılan).",
+      "nUbatch": "Taslak yığın boyutu",
+      "nUbatchDescription": "Taslak bağlamının fiziksel yığın boyutu. VRAM tasarrufu için düşürün. 0, modelin yığın boyutunu kullanır (varsayılan)."
+    },
+    "templateKwargs": {
+      "section": "Sohbet şablonu seçenekleri",
+      "description": "Bu modelin sohbet şablonunun kabul ettiği ek seçenekler. Her istekte chat_template_kwargs olarak gönderilir; kararı şablona bırakmak için değeri varsayılanda tutun.",
+      "addCustom": "Özel seçenek ekle",
+      "keyPlaceholder": "ad",
+      "valuePlaceholder": "değer",
+      "add": "Ekle",
+      "cancel": "İptal",
+      "remove": "Kaldır"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "Model ayarları güncellenemedi"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Veri klasörünün konumunu değiştir",
+      "description": "Veri klasörünün konumunu değiştirmek istediğinizden emin misiniz? Tüm verileriniz yeni konuma taşınacak ve uygulama yeniden başlatılacak.",
+      "currentLocation": "Geçerli konum:",
+      "newLocation": "Yeni konum:",
+      "cancel": "İptal",
+      "changeLocation": "Konumu değiştir"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Tüm konuşmaları sil",
+      "description": "“{{projectName}}” projesindeki {{count}} konuşma silinecek. Bu işlem geri alınamaz."
+    },
+    "deleteThread": {
+      "description": "Bu sohbeti silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
+    },
+    "editMessage": {
+      "title": "Mesajı düzenle"
+    },
+    "messageMetadata": {
+      "title": "Mesaj üst verileri"
+    },
+    "deleteAllChats": {
+      "title": "Proje dışındaki konuşmaları sil",
+      "description": "Bir projede bulunmayan konuşmaları siler. Proje konuşmaları, yıldızlı konuşmalar ve görevler korunur. Bu işlem geri alınamaz."
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "Bir sorun oluştu",
+    "details": "Ayrıntılar"
+  },
+  "missingDependenciesDialog": {
+    "title": "Eksik sistem kütüphaneleri",
+    "description": "{{backend}} kuruldu, ancak gereken bazı sistem kütüphaneleri bulunamadı. CPU'ya dönebilir veya düzgün çalışmayabilir.",
+    "installLabel": "Düzeltmek için şunları kurun:",
+    "download": "İndir",
+    "additionalLibraries": "Diğer eksik kütüphaneler:",
+    "missingLibraries": "Eksik kütüphaneler:",
+    "showRawLibraries": "Eksik {{count}} kütüphanenin adını göster"
+  },
+  "projects": {
+    "title": "Projeler",
+    "new": "Yeni proje",
+    "addProject": "Proje ekle",
+    "addToProject": "Projeye ekle",
+    "removeFromProject": "Projeden çıkar",
+    "createNewProject": "Yeni proje oluştur",
+    "editProject": "Projeyi düzenle",
+    "deleteProject": "Projeyi sil",
+    "projectName": "Proje adı",
+    "enterProjectName": "Proje adı girin...",
+    "noProjectsAvailable": "Kullanılabilir proje yok",
+    "noProjectsYet": "Henüz proje yok",
+    "noProjectsYetDesc": "Proje ekle düğmesine tıklayarak yeni bir proje başlatın.",
+    "projectNotFound": "Proje bulunamadı",
+    "projectNotFoundDesc": "Aradığınız proje mevcut değil veya silinmiş.",
+    "selectAssistant": "Asistan seç",
+    "noAssistantAssigned": "Bu projeye asistan atanmadı",
+    "files": "Dosyalar",
+    "filesDescription": "Bu projede kaynak olarak kullanmak için PDF, belge veya başka metinler ekleyin.",
+    "uploadingFiles": "Dosyalar işleniyor…",
+    "processButton": "Ekle",
+    "deleteProjectDialog": {
+      "title": "Projeyi sil",
+      "permanentDelete": "“{{projectName}}” ve içindeki tüm konuşmalar kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+      "permanentDeleteWarning": "Bu işlem projedeki TÜM sohbetleri kalıcı olarak siler!",
+      "saveThreadsAdvice": "Sohbetleri korumak için silmeden önce sohbet listenize veya başka bir projeye taşıyın.",
+      "starredWarning": "Projede hâlâ yıldızlı sohbetleriniz var.",
+      "deleteButton": "Sil",
+      "successWithName": "“{{projectName}}” projesi silindi",
+      "successWithoutName": "Proje silindi",
+      "error": "Proje silinemedi. Lütfen tekrar deneyin.",
+      "ariaLabel": "{{projectName}} projesini sil"
+    },
+    "addProjectDialog": {
+      "createTitle": "Yeni proje oluştur",
+      "editTitle": "Projeyi düzenle",
+      "nameLabel": "Proje adı",
+      "namePlaceholder": "Proje adı girin...",
+      "assistant": "Asistan",
+      "selectAssistant": "Asistan seçin (isteğe bağlı)",
+      "noAssistant": "Asistan yok",
+      "addAssistant": "Asistan ekle",
+      "createButton": "Oluştur",
+      "updateButton": "Güncelle",
+      "alreadyExists": "“{{projectName}}” projesi zaten var",
+      "createSuccess": "“{{projectName}}” projesi oluşturuldu",
+      "updateSuccess": "“{{projectName}}” projesi güncellendi"
+    },
+    "noConversationsIn": "{{projectName}} projesinde konuşma yok",
+    "conversationsIn": "{{projectName}} projesindeki konuşmalar",
+    "conversationsDescription": "Sohbete devam etmek için bir konuşmaya tıklayın veya aşağıdan yeni bir konuşma başlatın.",
+    "conversation": "Konuşma",
+    "instructions": "Talimatlar",
+    "setup": "Kurulum",
+    "instructionsDescription": "Yanıtların tonunu ve tarzını özelleştirin",
+    "manageInstructions": "Talimatları yönet",
+    "thread": "sohbet",
+    "threads": "sohbet",
+    "updated": "Güncellenme:",
+    "collapseProject": "Projeyi daralt",
+    "expandProject": "Projeyi genişlet",
+    "update": "Güncelle",
+    "searchProjects": "Proje ara...",
+    "noProjectsFound": "Proje bulunamadı",
+    "tryDifferentSearch": "Farklı bir arama terimi deneyin",
+    "viewProject": "Projeyi görüntüle",
+    "sendMessageToStart": "Başlatmak için yukarıdan bir mesaj gönderin."
+  },
+  "attachmentsIngestion": {
+    "title": "Eklerin nasıl alınacağını seçin",
+    "description": "Bu dosyaları doğrudan sohbete dahil etmeyi veya gömme olarak dizine eklemeyi seçin.",
+    "inline": "Sohbete ekle",
+    "embeddings": "Gömmeleri kullan"
+  },
+  "attachmentInjectedIndicator": "Sohbete eklendi",
+  "attachmentEmbeddedIndicator": "RAG için gömme oluşturuldu",
+  "viewInjectedContent": "Eklenen içeriği görüntüle",
+  "injectedContentTitle": "Eklenen dosya içeriği",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Tüm sohbetler favorilerden çıkarıldı",
+      "description": "Tüm sohbetler favorilerinizden çıkarıldı."
+    },
+    "deleteAllThreads": {
+      "title": "Tüm sohbetleri sil",
+      "description": "Tüm sohbetler kalıcı olarak silindi."
+    },
+    "renameThread": {
+      "title": "Sohbeti yeniden adlandır",
+      "description": "Sohbet başlığı '{{title}}' olarak değiştirildi"
+    },
+    "deleteThread": {
+      "title": "Sohbeti sil",
+      "description": "Bu sohbet kalıcı olarak silindi."
+    },
+    "errorCopied": {
+      "title": "Kopyalandı",
+      "description": "Hata bilgileri panoya kopyalandı"
+    },
+    "errorCopyFailed": {
+      "title": "Kopyalanamadı",
+      "description": "Hata bilgileri panoya kopyalanamadı"
+    },
+    "editMessage": {
+      "title": "Mesajı düzenle",
+      "description": "Mesaj düzenlendi. Lütfen modelin yanıtını bekleyin."
+    },
+    "appUpdateDownloaded": {
+      "title": "Uygulama güncellemesi indirildi",
+      "description": "Uygulama güncellemesi indirildi."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Uygulama güncellemesi indirilemedi",
+      "description": "Uygulama güncellemesi indirilemedi. Lütfen tekrar deneyin."
+    },
+    "downloadComplete": {
+      "title": "İndirme tamamlandı",
+      "description": "{{item}} indirildi"
+    },
+    "downloadCancelled": {
+      "title": "İndirme iptal edildi",
+      "description": "İndirme işlemi iptal edildi"
+    },
+    "downloadFailed": {
+      "title": "İndirme başarısız",
+      "description": "{{item}} indirilemedi",
+      "descriptionWithReason": "{{item}} indirilemedi: {{reason}}",
+      "reason": {
+        "dns": "sunucu adı çözümlenemedi",
+        "refused": "bağlantı reddedildi",
+        "timeout": "bağlantı zaman aşımına uğradı",
+        "tls": "güvenli bağlantı kurulamadı",
+        "proxy": "proxy'ye ulaşılamadı",
+        "unreachable": "sunucuya ulaşılamadı"
+      }
+    },
+    "openSettings": "Ayarları aç",
+    "openLogs": "Günlükleri aç",
+    "downloadTokenRequired": {
+      "title": "Hugging Face erişim anahtarı gerekli",
+      "description": "Bu model Hugging Face erişim anahtarı gerektiriyor. Ayarlar'dan anahtarınızı ekleyip yeniden deneyin."
+    },
+    "downloadLicenseRequired": {
+      "title": "Hugging Face üzerinde model lisansını kabul edin",
+      "description": "İndirmeden önce Hugging Face sayfasında modelin lisansını kabul etmelisiniz."
+    },
+    "downloadRateLimited": {
+      "title": "Hugging Face istek sınırına ulaşıldı",
+      "description": "İstek sınırına ulaştınız. Erişim anahtarı eklemek sınırları artırabilir. Lütfen daha sonra tekrar deneyin."
+    },
+    "modelValidationStarted": {
+      "title": "Model doğrulanıyor",
+      "description": "“{{modelId}}” modeli indirildi. Bütünlük doğrulanıyor..."
+    },
+    "modelValidationFailed": {
+      "title": "Model doğrulanamadı",
+      "description": "İndirilen “{{modelId}}” modeli bütünlük doğrulamasını geçemediği için kaldırıldı. Dosya bozulmuş veya değiştirilmiş olabilir."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "İndirme tamamlandı",
+      "description": "“{{item}}” modeli indirildi ve doğrulandı"
+    },
+    "projectCreated": {
+      "title": "Proje oluşturuldu",
+      "description": "“{{projectName}}” projesi oluşturuldu"
+    },
+    "projectRenamed": {
+      "title": "Proje yeniden adlandırıldı",
+      "description": "Projenin adı “{{oldName}}” yerine “{{newName}}” olarak değiştirildi"
+    },
+    "projectDeleted": {
+      "title": "Proje silindi",
+      "description": "“{{projectName}}” projesi silindi"
+    },
+    "projectAlreadyExists": {
+      "title": "Proje zaten var",
+      "description": "“{{projectName}}” projesi zaten var"
+    },
+    "projectDeleteFailed": {
+      "title": "Silinemedi",
+      "description": "Proje silinemedi. Lütfen tekrar deneyin."
+    },
+    "threadAssignedToProject": {
+      "title": "Sohbet atandı",
+      "description": "Sohbet “{{projectName}}” projesine atandı"
+    },
+    "threadRemovedFromProject": {
+      "title": "Sohbet çıkarıldı",
+      "description": "Sohbet “{{projectName}}” projesinden çıkarıldı"
+    },
+    "threadProjectMoveFailed": {
+      "title": "Taşınamadı",
+      "description": "Bu konuşma taşınamadı. Oturumu kullanılamıyor."
+    },
+    "fileUploaded": {
+      "title": "Dosya işlendi",
+      "description": "Dosya işlendi ve dizine eklendi"
+    },
+    "uploadFailed": {
+      "title": "İşleme başarısız",
+      "description": "Dosya işlenemedi",
+      "subjectThisFile": "Bu dosya",
+      "pdfMalformedXref": "{{subject}} bozuk bir PDF çapraz başvuru tablosu içeriyor ve ayrıştırılamadı. PDF görüntüleyicisinde açıp yeniden kaydetmeyi deneyin (Dosya → Yazdır → PDF olarak kaydet), ardından tekrar yükleyin.",
+      "pdfScanned": "{{subject}} taranmış veya görsel tabanlı bir PDF gibi görünüyor. OCR henüz desteklenmiyor; lütfen metin tabanlı bir PDF yükleyin.",
+      "pdfEncrypted": "{{subject}} parola korumalı. Parolayı kaldırıp tekrar deneyin.",
+      "pdfUnsupportedFeature": "{{subject}}, Jan'ın henüz ayrıştıramadığı bir PDF özelliği kullanıyor (ör. PostScript renk/gölgeleme işlevleri). Düzleştirmek için yeniden kaydetmeyi deneyin (Dosya → Yazdır → PDF olarak kaydet), ardından tekrar yükleyin.",
+      "pdfGeneric": "{{subject}} PDF olarak ayrıştırılamadı. Dosya bozuk olabilir veya desteklenmeyen bir PDF özelliği kullanıyor olabilir.",
+      "fileTooLarge": "{{subject}} çok büyük. {{message}}.",
+      "unsupportedType": "“{{type}}” dosya türü desteklenmiyor.",
+      "ioError": "{{subject}} okunamadı: {{message}}",
+      "parseGeneric": "{{subject}} ayrıştırılamadı: {{message}}",
+      "fallback": "{{subject}} işlenemedi."
+    },
+    "fileDeleted": {
+      "title": "Dosya silindi",
+      "description": "Dosya projeden kaldırıldı"
+    },
+    "deleteFailed": {
+      "title": "Silinemedi",
+      "description": "Dosya silinemedi"
+    },
+    "fileAlreadyExists": {
+      "title": "Dosya zaten var",
+      "description": "Dosya bu projeye zaten eklenmiş"
+    },
+    "unsupportedFileType": {
+      "title": "Desteklenmeyen dosya türü",
+      "description": "“.{{extension}}” dosya uzantısı projeler için desteklenmiyor."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Dosya ekleri devre dışı",
+      "description": "Dosya ekleri Ayarlar'dan kapatılmış"
+    },
+    "deleteAllChats": {
+      "title": "Konuşmalar silindi",
+      "description": "Proje dışındaki konuşmalar silindi. Proje konuşmaları ve görevler korundu."
+    }
+  },
+  "errors": {
+    "fileTooLarge": "Dosya çok büyük",
+    "fileTooLargeDescription": "{{fileName}}, {{maxFileSizeMB}} MB sınırını aşıyor"
+  },
+  "files": {
+    "chunksCount": "{{count}} parça",
+    "title": "Dosyalar",
+    "empty": "Eklediğiniz dosyalar ve ajanın oluşturduğu dosyalar burada görünür.",
+    "a11y": "Dosyalar: {{count}}",
+    "attachments": "Ekler",
+    "notImported": "çalışma alanında değil"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp hâlâ meşgul",
+    "description": "Bir veya daha fazla model zamanında bellekten kaldırılamadı. Zorla çıkmak llama.cpp'yi sonlandırır ve devam eden yanıtları kesebilir.",
+    "forceQuit": "Zorla çık",
+    "forcing": "Zorla çıkılıyor…",
+    "shuttingDown": "Kapatılıyor…"
+  },
+  "duration": {
+    "seconds": "{{count}} sn",
+    "minutes": "{{count}} dk",
+    "hours": "{{count}} sa"
+  },
+  "collapse": "Daralt",
+  "expand": "Genişlet",
+  "todoPanelTitle": "İlerleme",
+  "todoPanelEmpty": "Henüz yapılacaklar listesi yok.",
+  "backgroundTasks": "Arka plan görevleri",
+  "subagentsRunning_one": "{{count}} alt ajan çalışıyor",
+  "subagentsRunning_other": "{{count}} alt ajan çalışıyor",
+  "monitorsRunning_one": "{{count}} izleyici çalışıyor",
+  "monitorsRunning_other": "{{count}} izleyici çalışıyor",
+  "backgroundRunning_one": "{{count}} arka plan görevi çalışıyor",
+  "backgroundRunning_other": "{{count}} arka plan görevi çalışıyor",
+  "monitors": "İzleyiciler",
+  "monitorPolling": "Sorgulanıyor",
+  "monitorMatched": "Eşleşti",
+  "monitorTimedOut": "Zaman aşımına uğradı",
+  "monitorStopped": "Durduruldu",
+  "monitorEnded": "Sona erdi",
+  "coworkWatching_one": "{{count}} izleyici takip ediliyor…",
+  "coworkWatching_other": "{{count}} izleyici takip ediliyor…",
+  "coworkWaitingBackground": "Arka plan görevleri bekleniyor…",
+  "noBackgroundTasks": "Henüz arka plan görevi yok.",
+  "running": "Çalışıyor",
+  "queued": "Sırada",
+  "waiting": "Bekliyor",
+  "finished": "Tamamlandı",
+  "subagentPhase": "{{phase}} aşaması",
+  "subagentWaiting": "bekliyor",
+  "viewTranscript": "Konuşma kaydını görüntüle",
+  "taskWorking": "Çalışıyor…",
+  "taskNoOutput": "Alt ajan görünür bir çıktı üretmedi.",
+  "subagentToolUses_one": "{{count}} araç kullanımı",
+  "subagentToolUses_other": "{{count}} araç kullanımı",
+  "artifactGroupCode": "Kod",
+  "artifactGroupImage": "Görsel",
+  "artifactGroupDocument": "Belge",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Ses",
+  "artifactOpenPreview": "Önizlemeyi aç",
+  "artifactOpenExternal": "Aç",
+  "artifactMoreActions": "Diğer işlemler",
+  "artifactShowInFolder": "Klasörde göster",
+  "skillsUsedLabel": "Kullanılan beceriler",
+  "skillsUsed": "Kullanılan beceriler: {{skills}}",
+  "artifactsAll": "Tümü",
+  "artifactsEmpty": "Henüz çıktı yok. Konuşmalarınızda oluşturulan dosyalar burada görünür.",
+  "artifactsNoMatch": "Eşleşen çıktı yok.",
+  "artifactsSearch": "Çıktı ara",
+  "artifactsShowMore": "{{count}} tane daha göster",
+  "workspace": {
+    "readsFrom": "Çalışma konumu",
+    "writable": "okuma ve yazma",
+    "footnote": "Ajan bu klasörü doğrudan okur ve düzenler. Değişiklikleri fark panelinden inceleyin.",
+    "chatFootnote": "Jan bu klasörü serbestçe okur; her düzenleme veya klasörde çalıştıracağı komut için önce size sorar.",
+    "footnoteEmpty": "Ajanın projenizde çalışabilmesi için bir klasör ekleyin. İçindeki dosyaları okuyabilir ve düzenleyebilir.",
+    "attach": "Klasör ekle",
+    "change": "Klasörü değiştir",
+    "detach": "Klasör bağlantısını kaldır",
+    "open": "Aç",
+    "reveal": "Klasörde göster",
+    "unavailable": "Çalışma alanı kullanılamıyor",
+    "missing": "{{folder}} çalışma alanı klasörü artık kullanılamıyor. Başka bir klasör seçin.",
+    "openFailed": "Çalışma alanı açılamadı",
+    "revealFailed": "Çalışma alanı klasörde gösterilemedi",
+    "saveFailed": "Bu sohbetin klasörü kaydedilemedi",
+    "a11yWithFolder": "{{folder}} proje klasörü okuma ve yazma erişimiyle eklendi. Değiştirin veya bağlantısını kaldırın.",
+    "a11yNoFolder": "Proje klasörü eklenmedi. Bir klasör ekleyin."
+  },
+  "coworkEmpty": {
+    "title": "Ne üzerinde çalışıyoruz?",
+    "subtitleSandbox": "Jan'a bir görev verin. Dosyaları okur ve yazar, komutları çalıştırır ve adımları kendi başına tamamlar.",
+    "subtitleFolder": "Jan'a bir görev verin. {{folder}} içinde dosyaları kendi başına okuyup düzenleyerek doğrudan çalışır.",
+    "try": "Deneyin",
+    "sandbox": {
+      "first": "Dosyaları çekildikleri tarihe göre yeniden adlandıran bir Python betiği yaz",
+      "second": "Yapıştıracağım CSV'den tek sayfalık bir gösterge paneli oluştur",
+      "third": "Anlatacağım proje için bir README taslağı hazırla"
+    },
+    "folder": {
+      "first": "{{folder}} yapısının nasıl düzenlendiğini açıkla",
+      "second": "{{folder}} içindeki tüm TODO'ları bul ve konularına göre grupla",
+      "third": "{{folder}} içinde göstereceğim bölümün testlerini yaz"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "Terminal yok",
+    "a11y": "Komut çalıştırma kapalı. Ayrıntılar.",
+    "title": "Komut çalıştırma kapalı",
+    "body": "Jan, ajanın kabuk komutlarını yalnızca sisteminiz bunları sınırlandırabiliyorsa çalıştırmasına izin verir. Burada yalıtım ortamı yok; dolayısıyla ajan kendi alanında dosya okuyabilir, yazabilir ve düzenleyebilir, ancak hiçbir şey çalıştıramaz.",
+    "fixLinux": "Linux, bubblewrap kullanır. Kurduktan sonra Jan'ı yeniden başlatın.",
+    "fixMac": "macOS, /usr/bin/sandbox-exec konumundaki yerleşik yalıtım aracını kullanır. Kullanılabilir olduğunda Jan'ı yeniden başlatın.",
+    "fixWindows": "Windows, AppContainer kullanır. Yeniden denemek için Jan'ı yeniden başlatın.",
+    "recheck": "Tekrar kontrol et"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Önce planla: ajan yazmadan okur ve önerir.",
+    "tooltipOn": "Planlanıyor. Ajanın dosya yazmasına izin vermek için kapatın.",
+    "onAnnounce": "Plan modu açık",
+    "placeholder": "Bir plan isteyin. Ajan hiçbir dosyayı değiştirmez."
+  },
+  "budget": {
+    "stoppedSteps": "{{max}} adımda durdu. Ajan henüz bitirmedi.",
+    "keepGoing": "Devam et",
+    "stoppedTokens": "Durduruldu: bu konuşma token bütçesine ulaştı.",
+    "compact": "Sıkıştır",
+    "newSession": "Yeni oturum"
+  },
+  "run": {
+    "stopped": "Durduruldu.",
+    "failed": "Çalışma erken durdu.",
+    "tryAgain": "Tekrar dene"
+  },
+  "modelNoTools": "{{model}} araç çağıramadığı için ajan olarak çalışamaz. Araç çağırabilen bir model seçin.",
+  "coworkExtensionProvider": "Birlikte çalışma, uzantının eklediği bir sağlayıcıda çalışamaz. Başka bir model seçin veya bu modeli sohbette kullanın.",
+  "askContinue": "Devam et",
+  "askNext": "Sonraki soru",
+  "askPageOf": "{{current}} / {{total}}",
+  "askPrev": "Önceki soru",
+  "askSkipped": "Atlandı",
+  "askRecommended": "Önerilen",
+  "askSelectedCount": "{{count}} seçildi",
+  "askSomethingElse": "Başka bir şey",
+  "submit": "Gönder",
+  "coworkSync": {
+    "journalUnreadableTitle": "İçe aktarılan bazı birlikte çalışma konuşmaları gizlendi",
+    "journalUnreadableDescription": "Jan silme kaydını okuyamıyor. Daha önce sildiğiniz konuşmaları yanlışlıkla geri getirmemek için eski sürümden aktarılan konuşmalar gizli tutuluyor ve birlikte çalışma konuşmalarının silinmesi geçici olarak engelleniyor. Verilerinize dokunulmadı. Kurtarmak için önce Jan'dan tamamen çıkın; Jan çalışırken settings.json dosyasını bellekten yeniden yazar ve düzenlemenizi geri alır. Ardından settings.json içindeki 'cowork_deleted_ids' girdisini düzeltin veya kaldırın. Kaldırmak, daha önce sildikleriniz dahil içe aktarılan tüm konuşmaları geri getirir.",
+    "missingThreadTitle": "Bir birlikte çalışma konuşması kaydedilemedi",
+    "missingThreadDescription": "Kayıtlı sohbeti bulunamadığından değişiklikler artık kaydedilmiyor. Konuşmayı hâlâ okuyabilir, dışa aktarabilir veya silebilirsiniz.",
+    "writeRefusedTitle": "Bir birlikte çalışma konuşması kaydedilemiyor",
+    "writeRefusedDescription": "Jan bu konuşmayı mevcut kimliğiyle saklayamıyor; değişiklikler kaydedilmiyor. Konuşmayı hâlâ okuyabilir, dışa aktarabilir veya silebilirsiniz.",
+    "closeFailedTitle": "Jan her şeyi kaydedemediği için açık kaldı",
+    "closeFailedDescription": "Son değişiklikleriniz hâlâ bellekte. Kaydetmeyi yeniden denemek için pencereyi tekrar kapatın.",
+    "closeForceDescription": "Kaydetme başarısız olmaya devam ediyor. Kaydetmeden kapatabilirsiniz; bu durumda yazılamayan değişiklikler kaybolur.",
+    "closeAnyway": "Kaydetmeden kapat",
+    "quitFailedDescription": "Son değişiklikleriniz hâlâ bellekte. Kaydetmeyi yeniden denemek için tekrar çıkın.",
+    "quitAnyway": "Kaydetmeden çık"
+  },
+  "messageWrites": {
+    "failedTitle": "Bazı mesajlar kaydedilemedi",
+    "failedDescription": "Jan yeniden denemeye devam ediyor. Başarılı olana kadar son mesajlar yalnızca bu pencerede bulunur.",
+    "retry": "Şimdi yeniden dene"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Bu konuşma henüz hazır değil",
+    "notReadyDescription": "Jan bu konuşmanın sohbet mi yoksa birlikte çalışma görevi mi olduğunu doğrulayamadı. Tekrar deneyin; sorun sürerse uygulamayı yeniden başlatın.",
+    "retry": "Yeniden dene"
+  },
+  "agentSettings": "Ajan",
+  "sidebar": {
+    "more": "Daha fazla",
+    "toggle": "Kenar çubuğunu aç/kapat",
+    "navigation": "Gezinme",
+    "navigationDescription": "Sohbetlere, projelere, çıktılara, becerilere ve ayarlara gidin."
+  },
+  "composer": {
+    "addControls": "Ekler ve denetimler ekle",
+    "assistant": "Asistan",
+    "allTools": "Tüm araçlar",
+    "samplingParameters": "Örnekleme parametreleri",
+    "openAssistantSettings": "Asistan ayarlarını aç",
+    "samplingSaveFailed": "Örnekleme parametreleri kaydedilemedi. Lütfen tekrar deneyin.",
+    "context": "Bağlam: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Model seçin",
+    "none": "Yok",
+    "triggerLabel": "Model seç: {{name}}",
+    "dialogLabel": "Bir model seçin",
+    "searchLabel": "Model veya sağlayıcı ara",
+    "searchPlaceholder": "Model veya sağlayıcı ara...",
+    "listLabel": "Modeller",
+    "noMatches": "Eşleşen model yok",
+    "noModels": "Yapılandırılmış model yok",
+    "optionsLabel": "Model seçenekleri",
+    "reasoning": "Akıl yürütme",
+    "reasoningMode": "Akıl yürütme modu",
+    "reasoningEffort": "Akıl yürütme düzeyi",
+    "thinkingBudget": "Düşünme bütçesi",
+    "modelSettings": "Model ayarları",
+    "manageModels": "Modelleri yönet",
+    "effort": {
+      "default": "Varsayılan",
+      "auto": "Otomatik",
+      "on": "Açık",
+      "off": "Kapalı",
+      "low": "Düşük",
+      "medium": "Orta",
+      "high": "Yüksek",
+      "xhigh": "Çok yüksek",
+      "unlimited": "Sınırsız"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Projeye ekle",
+    "newProject": "Yeni proje",
+    "noProjects": "Henüz proje yok",
+    "addFolderAction": "Klasör ekle"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Klasör erişimi eklemeden önce araç kullanabilen bir model seçin.",
+    "folderUnsupported": "Bu model araç kullanamadığı için klasör eklenemez. Normal sohbet çalışmaya devam eder.",
+    "removeProject": "Proje seçimini kaldır",
+    "temporary": "Geçici sohbetlerde klasör erişimi korunmaz."
+  },
+  "skillDestination": "Yeni becerilerin kayıt yeri",
+  "skillDestinationFolder": "Bu klasör",
+  "skillDestinationGlobal": "Genel (tüm konuşmalar)",
+  "overview": {
+    "title": "Konuşmaya genel bakış",
+    "description": "Bu konuşmanın ilerlemesi, dosyaları ve arka plan görevleri.",
+    "resize": "Yan paneli yeniden boyutlandır",
+    "close": "Konuşmaya genel bakışı gizle",
+    "progress": "İlerleme",
+    "files": "Dosyalar",
+    "backgroundTasks": "Arka plan görevleri",
+    "monitorCount_one": "{{count}} izleyici",
+    "monitorCount_other": "{{count}} izleyici",
+    "noProgress": "Jan çalıştıkça adımlar görünür.",
+    "noFiles": "Dosyalar burada görünür."
+  },
+  "artifactsLibraryDescription": "Tüm konuşmalarınızda oluşturulan dosyalar tek yerde.",
+  "artifactsLibraryCount_one": "{{count}} dosya",
+  "artifactsLibraryCount_other": "{{count}} dosya",
+  "artifactsLibraryFilter": "Dosya türüne göre filtrele",
+  "artifactsLibraryReset": "Filtreleri temizle",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Bu görev içe aktarılamadı",
+      "body": "Jan bu görevi önceki sürümden taşıyamadığı için denemeyi durdurdu. Hiçbir şey kaybolmadı; aslı korunuyor. Tekrar deneyebilir veya dosyaya aktarabilirsiniz."
+    },
+    "id-collision": {
+      "title": "Bu görev içe aktarılamadı",
+      "body": "Başka bir konuşma aynı kimliği kullandığı için bu görev salt okunur gösteriliyor; diğer konuşmaya dokunulmadı. Bir kopyasını saklamak için dışa aktarın."
+    },
+    "missing-sidecar": {
+      "title": "Bu görevin geçmişi eksik",
+      "body": "Görevin kayıtlı geçmişi bulunamadığından salt okunur gösteriliyor. Diskteki dosyaları olduğu gibi korunur."
+    },
+    "unreadable-sidecar": {
+      "title": "Bu görevin geçmişi okunamıyor",
+      "body": "Görevin kayıtlı geçmişi bozuk veya daha yeni bir Jan sürümünden geldiği için salt okunur gösteriliyor; asla üzerine yazılmaz."
+    },
+    "missing-thread": {
+      "title": "Bu görev depolamadan kaldırıldı",
+      "body": "Bu görevin konuşması artık diskte yok. Gösterilen, hâlâ bellekte duran kopyadır; korumak için dışa aktarın."
+    },
+    "reason": "Neden: {{reason}}",
+    "retry": "Tekrar dene",
+    "retrying": "Deneniyor...",
+    "export": "Dışa aktar",
+    "exported": "Görev dışa aktarıldı",
+    "exportFailed": "Görev dışa aktarılamadı",
+    "imported": "Görev içe aktarıldı",
+    "retryFailed": "Görev yine içe aktarılamadı",
+    "revealFailed": "Klasör açılamadı",
+    "leftOut": {
+      "title": "Bazı dosyalar kopyalanmadı",
+      "body_one": "Bu görevin eski klasöründeki {{count}} öğe (bağlantı veya Jan'ın okumasına izin verilmeyen dosya) kopyalanmadı. Asıl klasör olduğu gibi korunuyor.",
+      "body_other": "Bu görevin eski klasöründeki {{count}} öğe (bağlantılar veya Jan'ın okumasına izin verilmeyen dosyalar) kopyalanmadı. Asıl klasör olduğu gibi korunuyor.",
+      "show": "Asıl klasörü göster"
+    }
+  },
+  "deleteThreadFailed": "Konuşma silinemedi. Yeniden başlatıldığında geri gelebilir.",
+  "continueAsTask": {
+    "action": "Görev olarak devam et",
+    "title": "Bu sohbete görev olarak devam edilsin mi?",
+    "description": "Jan bu konuşmayı korur ve birlikte çalışma görevi olarak sürdürür. Görev, her adımda sormadan kendi çalışma alanında araç kullanabilir, dosya yazabilir ve komut çalıştırabilir. Tekrar sohbete dönüştürülemez.",
+    "descriptionFolder": "Jan bu konuşmayı korur ve birlikte çalışma görevi olarak sürdürür. Görev, her değişiklik için sormadan {{folder}} içinde dosyaları düzenleyebilir ve komut çalıştırabilir. Tekrar sohbete dönüştürülemez.",
+    "confirm": "Görev olarak devam et"
+  }
+}
