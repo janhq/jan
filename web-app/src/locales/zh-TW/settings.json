@@ -101,8 +101,7 @@
     "resetCodeBlockStyleDesc": "將程式碼區塊樣式重設為預設值。",
     "resetCodeBlockSuccess": "程式碼區塊樣式重設成功",
     "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。",
-    "tokenCounterCompact": "緊湊型代幣計數器",
-    "tokenCounterCompactDesc": "在聊天輸入框內顯示代幣計數器。停用時，代幣計數器會顯示在輸入框下方。"
+    "themeDescFixed": "一律使用這個主題。選擇「系統」即可跟隨作業系統設定。"
   },
   "hardware": {
     "os": "作業系統",
@@ -151,6 +150,11 @@
     "peerSslDesc": "驗證對等連線的 SSL 憑證。",
     "hostSsl": "主機 SSL",
     "hostSslDesc": "驗證目標主機的 SSL 憑證。"
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Jan 能在你的電腦上做的事：它的沙箱 shell，以及永久保存在 Jan 資料夾中的記憶和技能。",
+    "networkDesc": "允許 shell 指令連上網路，例如安裝套件或取得儲存庫。預設為開啟。沙箱仍會限制指令能存取哪些檔案。"
   },
   "localApiServer": {
     "title": "本機 API 伺服器",

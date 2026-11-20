@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { UIMessage } from '@ai-sdk/react'
+import type * as ProviderCaps from '@/lib/providerCaps'
 
 // Regression test for https://github.com/janhq/jan/issues/8432 (Stop-during-load):
 // aborting a request while ModelFactory.createModel() is still awaiting
@@ -77,9 +78,6 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
   getLoadedModels: h.getLoadedModels,
   unloadLlamaModel: h.unloadLlamaModel,
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => null }) },
-}))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: vi.fn() },
 }))
@@ -89,7 +87,8 @@ vi.mock('@/lib/mcp-router-model-filter', () => ({
 vi.mock('@/lib/reasoningProviderOptions', () => ({
   buildReasoningProviderOptions: () => undefined,
 }))
-vi.mock('@/lib/providerCaps', () => ({
+vi.mock('@/lib/providerCaps', async (importOriginal) => ({
+  ...(await importOriginal<typeof ProviderCaps>()),
   isPredefinedRemoteProvider: () => false,
   getProviderApiType: () => 'openai',
 }))

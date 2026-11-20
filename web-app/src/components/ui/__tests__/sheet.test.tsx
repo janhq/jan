@@ -205,7 +205,7 @@ describe('Sheet Components', () => {
 
     const overlay = document.querySelector('[data-slot="sheet-overlay"]')
     expect(overlay).toBeInTheDocument()
-    expect(overlay).toHaveClass('fixed', 'inset-0', 'z-50', 'bg-black/50', 'backdrop-blur')
+    expect(overlay).toHaveClass('fixed', 'inset-0', 'z-(--layer-modal)', 'bg-black/50', 'backdrop-blur')
   })
 
   it('renders SheetClose component', () => {

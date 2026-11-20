@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   search: { threadModel: undefined as any },
   setCurrentThreadId: vi.fn(),
   useTools: vi.fn(),
+  folder: null as string | null,
   providerHasRemoteApiKeys: vi.fn(() => false),
   predefinedProviders: [
     { provider: 'openai' },
@@ -34,6 +35,32 @@ vi.mock('@/hooks/useThreads', () => ({
   useThreads: () => ({ setCurrentThreadId: h.setCurrentThreadId }),
 }))
 
+vi.mock('@/hooks/useFolderDraft', () => ({
+  useFolderDraft: () => ({
+    available: true,
+    folder: h.folder,
+    attach: vi.fn(),
+    detach: vi.fn(),
+  }),
+}))
+
+vi.mock('@/hooks/useThreadManagement', () => ({
+  useThreadManagement: () => ({ addFolder: vi.fn(), folders: [] }),
+}))
+
+vi.mock('@/containers/dialogs/AddProjectDialog', () => ({
+  default: () => null,
+}))
+
+vi.mock('@/containers/CoworkComposerMenu', () => ({
+  CoworkComposerMenu: () => null,
+}))
+
+vi.mock('@/containers/DraftWorkspacePill', () => ({
+  DraftWorkspacePill: ({ folder }: any) =>
+    folder ? <div data-testid="draft-pill">{folder}</div> : null,
+}))
+
 vi.mock('@/hooks/useTools', () => ({
   useTools: h.useTools,
 }))
@@ -48,12 +75,6 @@ vi.mock('@/containers/ChatInput', () => ({
 
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: any) => <div data-testid="header-page">{children}</div>,
-}))
-
-vi.mock('@/containers/DropdownModelProvider', () => ({
-  default: ({ model }: any) => (
-    <div data-testid="dropdown">{model ? model.id : 'none'}</div>
-  ),
 }))
 
 vi.mock('@/containers/SetupScreen', () => ({
@@ -88,6 +109,7 @@ describe('Index route', () => {
     vi.clearAllMocks()
     h.providers = []
     h.search = { threadModel: undefined }
+    h.folder = null
     h.providerHasRemoteApiKeys.mockReturnValue(false)
   })
 
@@ -122,7 +144,6 @@ describe('Index route', () => {
     renderComponent()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('dropdown')).toBeInTheDocument()
     expect(screen.getByText('chat:description')).toBeInTheDocument()
   })
 
@@ -151,12 +172,11 @@ describe('Index route', () => {
     expect(screen.getByTestId('setup-screen')).toBeInTheDocument()
   })
 
-  it('passes threadModel from search into DropdownModelProvider and ChatInput', () => {
+  it('passes threadModel from search into ChatInput', () => {
     h.providers = [{ provider: 'openai', models: [] }]
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.search = { threadModel: { id: 'gpt-x', provider: 'openai' } }
     renderComponent()
-    expect(screen.getByTestId('dropdown')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-initial', 'true')
   })
@@ -167,5 +187,16 @@ describe('Index route', () => {
     renderComponent()
     expect(h.setCurrentThreadId).toHaveBeenCalledWith(undefined)
     expect(h.useTools).toHaveBeenCalled()
+  })
+
+  it('shows the folder pill only once a folder is attached', () => {
+    h.providers = [{ provider: 'openai', models: [] }]
+    h.providerHasRemoteApiKeys.mockReturnValue(true)
+    const { unmount } = renderComponent()
+    expect(screen.queryByTestId('draft-pill')).toBeNull()
+    unmount()
+    h.folder = '/home/u/project'
+    renderComponent()
+    expect(screen.getByTestId('draft-pill')).toHaveTextContent('/home/u/project')
   })
 })

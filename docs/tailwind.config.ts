@@ -37,7 +37,20 @@ const config: Config = {
         'Helvetica',
         'sans-serif',
       ],
-      serif: ['PPEditorialNew'],
+      // Retired the PPEditorialNew serif site-wide; `font-serif` now renders
+      // Studio Feixen Sans like everything else. Kept the token so the existing
+      // font-serif display headings resolve without touching 19 files.
+      serif: [
+        'StudioFeixenSans',
+        '-apple-system',
+        'BlinkMacSystemFont',
+        'Segoe UI',
+        'Roboto',
+        'Oxygen-Sans',
+        'Ubuntu,Cantarell',
+        'Helvetica',
+        'sans-serif',
+      ],
     },
     extend: {},
   },

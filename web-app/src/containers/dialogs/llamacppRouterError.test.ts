@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { hasActiveLlamacppRequest } from './llamacppRouterError'
+import {
+  hasActiveLlamacppRequest,
+  isEngineWorkInFlight,
+} from './llamacppRouterError'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
@@ -37,5 +40,25 @@ describe('hasActiveLlamacppRequest', () => {
   it('still detects activity via the legacy state slots', () => {
     useAppState.setState({ busyThreads: { 'thread-1': true } })
     expect(hasActiveLlamacppRequest()).toBe(true)
+  })
+})
+
+// The hardware check reuses the predicate but not the provider gate: it runs
+// from the llama.cpp settings page, which already knows which engine it is.
+describe('isEngineWorkInFlight', () => {
+  it('reports work regardless of which provider is selected', () => {
+    useModelProvider.setState({ selectedProvider: 'openai' })
+    useAppState.setState({ currentStreamThreadId: 'thread-1' })
+    expect(isEngineWorkInFlight(useAppState.getState())).toBe(true)
+    expect(hasActiveLlamacppRequest()).toBe(false)
+  })
+
+  it('is false when nothing is loading or streaming', () => {
+    expect(isEngineWorkInFlight(useAppState.getState())).toBe(false)
+  })
+
+  it('counts a model that is still loading as work', () => {
+    useAppState.setState({ loadingModels: { 'qwen3': true } })
+    expect(isEngineWorkInFlight(useAppState.getState())).toBe(true)
   })
 })

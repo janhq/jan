@@ -5,6 +5,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { classifyDownloadError } from '@/lib/downloadError'
 
 /**
  * Bridges download events into the download store.
@@ -76,11 +77,23 @@ export function useDownloadEvents() {
         return
       }
 
+      // The reason keeps a firewall, proxy, TLS or DNS problem from looking like
+      // every other failure; with no recognisable cause the toast points at the logs.
+      const reason = classifyDownloadError(err)
       toast.error(t('common:toast.downloadFailed.title'), {
         id: 'download-failed',
-        description: t('common:toast.downloadFailed.description', {
-          item: state.modelId,
-        }),
+        description: reason
+          ? t('common:toast.downloadFailed.descriptionWithReason', {
+              item: state.modelId,
+              reason: t(`common:toast.downloadFailed.reason.${reason}`),
+            })
+          : t('common:toast.downloadFailed.description', {
+              item: state.modelId,
+            }),
+        action: {
+          label: t('common:toast.openLogs'),
+          onClick: () => navigate({ to: route.appLogs }),
+        },
       })
     },
     [removeDownload, removeLocalDownloadingModel, t, navigate]

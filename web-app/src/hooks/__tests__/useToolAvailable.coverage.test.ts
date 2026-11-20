@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
 
 vi.mock('@/constants/localStorage', () => ({
   localStorageKey: {
@@ -17,14 +16,7 @@ const getMigrate = (): Migrate | undefined =>
 describe('useToolAvailable - coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useToolAvailable.setState({ disabledTools: [], defaultsInitialized: false })
-  })
-
-  it('isDefaultsInitialized starts false; mark flips it', () => {
-    const { result } = renderHook(() => useToolAvailable())
-    expect(result.current.isDefaultsInitialized()).toBe(false)
-    act(() => result.current.markDefaultsAsInitialized())
-    expect(result.current.isDefaultsInitialized()).toBe(true)
+    useToolAvailable.setState({ disabledTools: [] })
   })
 
   describe('v1 -> v2 migration (per-thread -> global)', () => {
@@ -38,18 +30,16 @@ describe('useToolAvailable - coverage', () => {
         },
         1
       )
-      expect(migrated.disabledTools).toEqual(['exa::web_fetch_exa'])
-      expect(migrated.defaultsInitialized).toBe(true)
+      expect(migrated).toEqual({ disabledTools: ['exa::web_fetch_exa'] })
     })
 
-    it('re-seeds (defaultsInitialized=false) when old pre-:: keys are dropped', () => {
+    it('drops old pre-:: keys', () => {
       const migrate = getMigrate()!
       const migrated = migrate(
         { defaultDisabledTools: ['legacyTool'], defaultsInitialized: true },
         1
       )
       expect(migrated.disabledTools).toEqual([])
-      expect(migrated.defaultsInitialized).toBe(false)
     })
 
     it('null/empty persisted state migrates to an empty global set', () => {
@@ -59,7 +49,7 @@ describe('useToolAvailable - coverage', () => {
 
     it('a v2 state passes through unchanged', () => {
       const migrate = getMigrate()!
-      const state = { disabledTools: ['a::b'], defaultsInitialized: true }
+      const state = { disabledTools: ['a::b'] }
       expect(migrate(state, 2)).toEqual(state)
     })
   })

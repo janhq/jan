@@ -30,8 +30,12 @@ export function CoworkEmptyState({ folder, onPick }: Props) {
   const scope = name ? 'folder' : 'sandbox'
 
   return (
-    <div className="absolute inset-0 flex flex-col justify-end px-3 pb-2">
-      <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+    // The column matches the composer's (mx-auto, same width fractions and
+    // px-6 gutter) so the invitation shares its left edge. The examples pull
+    // back by -mx-2 so their labels line up under the heading while the hover
+    // target keeps its breathing room.
+    <div className="absolute inset-0 flex flex-col justify-end pb-3">
+      <div className="mx-auto w-full px-6 md:w-4/5 xl:w-4/6">
         <div className="animate-in fade-in-0 duration-500 motion-reduce:animate-none">
           <Handshake size={20} className="text-primary" aria-hidden />
           <h1 className="mt-3 font-studio text-2xl font-medium tracking-tight">
@@ -46,7 +50,7 @@ export function CoworkEmptyState({ folder, onPick }: Props) {
           <p className="mt-6 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
             {t('common:coworkEmpty.try')}
           </p>
-          <div className="mt-1 flex flex-col items-start">
+          <div className="mt-1 -mx-2 flex flex-col items-start">
             {EXAMPLE_KEYS.map((key) => {
               const text = t(`common:coworkEmpty.${scope}.${key}`, {
                 folder: name,

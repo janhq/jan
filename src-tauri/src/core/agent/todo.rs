@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TodoStatus {
     Pending,
@@ -18,7 +18,7 @@ pub enum TodoStatus {
     Abandoned,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TodoItem {
     pub content: String,
     pub status: TodoStatus,
@@ -33,7 +33,7 @@ impl TodoItem {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TodoPhase {
     pub name: String,
     pub tasks: Vec<TodoItem>,
@@ -48,7 +48,7 @@ pub fn new_registry() -> TodoRegistry {
     Arc::new(Mutex::new(TodoList::default()))
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TodoList {
     pub phases: Vec<TodoPhase>,
 }

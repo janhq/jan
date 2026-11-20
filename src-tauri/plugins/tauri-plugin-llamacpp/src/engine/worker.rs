@@ -9,13 +9,25 @@
 //! management, so a build that did not compile llama.cpp can still drive a
 //! worker shipped alongside it as a sidecar.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+use tauri_plugin_hardware::vendor::nvidia::CudaVersion;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
+
+/// A device as the engine names it: the id a `device` setting uses and the
+/// human name. Deliberately without memory, which changes constantly and says
+/// nothing about whether the set of GPUs is the same.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceIdentity {
+    pub id: String,
+    pub name: String,
+}
 
 /// The worker prints this and nothing else on stdout, then serves. Reading a
 /// structured line beats the router path's stderr scraping: there is no
@@ -25,11 +37,23 @@ pub struct Handshake {
     pub port: u16,
     pub pid: u32,
     pub models: Vec<String>,
+    /// The CUDA toolkit the engine was built with, which decides how new an
+    /// NVIDIA driver it needs.
+    pub cuda_toolkit: Option<CudaVersion>,
+    /// The devices the worker itself initialised, as it saw them at start.
+    /// `None` when it did not say (a worker that predates the field, or one
+    /// that could not list them), which is not the same as `Some(vec![])`: an
+    /// empty list is a real answer, "this machine has no GPU".
+    pub devices: Option<Vec<DeviceIdentity>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum WorkerError {
     Spawn(String),
+    /// The OS refused to run the worker because it is built for another
+    /// processor than this computer's: the Apple Silicon engine on an Intel Mac
+    /// (#9270). Not a transient failure, so callers say so instead of retrying.
+    WrongArchitecture(String),
     /// The worker exited or said nothing intelligible before serving.
     Handshake(String),
     Timeout(Duration),
@@ -39,12 +63,30 @@ impl std::fmt::Display for WorkerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Spawn(m) => write!(f, "could not start jan-llama-worker: {m}"),
+            Self::WrongArchitecture(m) => write!(
+                f,
+                "jan-llama-worker is built for a different processor than this computer's: {m}"
+            ),
             Self::Handshake(m) => write!(f, "jan-llama-worker did not come up: {m}"),
             Self::Timeout(d) => {
                 write!(f, "jan-llama-worker did not report a port within {d:?}")
             }
         }
     }
+}
+
+/// `EBADARCH`, which macOS returns from `exec` for a Mach-O with no slice for
+/// this CPU ("Bad CPU type in executable"). It is only a macOS code: on Linux
+/// the same number is a different errno.
+#[cfg(target_os = "macos")]
+const EBADARCH: i32 = 86;
+
+fn spawn_error(e: std::io::Error) -> WorkerError {
+    #[cfg(target_os = "macos")]
+    if e.raw_os_error() == Some(EBADARCH) {
+        return WorkerError::WrongArchitecture(e.to_string());
+    }
+    WorkerError::Spawn(e.to_string())
 }
 
 /// A runtime failure worth telling the user about, classified from one worker
@@ -83,7 +125,13 @@ pub fn classify_fault(line_lower: &str) -> Option<RuntimeFault> {
 }
 
 fn is_oom_line(line_lower: &str) -> bool {
-    if line_lower.contains("erroroutofdevicememory") || line_lower.contains("erroroutofhostmemory")
+    // The Metal code is what macOS reports when the mapped model outgrows
+    // `recommendedMaxWorkingSetSize`; "insufficient memory" is both its
+    // localized text and ggml_aligned_malloc's ENOMEM message.
+    if line_lower.contains("erroroutofdevicememory")
+        || line_lower.contains("erroroutofhostmemory")
+        || line_lower.contains("kiogpucommandbuffercallbackerroroutofmemory")
+        || line_lower.contains("insufficient memory")
     {
         return true;
     }
@@ -126,6 +174,70 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     .any(|m| line_lower.contains(m))
 }
 
+/// Whether a worker log line says auto-fit could not fit the model even into
+/// system memory. llama.cpp then loads with the unfitted parameters anyway, so
+/// the load that follows fails with an error that does not name the cause.
+///
+/// fit.cpp throws this only when there is no GPU at all (`nd == 0`); with a GPU
+/// it shrinks the context and offloads instead, and a model still too big shows
+/// up as an ordinary out-of-memory load failure (see `commands::explain_load_failure`).
+/// The other reasons fit gives (an explicit n_gpu_layers or tensor split, a
+/// split mode it does not handle) are fit declining to run, not a model that is
+/// too big. None of them is a runtime fault, so `classify_fault` ignores them.
+pub fn is_fit_failure_line(line_lower: &str) -> bool {
+    line_lower.contains("failed to fit params") && line_lower.contains("unable to fit model")
+}
+
+/// Turns worker stderr lines into faults, one call per line.
+///
+/// Metal reports a failed command buffer as two lines: a status line that
+/// only says "failed with status N", then the cause (`error: Insufficient
+/// Memory (...)`). Classified one at a time, the status line would be
+/// reported as a backend fault and the debounce would swallow the OOM line
+/// after it, so the status line is held until the next line decides it.
+#[derive(Debug, Default)]
+struct FaultReader {
+    pending_metal_status: Option<String>,
+}
+
+impl FaultReader {
+    fn feed(&mut self, line: &str) -> Vec<(RuntimeFault, String)> {
+        let lower = line.to_lowercase();
+        let mut out = Vec::new();
+        let is_status = lower.contains("command buffer") && lower.contains("failed with status");
+        if let Some(status) = self.pending_metal_status.take() {
+            // ggml-metal prints the detail as `error: <description>`, behind
+            // whatever prefix the log sink adds, so match loosely.
+            if !is_status && lower.contains("error:") {
+                let fault = classify_fault(&lower).unwrap_or(RuntimeFault::Backend);
+                out.push((fault, format!("{status} {line}")));
+                return out;
+            }
+            out.push((RuntimeFault::Backend, status));
+        }
+        if is_status {
+            self.pending_metal_status = Some(line.to_string());
+            return out;
+        }
+        if let Some(fault) = classify_fault(&lower) {
+            out.push((fault, line.to_string()));
+        }
+        out
+    }
+
+    /// A held status line whose detail never came (stderr closed or went
+    /// quiet), reported as the backend fault it is on its own.
+    fn flush(&mut self) -> Option<(RuntimeFault, String)> {
+        self.pending_metal_status
+            .take()
+            .map(|status| (RuntimeFault::Backend, status))
+    }
+}
+
+/// How long a held Metal status line waits for its detail line. The two are
+/// printed back to back, so this only bounds the no-detail case.
+const METAL_DETAIL_WAIT: Duration = Duration::from_millis(500);
+
 /// Called once per classified line, with the line itself. Boxed rather than
 /// generic so `WorkerHandle` does not have to carry a type parameter.
 pub type FaultCallback = std::sync::Arc<dyn Fn(RuntimeFault, String) + Send + Sync + 'static>;
@@ -134,6 +246,155 @@ pub type FaultCallback = std::sync::Arc<dyn Fn(RuntimeFault, String) + Send + Sy
 /// error, then the assert, then the abort message), and the user needs the
 /// first one, not all of them.
 const FAULT_DEBOUNCE: Duration = Duration::from_secs(3);
+
+/// How much of the worker's stderr is kept for an error message. A worker that
+/// dies on GPU init or under antivirus prints its reason last, and the user
+/// otherwise sees only a refused connection; a few lines are enough to name
+/// the cause, and the full stream is already in the app log.
+const STDERR_TAIL_LINES: usize = 4;
+
+/// Per line, so one runaway line cannot crowd out the rest of the tail.
+const STDERR_TAIL_LINE_CHARS: usize = 300;
+
+/// How long a dead worker's stderr drain is given to finish before its tail is
+/// read. A worker's last words are often its last write before it exits, so
+/// its exit can be collected while they still sit unread in the pipe. The pipe
+/// closes when the worker does, so this is normally a few milliseconds; the
+/// bound is for a grandchild that still holds the pipe open.
+const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
+
+/// The last few stderr lines, shared between the drain task and the handle.
+type StderrTail = Arc<Mutex<VecDeque<String>>>;
+
+/// Fit-failure lines the worker printed. Counted rather than taken, so a load
+/// can ask for the lines printed since it started without clearing a line that
+/// a concurrent load on the same worker is still waiting for.
+#[derive(Default)]
+struct FitNotes {
+    count: u64,
+    last: Option<String>,
+}
+
+type FitFailure = Arc<Mutex<FitNotes>>;
+
+/// Everything the worker printed to stderr, newest last, for a load-failure
+/// report. `total` counts every line ever seen, so a load can ask for the lines
+/// printed since it started even after older ones were evicted.
+#[derive(Default)]
+struct LogBuffer {
+    total: u64,
+    lines: VecDeque<String>,
+    /// Backend modules ggml announced (`load_backend: loaded CUDA backend from
+    /// ...`), as "CUDA (libggml-cuda.so)". Kept apart from `lines` because they
+    /// are printed once at start and would be evicted long before a load fails.
+    backends: Vec<String>,
+}
+
+type WorkerLog = Arc<Mutex<LogBuffer>>;
+
+/// Lines kept for a failure report. Enough for a verbose load (tensor and
+/// device tables run to a few hundred lines) without growing for the life of a
+/// long-running worker.
+const WORKER_LOG_LINES: usize = 600;
+
+/// Per line, so a runaway progress line cannot fill the buffer.
+const WORKER_LOG_LINE_CHARS: usize = 1000;
+
+fn record_log_line(log: &WorkerLog, line: &str) {
+    let Ok(mut log) = log.lock() else { return };
+    if let Some(backend) = parse_backend_line(line) {
+        if !log.backends.contains(&backend) {
+            log.backends.push(backend);
+        }
+    }
+    log.total += 1;
+    if log.lines.len() == WORKER_LOG_LINES {
+        log.lines.pop_front();
+    }
+    log.lines
+        .push_back(line.chars().take(WORKER_LOG_LINE_CHARS).collect());
+}
+
+/// `load_backend: loaded CUDA backend from /opt/jan/libggml-cuda.so` as
+/// `CUDA (libggml-cuda.so)`; the directory is dropped because it is a local path.
+pub fn parse_backend_line(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("load_backend: loaded ")?;
+    let (name, path) = rest.split_once(" backend from ")?;
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path).trim();
+    Some(format!("{} ({file})", name.trim()))
+}
+
+/// How far a worker's output had got at some moment: its fit-failure lines
+/// (see [`WorkerHandle::fit_failure_since`]) and its log (see
+/// [`WorkerHandle::log_since`]).
+#[derive(Debug, Clone, Copy)]
+pub struct FitMark {
+    fit: u64,
+    log: u64,
+}
+
+/// Lines that are kept out of the tail, though still logged. ggml prints one
+/// `load_backend: loaded ... from <path>` per backend at start, which says
+/// nothing about a crash and would fill the error with local paths.
+pub fn is_tail_noise(line: &str) -> bool {
+    line.starts_with("load_backend:")
+}
+
+fn remember_stderr_line(tail: &StderrTail, line: &str) {
+    let line = line.trim();
+    if line.is_empty() || is_tail_noise(line) {
+        return;
+    }
+    let line: String = line.chars().take(STDERR_TAIL_LINE_CHARS).collect();
+    let Ok(mut tail) = tail.lock() else { return };
+    if tail.len() == STDERR_TAIL_LINES {
+        tail.pop_front();
+    }
+    tail.push_back(line);
+}
+
+fn stderr_lines(tail: &StderrTail) -> Vec<String> {
+    tail.lock().map(|t| t.iter().cloned().collect()).unwrap_or_default()
+}
+
+/// How a worker that is no longer running ended, for the error the user sees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExitReport {
+    /// From [`describe_exit`], e.g. `exit code 0xC0000005`.
+    pub status: String,
+    /// The worker's last stderr lines, oldest first. Empty if it said nothing.
+    pub last_lines: Vec<String>,
+}
+
+/// An exit status in the form a user, or a search engine, will recognise.
+///
+/// Windows reports a crash as an NTSTATUS such as `0xC0000005` (access
+/// violation) or `0xC0000409` (stack buffer overrun), which as the decimal
+/// `i32` `code()` returns is a meaningless negative number. Unix reports a
+/// crash as a signal and no code at all.
+pub fn describe_exit(status: &ExitStatus) -> String {
+    if let Some(code) = status.code() {
+        let raw = code as u32;
+        return if raw >= 0xC000_0000 {
+            format!("exit code 0x{raw:08X}")
+        } else {
+            format!("exit code {code}")
+        };
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            // Signal numbers differ by platform (SIGBUS is 7 on Linux, 10 on
+            // macOS), so the name comes from the platform's own table.
+            return match nix::sys::signal::Signal::try_from(sig) {
+                Ok(signal) => format!("killed by {}", signal.as_str()),
+                Err(_) => format!("killed by signal {sig}"),
+            };
+        }
+    }
+    "no exit code".to_string()
+}
 
 /// Env var the worker reads its bearer token from. Never an argv flag: argv is
 /// world-readable via `ps` / `/proc/<pid>/cmdline`, and the supervisor logs it.
@@ -145,6 +406,33 @@ pub const API_KEY_ENV: &str = "JAN_LLAMA_API_KEY";
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 
+
+/// A client for the worker's loopback port, with proxies switched off.
+///
+/// reqwest picks up `HTTP(S)_PROXY`/`ALL_PROXY` from the environment, and on
+/// Windows and macOS the system proxy too, and neither exempts 127.0.0.1
+/// unless `NO_PROXY` says so. A VPN client, a proxy tool or a corporate PAC
+/// setup then captures the request meant for the worker, and every model load
+/// fails with a bare "error sending request for url (http://127.0.0.1:...)"
+/// even though the worker is up and listening. The worker is on this machine
+/// by construction, so there is never a proxy worth going through.
+///
+/// Internet-facing clients (model downloads, remote gguf reads) deliberately
+/// do not use this: they must keep honouring the user's proxy.
+pub fn loopback_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().no_proxy()
+}
+
+/// [`loopback_client_builder`] with reqwest's defaults otherwise.
+///
+/// No fallback to `reqwest::Client::default()`: that would turn proxy lookup
+/// back on, and it fails (by panicking) on the same TLS-backend error that
+/// would make this build fail, which is all that can -- proxies are off.
+pub fn loopback_client() -> reqwest::Client {
+    loopback_client_builder()
+        .build()
+        .expect("a reqwest client without proxies builds")
+}
 
 /// How long to wait for the handshake. Generous because a cold page-cache read
 /// of the preset plus binding a port can be slow on a loaded machine, but far
@@ -194,7 +482,32 @@ pub fn parse_handshake(line: &str) -> Result<Handshake, WorkerError> {
                 .collect()
         })
         .unwrap_or_default();
-    Ok(Handshake { port, pid, models })
+    // Absent for a worker without CUDA, or one built where nvcc could not be
+    // read. Unreadable is treated the same: the handshake is not the place to
+    // fail over a diagnostic.
+    let cuda_toolkit = v
+        .get("cuda_toolkit")
+        .and_then(serde_json::Value::as_str)
+        .and_then(CudaVersion::parse);
+    // `null` or absent means "not reported", which must stay distinct from an
+    // empty list. One unreadable entry makes the whole list untrustworthy as a
+    // baseline, so it reads as not reported rather than as a shorter list that
+    // would later look like a change.
+    let devices = v
+        .get("devices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|a| {
+            a.iter()
+                .map(|d| serde_json::from_value::<DeviceIdentity>(d.clone()).ok())
+                .collect::<Option<Vec<_>>>()
+        });
+    Ok(Handshake {
+        port,
+        pid,
+        models,
+        cuda_toolkit,
+        devices,
+    })
 }
 
 impl std::fmt::Debug for WorkerHandle {
@@ -221,7 +534,7 @@ impl std::fmt::Debug for WorkerHandle {
 /// A job object whose last handle dies with this process is the one reaping the
 /// OS will do on our behalf. Unix gets this from `process_group(0)`.
 #[cfg(windows)]
-mod reap {
+pub(crate) mod reap {
     use std::os::windows::io::RawHandle;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
@@ -231,7 +544,7 @@ mod reap {
     };
 
     /// Closing this kills every process still in the job.
-    pub struct Job(HANDLE);
+    pub(crate) struct Job(HANDLE);
 
     // The handle is opaque to everything but `Drop`, which owns it exclusively.
     unsafe impl Send for Job {}
@@ -245,7 +558,7 @@ mod reap {
 
     /// Best effort: a Jan already confined to a job that forbids nesting should
     /// lose the reaping guarantee, not the engine.
-    pub fn confine(child: RawHandle) -> Option<Job> {
+    pub(crate) fn confine(child: RawHandle) -> Option<Job> {
         let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if job.is_null() {
             log::warn!("could not create a job object for the worker");
@@ -279,7 +592,23 @@ pub struct WorkerHandle {
     pub pid: u32,
     pub api_key: String,
     pub models: Vec<String>,
+    /// The CUDA toolkit the engine was built with, when it reported one.
+    pub cuda_toolkit: Option<CudaVersion>,
+    /// The devices the worker itself initialised, from its handshake (`None`
+    /// when it did not say). It lists its GPUs once, at start, so this is the
+    /// baseline a later enumeration is compared against. Kept on the handle,
+    /// not in the webview, so it survives a page reload and always describes
+    /// the worker that is actually running.
+    pub devices: Option<Vec<DeviceIdentity>>,
+    /// The preset the worker was started from. Jan regenerates it in place and
+    /// the worker reloads the same path, so it also describes later loads.
+    pub preset_path: PathBuf,
     child: Child,
+    stderr_tail: StderrTail,
+    fit_failure: FitFailure,
+    log: WorkerLog,
+    /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
+    stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
     /// get its turn before closing the job would kill the worker outright.
     #[cfg(windows)]
@@ -318,9 +647,9 @@ impl WorkerHandle {
 
         #[cfg(unix)]
         crate::process::graceful_terminate_process(&mut self.child).await;
-        #[cfg(all(windows, target_arch = "x86_64"))]
+        #[cfg(windows)]
         crate::process::force_terminate_process(&mut self.child).await;
-        #[cfg(not(any(unix, all(windows, target_arch = "x86_64"))))]
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = self.child.kill().await;
         }
@@ -353,6 +682,97 @@ impl WorkerHandle {
     pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
         self.child.try_wait().ok().flatten()
     }
+
+    /// Taken before a load, so only a fit failure printed during that load is
+    /// blamed for it: a stale one would pin the next, unrelated failure on fit.
+    pub fn fit_mark(&self) -> FitMark {
+        FitMark {
+            fit: self.fit_failure.lock().map(|f| f.count).unwrap_or(0),
+            log: self.log.lock().map(|l| l.total).unwrap_or(0),
+        }
+    }
+
+    /// Whatever the worker printed after `mark`, oldest first, and whether the
+    /// start of it was already evicted.
+    pub fn log_since(&self, mark: FitMark) -> (Vec<String>, bool) {
+        let Ok(log) = self.log.lock() else {
+            return (Vec::new(), false);
+        };
+        let wanted = log.total.saturating_sub(mark.log) as usize;
+        let skip = log.lines.len().saturating_sub(wanted);
+        (
+            log.lines.iter().skip(skip).cloned().collect(),
+            wanted > log.lines.len(),
+        )
+    }
+
+    /// The backend modules the worker loaded, as ggml announced them.
+    pub fn backends(&self) -> Vec<String> {
+        self.log.lock().map(|l| l.backends.clone()).unwrap_or_default()
+    }
+
+    /// The latest fit-failure line, if one was printed after `mark`.
+    ///
+    /// The line names no model: llama.cpp logs it from inside the load. The
+    /// worker loads one model at a time, but two loads sent at once can each
+    /// see a line printed after both marks, so a model that failed for another
+    /// reason can be reported as not fitting when the other one did not fit.
+    /// Tagging the line would take a marker that llama.cpp's own (asynchronous)
+    /// logger orders against, which it does not offer. Rare in practice: the
+    /// frontend loads one chat model at a time.
+    pub fn fit_failure_since(&self, mark: FitMark) -> Option<String> {
+        let notes = self.fit_failure.lock().ok()?;
+        if notes.count > mark.fit {
+            notes.last.clone()
+        } else {
+            None
+        }
+    }
+
+    /// None while still running, otherwise how it ended and what it last said.
+    ///
+    /// Waits up to [`STDERR_DRAIN_WAIT`] for the rest of its stderr first, so
+    /// a crash reason written just before the exit is not missed.
+    pub async fn exit_report(&mut self) -> Option<ExitReport> {
+        let status = self.exited()?;
+        wait_for_drain(self.stderr_drain.take()).await;
+        Some(ExitReport {
+            status: describe_exit(&status),
+            last_lines: stderr_lines(&self.stderr_tail),
+        })
+    }
+}
+
+/// Gives a dead worker's stderr drain a bounded moment to read what is left.
+/// On timeout the task is detached, not cancelled, and keeps logging.
+async fn wait_for_drain(drain: Option<tokio::task::JoinHandle<()>>) {
+    if let Some(drain) = drain {
+        let _ = tokio::time::timeout(STDERR_DRAIN_WAIT, drain).await;
+    }
+}
+
+/// The working directory every worker spawn pins.
+///
+/// ggml's backend scan puts `fs::current_path()` in its search paths and
+/// calls dl_load_library on every `ggml-*` filename match *before* reading
+/// its score, so a planted module in an inherited cwd runs its DllMain /
+/// constructor even if it is never selected -- and `best_score` is one
+/// accumulator across all search paths, so a higher-scoring plant wins
+/// outright rather than losing to path order. Pinning the cwd to the
+/// worker's own directory, which is where the bundled modules already live,
+/// removes the attacker-writable entry from that list.
+///
+/// Absolute only: `current_dir` also changes how the OS resolves a *relative*
+/// program path, so doing this unconditionally would make a dev's
+/// `--bin build/jan-llama-worker` be looked up inside `build/`. Every shipped
+/// path is absolute (`resource_dir()`, or `sidecar_path` off
+/// `current_exe`), so the hardening lands exactly where it matters.
+pub(crate) fn worker_cwd(exe: &Path) -> Option<&Path> {
+    if exe.is_absolute() {
+        exe.parent()
+    } else {
+        None
+    }
 }
 
 /// Spawns the worker and waits for its handshake line.
@@ -374,24 +794,8 @@ pub async fn spawn(
     // Without this the worker flashes a console window on Windows, the way
     // every other spawn in this plugin already avoids.
     jan_utils::system::setup_windows_process_flags(&mut cmd);
-    // ggml's backend scan puts `fs::current_path()` in its search paths and
-    // calls dl_load_library on every `ggml-*` filename match *before* reading
-    // its score, so a planted module in an inherited cwd runs its DllMain /
-    // constructor even if it is never selected -- and `best_score` is one
-    // accumulator across all search paths, so a higher-scoring plant wins
-    // outright rather than losing to path order. Pinning the cwd to the
-    // worker's own directory, which is where the bundled modules already live,
-    // removes the attacker-writable entry from that list.
-    //
-    // Absolute only: `current_dir` also changes how the OS resolves a *relative*
-    // program path, so doing this unconditionally would make a dev's
-    // `--bin build/jan-llama-worker` be looked up inside `build/`. Every shipped
-    // path is absolute (`resource_dir()`, or `sidecar_path` off
-    // `current_exe`), so the hardening lands exactly where it matters.
-    if exe.is_absolute() {
-        if let Some(dir) = exe.parent() {
-            cmd.current_dir(dir);
-        }
+    if let Some(dir) = worker_cwd(exe) {
+        cmd.current_dir(dir);
     }
     cmd.args(&args)
         .envs(envs)
@@ -404,7 +808,7 @@ pub async fn spawn(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = cmd.spawn().map_err(|e| WorkerError::Spawn(e.to_string()))?;
+    let mut child = cmd.spawn().map_err(spawn_error)?;
     // Before the handshake, so every error path below drops the job too and
     // cannot leak a worker that never reported for duty.
     #[cfg(windows)]
@@ -416,24 +820,59 @@ pub async fn spawn(
         .ok_or_else(|| WorkerError::Spawn("no stdout pipe".into()))?;
     // Drained on its own task: a full stderr pipe would otherwise block the
     // worker mid-generation, which is a hang with no error message.
+    let stderr_tail = StderrTail::default();
+    let fit_failure = FitFailure::default();
+    let log = WorkerLog::default();
+    let mut stderr_drain = None;
     if let Some(stderr) = child.stderr.take() {
-        tokio::spawn(async move {
+        let tail = stderr_tail.clone();
+        let fit_note = fit_failure.clone();
+        let worker_log = log.clone();
+        stderr_drain = Some(tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
+            let mut reader = FaultReader::default();
             let mut last_fault_at: Option<tokio::time::Instant> = None;
-            while let Ok(Some(line)) = lines.next_line().await {
-                log::debug!("jan-llama-worker: {line}");
-                let Some(cb) = on_fault.as_ref() else { continue };
-                let Some(fault) = classify_fault(&line.to_lowercase()) else {
-                    continue;
-                };
+            let mut report = |fault: RuntimeFault, line: String| {
+                let Some(cb) = on_fault.as_ref() else { return };
                 let now = tokio::time::Instant::now();
                 if last_fault_at.is_some_and(|t| now.duration_since(t) <= FAULT_DEBOUNCE) {
-                    continue;
+                    return;
                 }
                 last_fault_at = Some(now);
                 cb(fault, line);
+            };
+            loop {
+                let next = if reader.pending_metal_status.is_some() {
+                    match tokio::time::timeout(METAL_DETAIL_WAIT, lines.next_line()).await {
+                        Ok(next) => next,
+                        Err(_) => {
+                            if let Some((fault, line)) = reader.flush() {
+                                report(fault, line);
+                            }
+                            continue;
+                        }
+                    }
+                } else {
+                    lines.next_line().await
+                };
+                let Ok(Some(line)) = next else { break };
+                log::debug!("jan-llama-worker: {line}");
+                remember_stderr_line(&tail, &line);
+                record_log_line(&worker_log, &line);
+                if is_fit_failure_line(&line.to_lowercase()) {
+                    if let Ok(mut notes) = fit_note.lock() {
+                        notes.count += 1;
+                        notes.last = Some(line.trim().to_string());
+                    }
+                }
+                for (fault, text) in reader.feed(&line) {
+                    report(fault, text);
+                }
             }
-        });
+            if let Some((fault, line)) = reader.flush() {
+                report(fault, line);
+            }
+        }));
     }
 
     let mut lines = BufReader::new(stdout).lines();
@@ -449,11 +888,22 @@ pub async fn spawn(
             return Err(WorkerError::Handshake(e.to_string()));
         }
         Ok(Ok(None)) => {
-            // Closed stdout without a line: it died. The exit status is the
-            // most useful thing we can report.
-            let status = child.wait().await.ok();
+            // Closed stdout without a line: it died. The exit status and its
+            // last words are the most useful things we can report.
+            let status = child
+                .wait()
+                .await
+                .map(|s| describe_exit(&s))
+                .unwrap_or_else(|e| format!("exit status unknown: {e}"));
+            wait_for_drain(stderr_drain).await;
+            let lines = stderr_lines(&stderr_tail);
+            let output = if lines.is_empty() {
+                String::new()
+            } else {
+                format!("; last output: {}", lines.join(" / "))
+            };
             return Err(WorkerError::Handshake(format!(
-                "exited before serving (status {status:?})"
+                "exited before serving ({status}){output}"
             )));
         }
         Ok(Ok(Some(line))) => line,
@@ -479,7 +929,14 @@ pub async fn spawn(
         pid: hs.pid,
         api_key: api_key.to_string(),
         models: hs.models,
+        cuda_toolkit: hs.cuda_toolkit,
+        devices: hs.devices,
+        preset_path: preset_path.to_path_buf(),
         child,
+        stderr_tail,
+        fit_failure,
+        log,
+        stderr_drain,
         #[cfg(windows)]
         _job: job,
     })
@@ -495,20 +952,35 @@ pub fn worker_file_name() -> &'static str {
     }
 }
 
+/// Where the worker would sit beside the app executable, whether or not it is
+/// actually there. Separate from `sidecar_path` so a failure can report the
+/// path it looked at instead of just saying it found nothing.
+pub fn sidecar_candidate() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join(worker_file_name()))
+}
+
 /// The worker beside the app executable.
 ///
 /// This is the dev layout (`target/<profile>/`). A bundled app puts it under the
 /// resource directory instead, which only the Tauri side can resolve, so
 /// `commands::resolve_worker_exe` checks that first and falls back here.
 pub fn sidecar_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let candidate = exe.parent()?.join(worker_file_name());
+    let candidate = sidecar_candidate()?;
     candidate.is_file().then_some(candidate)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn worker_cwd_is_the_exe_dir_only_for_absolute_paths() {
+        let exe = std::env::temp_dir().join("bin").join("jan-llama-worker");
+        assert_eq!(worker_cwd(&exe), exe.parent());
+        assert!(worker_cwd(Path::new("build/jan-llama-worker")).is_none());
+        assert!(worker_cwd(Path::new("jan-llama-worker")).is_none());
+    }
 
     // Restored with the marker lists intact: each entry came from a real crash
     // report, and a fault the classifier misses is a silent hang for the user.
@@ -567,6 +1039,88 @@ mod tests {
         );
     }
 
+    // fit declining to run (the user pinned the layers) is not a model that is
+    // too big, and must not be reported as one.
+    #[test]
+    fn fit_declining_to_run_is_not_a_fit_failure() {
+        for line in [
+            "common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort",
+            "common_fit_params: successfully fit params to free device memory",
+            "alloc_tensor_range: failed to allocate cuda0 buffer of size 2491323904",
+        ] {
+            assert!(!is_fit_failure_line(&line.to_lowercase()), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn classifies_metal_and_host_out_of_memory_as_oom() {
+        for line in [
+            "error: insufficient memory (00000008:kiogpucommandbuffercallbackerroroutofmemory)",
+            "ggml_aligned_malloc: insufficient memory (attempted to allocate 512.00 mb)",
+        ] {
+            assert_eq!(classify_fault(line), Some(RuntimeFault::Oom), "{line:?}");
+        }
+    }
+
+    // The exact pair from janhq/jan#9198. The status line alone looks like a
+    // generic Metal error; only the line after it says it was memory.
+    #[test]
+    fn a_metal_status_line_is_reported_together_with_its_oom_detail() {
+        let mut r = FaultReader::default();
+        assert_eq!(
+            r.feed("E ggml_metal_synchronize: error: command buffer 0 failed with status 5"),
+            vec![]
+        );
+        assert_eq!(
+            r.feed("E error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)"),
+            vec![(
+                RuntimeFault::Oom,
+                "E ggml_metal_synchronize: error: command buffer 0 failed with status 5 \
+                 E error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)"
+                    .to_string()
+            )]
+        );
+        assert_eq!(r.flush(), None);
+    }
+
+    #[test]
+    fn a_metal_status_line_with_a_non_memory_detail_stays_a_backend_fault() {
+        let mut r = FaultReader::default();
+        r.feed("ggml_metal_synchronize: error: command buffer 0 failed with status 5");
+        let out = r.feed("error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout)");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, RuntimeFault::Backend);
+        assert!(out[0].1.contains("Timeout"), "{:?}", out[0].1);
+    }
+
+    // A status other than Error prints no detail line, so whatever comes next
+    // is unrelated and must be classified on its own, not glued on.
+    #[test]
+    fn a_metal_status_line_without_detail_is_reported_alone() {
+        let mut r = FaultReader::default();
+        let status = "ggml_metal_synchronize: error: command buffer 1 failed with status 4";
+        r.feed(status);
+        assert_eq!(
+            r.feed("srv log_server_r: request: post /v1/chat/completions"),
+            vec![(RuntimeFault::Backend, status.to_string())]
+        );
+
+        r.feed(status);
+        assert_eq!(r.flush(), Some((RuntimeFault::Backend, status.to_string())));
+        assert_eq!(r.flush(), None);
+    }
+
+    #[test]
+    fn the_reader_passes_other_lines_straight_through() {
+        let mut r = FaultReader::default();
+        assert_eq!(
+            r.feed("ErrorOutOfDeviceMemory"),
+            vec![(RuntimeFault::Oom, "ErrorOutOfDeviceMemory".to_string())]
+        );
+        assert_eq!(r.feed("main: server is listening"), vec![]);
+        assert_eq!(r.flush(), None);
+    }
+
     #[test]
     fn each_fault_maps_to_the_event_the_frontend_listens_on() {
         assert_eq!(RuntimeFault::Oom.event_name(), "llamacpp-router-oom");
@@ -622,13 +1176,18 @@ mod tests {
 
     #[test]
     fn parse_handshake_reads_the_worker_line() {
-        let hs = parse_handshake(r#"{"port":39271,"pid":1234,"models":["a","b"]}"#).unwrap();
+        let hs = parse_handshake(
+            r#"{"port":39271,"pid":1234,"models":["a","b"],"cuda_toolkit":"13.2"}"#,
+        )
+        .unwrap();
         assert_eq!(
             hs,
             Handshake {
                 port: 39271,
                 pid: 1234,
                 models: vec!["a".into(), "b".into()],
+                cuda_toolkit: Some(CudaVersion { major: 13, minor: 2 }),
+                devices: None,
             }
         );
     }
@@ -639,6 +1198,68 @@ mod tests {
         assert_eq!(hs.port, 8080);
         assert_eq!(hs.pid, 0);
         assert!(hs.models.is_empty());
+        assert_eq!(hs.cuda_toolkit, None);
+    }
+
+    // A worker built without CUDA, or by a build that could not read nvcc,
+    // reports null; an unreadable value must not fail the whole handshake.
+    #[test]
+    fn parse_handshake_treats_an_absent_or_unreadable_toolkit_as_unknown() {
+        for line in [
+            r#"{"port":8080,"cuda_toolkit":null}"#,
+            r#"{"port":8080,"cuda_toolkit":"thirteen"}"#,
+            r#"{"port":8080,"cuda_toolkit":13}"#,
+        ] {
+            let hs = parse_handshake(line).unwrap();
+            assert_eq!(hs.port, 8080, "{line}");
+            assert_eq!(hs.cuda_toolkit, None, "{line}");
+        }
+    }
+
+    fn id_name(id: &str, name: &str) -> DeviceIdentity {
+        DeviceIdentity {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn parse_handshake_reads_the_devices_the_worker_initialised() {
+        let hs = parse_handshake(
+            r#"{"port":8080,"devices":[{"id":"CUDA0","name":"RTX 4060"},{"id":"Vulkan1","name":"UHD"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            hs.devices,
+            Some(vec![id_name("CUDA0", "RTX 4060"), id_name("Vulkan1", "UHD")])
+        );
+    }
+
+    // "No GPU" is a real baseline: a GPU appearing later must read as a change.
+    // Not reporting is not that, or a worker that predates the field would be
+    // restarted on every check.
+    #[test]
+    fn parse_handshake_tells_no_devices_from_devices_not_reported() {
+        let none = parse_handshake(r#"{"port":8080,"devices":[]}"#).unwrap();
+        assert_eq!(none.devices, Some(vec![]));
+        for line in [
+            r#"{"port":8080}"#,
+            r#"{"port":8080,"devices":null}"#,
+            r#"{"port":8080,"devices":"CUDA0"}"#,
+        ] {
+            assert_eq!(parse_handshake(line).unwrap().devices, None, "{line}");
+        }
+    }
+
+    // A truncated list as a baseline would look like a GPU appearing, and
+    // restart the engine for nothing.
+    #[test]
+    fn parse_handshake_does_not_trust_a_list_with_an_unreadable_entry() {
+        let hs = parse_handshake(
+            r#"{"port":8080,"devices":[{"id":"CUDA0","name":"RTX"},{"id":"Vulkan1"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(hs.devices, None);
     }
 
     #[test]
@@ -676,6 +1297,198 @@ mod tests {
         .await
         .expect_err("a missing exe must fail");
         assert!(matches!(err, WorkerError::Spawn(_)), "got {err:?}");
+    }
+
+    // #9270: a worker built for another processor (the Apple Silicon engine on
+    // an Intel Mac) is refused by the kernel with EBADARCH. A thin Mach-O for a
+    // CPU no Mac runs today gets the same refusal on any Mac, which is how this
+    // is exercised without an Intel machine.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_worker_built_for_another_processor_is_its_own_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("jan-llama-worker");
+        let mut header = Vec::new();
+        // mach_header_64: magic, cputype (PowerPC), cpusubtype, MH_EXECUTE, ncmds,
+        // sizeofcmds, flags, reserved.
+        for word in [0xfeed_facf_u32, 0x12, 0, 2, 0, 0, 0, 0] {
+            header.extend_from_slice(&word.to_le_bytes());
+        }
+        header.resize(64, 0);
+        std::fs::write(&exe, header).unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = spawn(
+            &exe,
+            Path::new("/tmp/x.ini"),
+            0,
+            "k",
+            1,
+            0,
+            HashMap::new(),
+            None,
+        )
+        .await
+        .expect_err("a worker for another CPU cannot start");
+        assert!(
+            matches!(err, WorkerError::WrongArchitecture(_)),
+            "got {err:?}"
+        );
+    }
+
+    // The tail is what turns "connection refused" into a cause, so it must
+    // keep the newest lines, and only a few of them.
+    #[test]
+    fn the_stderr_tail_keeps_the_last_few_nonblank_lines() {
+        let tail = StderrTail::default();
+        for i in 0..10 {
+            remember_stderr_line(&tail, &format!("line {i}"));
+            remember_stderr_line(&tail, "   ");
+        }
+        let kept = stderr_lines(&tail);
+        assert_eq!(kept.len(), STDERR_TAIL_LINES);
+        assert_eq!(kept.last().map(String::as_str), Some("line 9"));
+
+        remember_stderr_line(&tail, &"x".repeat(5000));
+        assert_eq!(
+            stderr_lines(&tail).last().map(|l| l.chars().count()),
+            Some(STDERR_TAIL_LINE_CHARS)
+        );
+    }
+
+    // Backend-load lines name no cause and carry local paths, so a crash
+    // right after start must show what came before them, not them.
+    #[test]
+    fn backend_load_lines_stay_out_of_the_tail() {
+        let tail = StderrTail::default();
+        remember_stderr_line(&tail, "ggml_metal_init: error: failed to allocate");
+        for b in ["MTL", "BLAS", "CPU"] {
+            remember_stderr_line(
+                &tail,
+                &format!("load_backend: loaded {b} backend from /opt/jan/libggml-{b}.so"),
+            );
+        }
+        assert_eq!(
+            stderr_lines(&tail),
+            vec!["ggml_metal_init: error: failed to allocate".to_string()]
+        );
+    }
+
+    #[test]
+    fn the_log_since_a_mark_holds_only_what_came_after_it() {
+        let log = WorkerLog::default();
+        record_log_line(&log, "before");
+        let mark = FitMark { fit: 0, log: log.lock().unwrap().total };
+        record_log_line(&log, "during 1");
+        record_log_line(&log, "during 2");
+        let buf = log.lock().unwrap();
+        let wanted = buf.total.saturating_sub(mark.log) as usize;
+        let tail: Vec<_> = buf.lines.iter().skip(buf.lines.len() - wanted).collect();
+        assert_eq!(tail, ["during 1", "during 2"]);
+    }
+
+    #[test]
+    fn the_log_is_bounded_and_backends_survive_eviction() {
+        let log = WorkerLog::default();
+        record_log_line(&log, "load_backend: loaded CUDA backend from /home/u/jan/libggml-cuda.so");
+        for i in 0..(WORKER_LOG_LINES + 50) {
+            record_log_line(&log, &format!("line {i}"));
+        }
+        let buf = log.lock().unwrap();
+        assert_eq!(buf.lines.len(), WORKER_LOG_LINES);
+        assert_eq!(buf.backends, ["CUDA (libggml-cuda.so)"]);
+    }
+
+    #[test]
+    fn a_backend_line_drops_the_local_directory() {
+        assert_eq!(
+            parse_backend_line(r"load_backend: loaded Vulkan backend from C:\Users\bob\jan\ggml-vulkan.dll")
+                .as_deref(),
+            Some("Vulkan (ggml-vulkan.dll)")
+        );
+        assert_eq!(parse_backend_line("ggml_vulkan: Found 1 Vulkan devices"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_statuses_read_the_way_users_search_for_them() {
+        use std::os::unix::process::ExitStatusExt;
+        // Unix wait status: the code in the high byte, a signal in the low bits.
+        assert_eq!(describe_exit(&ExitStatus::from_raw(3 << 8)), "exit code 3");
+        // From the platform's constants: SIGBUS is 7 on Linux but 10 on macOS,
+        // where 7 is SIGEMT.
+        use nix::sys::signal::Signal;
+        for (sig, name) in [
+            (Signal::SIGABRT, "SIGABRT"),
+            (Signal::SIGBUS, "SIGBUS"),
+            (Signal::SIGKILL, "SIGKILL"),
+            (Signal::SIGSEGV, "SIGSEGV"),
+            (Signal::SIGTERM, "SIGTERM"),
+        ] {
+            assert_eq!(
+                describe_exit(&ExitStatus::from_raw(sig as i32)),
+                format!("killed by {name}")
+            );
+        }
+        assert_eq!(describe_exit(&ExitStatus::from_raw(100)), "killed by signal 100");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_crash_code_is_shown_as_its_ntstatus() {
+        use std::os::windows::process::ExitStatusExt;
+        assert_eq!(
+            describe_exit(&ExitStatus::from_raw(0xC000_0005)),
+            "exit code 0xC0000005"
+        );
+        assert_eq!(describe_exit(&ExitStatus::from_raw(1)), "exit code 1");
+    }
+
+    /// A stand-in worker: a shell script that ignores the worker flags.
+    #[cfg(unix)]
+    pub(crate) fn fake_worker(dir: &Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-worker.sh");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    /// `spawn`, retried while the script is "Text file busy". Another test
+    /// forking at the moment the script was written inherits the write fd until
+    /// its child execs, and executing a file open for writing is ETXTBSY.
+    #[cfg(unix)]
+    pub(crate) async fn spawn_script(exe: &Path) -> Result<WorkerHandle, WorkerError> {
+        for _ in 0..50 {
+            match spawn(exe, Path::new("/tmp/x.ini"), 0, "k", 1, 0, HashMap::new(), None).await {
+                Err(WorkerError::Spawn(m)) if m.contains("os error 26") => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                other => return other,
+            }
+        }
+        panic!("{} stayed busy", exe.display());
+    }
+
+    // A GPU init crash happens before the handshake, so this message is all
+    // the user gets; it has to carry the exit code and the reason, not a
+    // Debug-printed `Option<ExitStatus>`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_worker_that_dies_before_serving_reports_its_exit_and_last_words() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = fake_worker(
+            dir.path(),
+            "echo 'ggml_cuda_init: failed to initialize CUDA: unknown error' >&2\nexit 3",
+        );
+        let err = spawn_script(&exe)
+            .await
+            .expect_err("a worker that exits must fail the start");
+        let msg = err.to_string();
+        assert!(msg.contains("exit code 3"), "{msg}");
+        assert!(msg.contains("failed to initialize CUDA"), "{msg}");
     }
 
     #[tokio::test]

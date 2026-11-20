@@ -1,6 +1,6 @@
 //! Import skills from Anthropic's public skill hub (github.com/anthropics/skills).
 //! Skills live at `skills/<name>/SKILL.md` with optional bundled files; import
-//! copies the whole folder into the project's `.jan/agent/skills/<name>/`.
+//! copies the whole folder into the project store's `skills/<name>/`.
 //!
 //! All network I/O goes through the backend (no CORS/CSP limits) using the git
 //! tree API (1 request to enumerate paths) plus raw.githubusercontent.com for
@@ -10,10 +10,9 @@ use std::path::Path;
 
 use futures::future::join_all;
 
-use tauri_plugin_agent_tools::{skills, workspace};
+use tauri_plugin_agent_tools::skills;
 
-const TREE_URL: &str =
-    "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
+const TREE_URL: &str = "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
 const RAW_BASE: &str = "https://raw.githubusercontent.com/anthropics/skills/main/";
 const SKILLS_PREFIX: &str = "skills/";
 const USER_AGENT: &str = "jan-agent-skill-import";
@@ -104,13 +103,13 @@ pub async fn list() -> Result<Vec<HubSkill>, String> {
 }
 
 /// Download one hub skill (SKILL.md + every bundled file) into the project's
-/// `.jan/agent/skills/<name>/`, replacing any existing skill of the same name.
+/// `<store>/skills/<name>/`, replacing any existing skill of the same name.
 ///
 /// Atomic on failure: every file is fetched into memory first, and only once all
 /// downloads succeed is the destination cleared and rewritten — a mid-download
 /// error leaves the existing skill untouched, and re-import never leaves stale
 /// files from a prior version behind.
-pub async fn import(root: &Path, name: &str) -> Result<(), String> {
+pub async fn import(store: &Path, name: &str) -> Result<(), String> {
     // Reuse the shared workspace name guard (rejects separators, `..`, `.`, empty).
     let stem = skills::safe_stem(name)?;
     let client = client()?;
@@ -151,8 +150,9 @@ pub async fn import(root: &Path, name: &str) -> Result<(), String> {
         fetched.push(result?);
     }
 
-    // Phase 2: replace the destination with the freshly fetched files.
-    let skills_dir = skills::skills_dir(&workspace::project_store(root));
+    // Phase 2: replace the destination with the freshly fetched files. `store`
+    // is a store root (project or permanent); the caller resolved it.
+    let skills_dir = skills::skills_dir(store);
     let dest_root = skills_dir.join(&stem);
     let flat = skills_dir.join(format!("{stem}.md"));
     let _ = tokio::fs::remove_dir_all(&dest_root).await;

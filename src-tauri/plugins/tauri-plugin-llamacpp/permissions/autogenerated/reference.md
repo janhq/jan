@@ -14,11 +14,16 @@ Default permissions for the llamacpp plugin
 - `allow-start-engine`
 - `allow-stop-engine`
 - `allow-get-engine-info`
+- `allow-get-engine-version`
 - `allow-reload-engine-models`
 - `allow-engine-devices`
 - `allow-force-stop-engine`
 - `allow-engine-slots-idle`
+- `allow-begin-engine-restart`
+- `allow-end-engine-restart`
 - `allow-erase-thread-slot-state`
+- `allow-start-diagnostics`
+- `allow-cancel-diagnostics`
 - `allow-read-gguf-metadata`
 - `allow-find-gguf-tensors`
 - `allow-is-model-supported`
@@ -31,6 +36,58 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp:allow-begin-engine-restart`
+
+</td>
+<td>
+
+Enables the begin_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-begin-engine-restart`
+
+</td>
+<td>
+
+Denies the begin_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-cancel-diagnostics`
+
+</td>
+<td>
+
+Enables the cancel_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-cancel-diagnostics`
+
+</td>
+<td>
+
+Denies the cancel_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -54,6 +111,32 @@ Enables the cleanup_llama_processes command without any pre-configured scope.
 <td>
 
 Denies the cleanup_llama_processes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-end-engine-restart`
+
+</td>
+<td>
+
+Enables the end_engine_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-end-engine-restart`
+
+</td>
+<td>
+
+Denies the end_engine_restart command without any pre-configured scope.
 
 </td>
 </tr>
@@ -295,6 +378,32 @@ Denies the get_engine_info command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-get-engine-version`
+
+</td>
+<td>
+
+Enables the get_engine_version command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-engine-version`
+
+</td>
+<td>
+
+Denies the get_engine_version command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-get-loaded-models`
 
 </td>
@@ -418,6 +527,32 @@ Enables the reload_engine_models command without any pre-configured scope.
 <td>
 
 Denies the reload_engine_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-start-diagnostics`
+
+</td>
+<td>
+
+Enables the start_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-start-diagnostics`
+
+</td>
+<td>
+
+Denies the start_diagnostics command without any pre-configured scope.
 
 </td>
 </tr>

@@ -36,7 +36,6 @@ vi.mock('../models', () => ({
 const mockWindow = {
   core: {
     api: {
-      installExtensions: vi.fn(),
       relaunch: vi.fn(),
       getAppConfigurations: vi.fn(),
       changeAppDataFolder: vi.fn(),

@@ -2,8 +2,8 @@
  * Typed access to the Rust settings store (`core::app::settings_store`), which
  * persists to `<jan_data>/settings.json`.
  *
- * Named `appSettings` rather than `settings` to keep it distinct from
- * `BaseExtension`'s per-extension setting descriptors, which are unrelated.
+ * Named `appSettings` rather than `settings` to keep it distinct from the
+ * per-extension settings store on the extension host, which is unrelated.
  */
 
 /**

@@ -1,0 +1,32 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                |
+|╭ monitors ────────────────────────────────────────────────────────────────────╮|
+|│ ▶ ◔ mon-1  build  12 polls  grep -m1 OK build.log                            │|
+|│   ◔ mon-2  boot  1 poll  curl -sf localhost:1337/health                      │|
+|╰──────────────────────────────────────────────────────────────────────────────╯|
+|                                                                                |
+|────────────────────────────────────────────────────────────────────────────────|
+|selecting…                                                                      |
+|                                                                                |
+|📂 /snapshot/repo                                ↑/↓ select   x stop   Esc close|
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#98C379
+ 1 0..80 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 2..78 fg=Cyan mod=BOLD
+ 2 79..80 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 4..11 fg=#56B6C2
+ 3 17..57 fg=#808080
+ 3 79..80 fg=#56B6C2
+ 4 0..80 fg=#56B6C2
+ 7 0..10 mod=DIM | ITALIC
+ 9 0..1 fg=#808080
+ 9 2..17 fg=#808080
+ 9 48..80 mod=DIM

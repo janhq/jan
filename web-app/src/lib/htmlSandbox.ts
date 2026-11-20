@@ -1,4 +1,5 @@
 import { PREVIEW_INSPECTOR_SCRIPT } from '@/lib/previewInspector'
+import { PREVIEW_SHIM_SCRIPT } from '@/lib/previewShim'
 
 function buildCsp(allowNetwork: boolean, allowScripts: boolean): string {
   if (!allowScripts) {
@@ -10,22 +11,28 @@ function buildCsp(allowNetwork: boolean, allowScripts: boolean): string {
       "connect-src 'none'",
     ].join('; ')
   }
+  // `blob:` on script/worker and `media-src` are what a self-contained game
+  // needs: a Worker built from a blob, sound effects as data URLs.
   if (allowNetwork) {
     return [
       "default-src 'none'",
-      "script-src 'unsafe-inline' https:",
+      "script-src 'unsafe-inline' blob: https:",
       "style-src 'unsafe-inline' https:",
       'img-src data: blob: https:',
       'font-src data: https:',
+      'media-src data: blob: https:',
+      'worker-src blob:',
       'connect-src https:',
     ].join('; ')
   }
   return [
     "default-src 'none'",
-    "script-src 'unsafe-inline'",
+    "script-src 'unsafe-inline' blob:",
     "style-src 'unsafe-inline'",
     'img-src data: blob:',
     'font-src data:',
+    'media-src data: blob:',
+    'worker-src blob:',
     "connect-src 'none'",
   ].join('; ')
 }
@@ -49,8 +56,9 @@ export function buildSrcDoc(
   // Element inspection (hover outline / click-to-pin bbox) needs a script in
   // the iframe's own document, which is only possible when scripts run at all
   // (allowScripts=false is the static SVG mode).
+  // The shim goes first: storage must be patched before any model script runs.
   const inspector = allowScripts
-    ? `<script>${PREVIEW_INSPECTOR_SCRIPT}</script>`
+    ? `<script>${PREVIEW_SHIM_SCRIPT}</script><script>${PREVIEW_INSPECTOR_SCRIPT}</script>`
     : ''
   // Always wrap so the CSP meta precedes all model markup — a meta CSP is only
   // honored before resource-fetching content, and a later one can't loosen it.

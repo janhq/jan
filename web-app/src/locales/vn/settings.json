@@ -93,8 +93,6 @@
     "resetToDefaultDesc": "Đặt lại tất cả cài đặt giao diện về mặc định.",
     "resetInterfaceSuccess": "Giao diện đã được đặt lại thành công",
     "resetInterfaceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
-    "tokenCounterCompact": "Bộ đếm token nhỏ gọn",
-    "tokenCounterCompactDesc": "Hiển thị bộ đếm token bên trong ô nhập trò chuyện. Khi tắt, bộ đếm token sẽ xuất hiện bên dưới ô nhập.",
     "codeBlockTitle": "Khối mã",
     "codeBlockDesc": "Chọn kiểu tô sáng cú pháp.",
     "showLineNumbers": "Hiển thị số dòng",
@@ -102,7 +100,8 @@
     "resetCodeBlockStyle": "Đặt lại kiểu khối mã",
     "resetCodeBlockStyleDesc": "Đặt lại kiểu khối mã về mặc định.",
     "resetCodeBlockSuccess": "Kiểu khối mã đã được đặt lại thành công",
-    "resetCodeBlockSuccessDesc": "Kiểu khối mã đã được khôi phục về mặc định."
+    "resetCodeBlockSuccessDesc": "Kiểu khối mã đã được khôi phục về mặc định.",
+    "themeDescFixed": "Luôn dùng giao diện này. Chọn Hệ thống để theo hệ điều hành."
   },
   "hardware": {
     "os": "Hệ điều hành",
@@ -151,6 +150,11 @@
     "peerSslDesc": "Xác thực chứng chỉ SSL của các kết nối ngang hàng.",
     "hostSsl": "Máy chủ SSL",
     "hostSslDesc": "Xác thực chứng chỉ SSL của các máy chủ đích."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Những gì Jan có thể làm trên máy tính của bạn: shell trong sandbox, cùng với ký ức và kỹ năng được lưu vĩnh viễn trong thư mục dữ liệu Jan.",
+    "networkDesc": "Cho phép lệnh shell truy cập mạng, chẳng hạn để cài gói hoặc tải một kho mã. Bật theo mặc định. Sandbox vẫn giới hạn những tệp mà lệnh có thể truy cập."
   },
   "localApiServer": {
     "title": "Máy chủ API cục bộ",

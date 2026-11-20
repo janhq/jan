@@ -15,6 +15,7 @@ Jan supports the [Model Context Protocol](https://modelcontextprotocol.io), lett
 ## Settings
 
 - **Allow All MCP Tool Permissions** — When enabled, all MCP tool calls are automatically approved without showing permission dialogs. Applies globally to all conversations.
+- **Saved tool permissions** - The servers and tools you chose **Always allow** for. They run without asking in every conversation until you select **Revoke**. **Allow in thread** answers are never saved: they end when you close Jan.
 - **Tool call timeout** — Maximum time (in seconds) to wait for an MCP tool response before timing out. Default is 30 seconds.
 - **Smart MCP tool routing** — When enabled, Jan narrows which MCP servers are queried for tools on each turn when you have more than a small number of connected servers, reducing context size. You can optionally use a **dedicated lightweight model** for that routing step.
 - **Routing model** — Single picker for provider + model; only lightweight models are listed. Requires smart routing and “Use a dedicated model for routing” to be on.

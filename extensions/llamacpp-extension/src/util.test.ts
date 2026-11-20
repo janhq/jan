@@ -3,11 +3,13 @@ import { logger } from '@janhq/core'
 import {
   buildEmbedBatches,
   detectMtpLayersFromGgufMeta,
+  detectExpertCountFromGgufMeta,
   resolveSpecDraftKind,
   detectTemplateKwargsFromChatTemplate,
   estimateTokensFromText,
   getProxyConfig,
   truncateToTokenBudget,
+  fileName,
 } from './util'
 import { getBackendSetting } from './backend-settings'
 
@@ -566,6 +568,41 @@ describe('buildEmbedBatches', () => {
   })
 })
 
+describe('detectExpertCountFromGgufMeta', () => {
+  it('returns 0 for missing meta or a dense model', () => {
+    expect(detectExpertCountFromGgufMeta(undefined)).toBe(0)
+    expect(
+      detectExpertCountFromGgufMeta({ 'general.architecture': 'llama' })
+    ).toBe(0)
+  })
+
+  it('reads {arch}.expert_count, as a number or a string', () => {
+    expect(
+      detectExpertCountFromGgufMeta({
+        'general.architecture': 'qwen3moe',
+        'qwen3moe.expert_count': 128,
+      })
+    ).toBe(128)
+    expect(
+      detectExpertCountFromGgufMeta({
+        'general.architecture': 'gpt-oss',
+        'gpt-oss.expert_count': '32',
+      })
+    ).toBe(32)
+  })
+
+  // An arch-less key is not trusted: a draft or projector gguf can carry
+  // another architecture's metadata, and a false positive breaks the load.
+  it('ignores an expert_count under a different architecture', () => {
+    expect(
+      detectExpertCountFromGgufMeta({
+        'general.architecture': 'llama',
+        'other.expert_count': 8,
+      })
+    ).toBe(0)
+  })
+})
+
 describe('detectMtpLayersFromGgufMeta', () => {
   it('returns 0 for undefined or empty meta', () => {
     expect(detectMtpLayersFromGgufMeta(undefined)).toBe(0)
@@ -739,5 +776,16 @@ describe('resolveSpecDraftKind', () => {
     expect(
       resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
     ).toBe('dflash')
+  })
+})
+
+describe('fileName', () => {
+  it('takes the last segment of a POSIX or Windows path', () => {
+    expect(fileName('/jan/models/imported/qwen.yml')).toBe('qwen.yml')
+    expect(fileName('C:\\jan\\models\\qwen.gguf')).toBe('qwen.gguf')
+  })
+
+  it('returns a bare name unchanged', () => {
+    expect(fileName('qwen.yml')).toBe('qwen.yml')
   })
 })

@@ -10,6 +10,7 @@ use crate::core::agent::git;
 use crate::core::agent::plugins;
 use crate::core::agent::project::{
     agent_toml_path, ensure_project, load_agent_config, set_skills_enabled_in_agent_toml,
+    store_root,
 };
 use crate::core::agent::skill_hub;
 use crate::core::agent::skills as agent_skills;
@@ -24,21 +25,21 @@ fn ui_error(e: String) -> String {
     e.strip_prefix("ERROR: ").map(str::to_string).unwrap_or(e)
 }
 
-/// List the skills under `<project>/.jan/agent/skills/` (folder `<name>/SKILL.md`
+/// List the skills under `<store>/skills/` (folder `<name>/SKILL.md`
 /// and legacy flat `<name>.md`). These are the same skills `load_skills` injects
 /// into the agent's system prompt; managing them here is CRUD over that
 /// directory. Read-only: returns empty when the project isn't scaffolded yet.
 #[tauri::command]
 pub async fn agent_skill_list(project: String) -> Result<Vec<SkillMeta>, String> {
     let root = std::path::PathBuf::from(&project);
-    Ok(skills::list_meta(&workspace::project_store(&root)))
+    Ok(skills::list_meta(&store_root(&root)))
 }
 
 /// Read one skill's raw SKILL.md (frontmatter included) for the editor.
 #[tauri::command]
 pub async fn agent_skill_read(project: String, name: String) -> Result<String, String> {
     let root = std::path::PathBuf::from(&project);
-    skills::read_raw(&workspace::project_store(&root), &name).map_err(ui_error)
+    skills::read_raw(&store_root(&root), &name).map_err(ui_error)
 }
 
 /// Create or overwrite a skill. New skills are written as `<name>/SKILL.md`;
@@ -51,14 +52,14 @@ pub async fn agent_skill_write(
 ) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
-    skills::write(&workspace::project_store(&root), &name, &content).map_err(ui_error)
+    skills::write(&store_root(&root), &name, &content).map_err(ui_error)
 }
 
 /// Delete a skill by name. Idempotent: a missing skill is treated as success.
 #[tauri::command]
 pub async fn agent_skill_delete(project: String, name: String) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
-    skills::delete(&workspace::project_store(&root), &name).map_err(ui_error)
+    skills::delete(&store_root(&root), &name).map_err(ui_error)
 }
 
 /// List the skills available on Anthropic's public skill hub (name + purpose).
@@ -67,13 +68,37 @@ pub async fn agent_skill_hub_list() -> Result<Vec<skill_hub::HubSkill>, String> 
     skill_hub::list().await.map_err(ui_error)
 }
 
-/// Download a hub skill (SKILL.md + bundled files) into the project as
-/// `<name>/SKILL.md`. Scaffolds the project on first use.
+/// Download a hub skill (SKILL.md + bundled files) as `<name>/SKILL.md`, into
+/// the project store when a project is given (scaffolded on first use), else
+/// into the permanent store -- Cowork's skills manager works with no folder
+/// attached, and the store is what its agent reads anyway.
 #[tauri::command]
-pub async fn agent_skill_hub_import(project: String, name: String) -> Result<(), String> {
-    let root = std::path::PathBuf::from(&project);
-    ensure_project(&root)?;
-    skill_hub::import(&root, &name).await.map_err(ui_error)
+pub async fn agent_skill_hub_import(
+    project: Option<String>,
+    data_folder: Option<String>,
+    name: String,
+) -> Result<(), String> {
+    let store = match project
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+    {
+        Some(p) => {
+            let root = std::path::PathBuf::from(&p);
+            ensure_project(&root)?;
+            store_root(&root)
+        }
+        None => {
+            let data = data_folder
+                .filter(|d| !d.trim().is_empty())
+                .ok_or_else(|| {
+                    "ERROR: neither a project nor the data folder was given".to_string()
+                })?;
+            workspace::ensure_permanent_store(std::path::Path::new(&data))
+                .await
+                .map_err(ui_error)?
+        }
+    };
+    skill_hub::import(&store, &name).await.map_err(ui_error)
 }
 
 /// Read the project's enabled-skill whitelist (`[skills].enabled`). An empty
@@ -112,7 +137,7 @@ pub async fn agent_skill_invoke(
         .map_err(ui_error)
 }
 
-/// List installed plugins under `<project>/.jan/agent/plugins/` with metadata
+/// List installed plugins under `<store>/plugins/` with metadata
 /// and skill counts.
 #[tauri::command]
 pub async fn agent_plugin_list(project: String) -> Result<Vec<plugins::InstalledPlugin>, String> {

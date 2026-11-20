@@ -75,6 +75,18 @@ type ProviderObject = {
   custom_header?: ProviderCustomHeader[] | null
   /** Wire format of the provider's HTTP API. Missing = 'openai' (default). */
   api_type?: ProviderApiType
+  /**
+   * What the UI calls the provider when its id is not meant for people, such
+   * as the namespaced id of an extension's provider. `getProviderTitle`
+   * prefers it.
+   */
+  display_name?: string
+  /**
+   * Set when an extension contributed the provider. Such providers live only
+   * while the extension runs and are never persisted; the extension owns
+   * their key and base URL, so the provider page does not edit them.
+   */
+  source?: { extensionId: string; extensionName: string }
 }
 
 /**

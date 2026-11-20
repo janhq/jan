@@ -102,6 +102,7 @@ tools, vision, or audio. Add each model manually and configure its capabilities 
 | vLLM | OpenAI-Compatible | `http://localhost:8000/v1` |
 | Ollama | OpenAI-Compatible | `http://localhost:11434/v1` |
 | LocalAI | OpenAI-Compatible | `http://localhost:8080/v1` |
+| llama.cpp `llama-server` | OpenAI-Compatible | `http://localhost:8080/v1` |
 | Text Generation Inference (TGI) | OpenAI-Compatible | `http://localhost:8080/v1` |
 | LiteLLM (OpenAI mode) | OpenAI-Compatible | `http://localhost:4000/v1` |
 | LiteLLM (Anthropic mode) | Anthropic-Compatible | `http://localhost:4000` |
@@ -109,6 +110,45 @@ tools, vision, or audio. Add each model manually and configure its capabilities 
 <Callout type="info">
 Ports and paths depend on how you launched the server — check its startup logs. The values above
 are defaults and may differ in your setup.
+</Callout>
+
+## Use a different llama.cpp version
+
+Jan's built-in llama.cpp engine (**Settings** > **Llama.cpp**) is the version that ships with the app, and it updates together with Jan. If a model misbehaves on that version but works on another one, for example after a llama.cpp regression on your GPU, run the llama.cpp version you need yourself and connect it as a custom endpoint. This works today, with any llama.cpp build.
+
+<Steps>
+
+### Step 1: Get llama.cpp
+
+Open [ggml-org/llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) and pick a numbered build such as `b11514`; GitHub marks these as pre-releases, and the release marked "Latest" has no binaries. Download the `llama-<build>-bin-…` archive for your system and GPU and unpack it, for example:
+
+- Windows: `llama-b11514-bin-win-vulkan-x64.zip` or `llama-b11514-bin-win-cuda-13.4-x64.zip`. CUDA builds also need the matching `cudart-llama-bin-win-cuda-13.4-x64.zip`, unpacked into the same folder.
+- Linux: `llama-b11514-bin-ubuntu-vulkan-x64.tar.gz` or `llama-b11514-bin-ubuntu-cuda-13.4-x64.tar.gz`.
+- macOS (Apple Silicon): `llama-b11514-bin-macos-arm64.tar.gz`.
+
+### Step 2: Start `llama-server` with your model
+
+```bash
+llama-server -m /path/to/model.gguf --alias my-model --port 8080 -ngl 99 --jinja
+```
+
+- `--alias` is the model name Jan will show. Without it, the model is listed under its full file path.
+- `-ngl 99` offloads every layer to the GPU; lower it if the model doesn't fit. Recent builds default to `auto`, older ones to CPU only.
+- `--jinja` uses the model's own chat template, which tool calling needs. It is the default in recent builds and harmless to pass.
+- Use a port other than 1337, which Jan's own Local API Server uses by default.
+
+Models you downloaded in Jan are under your Jan data folder, in `llamacpp/models/<model>/model.gguf`.
+
+### Step 3: Add it to Jan
+
+Follow [Add a custom provider](#add-a-custom-provider) with **OpenAI-compatible**, base URL `http://localhost:8080/v1` and any placeholder API key (e.g. `sk-no-key`). Jan lists the model under its `--alias`; pick it in the chat's model selector.
+
+To let the model call tools, click the pencil next to it in the provider's **Models** list and turn on **Tools** under **Capabilities**. Jan can't detect a custom provider's capabilities on its own.
+
+</Steps>
+
+<Callout type="info">
+A model served this way is not managed by Jan: its download, load settings and GPU offload are whatever you pass to `llama-server`, and Jan's per-model llama.cpp settings don't apply to it.
 </Callout>
 
 ## API key fallbacks

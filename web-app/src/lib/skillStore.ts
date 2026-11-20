@@ -4,6 +4,7 @@ import {
   skillRead,
   skillWrite,
   skillDelete,
+  skillInvoke,
   type SkillMeta,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -19,7 +20,7 @@ export type { SkillMeta }
  *
  * - `store`   -- the desktop's permanent store in the Jan data folder, managed
  *                from Settings. Reached through the plugin's guest-js.
- * - `project` -- a project's co-located `<folder>/.jan/agent`, managed from the
+ * - `project` -- the folder's project store `~/.jan/projects/<slug>`, managed from the
  *                code screen.
  *
  * The project scope deliberately keeps using the core `agent_skill_*` commands
@@ -93,4 +94,18 @@ export async function deleteSkill(
     return
   }
   await skillDelete(await dataFolder(), name)
+}
+export async function invokeSkill(
+  scope: SkillScope,
+  name: string,
+  args: string
+): Promise<string> {
+  if (scope.kind === 'project') {
+    return await invoke<string>('agent_skill_invoke', {
+      project: scope.folder,
+      name,
+      args,
+    })
+  }
+  return await skillInvoke(await dataFolder(), name, args)
 }

@@ -1,23 +1,39 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FolderOpen, Globe, RotateCw, SquareArrowOutUpRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  FolderOpen,
+  Globe,
+  Ellipsis,
+  RotateCw,
+  ShieldOff,
+  SquareArrowOutUpRight,
+} from 'lucide-react'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
+import { CoworkPanelButton, CoworkSidePanel } from '@/containers/CoworkSidePanel'
 import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { buildSrcDoc } from '@/lib/htmlSandbox'
 import { cn } from '@/lib/utils'
+import { buildSrcDoc } from '@/lib/htmlSandbox'
+import { previewShimError } from '@/lib/previewShim'
+import {
+  artifactOpener,
+  previewUrl,
+  registerPreviewRoot,
+  unregisterPreviewRoot,
+} from '@/lib/previewProtocol'
 import {
   MAX_PREVIEW_BYTES,
   basenameOf,
+  externalRefs,
   isAssetKind,
+  openOrReveal,
   previewKindFor,
-  resolveInRoot,
+  resolveInRoots,
   unresolvedRefs,
   type PreviewState,
 } from '@/lib/coworkPreview'
@@ -26,9 +42,16 @@ import {
  * whose identity changes on every render. */
 const TOO_LARGE = 'common:preview.tooLarge'
 
+/** Whether the unsandboxed `preview://` mode is offered. Not on Windows: Tauri
+ * treats the scheme's origin as the app's own, and on WebView2 wry injects the
+ * IPC init script into subframes too (elsewhere only the main frame gets it),
+ * so there only the opaque-origin srcdoc sandbox keeps the page off IPC. */
+const canUnsandbox = () => !IS_WINDOWS
+
 type Props = {
-  /** The session sandbox. Every previewed path must resolve inside it. */
-  root: string | null
+  /** Every place the session may have written the file: its sandbox and, when
+   * attached, the writable project folder. The path must resolve inside one. */
+  roots: Array<string | null>
   path: string
   onClose: () => void
 }
@@ -41,7 +64,7 @@ type Props = {
  * footer, which is right for a model and wrong for a preview, and it hands back
  * a description of an image rather than its bytes.
  */
-export function CoworkPreviewPanel({ root, path, onClose }: Props) {
+export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const [state, setState] = useState<PreviewState>({ status: 'idle' })
@@ -49,11 +72,23 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
   // mid-interaction in a document or a running page.
   const [nonce, setNonce] = useState(0)
   const [allowNetwork, setAllowNetwork] = useState(false)
+  // Off by default: the srcdoc sandbox is the safe path. On, the page is served
+  // from `preview://` with an origin of its own (see previewProtocol.ts).
+  const [unsandboxed, setUnsandboxed] = useState(false)
 
-  const abs = useMemo(
-    () => (root ? resolveInRoot(root, path) : null),
-    [root, path]
+  // Keyed on the values, not the array identity, which the parent rebuilds each
+  // render.
+  const rootsKey = roots.join('\n')
+  // Both the absolute path and the root that contained it: the unsandboxed
+  // `preview://` mode registers the matched directory, which may be the attached
+  // folder rather than the sandbox.
+  const resolved = useMemo(
+    () => resolveInRoots(roots, path),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rootsKey, path]
   )
+  const abs = resolved?.abs ?? null
+  const matchedRoot = resolved?.root ?? null
   const kind = useMemo(() => previewKindFor(path), [path])
 
   useEffect(() => {
@@ -90,6 +125,7 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
           kind,
           content,
           unresolvedRefs: kind === 'html' ? unresolvedRefs(content) : undefined,
+          externalRefs: kind === 'html' ? externalRefs(content) : undefined,
         })
       } catch (e) {
         if (!alive) return
@@ -108,65 +144,183 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
-  const iconButton = (
-    label: string,
-    Icon: typeof RotateCw,
-    onClick: () => void,
-    active?: boolean
-  ) => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onClick}
-          aria-label={label}
-          aria-pressed={active}
-          className={cn(
-            'shrink-0',
-            active ? 'text-primary' : 'text-muted-foreground'
-          )}
-        >
-          <Icon className="size-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
+  // The scheme serves nothing until the root is registered, and the network
+  // flag rides on the registration, so a toggle re-registers. Closing the
+  // panel or leaving the mode withdraws the root. The registered root is the
+  // one the file resolved inside -- sandbox or attached folder.
+  const live = unsandboxed && canUnsandbox() && kind === 'html' && !!matchedRoot
+  useEffect(() => {
+    if (!live || !matchedRoot) return
+    void registerPreviewRoot(matchedRoot, allowNetwork).catch(() => {
+      // A failed registration leaves the frame 404ing; the reload button
+      // retries it by re-running this effect.
+    })
+    return () => void unregisterPreviewRoot(matchedRoot).catch(() => {})
+  }, [live, matchedRoot, allowNetwork, nonce])
 
   return (
     <CoworkSidePanel
       title={basenameOf(path)}
       onClose={onClose}
       summary={
-        <div className="flex shrink-0 items-center gap-0.5">
-          {state.status === 'ready' && state.kind === 'html' &&
-            iconButton(
-              t('common:preview.allowNetwork'),
-              Globe,
-              () => setAllowNetwork((v) => !v),
-              allowNetwork
-            )}
-          {iconButton(t('common:preview.reload'), RotateCw, reload)}
-          {abs && (
-            <>
-              {iconButton(
-                t('common:artifactOpenExternal'),
-                SquareArrowOutUpRight,
-                () => void serviceHub.opener().openPath(abs)
-              )}
-              {iconButton(
-                t('common:artifactShowInFolder'),
-                FolderOpen,
-                () => void serviceHub.opener().revealItemInDir(abs)
-              )}
-            </>
-          )}
-        </div>
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <CoworkPanelButton
+                aria-label={t('common:artifactMoreActions')}
+                title={t('common:artifactMoreActions')}
+              >
+                <Ellipsis className="size-4" />
+              </CoworkPanelButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              collisionPadding={12}
+              className="w-80 max-w-[calc(100vw-24px)]"
+            >
+              {abs && <>
+                <DropdownMenuItem onSelect={() => void openOrReveal(artifactOpener(), roots, abs)}>
+                  <SquareArrowOutUpRight />{t('common:artifactOpenExternal')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void serviceHub.opener().revealItemInDir(abs)}>
+                  <FolderOpen />{t('common:artifactShowInFolder')}
+                </DropdownMenuItem>
+              </>}
+              {state.status === 'ready' && state.kind === 'html' && <>
+                {abs && <DropdownMenuSeparator />}
+                <DropdownMenuCheckboxItem
+                  indicatorAlign="right"
+                  checked={allowNetwork}
+                  onCheckedChange={setAllowNetwork}
+                >
+                  <Globe className="size-4 text-muted-foreground" />
+                  <span className="min-w-0 whitespace-normal">
+                    {t('common:preview.allowNetwork')}
+                  </span>
+                </DropdownMenuCheckboxItem>
+                {matchedRoot && canUnsandbox() && (
+                  <DropdownMenuCheckboxItem
+                    indicatorAlign="right"
+                    checked={unsandboxed}
+                    onCheckedChange={setUnsandboxed}
+                  >
+                    <ShieldOff className="size-4 text-muted-foreground" />
+                    <span className="min-w-0 whitespace-normal">
+                      {t('common:preview.unsandboxed')}
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                )}
+              </>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <CoworkPanelButton
+                onClick={reload}
+                aria-label={t('common:preview.reload')}
+              >
+                <RotateCw className="size-4" />
+              </CoworkPanelButton>
+            </TooltipTrigger>
+            <TooltipContent>{t('common:preview.reload')}</TooltipContent>
+          </Tooltip>
+        </>
       }
     >
-      <PreviewBody state={state} allowNetwork={allowNetwork} />
+      <PreviewBody
+        state={state}
+        allowNetwork={allowNetwork}
+        liveUrl={live && abs ? previewUrl(abs) : null}
+      />
     </CoworkSidePanel>
+  )
+}
+
+/** Reports past this many are dropped: the first ones name the cause. */
+const MAX_REPORTED_ERRORS = 5
+
+function HtmlFrame({
+  state,
+  allowNetwork,
+  liveUrl,
+}: {
+  state: Extract<PreviewState, { status: 'ready' }>
+  allowNetwork: boolean
+  liveUrl: string | null
+}) {
+  const { t } = useTranslation()
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [errors, setErrors] = useState<string[]>([])
+  // SVG is static markup, so it runs no scripts; HTML gets them, because an
+  // artifact that draws a chart is inert without them.
+  const scripts = state.kind === 'html'
+  const srcDoc = buildSrcDoc(state.content ?? '', allowNetwork, scripts)
+
+  // A new document starts with a clean slate; the old page's errors are not
+  // this one's.
+  useEffect(() => setErrors([]), [srcDoc])
+
+  // The shim inside the frame posts what the sandbox would otherwise swallow.
+  // Matched on the frame's own window so another preview's report is ignored.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.current?.contentWindow) return
+      const message = previewShimError(e.data)
+      if (!message) return
+      setErrors((prev) =>
+        prev.includes(message) || prev.length >= MAX_REPORTED_ERRORS
+          ? prev
+          : [...prev, message]
+      )
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  const blocked = allowNetwork ? 0 : (state.externalRefs ?? 0)
+  const notice = 'border-b bg-muted dark:bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+  const frameClass = 'min-h-0 w-full flex-1 border-0 bg-white'
+  return (
+    <div className="flex h-full flex-col">
+      {/* Served by URL, relative refs resolve; served inline, they cannot. */}
+      {!liveUrl && (state.unresolvedRefs ?? 0) > 0 && (
+        <p className={notice}>
+          {t('common:preview.unresolvedRefs', { count: state.unresolvedRefs })}
+        </p>
+      )}
+      {blocked > 0 && (
+        <p className={notice}>
+          {t('common:preview.externalRefs', { count: blocked })}
+        </p>
+      )}
+      {errors.length > 0 && (
+        <p className={cn(notice, 'text-destructive')} role="alert">
+          {t('common:preview.scriptErrors', {
+            count: errors.length,
+            message: errors[0],
+          })}
+        </p>
+      )}
+      {liveUrl ? (
+        // `allow-same-origin` is safe here because the origin is the scheme's,
+        // not the app's; it is what makes storage and relative assets work.
+        <iframe
+          key={liveUrl}
+          title={state.path}
+          src={liveUrl}
+          sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-modals"
+          className={frameClass}
+        />
+      ) : (
+        <iframe
+          ref={frame}
+          title={state.path}
+          srcDoc={srcDoc}
+          sandbox={scripts ? 'allow-scripts' : ''}
+          className={frameClass}
+        />
+      )}
+    </div>
   )
 }
 
@@ -181,9 +335,12 @@ function Notice({ children }: { children: React.ReactNode }) {
 function PreviewBody({
   state,
   allowNetwork,
+  liveUrl,
 }: {
   state: PreviewState
   allowNetwork: boolean
+  /** Set when the page is served unsandboxed from `preview://`. */
+  liveUrl: string | null
 }) {
   const { t } = useTranslation()
 
@@ -204,28 +361,10 @@ function PreviewBody({
 
   switch (state.kind) {
     case 'html':
-    case 'svg': {
-      // SVG is static markup, so it runs no scripts; HTML gets them, because an
-      // artifact that draws a chart is inert without them.
-      const scripts = state.kind === 'html'
+    case 'svg':
       return (
-        <div className="flex h-full flex-col">
-          {(state.unresolvedRefs ?? 0) > 0 && (
-            <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              {t('common:preview.unresolvedRefs', {
-                count: state.unresolvedRefs,
-              })}
-            </p>
-          )}
-          <iframe
-            title={state.path}
-            srcDoc={buildSrcDoc(state.content ?? '', allowNetwork, scripts)}
-            sandbox={scripts ? 'allow-scripts' : ''}
-            className="min-h-0 w-full flex-1 border-0 bg-white"
-          />
-        </div>
+        <HtmlFrame state={state} allowNetwork={allowNetwork} liveUrl={liveUrl} />
       )
-    }
     case 'markdown':
       return (
         <div className="h-full overflow-auto px-4 py-3">

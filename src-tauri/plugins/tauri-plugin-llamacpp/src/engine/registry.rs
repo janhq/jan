@@ -1,11 +1,11 @@
 //! In-process replacement for llama.cpp's router mode.
 //!
 //! Upstream's router is a process supervisor plus a reverse proxy: it spawns a
-//! child `llama-server` per model (`server-models.cpp:1020-1046`). Linking
+//! child `llama-server` per model (`server_models::load` in server-models.cpp). Linking
 //! `server_context` directly means there are no children, so what survives is
 //! only the bookkeeping -- a model registry with `models_max` and LRU eviction.
-//! The two invariants are taken from upstream (`server-models.cpp:92-95` and
-//! `:103-210`): never evict a model with requests in flight, and make a caller
+//! The two invariants are taken from upstream (`server_lru_sched::pick_victim`
+//! and its queue in server-models.cpp): never evict a model with requests in flight, and make a caller
 //! that arrives while the registry is full wait rather than fail.
 
 use std::collections::{HashMap, HashSet};
@@ -69,8 +69,8 @@ pub enum LoadSpec {
 }
 
 /// What `GET /models` reports per entry. The names match llama.cpp's router
-/// (`server-models.h:29-37`) because the plugin's polling arm
-/// (`commands::evaluate_load_poll`) already parses exactly these values, and
+/// (`server_model_status` in `server-models.h`) because the plugin's polling
+/// arm (`commands::evaluate_load_poll`) already parses exactly these values, and
 /// changing them would silently turn every load into a 600s timeout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelStatus {
@@ -683,7 +683,7 @@ mod tests {
 
     #[test]
     fn a_busy_model_is_never_evicted_even_if_it_is_oldest() {
-        // Upstream's rule (server-models.cpp:92-95): evicting a model with a
+        // Upstream's rule (server_lru_sched::pick_victim): evicting a model with a
         // request in flight would cancel a live generation.
         let entries = [("old-but-busy", 3usize, 1u64), ("idle", 0, 9)];
         assert_eq!(

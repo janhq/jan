@@ -50,6 +50,8 @@ on:
         required: false
       DELTA_AWS_SECRET_ACCESS_KEY:
         required: false
+      DELTA_AWS_REGION:
+        required: false
       CODE_SIGN_P12_BASE64:
         required: false
       CODE_SIGN_P12_PASSWORD:
@@ -88,22 +90,22 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
         shell: bash
         run: |
-          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+          bash .github/scripts/use-channel-icons.sh ${{ inputs.channel }}
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: |
@@ -116,36 +118,11 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
-          mv /tmp/package.json web-app/package.json
 
-          # Update tauri plugin versions
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-
-          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/Cargo.toml---------"
-          cat ./src-tauri/Cargo.toml
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "${{ inputs.new_version }}"
 
           # Temporarily enable devtool on prod build
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
@@ -181,7 +158,7 @@ jobs:
         env:
           NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
 
-      - uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
+      - uses: apple-actions/import-codesign-certs@v2.0.0
         continue-on-error: true
         with:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
@@ -199,9 +176,26 @@ jobs:
       # Xcode, so this runs on the GitHub-hosted image unless a caller says
       # otherwise.
       - name: Set up the llama.cpp engine toolchain
-        uses: ./.github/actions/setup-engine-toolchain
+        uses: $/.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
+
+      # Stages a cached mlx-server build instead of compiling it (~8 of the ~10
+      # minutes xcodebuild takes; resolving its Swift packages still runs, since
+      # the exact versions resolved are part of the key). No credentials, or a
+      # missing or incomplete object, means the full xcodebuild build. Key and
+      # layout: src-tauri/build-utils/mlx-prebuilt.sh
+      - name: Restore the prebuilt MLX server
+        id: mlx_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/mlx-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       - name: Build app
         run: |
@@ -222,6 +216,25 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
+      # Only after a miss, and only when the job builds main or a release tag
+      # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
+      # write it, and neither does a caller on main that builds another ref.
+      # `!cancelled()` rather than success() so the build is kept when signing
+      # or notarization fails later; the script itself refuses unless mlx-server
+      # was built and staged in this run.
+      - name: Save the prebuilt MLX server
+        if: ${{ !cancelled() && steps.mlx_prebuilt.outputs.key != '' && steps.mlx_prebuilt.outputs.hit != 'true' && inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/mlx-prebuilt.sh save
+        env:
+          KEY: ${{ steps.mlx_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
       - name: Report ccache statistics
         if: success() || failure()
         shell: bash
@@ -233,7 +246,7 @@ jobs:
       # having.
       - name: Upload the engine build log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: engine-build-log-macos
           path: src-tauri/target/engine-build.log
@@ -289,7 +302,7 @@ jobs:
       ## Artifacts, for dev and test
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |
@@ -339,7 +352,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.FILE_NAME }}
@@ -350,7 +363,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/${{ steps.metadata.outputs.DMG_NAME }}
@@ -361,7 +374,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.TAR_NAME }}

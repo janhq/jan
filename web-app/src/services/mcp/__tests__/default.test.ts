@@ -56,16 +56,6 @@ describe('DefaultMCPService', () => {
     })
   })
 
-  describe('callTool', () => {
-    it('returns empty content and no error', async () => {
-      const result = await svc.callTool({
-        toolName: 'test_tool',
-        arguments: { key: 'value' },
-      })
-      expect(result).toEqual({ error: '', content: [] })
-    })
-  })
-
   describe('callToolWithCancellation', () => {
     it('returns a result with promise, cancel, and token', async () => {
       const result = svc.callToolWithCancellation({

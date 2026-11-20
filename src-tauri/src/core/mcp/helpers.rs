@@ -1,9 +1,9 @@
 use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{
-        sse_client::SseClient, streamable_http_client::StreamableHttpClient,
-        streamable_http_client::StreamableHttpClientTransportConfig, SseClientTransport,
-        StreamableHttpClientTransport, TokioChildProcess,
+        streamable_http_client::StreamableHttpClient,
+        streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
+        TokioChildProcess,
     },
     ServiceExt,
 };
@@ -20,6 +20,7 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
+    mcp::identity,
     mcp::oauth,
     mcp::progress::JanClientHandler,
     state::{AppState, RunningMcpService, SharedMcpServers},
@@ -419,7 +420,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // One client for both transports, and one place the configured headers
         // are turned into a `HeaderMap` -- the http and sse arms used to carry
         // identical copies of that loop.
-        let base = reqwest::Client::builder()
+        let base = reqwest13::Client::builder()
             .default_headers(header_map(&config_params.headers))
             .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
             .build()
@@ -435,24 +436,26 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .map_err(|detail| oauth::NEEDS_AUTH_PREFIX.to_string() + &detail)?;
         let had_credentials = authorized.is_some();
 
-        let label = if transport == "http" {
-            "Jan Streamable Client"
-        } else {
-            "Jan SSE Client"
-        };
-        let handler = JanClientHandler::new(client_info(label), name.clone(), app.clone());
+        // rmcp 3.x dropped the SSE client transport (MCP deprecated HTTP+SSE for
+        // Streamable HTTP), so a legacy `sse` config is served over the
+        // streamable-http client instead of a dedicated SSE one.
+        if transport == "sse" {
+            log::warn!(
+                "MCP server '{name}' is configured with the deprecated 'sse' transport; \
+                 connecting over Streamable HTTP instead"
+            );
+        }
+        let handler = JanClientHandler::new(jan_client_info(), name.clone(), app.clone());
 
-        let client = match (transport, authorized) {
-            ("http", Some(c)) => serve_http(c, &url, handler).await,
-            ("http", None) => serve_http(base, &url, handler).await,
-            (_, Some(c)) => serve_sse(c, &url, handler).await,
-            (_, None) => serve_sse(base, &url, handler).await,
+        let client = match authorized {
+            Some(c) => serve_http(c, &url, handler).await,
+            None => serve_http(base, &url, handler).await,
         };
 
         match client {
             Ok(client) => {
                 log::info!("Connected to server: {:?}", client.peer_info());
-                servers.lock().await.insert(name.clone(), client);
+                identity::insert_server(&mut *servers.lock().await, &name, client);
 
                 emit_mcp_update_event(&app, &name);
             }
@@ -544,11 +547,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
             // Make the child a process-group leader (pgid == pid) so teardown can
             // signal the whole tree; MCP bridges fork grandchildren that hold the
-            // port and outlive a single-PID kill.
+            // port and outlive a single-PID kill. A new session, not just a new
+            // group, so the server can never take over a terminal Jan runs in.
             #[cfg(unix)]
-            {
-                cmd.process_group(0);
-            }
+            tauri_plugin_agent_tools::tools::proc::detach_from_terminal(&mut cmd);
             cmd.kill_on_drop(true);
             config_params
                 .args
@@ -582,10 +584,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 pids.insert(name.clone(), pid);
             }
 
-            // ClientInfo::default() is exactly what the previous `()` handler
-            // sent on initialize, so the handshake is unchanged.
-            let handler =
-                JanClientHandler::new(ClientInfo::default(), name.clone(), app.clone());
+            let handler = JanClientHandler::new(jan_client_info(), name.clone(), app.clone());
             match handler.serve(process).await {
                 Ok(server) => break (server, stderr),
                 Err(e) => {
@@ -639,10 +638,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             });
         }
         log::trace!("Connected to server: {:#?}", server.peer_info());
-        servers
-            .lock()
-            .await
-            .insert(name.clone(), server);
+        identity::insert_server(&mut *servers.lock().await, &name, server);
         log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
@@ -764,14 +760,15 @@ fn log_mcp_stderr_line(server_name: &str, line: &str) {
 }
 
 /// Turn the entry's configured `headers` map into a `HeaderMap`, skipping any
-/// pair that is not a valid header name/value. Shared by both remote transports.
-fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest::header::HeaderMap {
-    let mut map = reqwest::header::HeaderMap::new();
+/// pair that is not a valid header name/value. Uses `reqwest13` because rmcp's
+/// streamable-http transport is implemented for reqwest 0.13.
+fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest13::header::HeaderMap {
+    let mut map = reqwest13::header::HeaderMap::new();
     for (key, value) in headers.iter() {
         if let Some(v) = value.as_str() {
             if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                reqwest::header::HeaderValue::from_str(v),
+                reqwest13::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest13::header::HeaderValue::from_str(v),
             ) {
                 map.insert(name, val);
             }
@@ -780,18 +777,15 @@ fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest::header::Head
     map
 }
 
-fn client_info(label: &str) -> ClientInfo {
-    ClientInfo {
-        protocol_version: Default::default(),
-        capabilities: ClientCapabilities::default(),
-        client_info: Implementation {
-            name: label.to_string(),
-            version: "0.0.1".to_string(),
-            title: None,
-            website_url: None,
-            icons: None,
-        },
-    }
+/// What every MCP server sees in `initialize.clientInfo`: Jan and its app
+/// version. Servers use it for logs, audit and per-client policy, so leaving
+/// the `rmcp` crate default would make Jan indistinguishable from any other
+/// client built on it.
+pub(crate) fn jan_client_info() -> ClientInfo {
+    ClientInfo::new(
+        ClientCapabilities::default(),
+        Implementation::new("Jan", env!("CARGO_PKG_VERSION")),
+    )
 }
 
 /// Serve the streamable-http transport over any client that implements it, so
@@ -806,32 +800,8 @@ where
 {
     let transport = StreamableHttpClientTransport::with_client(
         client,
-        StreamableHttpClientTransportConfig {
-            uri: url.to_string().into(),
-            ..Default::default()
-        },
+        StreamableHttpClientTransportConfig::with_uri(url.to_string()),
     );
-    handler.serve(transport).await.map_err(|e| e.to_string())
-}
-
-/// `serve_http`'s counterpart for the legacy SSE transport.
-async fn serve_sse<C>(
-    client: C,
-    url: &str,
-    handler: JanClientHandler,
-) -> Result<RunningMcpService, String>
-where
-    C: SseClient + Send + Sync + 'static,
-{
-    let transport = SseClientTransport::start_with_client(
-        client,
-        rmcp::transport::sse_client::SseClientConfig {
-            sse_endpoint: url.to_string().into(),
-            ..Default::default()
-        },
-    )
-    .await
-    .map_err(|e| format!("Failed to start SSE transport: {e}"))?;
     handler.serve(transport).await.map_err(|e| e.to_string())
 }
 
@@ -1015,7 +985,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("taskkill");
+    let mut cmd = Command::new(jan_utils::windows_system_tool("taskkill.exe"));
     cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
 
     #[cfg(windows)]

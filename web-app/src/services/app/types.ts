@@ -23,5 +23,6 @@ export interface AppService {
   relocateJanDataFolder(path: string): Promise<void>
   getServerStatus(): Promise<boolean>
   setServerRunInBackground(enabled: boolean): Promise<void>
+  setCloseToTray(enabled: boolean): Promise<void>
   readYaml<T = unknown>(path: string): Promise<T>
 }

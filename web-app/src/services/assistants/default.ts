@@ -2,33 +2,33 @@
  * Default Assistants Service - Web implementation
  */
 
-import { ExtensionManager } from '@/lib/extension'
-import { Assistant, AssistantExtension, ExtensionTypeEnum } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { ServiceKeys, type Assistant } from '@janhq/core'
 import type { AssistantsService } from './types'
+
+const assistants = () => getExtensionHost().services.get(ServiceKeys.Assistants)
 
 export class DefaultAssistantsService implements AssistantsService {
   async getAssistants(): Promise<Assistant[] | null> {
-    const extension = ExtensionManager.getInstance().get<AssistantExtension>(
-      ExtensionTypeEnum.Assistant
-    )
+    const service = assistants()
 
-    if (!extension) {
-      console.warn('AssistantExtension not found')
+    if (!service) {
+      console.warn('Assistants service not available')
       return null
     }
 
-    return extension.getAssistants()
+    return service.getAssistants()
   }
 
   async createAssistant(assistant: Assistant): Promise<void> {
-    await ExtensionManager.getInstance()
-      .get<AssistantExtension>(ExtensionTypeEnum.Assistant)
-      ?.createAssistant(assistant)
+    const service = assistants()
+    if (!service) throw new Error('AssistantExtension not found')
+    await service.createAssistant(assistant)
   }
 
   async deleteAssistant(assistant: Assistant): Promise<void> {
-    await ExtensionManager.getInstance()
-      .get<AssistantExtension>(ExtensionTypeEnum.Assistant)
-      ?.deleteAssistant(assistant)
+    const service = assistants()
+    if (!service) throw new Error('AssistantExtension not found')
+    await service.deleteAssistant(assistant)
   }
 }

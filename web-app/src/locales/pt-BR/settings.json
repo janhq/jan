@@ -93,8 +93,6 @@
     "resetToDefaultDesc": "Redefinir todas as configurações de aparência para padrão.",
     "resetAppearanceSuccess": "Aparência redefinida com sucesso",
     "resetAppearanceSuccessDesc": "Todas as configurações de aparência foram restauradas para padrão.",
-    "tokenCounterCompact": "Contador de Tokens Compacto",
-    "tokenCounterCompactDesc": "Mostrar contador de tokens dentro da entrada do chat. Quando desabilitado, contador de tokens aparece abaixo da entrada.",
     "codeBlockTitle": "Bloco de Código",
     "codeBlockDesc": "Escolher um estilo de realce de sintaxe.",
     "showLineNumbers": "Mostrar Números de Linha",
@@ -151,6 +149,11 @@
     "peerSslDesc": "Validar os certificados SSL das conexões peer.",
     "hostSsl": "SSL do Host",
     "hostSslDesc": "Validar os certificados SSL dos hosts de destino."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "O que o Jan pode fazer no seu computador: seu shell isolado, além das memórias e habilidades guardadas permanentemente na sua pasta de dados do Jan.",
+    "networkDesc": "Permite que os comandos do shell acessem a rede, por exemplo para instalar pacotes ou buscar um repositório. Ativado por padrão. O sandbox continua limitando quais arquivos os comandos podem acessar."
   },
   "localApiServer": {
     "title": "Servidor de API Local",
@@ -296,5 +299,8 @@
     }
   },
   "backendInstallSuccess": "Backend instalado com sucesso",
-  "backendInstallError": "Falha ao instalar backend"
+  "backendInstallError": "Falha ao instalar backend",
+  "interface": {
+    "themeDescFixed": "Sempre usar este tema. Escolha Sistema para seguir o sistema operacional."
+  }
 }

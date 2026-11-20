@@ -5,9 +5,9 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useAppUpdateDownload } from '@/stores/app-update-download-store'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { events, AppEvent } from '@janhq/core'
+import { events, AppEvent, ServiceKeys } from '@janhq/core'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -15,6 +15,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/utils'
+import { getExtensionHost } from '@/lib/extensions/host'
 
 export function DownloadManagement() {
   const { t } = useTranslation()
@@ -28,23 +29,8 @@ export function DownloadManagement() {
     setPaused,
     addLocalDownloadingModel,
   } = useDownloadStore()
-  const { updateState } = useAppUpdater()
-
-  const [appUpdateState, setAppUpdateState] = useState({
-    isDownloading: false,
-    downloadProgress: 0,
-    downloadedBytes: 0,
-    totalBytes: 0,
-  })
-
-  useEffect(() => {
-    setAppUpdateState({
-      isDownloading: updateState.isDownloading,
-      downloadProgress: updateState.downloadProgress,
-      downloadedBytes: updateState.downloadedBytes,
-      totalBytes: updateState.totalBytes,
-    })
-  }, [updateState])
+  const appUpdateState = useAppUpdateDownload()
+  const setAppUpdateState = appUpdateState.update
 
   const onAppUpdateDownloadUpdate = useCallback(
     (data: {
@@ -52,37 +38,32 @@ export function DownloadManagement() {
       downloadedBytes?: number
       totalBytes?: number
     }) => {
-      setAppUpdateState((prev) => ({
-        ...prev,
+      setAppUpdateState({
         isDownloading: true,
         downloadProgress: data.progress || 0,
         downloadedBytes: data.downloadedBytes || 0,
         totalBytes: data.totalBytes || 0,
-      }))
+      })
     },
-    []
+    [setAppUpdateState]
   )
 
   const onAppUpdateDownloadSuccess = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
+    setAppUpdateState({
       isDownloading: false,
       downloadProgress: 1,
-    }))
+    })
     toast.success(t('common:toast.appUpdateDownloaded.title'), {
       description: t('common:toast.appUpdateDownloaded.description'),
     })
-  }, [t])
+  }, [t, setAppUpdateState])
 
   const onAppUpdateDownloadError = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
-      isDownloading: false,
-    }))
+    setAppUpdateState({ isDownloading: false })
     toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
       description: t('common:toast.appUpdateDownloadFailed.description'),
     })
-  }, [t])
+  }, [t, setAppUpdateState])
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
@@ -191,10 +172,7 @@ export function DownloadManagement() {
       removeDownload(id)
       removeLocalDownloadingModel(id)
       if (id.startsWith('llamacpp') || id.startsWith('mlx')) {
-        const downloadManager = window.core.extensionManager.getByName(
-          '@janhq/download-extension'
-        )
-        downloadManager.cancelDownload(id)
+        getExtensionHost().services.get(ServiceKeys.Downloads)?.cancelDownload(id)
       } else {
         serviceHub
           .models()
@@ -230,11 +208,16 @@ export function DownloadManagement() {
     onAppUpdateDownloadError,
   ])
 
+  // Stay mounted so the app-update listeners above keep firing; only the
+  // button hides. Keep it while the popover is open so the last download
+  // finishing doesn't yank the anchor out from under it.
+  if (downloadCount === 0 && !isPopoverOpen) return null
+
   return (
     <>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
+          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative animate-in fade-in-0 zoom-in-95">
             <DownloadIcon className='text-muted-foreground size-4' />
             {downloadCount > 0 && (
               <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">

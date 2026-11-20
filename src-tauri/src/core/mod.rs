@@ -9,6 +9,9 @@ pub mod downloads;
 #[cfg(not(feature = "cli"))]
 pub mod filesystem;
 pub mod mcp;
+// Desktop-only: the webview navigation guard.
+#[cfg(not(feature = "cli"))]
+pub mod navigation;
 pub mod openai_schema;
 pub mod server;
 // Desktop-only app setup (tray, theme, window wiring); pulls in Tauri GUI types

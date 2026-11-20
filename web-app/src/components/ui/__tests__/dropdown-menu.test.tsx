@@ -286,6 +286,26 @@ describe('DropdownMenu Components', () => {
   })
 
   describe('DropdownMenuCheckboxItem', () => {
+    it('places a single accent check on the right when requested', async () => {
+      const user = userEvent.setup()
+      render(
+        <DropdownMenu>
+          <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuCheckboxItem checked indicatorAlign="right">Web Search</DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )
+      await user.click(screen.getByRole('button'))
+      const item = screen.getByRole('menuitemcheckbox', { name: 'Web Search' })
+      expect(item).toHaveClass('pl-2', 'pr-8')
+      expect(item).toHaveAttribute('aria-checked', 'true')
+      const indicator = item.firstElementChild
+      expect(indicator).toHaveClass('right-2', 'text-primary')
+      expect(indicator).not.toHaveClass('left-2')
+      expect(indicator?.querySelectorAll('svg')).toHaveLength(1)
+    })
+
     it('renders DropdownMenuCheckboxItem with correct styling and data-slot', async () => {
       const user = userEvent.setup()
       

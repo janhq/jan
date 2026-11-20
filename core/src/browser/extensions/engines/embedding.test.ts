@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { getEmbeddingEngine, embedTexts, EMBEDDING_ENGINE_EXTENSION } from './embedding'
+import { getEmbeddingEngine, embedTexts, EMBEDDING_ENGINE_PROVIDER } from './embedding'
 
 function withExtension(ext: unknown) {
-  globalThis.core = { extensionManager: { getByName: vi.fn().mockReturnValue(ext) } }
+  window.core = { engineManager: { get: vi.fn().mockReturnValue(ext) } }
 }
 
 const engine = {
@@ -14,11 +14,11 @@ const engine = {
 describe('getEmbeddingEngine', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('looks the engine up by extension name', () => {
+  it('looks the engine up by provider in the engine registry', () => {
     withExtension(engine)
     expect(getEmbeddingEngine()).toBe(engine)
-    expect(globalThis.core.extensionManager.getByName).toHaveBeenCalledWith(
-      EMBEDDING_ENGINE_EXTENSION
+    expect(window.core.engineManager.get).toHaveBeenCalledWith(
+      EMBEDDING_ENGINE_PROVIDER
     )
   })
 
@@ -40,8 +40,8 @@ describe('getEmbeddingEngine', () => {
     await expect(embedTexts(['a'])).resolves.toEqual([[7]])
   })
 
-  it('survives a missing extension manager', () => {
-    globalThis.core = undefined
+  it('survives a missing engine manager', () => {
+    window.core = undefined
     expect(getEmbeddingEngine()).toBeUndefined()
   })
 })

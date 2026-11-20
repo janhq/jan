@@ -91,6 +91,15 @@ Jan includes a built-in spell check feature to help catch typing errors in your 
 
 ![Spell Check](./_assets/spell-check-settings.png)
 
+### Close Button and System Tray (Windows and Linux)
+By default, closing Jan's window quits Jan. In **Settings > General**, turn on **Close button minimizes to the system tray** to keep Jan running in the system tray instead. To open Jan again, click the tray icon, or choose **Open Jan** from its menu (on Linux, the icon opens the menu). Choose **Quit** from the menu to exit.
+
+Closing the window also hides Jan to the tray while the Local API Server is running and **Settings > Local API Server > Run in background** is on. macOS always keeps Jan running when you close the window; quit with Cmd+Q.
+
+<Callout type="warning">
+Some Linux desktops, including stock GNOME, do not show tray icons unless an AppIndicator extension is installed. If you cannot see the tray icon, launch Jan again to bring the hidden window back.
+</Callout>
+
 
 ### Jan Data Folder
 Jan stores your data locally in your own filesystem in a universal file format. See detailed [Jan Folder Structure](/docs/desktop/data-folder#directory-structure).

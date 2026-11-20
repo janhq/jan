@@ -1,4 +1,4 @@
-import { cloneElement, memo, useState } from 'react'
+import { cloneElement, memo, useCallback, useState } from 'react'
 import { twMerge } from 'tailwind-merge'
 import { IconArrowDown, IconCircleCheck } from '@tabler/icons-react'
 import {
@@ -11,23 +11,17 @@ import {
   StepRow,
 } from '@/components/ai-elements/reasoning-timeline'
 import { Button } from '@/components/ui/button'
+import { scrollToBottomButtonClassName } from '@/components/ai-elements/conversation'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
-  findRunningToolCallId,
+  isToolCallRunning,
   useToolCallRuntime,
 } from '@/hooks/useToolCallRuntime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useCoTDuration } from '@/hooks/useCoTDuration'
 import { segmentReasoningSteps } from '@/lib/reasoning'
 import { ToolCallCard } from './ToolCallCard'
 import { CONTENT_TYPE, isToolPart, type PartEntry } from './types'
-
-// Turn a tool identifier (e.g. "web_search", "exa_search") into a readable
-// label for the streaming step header (e.g. "Web search").
-function humanizeToolName(name: string): string {
-  const spaced = name.replace(/[_-]+/g, ' ').trim()
-  if (!spaced) return 'tool'
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
 
 export type ChainOfThoughtGroupProps = {
   /** Reasoning and tool parts belonging to this trace, in message order. */
@@ -63,7 +57,23 @@ export const ChainOfThoughtGroup = memo(
   }: ChainOfThoughtGroupProps) => {
     const { t } = useTranslation()
     const pendingApprovals = useToolApprovalRequests((s) => s.pending)
-    const runningToolCallId = useToolCallRuntime((s) => findRunningToolCallId(s.timings))
+    // This trace's own running call: another thread's loop may be running one
+    // in the background at the same time.
+    const runningToolCallId = useToolCallRuntime(
+      (s) =>
+        entries.find(
+          (e) =>
+            e.part.toolCallId !== undefined &&
+            isToolCallRunning(s.timings[e.part.toolCallId])
+        )?.part.toolCallId
+    )
+    // Seed the header from a persisted duration on reload; persist the live
+    // measurement so it survives the next one. Keyed by the (stable) message id.
+    const storedDuration = useCoTDuration((s) => s.durations[messageId])
+    const recordDuration = useCallback(
+      (ms: number) => useCoTDuration.getState().record(messageId, ms),
+      [messageId]
+    )
     const [view, setView] = useState<'condensed' | 'extended'>('condensed')
 
     if (entries.length === 0) return null
@@ -86,21 +96,30 @@ export const ChainOfThoughtGroup = memo(
       return isToolPart(part)
     }
     const meaningful = entries.filter(isMeaningfulEntry)
-    // Tools execute one at a time, so with several calls in a turn the last
-    // part is the one at the back of the queue. Follow the call actually doing
-    // the work; before execution starts nothing is running and the newest part
-    // is still the right thing to show as it streams in.
     const running = runningToolCallId
       ? meaningful.find((e) => e.part.toolCallId === runningToolCallId)
       : undefined
     const lastMeaningful = running ?? meaningful[meaningful.length - 1]
-    // While streaming, show only the current step — but never truncate away a
-    // tool part that is awaiting the user's approval, or its approve/deny
-    // controls would never mount and the run would hang (multi-tool turns).
+    // The current step while streaming. A model emits parallel tool calls as one
+    // batch of tool parts (all non-terminal at once); execution is serial, but
+    // the whole batch is the step, so showing only the running call hides the
+    // rest of it. Take the trailing run of tool parts as the batch; if the
+    // frontier is reasoning, that single step stands.
+    const frontier = (() => {
+      const batch: PartEntry[] = []
+      for (let i = meaningful.length - 1; i >= 0; i--) {
+        if (isToolPart(meaningful[i].part)) batch.unshift(meaningful[i])
+        else break
+      }
+      return batch.length > 0 ? batch : meaningful.slice(-1)
+    })()
+    // While streaming, show the current step — but never truncate away a tool
+    // part awaiting the user's approval, or its approve/deny controls would
+    // never mount and the run would hang.
     const visibleEntries =
       groupIsStreaming && meaningful.length > 0
         ? meaningful.filter((e) => {
-            if (e === lastMeaningful) return true
+            if (frontier.includes(e)) return true
             const toolCallId = e.part.toolCallId
             return Boolean(toolCallId && pendingApprovals[toolCallId])
           })
@@ -112,10 +131,6 @@ export const ChainOfThoughtGroup = memo(
     const currentStepIsTool = Boolean(
       lastMeaningful && isToolPart(lastMeaningful.part)
     )
-
-    const currentToolLabel = currentStepIsTool
-      ? humanizeToolName(lastMeaningful.part.type.split('-').slice(1).join('-'))
-      : ''
 
     // While streaming, expand for a tool call -- its card carries the live
     // search/address bar and the result, all of which sit inside this
@@ -222,13 +237,18 @@ export const ChainOfThoughtGroup = memo(
         </div>
         {!isReasoningAtBottom && (
           <Button
-            className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+            className={twMerge(
+              'absolute bottom-2 left-[50%] translate-x-[-50%] size-7 z-10',
+              scrollToBottomButtonClassName
+            )}
             onClick={onReasoningScrollToBottom}
             size="icon"
             type="button"
             variant="outline"
+            aria-label={t('common:scrollToBottom')}
+            title={t('common:scrollToBottom')}
           >
-            <IconArrowDown className="size-3" />
+            <IconArrowDown className="size-3" aria-hidden="true" />
           </Button>
         )}
       </div>
@@ -263,16 +283,21 @@ export const ChainOfThoughtGroup = memo(
 
     return (
       <ChainOfThought
-        className="w-full text-muted-foreground"
+        className="text-muted-foreground"
         isStreaming={groupIsStreaming}
         shouldCollapse={shouldCollapse}
         forceOpen={awaitingApproval}
         defaultOpen={hasDisplayableContent && !hasFollowingContent}
+        durationMs={storedDuration}
+        onDurationSettled={recordDuration}
       >
         <ChainOfThoughtHeader
+          // The tool card rendered right below names the call, its origin and
+          // its elapsed time, so repeating the tool here printed it twice one
+          // row apart. This row speaks for the trace, not the step.
           streamingLabel={
             currentStepIsTool
-              ? t('chat:reasoning.usingTool', { tool: currentToolLabel })
+              ? t('chat:reasoning.working')
               : t('chat:reasoning.thinking')
           }
           completedVariant={hasTools ? 'worked' : 'thought'}

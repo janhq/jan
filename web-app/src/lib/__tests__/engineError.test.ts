@@ -14,6 +14,8 @@ import {
   parseEngineError,
   describeEngineError,
   engineFailure,
+  formatLoadDiagnostics,
+  stripLocalPaths,
   ENGINE_ERROR_CODES,
 } from '../engineError'
 
@@ -65,6 +67,19 @@ describe('parseEngineError', () => {
 
     expect(parsed?.missingLibraries).toBeUndefined()
   })
+
+  // #9270: start_engine hands the wrong-processor failure over as JSON inside
+  // the error text, and the UI must still recover its code from it.
+  it('recovers a wrong-processor engine start from the error text', () => {
+    const parsed = parseEngineError(
+      new Error(
+        'Failed to start model: {"code":"UNSUPPORTED_CPU","message":"The llama.cpp engine in this Jan build does not support this computer\'s processor.","details":"Bad CPU type in executable (os error 86)"}'
+      )
+    )
+
+    expect(parsed?.code).toBe('UNSUPPORTED_CPU')
+    expect(parsed?.details).toBe('Bad CPU type in executable (os error 86)')
+  })
 })
 
 describe('describeEngineError', () => {
@@ -112,6 +127,17 @@ describe('describeEngineError', () => {
     expect(text).toContain('cudaMalloc failed: out of memory')
   })
 
+  // jan-internal#487: fit finding no plan is its own advice, not the generic
+  // OOM one that suggests lowering a context fit already lowered.
+  it('describes a model fit could not place as not fitting this device', () => {
+    describeEngineError({
+      code: 'MODEL_DOES_NOT_FIT',
+      details: 'common_fit_params: failed to allocate a plan',
+    })
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.MODEL_DOES_NOT_FIT')
+  })
+
   it('collapses whitespace and clips a log-sized detail', () => {
     const text = describeEngineError({
       code: 'MODEL_LOAD_FAILED',
@@ -126,6 +152,36 @@ describe('describeEngineError', () => {
     expect(detail).not.toContain('\n')
     expect(detail.length).toBeLessThan(250)
     expect(detail.endsWith('...')).toBe(true)
+  })
+
+  // `find_session_by_model` and `get_loaded_models` return String errors, so
+  // the plugin sends the structured error as JSON inside the string, and the
+  // extension rethrows it as `new Error(String(e))`. It has to come out as the
+  // localized sentence plus the evidence, not as the raw JSON.
+  it('describes an engine-stopped error that arrived inside an Error message', () => {
+    const fromRust = JSON.stringify({
+      code: 'ENGINE_STOPPED',
+      message: 'The llama.cpp engine stopped unexpectedly (exit code 0xC0000005).',
+      details: 'exit code 0xC0000005. Last output: CUDA error: unspecified launch failure',
+    })
+
+    const text = describeEngineError(new Error(fromRust))
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.ENGINE_STOPPED')
+    expect(text).toContain('0xC0000005')
+    expect(text).not.toContain('"code"')
+  })
+
+  it('describes a live but unreachable engine from its code', () => {
+    const text = describeEngineError(
+      JSON.stringify({
+        code: 'ENGINE_UNREACHABLE',
+        details: '127.0.0.1:51825: error sending request: connection refused',
+      })
+    )
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.ENGINE_UNREACHABLE')
+    expect(text).toContain('127.0.0.1:51825')
   })
 
   it('omits the detail wrapper when there is no detail', () => {
@@ -196,5 +252,135 @@ describe('engineFailure', () => {
     )
 
     expect(wrapped.message).toContain('GPU fail')
+  })
+})
+
+describe('formatLoadDiagnostics', () => {
+  const failure = {
+    code: 'MODEL_LOAD_FAILED',
+    details: 'failed to load model; open /home/bob/models/qwen.gguf failed',
+    diagnostics: {
+      model_file: 'qwen.gguf',
+      architecture: 'qwen3',
+      quantization: 'Q4_K_M',
+      request: { ctx_size: '8192', n_gpu_layers: '20', flash_attn: null },
+      gpus: [
+        {
+          name: 'NVIDIA RTX 4090',
+          driver_version: '560.35',
+          total_mib: 24564,
+          free_mib: 20000,
+        },
+      ],
+      backends: ['CUDA (libggml-cuda.so)'],
+      engine: { version: '0.9.0', tag: 'b12110', commit: 'a'.repeat(40) },
+      log: 'load_tensors: loading /home/bob/models/qwen.gguf\nC:\\Users\\bob\\x.dll failed',
+      log_truncated: true,
+    },
+  }
+
+  it('reports the request, devices, engine and log as markdown', () => {
+    const text = formatLoadDiagnostics(failure, {
+      appVersion: '0.9.0',
+      os: 'linux',
+    })!
+
+    expect(text).toContain('- Model file: qwen.gguf')
+    expect(text).toContain('- Architecture: qwen3')
+    expect(text).toContain('- ctx_size: 8192')
+    expect(text).not.toContain('flash_attn')
+    expect(text).toContain(
+      'NVIDIA RTX 4090 (driver 560.35, 24564 MiB, 20000 MiB free)'
+    )
+    expect(text).toContain('- CUDA (libggml-cuda.so)')
+    expect(text).toContain('- llama.cpp: 0.9.0 (b12110, aaaaaaaaaaaa)')
+    expect(text).toContain('Engine log (older lines dropped)')
+  })
+
+  it('leaves no home directory or user name in the copied text', () => {
+    const text = formatLoadDiagnostics(failure)!
+
+    expect(text).not.toContain('bob')
+    expect(text).toContain('~/models/qwen.gguf')
+  })
+
+  it('has nothing to report for an error without diagnostics', () => {
+    expect(formatLoadDiagnostics({ code: 'MODEL_LOAD_FAILED' })).toBeUndefined()
+    expect(formatLoadDiagnostics(new Error('plain'))).toBeUndefined()
+  })
+
+  it('reads diagnostics from an error that was stringified or wrapped', () => {
+    const wrapped = new Error('outer') as Error & { cause?: unknown }
+    wrapped.cause = failure
+    expect(formatLoadDiagnostics(wrapped)).toContain('Model load failure')
+    expect(formatLoadDiagnostics(new Error(JSON.stringify(failure)))).toContain(
+      'qwen.gguf'
+    )
+  })
+})
+
+describe('stripLocalPaths', () => {
+  it('replaces home directories on every platform', () => {
+    expect(
+      stripLocalPaths('/home/alice/a /Users/bob/b C:\\Users\\carol\\c')
+    ).toBe('~/a ~/b ~\\c')
+  })
+
+  it('still strips a home directory with nothing after it', () => {
+    expect(stripLocalPaths('cannot open /home/alice')).toBe('cannot open ~')
+  })
+
+  // The shape-guessing fallback stops at whitespace, so it can neither eat
+  // the prose between two paths nor turn an unrelated path into one under
+  // the home directory.
+  it('never reaches across prose into another path', () => {
+    expect(
+      stripLocalPaths('cannot open /home/bob and /usr/lib/libggml.so')
+    ).toBe('cannot open ~ and /usr/lib/libggml.so')
+    expect(stripLocalPaths('cannot open /home/bob and models/x.gguf')).toBe(
+      'cannot open ~ and models/x.gguf'
+    )
+    expect(
+      stripLocalPaths('C:\\Users\\bob and C:\\Windows\\System32\\x.dll')
+    ).toBe('~ and C:\\Windows\\System32\\x.dll')
+  })
+
+  // Knowing the directory is what makes a name with a space safe: there is no
+  // rule over the text alone that tells `/home/Jo Smith/lib` apart from
+  // `/home/bob and models/x.gguf`.
+  it('takes a spaced or non-ASCII profile name when the home is known', () => {
+    expect(
+      stripLocalPaths(
+        'C:\\Users\\Jo Smith\\AppData\\jan',
+        'C:\\Users\\Jo Smith'
+      )
+    ).toBe('~\\AppData\\jan')
+    expect(
+      stripLocalPaths('/Users/Jos\u00e9 Garc\u00eda/Library/jan', '/Users/Jos\u00e9 Garc\u00eda')
+    ).toBe('~/Library/jan')
+    expect(
+      stripLocalPaths("/home/Se\u00e1n O'Brien/models", "/home/Se\u00e1n O'Brien/")
+    ).toBe('~/models')
+  })
+
+  // A bare substring replace turned `/home/bobby` into `~by`, and having
+  // eaten the `/home/` the fallback could no longer recognise what was left.
+  it('does not match a longer name that merely starts with the home', () => {
+    expect(stripLocalPaths('/home/bobby/x.gguf', '/home/bob')).toBe('~/x.gguf')
+    expect(
+      stripLocalPaths('C:\\Users\\bobby\\x.gguf', 'C:\\Users\\bob')
+    ).toBe('~\\x.gguf')
+  })
+
+  it('matches the home directory written with either separator', () => {
+    expect(
+      stripLocalPaths('C:/Users/Jo Smith/jan', 'C:\\Users\\Jo Smith')
+    ).toBe('~/jan')
+  })
+
+  it('leaves the prose alone even when a home is known', () => {
+    expect(
+      stripLocalPaths('cannot open /home/Jo Smith and models/x.gguf', '/home/Jo Smith')
+    ).toBe('cannot open ~ and models/x.gguf')
   })
 })

@@ -82,8 +82,10 @@ export function backendGpuFamily(backend: string | undefined): BackendGpuFamily 
     if (pattern.test(name)) return family
   }
   // Metal is compiled into every macOS build and needs no separate runtime, so
-  // a macOS backend name with no GPU marker still means GPU-capable.
-  if (/^mac|darwin/i.test(name)) return 'metal'
+  // a macOS backend name with no GPU marker still means GPU-capable. The setup
+  // screen names the backend after the enumerated device (`metal`, from `MTL0`)
+  // rather than a build asset, so that spelling counts too.
+  if (/^mac|darwin|^(metal|mtl)\d*$/i.test(name)) return 'metal'
   return 'cpu'
 }
 

@@ -10,7 +10,7 @@ use crate::core::mcp::models::{McpSettings, ToolWithServer};
 #[cfg(not(feature = "cli"))]
 use crate::core::mcp::progress::JanClientHandler;
 #[cfg(feature = "cli")]
-use rmcp::model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult, InitializeRequestParams, Tool};
 #[cfg(feature = "cli")]
 use rmcp::ServiceError;
 use rmcp::{service::RunningService, RoleClient};
@@ -42,6 +42,12 @@ pub struct ProviderConfig {
     /// the provider's native API.
     #[serde(default)]
     pub api_type: Option<String>,
+    /// Share of the context window a prompt may fill before a run routed
+    /// through this provider compacts ahead of dispatching. Overrides
+    /// `[agent].compaction_ratio`; `None` inherits it. Sized per provider
+    /// because windows differ by an order of magnitude across them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_ratio: Option<f64>,
 }
 
 impl ProviderConfig {
@@ -72,7 +78,7 @@ pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningMcpService>>>;
 #[cfg(feature = "cli")]
 pub enum RunningServiceEnum {
     NoInit(RunningService<RoleClient, ()>),
-    WithInit(RunningService<RoleClient, InitializeRequestParam>),
+    WithInit(RunningService<RoleClient, InitializeRequestParams>),
 }
 #[cfg(feature = "cli")]
 pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
@@ -87,7 +93,7 @@ impl RunningServiceEnum {
     }
     pub async fn call_tool(
         &self,
-        params: CallToolRequestParam,
+        params: CallToolRequestParams,
     ) -> Result<CallToolResult, ServiceError> {
         match self {
             Self::NoInit(s) => s.call_tool(params).await,
@@ -95,12 +101,12 @@ impl RunningServiceEnum {
         }
     }
 
-    /// The `initialize` response: what the server said it implements. Read by
+    /// The peer's handshake info: what the server said it implements. Read by
     /// the `/mcp` detail screen for its capabilities and version lines.
-    pub fn peer_info(&self) -> Option<rmcp::model::InitializeResult> {
+    pub fn peer_info(&self) -> Option<rmcp::model::ServerPeerInfo> {
         match self {
-            Self::NoInit(s) => s.peer_info().cloned(),
-            Self::WithInit(s) => s.peer_info().cloned(),
+            Self::NoInit(s) => s.peer_info().map(|p| (*p).clone()),
+            Self::WithInit(s) => s.peer_info().map(|p| (*p).clone()),
         }
     }
 }

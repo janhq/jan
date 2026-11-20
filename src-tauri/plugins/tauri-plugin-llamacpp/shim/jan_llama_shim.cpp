@@ -13,6 +13,7 @@
 #include "ggml-backend.h"
 
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,14 +28,108 @@
 #include <thread>
 #include <unordered_map>
 
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 struct jan_llama_engine;
 
 namespace {
 
+#ifdef _WIN32
+bool is_ascii(const std::wstring & s) {
+    for (wchar_t c : s) {
+        if (c >= 0x80) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Restores the process working directory when it goes out of scope, so an
+/// exception from the loader cannot leave the engine in the wrong directory.
+struct cwd_guard {
+    std::wstring previous;
+    ~cwd_guard() {
+        SetCurrentDirectoryW(previous.c_str());
+    }
+};
+#endif
+
+/// `common_preset_context::load_from_ini` takes a narrow `std::string` and
+/// opens it with `std::filesystem::exists` and `std::ifstream`. On Windows
+/// both decode a narrow string with the ANSI code page, not UTF-8, so an ini
+/// whose path holds a non-ASCII character (a Cyrillic user name is enough)
+/// never resolves and the loader throws "preset file does not exist" for a
+/// file that is there. For such a path the process switches into the ini's
+/// directory for the duration of the load and hands upstream the bare
+/// file name, which every code page reads the same way. The directory is
+/// changed through the wide API, which does not depend on the code page; a
+/// `\\?\` prefix is dropped first because the working directory cannot be a
+/// verbatim path. The lock keeps two engine starts from interleaving their
+/// directory changes.
+///
+/// This only covers the ini. jan-llama-worker embeds a UTF-8 active-code-page
+/// manifest (build.rs), which makes every narrow path upstream opens -- model,
+/// `slot-save-path`, templates -- resolve too, so the working-directory switch
+/// is skipped when it is in effect and remains for Windows before 1903, which
+/// ignores the manifest.
+common_presets load_ini_presets(const common_preset_context & pctx, const char * ini_path, common_preset & global) {
+#ifdef _WIN32
+    static std::mutex cwd_mutex;
+
+    int wide_len = GetACP() == CP_UTF8
+                       ? 0
+                       : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ini_path, -1, nullptr, 0);
+    if (wide_len > 1) {
+        std::wstring wide(static_cast<size_t>(wide_len), L'\0');
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ini_path, -1, wide.data(), wide_len);
+        wide.resize(static_cast<size_t>(wide_len) - 1);
+
+        if (!is_ascii(wide)) {
+            if (wide.rfind(L"\\\\?\\UNC\\", 0) == 0) {
+                wide = L"\\\\" + wide.substr(8);
+            } else if (wide.rfind(L"\\\\?\\", 0) == 0) {
+                wide = wide.substr(4);
+            }
+
+            size_t sep = wide.find_last_of(L"\\/");
+            if (sep != std::wstring::npos && sep > 0) {
+                std::wstring dir  = wide.substr(0, sep);
+                std::wstring file = wide.substr(sep + 1);
+                if (dir.size() == 2 && dir[1] == L':') {
+                    dir += L'\\';  // "C:" alone means "the current directory on C:"
+                }
+                if (!file.empty() && is_ascii(file)) {
+                    std::lock_guard<std::mutex> lock(cwd_mutex);
+                    DWORD need = GetCurrentDirectoryW(0, nullptr);
+                    if (need > 0) {
+                        cwd_guard guard;
+                        guard.previous.resize(need);
+                        DWORD got = GetCurrentDirectoryW(need, guard.previous.data());
+                        guard.previous.resize(got);
+                        if (got > 0 && SetCurrentDirectoryW(dir.c_str())) {
+                            return pctx.load_from_ini(std::string(file.begin(), file.end()), global);
+                        }
+                    }
+                }
+            }
+        }
+    }
+#endif
+    return pctx.load_from_ini(ini_path, global);
+}
+
 /// Mirrors upstream's `ex_wrapper` (tools/server/server.cpp), which every route
 /// is registered behind. `build_table` captures the *unwrapped* handler members,
 /// so the two things that wrapper does have to be done here instead: map
-/// `std::invalid_argument` to 400 rather than 500, and build the body with the
+/// `std::invalid_argument` and `common_json_error` to 400 rather than 500, and build the body with the
 /// JSON library. Upstream's own messages quote the offending field
 /// (`response_format type must be one of "text" or "json_object"`), and a
 /// nlohmann parse error echoes the caller's bytes, so concatenating `e.what()`
@@ -81,6 +176,13 @@ std::mutex               g_capture_mu;
 std::vector<std::string> g_captured;
 bool                     g_capturing = false;
 
+// Metal's device-init probe logs an ERROR when the Metal 4 tensor API is
+// unavailable, then disables it and continues -- benign, so keep it out of the
+// captured cause instead of surfacing it as a load failure.
+bool is_benign_probe_error(const std::string & line) {
+    return line.find("ggml_metal_library_init_from_source") != std::string::npos;
+}
+
 void capture_log_callback(ggml_log_level level, const char * text, void * user_data) {
     if (level == GGML_LOG_LEVEL_ERROR && text != nullptr) {
         std::lock_guard<std::mutex> lock(g_capture_mu);
@@ -89,7 +191,7 @@ void capture_log_callback(ggml_log_level level, const char * text, void * user_d
             while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
                 line.pop_back();
             }
-            if (!line.empty()) {
+            if (!line.empty() && !is_benign_probe_error(line)) {
                 g_captured.push_back(std::move(line));
             }
         }
@@ -255,7 +357,8 @@ struct jan_llama_engine {
     }
 };
 
-// server-context.cpp:4188 does `res->set_req(&req)`, and server_res_spipe keeps
+// server_routes::handle_completions_impl (server-context.cpp) does
+// `res->set_req(&req)`, and server_res_spipe keeps
 // that pointer for the life of the stream -- so the request, and the
 // std::function its `should_stop` member references, must outlive the response.
 // Declaration order here is the destruction order that guarantees it.
@@ -348,7 +451,7 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         engine->params = pctx.default_params;
 
         common_preset global;
-        common_presets presets = pctx.load_from_ini(ini_path, global);
+        common_presets presets = load_ini_presets(pctx, ini_path, global);
 
         auto it = presets.find(preset_name);
         if (it == presets.end()) {
@@ -360,8 +463,18 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         global.apply_to_params(engine->params);
         it->second.apply_to_params(engine->params);
 
-        // common_params_parse does this at arg.cpp:892-896; apply_to_params does
-        // not. Without it n_threads stays 0 and ggml_threadpool_new_impl
+        // The router starts every child with `--alias <section name>`
+        // (server-models.cpp, update_args), and server_context answers with the
+        // first alias as the model name. Nothing here is a router, so without
+        // this it falls back to the model *file path* -- which is what API
+        // clients read back as `model` (`\\?\C:\...\model.gguf` on Windows).
+        // Replaced rather than added to: the router does the same, and the
+        // first member of a set of aliases is the one that gets used.
+        engine->params.model_alias.clear();
+        engine->params.model_alias.insert(preset_name);
+
+        // common_params_parse does this in common_params_parse_ex (arg.cpp);
+        // apply_to_params does not. Without it n_threads stays 0 and ggml_threadpool_new_impl
         // memsets a zero-length array -> SIGSEGV. The router never hits this
         // because it forwards keys to a child that re-parses them.
         postprocess_cpu_params(engine->params.cpuparams, nullptr);
@@ -371,8 +484,18 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         postprocess_cpu_params(engine->params.speculative.draft.cpuparams_batch,
                                &engine->params.cpuparams_batch);
 
-        // Same omission, arg.cpp:946-954: common_params_fit needs spare slots
-        // to write its overrides into and throws "did not provide buffer to
+        // common_params_parse_ex, added in 0.4.1: an unset `-mmdev` follows
+        // `--device` rather than falling back to auto-placement. Without it a preset that
+        // pins the model to one GPU would still let the projector land wherever
+        // ggml chose, which is the split the setting exists to prevent.
+        if (engine->params.mmproj_use_gpu && engine->params.mmproj_device == nullptr &&
+            !engine->params.devices.empty()) {
+            engine->params.mmproj_device  = engine->params.devices.front();
+            engine->params.mmproj_use_gpu = engine->params.mmproj_device != nullptr;
+        }
+
+        // Same omission, common_params_parse_ex: common_params_fit needs spare
+        // slots to write its overrides into and throws "did not provide buffer to
         // set tensor_buft_overrides" without them, so auto-fit silently gave
         // up and the load then asked for more VRAM than the device had.
         const size_t ntbo = llama_max_tensor_buft_overrides();
@@ -383,12 +506,21 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
             engine->params.speculative.draft.tensor_buft_overrides.push_back({nullptr, nullptr});
         }
 
-        // arg.cpp:935-938. llama_model_params::kv_overrides is a C array walked
-        // until an entry with an empty key, so a hand-edited `override-kv` in
+        // common_params_parse_ex. llama_model_params::kv_overrides is a C array
+        // walked until an entry with an empty key, so a hand-edited `override-kv` in
         // the ini would otherwise be read past its end.
         if (!engine->params.kv_overrides.empty()) {
             engine->params.kv_overrides.emplace_back();
             engine->params.kv_overrides.back().key[0] = 0;
+        }
+
+        // The end of common_params_parse_ex (arg.cpp). Since 0.4.0 the
+        // kwarg defaults to on when the user did not name it, and a template
+        // with `supports_preserve_reasoning` reads it -- so omitting this here
+        // would have the preset path preserve less reasoning than the argv path
+        // and than llama-server, for the same ini.
+        if (!engine->params.default_template_kwargs.count("preserve_reasoning")) {
+            engine->params.default_template_kwargs["preserve_reasoning"] = "true";
         }
 
         return finish_start(std::move(engine), err, err_len);
@@ -406,14 +538,24 @@ namespace {
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
-        // server.cpp:152-157, in llama-server's main() -- which neither entry
-        // point here goes through. n_parallel = -1 is the SERVER default, and
+        // server_prepare_params (server.cpp), in llama-server's startup --
+        // which neither entry point here goes through. n_parallel = -1 is the SERVER default, and
         // server_context loops `for (i = 0; i < n_parallel; i++)` to build its
         // slots, so leaving the sentinel unresolved yields an engine with no
         // slots at all and every request waiting forever.
         if (engine->params.n_parallel < 0) {
             engine->params.n_parallel = 4;
             engine->params.kv_unified = true;
+        }
+
+        // server_prepare_params, immediately after the block above and
+        // dependent on it: the pool is n_parallel wide, so it can only be sized once the
+        // sentinel is resolved. Only `-c 0` (size to the model's trained
+        // context) leaves n_ctx at 0 for this to act on; any explicit ctx-size
+        // pins the pool and the cap then applies per slot inside it.
+        if (engine->params.kv_unified_per_slot > 0 && engine->params.n_ctx == 0 &&
+            (uint32_t) engine->params.fit_params_min_ctx != UINT32_MAX) {
+            engine->params.n_ctx = engine->params.n_parallel * engine->params.kv_unified_per_slot;
         }
 
         common_init();
@@ -555,9 +697,15 @@ jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
         return out;
     } catch (const std::invalid_argument & e) {
         // Upstream's own mapping: a malformed request is the client's to fix, so
-        // it must not look retryable. server-common.cpp throws this from 16
+        // it must not look retryable. server-common.cpp throws this from 23
         // sites (missing `messages`, bad `content` type, `top_logprobs` without
         // `logprobs`, ...), all of which reached Jan's API as 500 before.
+        out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
+        return out;
+    } catch (const common_json_error & e) {
+        // Since 0.7.0 upstream maps JSON parse and type errors to 400 too
+        // (server.cpp ex_wrapper); it derives from std::runtime_error, so it
+        // must be caught before the std::exception arm below.
         out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
         return out;
     } catch (const std::exception & e) {
@@ -639,7 +787,7 @@ void jan_llama_load_backends(const char * dir) {
     }
 }
 
-// Mirrors common_print_available_devices (common/arg.cpp:1139-1161): load every
+// Mirrors common_print_available_devices (common/arg.cpp): load every
 // backend, then report the non-CPU devices with memory in MiB. The CPU device
 // is excluded there too -- "offload to CPU" is not a choice the setting offers.
 char * jan_llama_devices_json(void) {
@@ -669,6 +817,41 @@ char * jan_llama_devices_json(void) {
     } catch (...) {
         // A backend module that throws while probing must not abort the
         // process: an empty list reads as "no GPU", which is recoverable.
+        out = "[";
+    }
+    out += ']';
+
+    char * buf = static_cast<char *>(std::malloc(out.size() + 1));
+    if (buf == nullptr) {
+        return nullptr;
+    }
+    std::memcpy(buf, out.c_str(), out.size() + 1);
+    return buf;
+}
+
+// jan_llama_devices_json without the memory query, which is the only part that
+// touches the GPU; the id and description are read from ggml's registry.
+char * jan_llama_device_identities_json(void) {
+    std::string out = "[";
+    try {
+        bool first = true;
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+                continue;
+            }
+            if (!first) {
+                out += ',';
+            }
+            first = false;
+            out += "{\"id\":";
+            out += json_quote(ggml_backend_dev_name(dev));
+            out += ",\"name\":";
+            out += json_quote(ggml_backend_dev_description(dev));
+            out += '}';
+        }
+    } catch (...) {
+        // Same stance as jan_llama_devices_json: an empty list is recoverable.
         out = "[";
     }
     out += ']';

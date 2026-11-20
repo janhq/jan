@@ -10,5 +10,6 @@
   "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
   "apiKeyLabel": "APIキー",
   "apiKeyPlaceholder": "APIキーを貼り付け",
-  "invalidBaseUrl": "ベースURLは有効なhttp(s) URLである必要があります"
+  "invalidBaseUrl": "ベースURLは有効なhttp(s) URLである必要があります",
+  "nameLabel": "名前"
 }

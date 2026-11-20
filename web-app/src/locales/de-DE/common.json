@@ -235,10 +235,6 @@
       "cancel": "Abbrechen",
       "changeLocation": "Speicherort ändern"
     },
-    "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
-    },
     "deleteThread": {
       "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
@@ -247,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen außerhalb von Projekten löschen",
+      "description": "Dadurch werden Unterhaltungen gelöscht, die nicht in einem Projekt liegen. Projektunterhaltungen, markierte Unterhaltungen und Aufgaben bleiben erhalten. Diese Aktion kann nicht rückgängig gemacht werden."
     }
   },
   "projects": {
@@ -267,9 +267,8 @@
     "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
     "deleteProjectDialog": {
       "title": "Projekt löschen",
-      "permanentDelete": "Dies wird alle Threads permanent löschen.",
+      "permanentDelete": "Dadurch werden \"{{projectName}}\" und alle zugehörigen Unterhaltungen dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
       "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
-      "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
       "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
       "starredWarning": "Du hast noch favorisierte Threads innerhalb des Projekts.",
       "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -291,7 +290,6 @@
       "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
-    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
     "conversationsIn": "Gespräche in {{projectName}}",
     "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
     "thread": "Thread",
@@ -304,7 +302,9 @@
     "noProjectsFound": "Keine Projekte gefunden",
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
     "uploadingFiles": "Dateien werden verarbeitet…",
-    "processButton": "Hinzufügen"
+    "processButton": "Hinzufügen",
+    "viewProject": "Projekt ansehen",
+    "sendMessageToStart": "Sende oben eine Nachricht, um eine zu beginnen."
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
@@ -342,6 +342,10 @@
     "threadRemovedFromProject": {
       "title": "Thread entfernt",
       "description": "Thread erfolgreich von \"{{projectName}}\" entfernt"
+    },
+    "threadProjectMoveFailed": {
+      "title": "Verschieben fehlgeschlagen",
+      "description": "Diese Unterhaltung konnte nicht verschoben werden. Ihre Sitzung ist nicht verfügbar."
     },
     "deleteAllThreads": {
       "title": "Alle Threads löschen",
@@ -398,6 +402,10 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen gelöscht",
+      "description": "Unterhaltungen außerhalb von Projekten wurden gelöscht. Projektunterhaltungen und Aufgaben wurden behalten."
     }
   },
   "llamacppBusyOnExit": {
@@ -406,5 +414,165 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Noch nichts erstellt. Dateien, die in deinen Unterhaltungen entstehen, erscheinen hier.",
+  "workspace": {
+    "chatFootnote": "Jan liest diesen Ordner frei und fragt dich vor jeder Änderung und jedem Befehl, der darin ausgeführt wird.",
+    "saveFailed": "Der Ordner für diesen Chat konnte nicht gespeichert werden"
+  },
+  "budget": {
+    "stoppedTokens": "Angehalten: Diese Unterhaltung hat ihr Token-Budget erreicht."
+  },
+  "coworkSync": {
+    "journalUnreadableTitle": "Einige importierte Cowork-Unterhaltungen sind ausgeblendet",
+    "journalUnreadableDescription": "Jan kann seine Löschliste nicht lesen. Unterhaltungen aus einer älteren Version bleiben daher ausgeblendet, damit bereits gelöschte nicht wiederhergestellt werden, und das Löschen von Cowork-Unterhaltungen ist vorübergehend gesperrt. Ihre Daten sind unverändert. So stellen Sie den Normalzustand her: Beenden Sie Jan zuerst vollständig, denn Jan schreibt settings.json während der Laufzeit aus dem Speicher neu und würde Ihre Änderung rückgängig machen. Korrigieren oder entfernen Sie dann den Eintrag 'cowork_deleted_ids' in settings.json. Wenn Sie ihn entfernen, werden alle importierten Unterhaltungen wiederhergestellt, auch bereits gelöschte.",
+    "missingThreadTitle": "Eine Cowork-Unterhaltung konnte nicht gespeichert werden",
+    "missingThreadDescription": "Der gespeicherte Thread fehlt, daher werden Änderungen nicht mehr gespeichert. Sie können ihn weiterhin lesen, exportieren oder löschen.",
+    "writeRefusedTitle": "Eine Cowork-Unterhaltung kann nicht gespeichert werden",
+    "writeRefusedDescription": "Jan kann diese Unterhaltung nicht unter ihrer aktuellen ID speichern, daher werden Änderungen nicht gespeichert. Sie können sie weiterhin lesen, exportieren oder löschen.",
+    "closeFailedTitle": "Jan konnte nicht alles speichern und bleibt daher geöffnet",
+    "closeFailedDescription": "Ihre letzten Änderungen befinden sich noch im Arbeitsspeicher. Schließen Sie das Fenster erneut, um das Speichern zu wiederholen.",
+    "closeForceDescription": "Das Speichern schlägt weiterhin fehl. Sie können ohne Speichern schließen; dabei gehen die Änderungen verloren, die nicht geschrieben werden konnten.",
+    "closeAnyway": "Ohne Speichern schließen",
+    "quitFailedDescription": "Ihre letzten Änderungen befinden sich noch im Arbeitsspeicher. Beenden Sie Jan erneut, um das Speichern zu wiederholen.",
+    "quitAnyway": "Ohne Speichern beenden"
+  },
+  "messageWrites": {
+    "failedTitle": "Einige Nachrichten konnten nicht gespeichert werden",
+    "failedDescription": "Jan versucht es weiter. Bis es gelingt, existieren die letzten Nachrichten nur in diesem Fenster.",
+    "retry": "Jetzt erneut versuchen"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Diese Unterhaltung ist noch nicht bereit",
+    "notReadyDescription": "Jan konnte nicht bestätigen, ob diese Unterhaltung ein Chat oder eine Cowork-Aufgabe ist. Versuche es erneut; falls das Problem bestehen bleibt, starte die App neu.",
+    "retry": "Erneut versuchen"
+  },
+  "agentSettings": "Agent",
+  "artifacts": "Artefakte",
+  "skills": "Skills",
+  "coworkSessionUnavailable": "Diese Unterhaltung hat noch nichts anzuzeigen.",
+  "deleteSessionTitle": "Sitzung löschen?",
+  "deleteSessionBody": "„{{title}}“ und das zugehörige Protokoll werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
+  "sidebar": {
+    "more": "Mehr",
+    "toggle": "Seitenleiste ein- oder ausblenden",
+    "navigation": "Navigation",
+    "navigationDescription": "Zu Chats, Projekten, Artefakten, Skills und Einstellungen springen."
+  },
+  "composer": {
+    "addControls": "Anhänge und Steuerelemente hinzufügen",
+    "assistant": "Assistent",
+    "allTools": "Alle Tools",
+    "samplingParameters": "Sampling-Parameter",
+    "openAssistantSettings": "Assistenteneinstellungen öffnen",
+    "samplingSaveFailed": "Die Sampling-Parameter konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+    "context": "Kontext: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Modell auswählen",
+    "none": "Keines",
+    "triggerLabel": "Modell auswählen: {{name}}",
+    "dialogLabel": "Modell wählen",
+    "searchLabel": "Modelle oder Anbieter suchen",
+    "searchPlaceholder": "Modelle oder Anbieter suchen…",
+    "listLabel": "Modelle",
+    "noMatches": "Keine passenden Modelle",
+    "noModels": "Keine Modelle konfiguriert",
+    "optionsLabel": "Modelloptionen",
+    "reasoning": "Reasoning",
+    "reasoningMode": "Reasoning-Modus",
+    "reasoningEffort": "Reasoning-Aufwand",
+    "thinkingBudget": "Denkbudget",
+    "modelSettings": "Modelleinstellungen",
+    "manageModels": "Modelle verwalten",
+    "effort": {
+      "default": "Standard",
+      "auto": "Automatisch",
+      "on": "An",
+      "off": "Aus",
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "xhigh": "Sehr hoch",
+      "unlimited": "Unbegrenzt"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Zu einem Projekt hinzufügen",
+    "newProject": "Neues Projekt",
+    "noProjects": "Noch keine Projekte",
+    "addFolderAction": "Ordner hinzufügen"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Wähle ein Modell mit Werkzeugunterstützung, bevor du Ordnerzugriff hinzufügst.",
+    "folderUnsupported": "Dieses Modell kann keine Werkzeuge nutzen, daher lässt sich kein Ordner hinzufügen. Normales Chatten funktioniert weiterhin.",
+    "removeProject": "Projektauswahl entfernen",
+    "temporary": "Ein temporärer Chat behält keinen Ordnerzugriff."
+  },
+  "skillDestination": "Neue Skills speichern in",
+  "skillDestinationFolder": "Diesem Ordner",
+  "skillDestinationGlobal": "Global (jede Unterhaltung)",
+  "overview": {
+    "title": "Übersicht der Unterhaltung",
+    "description": "Fortschritt, Dateien und Hintergrundaufgaben dieser Unterhaltung.",
+    "resize": "Seitenleiste in der Größe ändern",
+    "close": "Übersicht der Unterhaltung ausblenden",
+    "progress": "Fortschritt",
+    "files": "Dateien",
+    "backgroundTasks": "Hintergrundaufgaben",
+    "monitorCount_one": "{{count}} Monitor",
+    "monitorCount_other": "{{count}} Monitore",
+    "noProgress": "Schritte erscheinen, sobald Jan arbeitet.",
+    "noFiles": "Dateien erscheinen hier."
+  },
+  "artifactsLibraryDescription": "Dateien aus all deinen Unterhaltungen an einem Ort.",
+  "artifactsLibraryCount_one": "{{count}} Datei",
+  "artifactsLibraryCount_other": "{{count}} Dateien",
+  "artifactsLibraryFilter": "Nach Dateityp filtern",
+  "artifactsLibraryReset": "Filter zurücksetzen",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Diese Aufgabe konnte nicht importiert werden",
+      "body": "Jan konnte diese Aufgabe nicht aus der vorherigen Version übernehmen und hat es nicht weiter versucht. Es ist nichts verloren gegangen: Das Original bleibt erhalten. Sie können es erneut versuchen oder die Aufgabe in eine Datei exportieren."
+    },
+    "id-collision": {
+      "title": "Diese Aufgabe konnte nicht importiert werden",
+      "body": "Eine andere Unterhaltung verwendet bereits dieselbe ID. Deshalb wird diese Aufgabe schreibgeschützt angezeigt, und die andere Unterhaltung bleibt unverändert. Exportieren Sie die Aufgabe, um eine Kopie zu behalten."
+    },
+    "missing-sidecar": {
+      "title": "Der Verlauf dieser Aufgabe fehlt",
+      "body": "Der gespeicherte Verlauf dieser Aufgabe wurde nicht gefunden. Deshalb wird sie schreibgeschützt angezeigt. Ihre Dateien auf dem Datenträger bleiben unverändert."
+    },
+    "unreadable-sidecar": {
+      "title": "Der Verlauf dieser Aufgabe kann nicht gelesen werden",
+      "body": "Der gespeicherte Verlauf dieser Aufgabe ist beschädigt oder stammt aus einer neueren Version von Jan. Deshalb wird sie schreibgeschützt angezeigt und nie überschrieben."
+    },
+    "missing-thread": {
+      "title": "Diese Aufgabe wurde aus dem Speicher entfernt",
+      "body": "Die Unterhaltung dieser Aufgabe ist nicht mehr auf dem Datenträger vorhanden. Angezeigt wird die Kopie, die sich noch im Arbeitsspeicher befindet. Exportieren Sie sie, um sie zu behalten."
+    },
+    "reason": "Grund: {{reason}}",
+    "retry": "Erneut versuchen",
+    "retrying": "Wird versucht...",
+    "export": "Exportieren",
+    "exported": "Aufgabe exportiert",
+    "exportFailed": "Die Aufgabe konnte nicht exportiert werden",
+    "imported": "Aufgabe importiert",
+    "retryFailed": "Die Aufgabe konnte weiterhin nicht importiert werden",
+    "revealFailed": "Der Ordner konnte nicht geöffnet werden",
+    "leftOut": {
+      "title": "Einige Dateien wurden nicht kopiert",
+      "body_one": "{{count}} Element aus dem alten Ordner dieser Aufgabe (ein Link oder eine Datei, die Jan nicht lesen durfte) wurde nicht kopiert. Der ursprüngliche Ordner bleibt unverändert erhalten.",
+      "body_other": "{{count}} Elemente aus dem alten Ordner dieser Aufgabe (Links oder Dateien, die Jan nicht lesen durfte) wurden nicht kopiert. Der ursprüngliche Ordner bleibt unverändert erhalten.",
+      "show": "Ursprünglichen Ordner anzeigen"
+    }
+  },
+  "deleteThreadFailed": "Die Unterhaltung konnte nicht gelöscht werden. Sie wird nach einem Neustart möglicherweise wieder angezeigt.",
+  "continueAsTask": {
+    "action": "Als Aufgabe fortsetzen",
+    "title": "Diesen Chat als Aufgabe fortsetzen?",
+    "description": "Jan behält diese Unterhaltung und setzt sie als Cowork-Aufgabe fort. Eine Aufgabe kann Werkzeuge ausführen, Dateien schreiben und Befehle in ihrem eigenen Arbeitsbereich ausführen, ohne bei jedem Schritt zu fragen. Sie kann nicht wieder in einen Chat umgewandelt werden.",
+    "descriptionFolder": "Jan behält diese Unterhaltung und setzt sie als Cowork-Aufgabe fort. Eine Aufgabe kann Dateien in {{folder}} bearbeiten und dort Befehle ausführen, ohne bei jeder Änderung zu fragen. Sie kann nicht wieder in einen Chat umgewandelt werden.",
+    "confirm": "Als Aufgabe fortsetzen"
   }
 }

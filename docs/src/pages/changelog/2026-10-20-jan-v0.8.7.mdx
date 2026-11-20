@@ -1,0 +1,91 @@
+---
+title: "Jan v0.8.7: Shell Switch, Image Size Limit, Project Threads & Agent Subagents"
+version: 0.8.7
+description: "Jan v0.8.7 adds a switch to turn the shell tool off in chat and a separate image size limit, keeps project threads in their project when you attach a document, leaves pasted code with @decorators as typed, removes the hosted Exa MCP default, and brings built-in subagents to the Jan agent."
+date: 2026-10-20
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.7: Shell Switch, Image Size Limit, Project Threads & Agent Subagents"
+  date="2026-10-20"
+/>
+
+# A minor update to v0.8.6
+
+v0.8.7 collects fixes reported since v0.8.6, adds two chat settings, and brings a round of improvements to the Jan agent and CLI. Your data and settings carry over; one MCP clean-up runs on first launch (see below).
+
+---
+
+# New
+
+**Turn the shell tool off in chat.**
+
+The chat input's tool menu now has a **Shell** switch. Turned off, the model is no longer given the shell tool or its instructions, while web search, fetch and your MCP tools keep working. It is on by default, and it appears when the shell can run sandboxed and the model supports tools. ([#9222](https://github.com/janhq/jan/issues/9222))
+
+**A separate size limit for images.**
+
+**Settings > Attachments** has a new **Max Image Size (MB)**, next to the document limit it was easy to confuse with. It defaults to 10 MB, as before, and accepts 1 to 100. ([#9312](https://github.com/janhq/jan/pull/9312))
+
+**Built-in subagents for the Jan agent.**
+
+The agent ships with explore, research, review and debug subagents, each of which can use its own model. The explore subagent is read-only by default. ([#9261](https://github.com/janhq/jan/pull/9261))
+
+---
+
+# Fixes
+
+**A thread left its project when you attached a document.**
+
+Once the document was processed, the thread moved out of its project, and stayed out after a restart. It now stays in its project. Thanks to [@enkynakamura](https://github.com/enkynakamura) for the fix. ([#9197](https://github.com/janhq/jan/issues/9197))
+
+**Pasted code with `@` lost its decorators.**
+
+Every `@word` was treated as a file reference, so pasting Python with `@dataclass` or `@app.route` removed the decorators and flattened the indentation. Only an `@` followed by a real file or folder is now treated as a reference; everything else is sent as you typed it. ([#9291](https://github.com/janhq/jan/issues/9291))
+
+**Stop now ends the whole turn.**
+
+Pressing **Stop** while a tool was running or waiting for your approval could leave the turn going. It now ends the turn, including the tool. ([#9241](https://github.com/janhq/jan/pull/9241))
+
+**A web page read by the built-in fetch tool is kept within the model's context window**, so a long page no longer overflows a local model. ([#9283](https://github.com/janhq/jan/pull/9283))
+
+**Chat with a local model failed behind a proxy or VPN.**
+
+Requests from Jan to its own local engine could be sent to a system proxy and fail although the engine was running. They now always go direct; remote providers still use your proxy. ([#9182](https://github.com/janhq/jan/pull/9182))
+
+**The hosted Exa MCP server is removed from existing installs.**
+
+v0.8.3 added a hosted Exa server to the default MCP list. On first launch, v0.8.7 removes that default entry. Servers you added, and an Exa entry you configured with your own key, are kept. ([#9010](https://github.com/janhq/jan/issues/9010))
+
+**Windows: a `^` in a command name could get past shell permissions.**
+
+cmd ignores `^` in a command name, so `cm^d` runs `cmd`. Such a command now always asks for approval. ([#9315](https://github.com/janhq/jan/issues/9315))
+
+**macOS now says why Jan asks for Local Network access**, needed to reach a model server on another machine, such as Ollama on your network. ([#9318](https://github.com/janhq/jan/pull/9318))
+
+---
+
+# Jan agent and CLI
+
+- A sandboxed shell command can ask to run outside the sandbox, with your approval each time ([#9239](https://github.com/janhq/jan/pull/9239)).
+- A tool call outside a run's `allowed_tools` is refused ([#9254](https://github.com/janhq/jan/issues/9254)), and a subagent's permission prompt is denied when nobody can answer it ([#9259](https://github.com/janhq/jan/pull/9259)).
+- On Windows, edits match files with CRLF line endings, and file names Windows cannot use (such as `con.txt`) are refused ([#9262](https://github.com/janhq/jan/issues/9262), [#9263](https://github.com/janhq/jan/issues/9263)).
+- `jan cli mcp add` works on a fresh install ([#9257](https://github.com/janhq/jan/issues/9257)), and an MCP server that never answers is given up on instead of hanging the run ([#9281](https://github.com/janhq/jan/pull/9281)).
+- Compaction summaries use your small model when one is set ([#9252](https://github.com/janhq/jan/pull/9252)), and the terminal UI gets search, clearer subagent and background-command rows, and many smaller refinements.
+
+---
+
+# Also
+
+- On NVIDIA GPUs, the engine logs the driver version at start, and a crash caused by a driver too old for the engine says to update the driver.
+- A model download stopped by a network error says why in more cases ([#9294](https://github.com/janhq/jan/pull/9294)), and a failed model-list fetch records the address it could not reach in the app log ([#9292](https://github.com/janhq/jan/issues/9292)).
+- The sidebar's Jan label is back on Windows and Linux ([#9242](https://github.com/janhq/jan/pull/9242)).
+
+---
+
+# Known issues
+
+- With **Shell** turned off, a model that calls the shell anyway ends its reply instead of continuing without it ([#9319](https://github.com/janhq/jan/issues/9319)).
+- **Auto compact** needs **Max Context Tokens** set for remote models; Jan does not detect a remote model's context window yet ([#9317](https://github.com/janhq/jan/issues/9317)).
+- Local models do not run on Intel Macs, as in v0.8.5.

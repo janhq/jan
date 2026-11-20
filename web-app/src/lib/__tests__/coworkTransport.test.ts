@@ -1,19 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { sandboxEnforces, buildCoworkTools } = vi.hoisted(() => ({
-  sandboxEnforces: vi.fn(() => true),
-  buildCoworkTools: vi.fn(),
-}))
-vi.mock('@/lib/agentTools', () => ({ sandboxEnforces }))
+const { sandboxEnforces, buildCoworkTools, getMemoryCatalog } = vi.hoisted(
+  () => ({
+    sandboxEnforces: vi.fn(() => true),
+    buildCoworkTools: vi.fn(),
+    getMemoryCatalog: vi.fn(async () => [] as unknown[]),
+  })
+)
+vi.mock('@/lib/agentTools', () => ({ sandboxEnforces, getMemoryCatalog }))
 vi.mock('@/lib/coworkTools', async (orig) => ({
   ...(await orig<typeof import('../coworkTools')>()),
   buildCoworkTools,
 }))
 
 import { CoworkChatTransport } from '../coworkTransport'
-import { CHAT_SLOT_ID, COWORK_SLOT_ID } from '@/constants/models'
+import { CHAT_SLOT_ID } from '@/constants/models'
 
 const config = (over = {}) => ({
+  model: { provider: 'test', id: 'test-model' },
   planMode: false,
   webSearch: false,
   subagentNames: ['researcher'],
@@ -37,15 +41,16 @@ describe('CoworkChatTransport', () => {
     sandboxEnforces.mockReturnValue(true)
   })
 
-  // Sharing slot 0 would have each of an agent turn's many prefills evict the
-  // viewed chat thread's KV cache, and vice versa. Nothing surfaces that but a
-  // slowdown, so it is asserted.
-  it('pins to the Cowork slot, not the chat slot', () => {
+  // Cowork reserves no slot of its own: it shares the chat slot and is told
+  // apart by thread_id, which is what makes the engine park the outgoing
+  // thread's KV cache instead of overwriting it. Nothing surfaces a regression
+  // here but a slowdown, so it is asserted.
+  it('shares the chat slot, under its own thread identity', () => {
     const t = new CoworkChatTransport('s1', config())
     const params = slotParamsOf(t, 's1')
-    expect(params.id_slot).toBe(COWORK_SLOT_ID)
-    expect(params.id_slot).not.toBe(CHAT_SLOT_ID)
+    expect(params.id_slot).toBe(CHAT_SLOT_ID)
     expect(params.thread_id).toBe('cowork:s1')
+    expect(params.thread_id).not.toBe('s1')
   })
 
   it('namespaces thread_id so a session cannot collide with a chat thread', () => {
@@ -78,7 +83,25 @@ describe('CoworkChatTransport', () => {
     )
   })
 
-  it('rebuilds when the sandbox appears, since bash joins the set', async () => {
+  // Memory moves independently of the tool config: a note written during one
+  // run must reach the next run's prompt even when the tool set is reused, and
+  // must not move mid-run, which would discard the prompt prefix.
+  it('re-snapshots the memory catalog at run boundaries, not mid-run', async () => {
+    getMemoryCatalog.mockReset()
+    getMemoryCatalog.mockResolvedValue([])
+    const t = new CoworkChatTransport('s1', config())
+    await t.refreshTools()
+    await t.refreshTools()
+    expect(getMemoryCatalog).toHaveBeenCalledTimes(1)
+
+    t.unfreezeTools()
+    await t.refreshTools()
+    expect(getMemoryCatalog).toHaveBeenCalledTimes(2)
+    // Same config, so the tool set was reused -- the catalog still refreshed.
+    expect(buildCoworkTools).toHaveBeenCalledTimes(1)
+  })
+
+  it('rebuilds when the sandbox appears, since shell joins the set', async () => {
     sandboxEnforces.mockReturnValue(false)
     const t = new CoworkChatTransport('s1', config())
     await t.refreshTools()
@@ -109,7 +132,7 @@ describe('CoworkChatTransport.advertisedTools', () => {
   })
 
   // A subagent's allowlist intersects with this, so plan mode and a withheld
-  // `bash` reach children without a second policy check.
+  // `shell` reach children without a second policy check.
   it('reports the set frozen for the run', async () => {
     const t = new CoworkChatTransport('s1', config())
     await t.refreshTools()

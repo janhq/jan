@@ -15,8 +15,13 @@
 use std::fmt;
 
 pub mod commands;
+pub mod diag;
+pub mod diagnose;
+pub mod diagnose_commands;
+pub mod driver;
 pub mod events;
 pub mod http;
+pub mod model_plan;
 pub mod preset;
 pub mod registry;
 pub mod slots;
@@ -40,6 +45,9 @@ pub enum EngineError {
     VersionMismatch { expected: String, actual: String },
     /// A route name the shim does not know.
     UnknownRoute(String),
+    /// The op diagnostic could not run at all (unknown device, bad filter);
+    /// a case that merely fails is a result, not this.
+    Diagnostic(String),
 }
 
 impl fmt::Display for EngineError {
@@ -55,6 +63,7 @@ impl fmt::Display for EngineError {
                 "linked llama.cpp is {actual}, but this crate is pinned to {expected}"
             ),
             Self::UnknownRoute(r) => write!(f, "unknown engine route: {r}"),
+            Self::Diagnostic(msg) => write!(f, "the ggml op diagnostic could not run: {msg}"),
         }
     }
 }
@@ -212,9 +221,9 @@ mod tests {
 
     #[test]
     fn pin_constants_are_populated_from_build_rs() {
-        assert_eq!(PINNED_TAG, "b10621");
-        assert_eq!(PINNED_BUILD_NUMBER, "10621");
-        assert_eq!(PINNED_VERSION, "0.3.0");
+        assert_eq!(PINNED_TAG, "b12359");
+        assert_eq!(PINNED_BUILD_NUMBER, "12359");
+        assert_eq!(PINNED_VERSION, "1.0.0");
         assert_eq!(PINNED_COMMIT.len(), 40, "commit should be a full sha");
     }
 

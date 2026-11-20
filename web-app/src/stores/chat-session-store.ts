@@ -4,6 +4,7 @@ import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
 import { useMessageQueue } from "@/stores/message-queue-store";
+import { forgetChat } from "@/lib/chatClose";
 
 export type SessionData = {
   tools: any[];
@@ -203,6 +204,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     } catch (error) {
       console.error("Failed to stop chat session", error);
     }
+    forgetChat(existing.chat);
 
     delete standaloneData[sessionId];
   },
@@ -227,6 +229,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       } catch (error) {
         console.error("Failed to stop chat session", error);
       }
+      forgetChat(session.chat);
     });
 
     // Clear standalone data

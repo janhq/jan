@@ -86,32 +86,19 @@ describe('TauriAppService – coverage', () => {
       })
     })
 
-    it('prunes model + setup localStorage on a full wipe', async () => {
+    it('leaves localStorage alone when the backend refuses the reset', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
-      vi.mocked(invoke).mockResolvedValue(undefined)
-      localStorage.setItem('model-provider', '{"providers":[]}')
-      localStorage.setItem('last-used-model', 'ghost')
-      localStorage.setItem('setup-completed', 'true')
-      localStorage.setItem('threads', '[]')
-
-      await svc.factoryReset({ keepAppData: false, keepModelsAndConfigs: false })
-
-      expect(localStorage.getItem('model-provider')).toBeNull()
-      expect(localStorage.getItem('last-used-model')).toBeNull()
-      expect(localStorage.getItem('setup-completed')).toBeNull()
-      expect(localStorage.getItem('threads')).toBeNull()
-    })
-
-    it('keeps model localStorage when models are preserved', async () => {
-      const { invoke } = await import('@tauri-apps/api/core')
-      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(invoke).mockRejectedValue('Refusing to reset /home/jan')
       localStorage.setItem('model-provider', '{"providers":[]}')
       localStorage.setItem('setup-completed', 'true')
 
-      await svc.factoryReset({ keepAppData: false, keepModelsAndConfigs: true })
+      await expect(
+        svc.factoryReset({ keepAppData: false, keepModelsAndConfigs: false })
+      ).rejects.toBe('Refusing to reset /home/jan')
 
+      // Pruning happens on the next startup from the Rust sentinel, which a
+      // refused reset never writes.
       expect(localStorage.getItem('model-provider')).toBe('{"providers":[]}')
-      // setup flag only cleared on a full wipe
       expect(localStorage.getItem('setup-completed')).toBe('true')
     })
 

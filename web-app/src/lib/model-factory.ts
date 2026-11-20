@@ -56,12 +56,15 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { invoke } from '@tauri-apps/api/core'
 import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
-import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { loopbackFetch } from './loopback-fetch'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
+import {
+  hasToolImageSentinel,
+  splitToolImageSentinels,
+} from './tool-image-sentinel'
 import { filterDefaultSseEvents } from './sseEventTypeFilter'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
@@ -76,6 +79,8 @@ import {
   getProviderApiType,
 } from '@/lib/providerCaps'
 import { engineFailure } from '@/lib/engineError'
+import { extensionProviderFetch } from '@/lib/extensions/providers'
+import { getMlxExtension } from '@/lib/llamacppRouterProps'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -471,6 +476,7 @@ export function createCustomFetch(
     if (!includeOurParams) {
       decodeAudioSentinelsInBody(rawBody)
       decodeVideoSentinelsInBody(rawBody)
+      decodeToolImageSentinelsInBody(rawBody)
       return rawBody
     }
     const normalised: Record<string, unknown> = {}
@@ -507,6 +513,7 @@ export function createCustomFetch(
     }
     decodeAudioSentinelsInBody(merged)
     decodeVideoSentinelsInBody(merged)
+    decodeToolImageSentinelsInBody(merged)
     return merged
   }
 
@@ -798,6 +805,25 @@ export function decodeVideoSentinelsInBody(body: Record<string, unknown>): void 
   }
 }
 
+// Rewrites a sentinel-bearing `role: tool` message (planted by Cowork's
+// `assistantMessageFor` for a tool that returned images) into a text part plus
+// OpenAI `image_url` parts, the shape the CLI loop sends for a `read` of an
+// image. Mutates `body.messages` in place.
+export function decodeToolImageSentinelsInBody(
+  body: Record<string, unknown>
+): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'tool' || typeof m.content !== 'string') continue
+    if (!hasToolImageSentinel(m.content)) continue
+    const split = splitToolImageSentinels(m.content)
+    if (split) m.content = split
+  }
+}
+
 type ApiKeyHeaderMode =
   | 'authorization-bearer'
   | 'x-api-key'
@@ -919,6 +945,18 @@ export class ModelFactory {
     const providerName = provider.provider.toLowerCase()
     parameters = stripUnsupportedSamplers(parameters, provider, modelId)
 
+    // A provider an extension contributed is OpenAI-compatible by contract,
+    // and every request it makes runs on the extension's checked network
+    // path, never on the app's.
+    const extensionFetch = extensionProviderFetch(provider, 'stream')
+    if (extensionFetch)
+      return this.createOpenAICompatibleModel(
+        modelId,
+        provider,
+        parameters,
+        extensionFetch
+      )
+
     // Wire-format dispatch wins over name-based dispatch — custom providers
     // pointing at Anthropic-compatible proxies (LiteLLM, Bedrock gateways)
     // need the Anthropic SDK regardless of the user-chosen provider name.
@@ -1016,7 +1054,7 @@ export class ModelFactory {
     // but never for a preserve_thinking model: its template re-emits prior
     // <think> from that field, so stripping it would diverge the KV-cache prefix.
     let customFetch = createCustomFetch(
-      httpFetch,
+      loopbackFetch,
       parameters,
       true,
       onLlamacppServerError,
@@ -1070,11 +1108,10 @@ export class ModelFactory {
       }
     }
 
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:mlx|find_mlx_session_by_model',
-      { modelId }
-    )
+    // Get session info which includes port and api_key. No mlx service means
+    // the engine is not running here (it only activates on macOS).
+    const sessionInfo =
+      (await getMlxExtension()?.findSession(modelId)) ?? null
 
     if (!sessionInfo) {
       throw new Error(`No running MLX session found for model: ${modelId}`)
@@ -1091,7 +1128,7 @@ export class ModelFactory {
     // raw stream) with every other provider, then layer MLX's /cancel-on-abort
     // on top.
     let baseCustomFetch = createCustomFetch(
-      httpFetch,
+      loopbackFetch,
       parameters,
       false,
       undefined,
@@ -1108,7 +1145,7 @@ export class ModelFactory {
       // to stop MLX inference immediately.
       if (init?.signal) {
         init.signal.addEventListener('abort', () => {
-          httpFetch(`${baseUrl}/v1/cancel`, {
+          loopbackFetch(`${baseUrl}/v1/cancel`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -1354,7 +1391,8 @@ export class ModelFactory {
   private static createOpenAICompatibleModel(
     modelId: string,
     provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    baseFetch: typeof globalThis.fetch = getRuntimeFetch()
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
@@ -1373,13 +1411,13 @@ export class ModelFactory {
     let fetchImpl: typeof globalThis.fetch =
       keyChain.length > 1
         ? createApiKeyRotatingFetch(
-            getRuntimeFetch(),
+            baseFetch,
             keyChain,
             parameters,
             'authorization-bearer',
             true
           )
-        : createCustomFetch(getRuntimeFetch(), parameters, false, undefined, true)
+        : createCustomFetch(baseFetch, parameters, false, undefined, true)
 
     // Groq's API rejects assistant `reasoning` fields, so it always strips
     // regardless of the toggle; other providers honor the global setting.

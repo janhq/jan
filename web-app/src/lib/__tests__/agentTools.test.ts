@@ -4,19 +4,38 @@ const toolSchemas = vi.fn()
 const executeTool = vi.fn()
 const threadWorkspaceDelete = vi.fn()
 const threadWorkspaceSweep = vi.fn()
+const sessionWorkspaceCopyToThread = vi.fn()
 const sandboxStatus = vi.fn()
+const memoryCatalog = vi.fn()
+const memoryRead = vi.fn()
+const subagentResultReserve = vi.fn()
+const subagentResultFill = vi.fn()
+const attachmentImport = vi.fn()
+const startMonitor = vi.fn()
 const getJanDataFolder = vi.fn()
+const coreInvoke = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   toolSchemas: () => toolSchemas(),
   executeTool: (...args: unknown[]) => executeTool(...args),
   threadWorkspaceDelete: (...args: unknown[]) => threadWorkspaceDelete(...args),
   threadWorkspaceSweep: (...args: unknown[]) => threadWorkspaceSweep(...args),
+  sessionWorkspaceCopyToThread: (...args: unknown[]) =>
+    sessionWorkspaceCopyToThread(...args),
   sandboxStatus: () => sandboxStatus(),
+  memoryCatalog: (...args: unknown[]) => memoryCatalog(...args),
+  memoryRead: (...args: unknown[]) => memoryRead(...args),
+  subagentResultReserve: (...args: unknown[]) => subagentResultReserve(...args),
+  subagentResultFill: (...args: unknown[]) => subagentResultFill(...args),
+  attachmentImport: (...args: unknown[]) => attachmentImport(...args),
+  startMonitor: (...args: unknown[]) => startMonitor(...args),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({ app: () => ({ getJanDataFolder }) }),
+  getServiceHub: () => ({
+    app: () => ({ getJanDataFolder }),
+    core: () => ({ invoke: coreInvoke }),
+  }),
 }))
 
 const schemaFor = (name: string) => ({
@@ -31,19 +50,51 @@ describe('agentTools', () => {
     executeTool.mockReset()
     threadWorkspaceDelete.mockReset().mockResolvedValue(undefined)
     threadWorkspaceSweep.mockReset().mockResolvedValue(0)
+    sessionWorkspaceCopyToThread
+      .mockReset()
+      .mockResolvedValue({ copied: true, files: 2, skipped: 0 })
     sandboxStatus
       .mockReset()
       .mockResolvedValue({ backend: 'bubblewrap', enforces: true })
+    memoryCatalog.mockReset().mockResolvedValue([])
+    memoryRead.mockReset().mockResolvedValue('')
+    subagentResultReserve.mockReset()
+    subagentResultFill.mockReset()
+    attachmentImport.mockReset()
+    startMonitor.mockReset()
     getJanDataFolder.mockReset().mockResolvedValue('/data')
+    coreInvoke.mockReset().mockImplementation(async (cmd: string) =>
+      cmd === 'get_jan_data_folder_path' ? '/data' : undefined
+    )
   })
 
-  it('advertises the workspace tools including writes and bash', async () => {
+  // The chat surface offers the sandboxed shell alone; everything else is
+  // Cowork's. A chat set that grew a write tool would hand the main interface
+  // an agent toolset it no longer advertises a workspace for.
+  it('restricts the chat subset to shell', async () => {
+    const { CHAT_AGENT_TOOL_NAMES } = await import('../agentTools')
+    expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['shell'])
+  })
+
+  // `bash` is recognised only when reading saved history; nothing dispatches
+  // or advertises it.
+  it('reads a saved bash call as the shell without accepting bash', async () => {
+    const { isRecordedShellCall, AGENT_TOOL_NAMES, CHAT_AGENT_TOOL_NAMES } =
+      await import('../agentTools')
+    expect(isRecordedShellCall('bash')).toBe(true)
+    expect(isRecordedShellCall('shell')).toBe(true)
+    expect(isRecordedShellCall('mcp__x__bash')).toBe(false)
+    expect(AGENT_TOOL_NAMES.has('bash')).toBe(false)
+    expect(CHAT_AGENT_TOOL_NAMES.has('bash')).toBe(false)
+  })
+
+  it('advertises the workspace tools including writes and shell', async () => {
     const { AGENT_TOOL_NAMES } = await import('../agentTools')
-    for (const name of ['read', 'ls', 'find', 'grep', 'bash']) {
+    for (const name of ['read', 'ls', 'find', 'grep', 'shell']) {
       expect(AGENT_TOOL_NAMES.has(name)).toBe(true)
     }
     // write/edit can only touch the thread's ephemeral sandbox, so they are
-    // allowed there without a prompt -- withholding them while bash can write
+    // allowed there without a prompt -- withholding them while shell can write
     // the same files would be a restriction a sibling tool bypasses.
     for (const name of ['write', 'edit']) {
       expect(AGENT_TOOL_NAMES.has(name)).toBe(true)
@@ -58,12 +109,12 @@ describe('agentTools', () => {
     toolSchemas.mockResolvedValue([
       schemaFor('read'),
       schemaFor('write'),
-      schemaFor('memory_write'),
+      schemaFor('memory'),
       schemaFor('web_search'),
     ])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
-    expect(names).toEqual(['read', 'write', 'memory_write'])
+    expect(names).toEqual(['read', 'write', 'memory'])
   })
 
   /// The diff must reach the caller so the UI can render it, but stay out of
@@ -92,26 +143,45 @@ describe('agentTools', () => {
     expect(result.diff).toBeUndefined()
   })
 
-  it('offers bash when the sandbox can enforce', async () => {
-    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
+  it('passes returned images through, dropping an empty list', async () => {
+    const images = [{ dataUrl: 'data:image/png;base64,AA', name: 'a.html' }]
+    executeTool.mockResolvedValue({
+      content: 'Screenshot of a.html (1280x960)',
+      diff: null,
+      isError: false,
+      images,
+    })
+    const { executeAgentTool } = await import('../agentTools')
+    expect(
+      (await executeAgentTool('screenshot', { path: 'a.html' }, 'thread-1'))
+        .images
+    ).toEqual(images)
+    executeTool.mockResolvedValue({ content: 'x', diff: null, isError: false })
+    expect(
+      (await executeAgentTool('read', { path: 'a.txt' }, 'thread-1')).images
+    ).toBeUndefined()
+  })
+
+  it('offers shell when the sandbox can enforce', async () => {
+    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('shell')])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
-    expect(names).toEqual(['read', 'bash'])
+    expect(names).toEqual(['read', 'shell'])
   })
 
   // Offering a tool the executor will always refuse wastes a model turn, so an
-  // unconfinable host must not see bash at all.
-  it('withholds bash when no sandbox backend exists', async () => {
+  // unconfinable host must not see shell at all.
+  it('withholds shell when no sandbox backend exists', async () => {
     sandboxStatus.mockResolvedValue({ backend: 'none', enforces: false })
-    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
+    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('shell')])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
     expect(names).toEqual(['read'])
   })
 
-  it('withholds bash when the sandbox probe itself fails', async () => {
+  it('withholds shell when the sandbox probe itself fails', async () => {
     sandboxStatus.mockRejectedValue(new Error('probe exploded'))
-    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
+    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('shell')])
     const { getAgentToolSchemas, sandboxEnforces } = await import(
       '../agentTools'
     )
@@ -120,38 +190,51 @@ describe('agentTools', () => {
     expect(sandboxEnforces()).toBe(false)
   })
 
-  it('passes the network setting through to the plugin', async () => {
+  // Chat's shell runs with the network closed; no global setting can open it.
+  it('keeps the sandbox network closed unless the caller opens it', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
-    const { useAgentToolsConfig } = await import('@/hooks/useAgentToolsConfig')
     const { executeAgentTool } = await import('../agentTools')
-
-    await executeAgentTool('bash', { command: 'ls' }, 'thread-1')
+    await executeAgentTool('shell', { command: 'ls' }, 'thread-1')
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
       'thread-1',
-      'bash',
+      'shell',
       { command: 'ls' },
       undefined,
       undefined,
       false,
       undefined,
-      'thread'
+      false,
+      'thread',
+      undefined
     )
+  })
 
-    useAgentToolsConfig.getState().setBashNetworkEnabled(true)
-    await executeAgentTool('bash', { command: 'ls' }, 'thread-1')
+  // Cowork opens the sandbox network per call.
+  it('opens the network when the caller asks', async () => {
+    executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool(
+      'shell',
+      { command: 'ls' },
+      'thread-1',
+      undefined,
+      'thread',
+      true
+    )
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
       'thread-1',
-      'bash',
+      'shell',
       { command: 'ls' },
       undefined,
       undefined,
       true,
       undefined,
-      'thread'
+      false,
+      'thread',
+      undefined
     )
-    useAgentToolsConfig.getState().setBashNetworkEnabled(false)
   })
 
   it('caches the schemas so every turn does not re-cross IPC', async () => {
@@ -183,7 +266,9 @@ describe('agentTools', () => {
       undefined,
       false,
       undefined,
-      'thread'
+      false,
+      'thread',
+      undefined
     )
   })
 
@@ -206,7 +291,9 @@ describe('agentTools', () => {
       undefined,
       false,
       '/home/u/repo',
-      'thread'
+      false,
+      'thread',
+      undefined
     )
   })
 
@@ -219,6 +306,53 @@ describe('agentTools', () => {
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('read', { path: 'a.txt' }, 'thread-1', null)
     expect(vi.mocked(executeTool).mock.calls.at(-1)?.[7]).toBeUndefined()
+  })
+
+  // Cowork layers the attached folder's skills over the permanent store, so the
+  // folder is forwarded as the plugin's skill-overlay `project` (arg 5) as well
+  // as the read-only filesystem root (arg 8) -- #8879.
+  it('forwards a skill-overlay project as the plugin project arg', async () => {
+    vi.mocked(executeTool).mockResolvedValue({
+      content: 'ok',
+      isError: false,
+      diff: null,
+    } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool(
+      'skill_list',
+      {},
+      'sess-1',
+      '/repo',
+      'session',
+      true,
+      true,
+      '/repo'
+    )
+    expect(executeTool).toHaveBeenLastCalledWith(
+      '/data',
+      'sess-1',
+      'skill_list',
+      {},
+      '/repo',
+      undefined,
+      true,
+      '/repo',
+      true,
+      'session',
+      undefined
+    )
+  })
+
+  // Chat never passes a skill overlay, so its skills stay global-only.
+  it('leaves the skill-overlay project undefined by default', async () => {
+    vi.mocked(executeTool).mockResolvedValue({
+      content: 'ok',
+      isError: false,
+      diff: null,
+    } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool('skill_list', {}, 'thread-1', '/home/u/repo')
+    expect(vi.mocked(executeTool).mock.calls.at(-1)?.[4]).toBeUndefined()
   })
 
   it('maps a gate refusal to an error rather than content', async () => {
@@ -252,18 +386,115 @@ describe('agentTools', () => {
   it('coerces a non-object input to empty args', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
-    await executeAgentTool('memory_list', undefined, 'thread-1')
+    await executeAgentTool('skill_list', undefined, 'thread-1')
     expect(executeTool).toHaveBeenCalledWith(
       '/data',
       'thread-1',
-      'memory_list',
+      'skill_list',
       {},
       undefined,
       undefined,
       false,
       undefined,
-      'thread'
+      false,
+      'thread',
+      undefined
     )
+  })
+
+  // ---- shared memory recall ----------------------------------------------
+
+  const note = (name: string, mtimeMs: number, summary = `${name} summary`) => ({
+    name,
+    summary,
+    mtimeMs,
+  })
+
+  it('caps the prompt catalog at the newest notes, then name-sorts it', async () => {
+    const { getMemoryCatalog, MEMORY_CATALOG_MAX_NOTES } = await import(
+      '../agentTools'
+    )
+    const notes = Array.from({ length: MEMORY_CATALOG_MAX_NOTES + 5 }, (_, i) =>
+      note(`n${String(i).padStart(3, '0')}`, i)
+    )
+    memoryCatalog.mockResolvedValue(notes)
+    const catalog = await getMemoryCatalog()
+    expect(catalog).toHaveLength(MEMORY_CATALOG_MAX_NOTES)
+    // The 5 oldest (lowest mtime) fell off, and the survivors are name-sorted
+    // so the prompt block is stable when nothing changed.
+    const names = catalog.map((n) => n.name)
+    expect(names).toEqual([...names].sort())
+    expect(names).not.toContain('n000')
+    expect(names).not.toContain('n004')
+    expect(names).toContain('n005')
+  })
+
+  it('builds a whole-note digest, newest first, under the byte budget', async () => {
+    const { refreshMemoryDigest, memoryDigestNow, MEMORY_DIGEST_BUDGET } =
+      await import('../agentTools')
+    expect(memoryDigestNow()).toBe('')
+    memoryCatalog.mockResolvedValue([
+      note('old', 1),
+      note('huge', 3),
+      note('new', 2),
+    ])
+    const bodies: Record<string, string> = {
+      old: 'user prefers tabs',
+      huge: 'x'.repeat(MEMORY_DIGEST_BUDGET + 1),
+      new: 'project targets Node 22',
+    }
+    memoryRead.mockImplementation(async (_df: string, name: string) => bodies[name])
+    const digest = await refreshMemoryDigest()
+    // Whole notes only: the oversized note is absent, not truncated.
+    expect(digest).not.toContain('xxx')
+    expect(digest).toContain('## new\nproject targets Node 22')
+    expect(digest).toContain('## old\nuser prefers tabs')
+    // Newest first.
+    expect(digest.indexOf('## new')).toBeLessThan(digest.indexOf('## old'))
+    expect(digest.length).toBeLessThanOrEqual(MEMORY_DIGEST_BUDGET)
+    expect(memoryDigestNow()).toBe(digest)
+  })
+
+  it('serves the snapshot from cache until a write invalidates it', async () => {
+    const { getMemoryCatalog, invalidateMemory } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([note('a', 1)])
+    await getMemoryCatalog()
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(1)
+    invalidateMemory()
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  // Cowork's memory writes go through executeAgentTool, so a note the model
+  // records mid-session must reach the next run/send without a restart.
+  it('invalidates the snapshot when a memory write succeeds', async () => {
+    executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
+    const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([])
+    await getMemoryCatalog()
+    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1')
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the snapshot across a memory view', async () => {
+    executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
+    const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([])
+    await getMemoryCatalog()
+    await executeAgentTool('memory', { op: 'view', name: 'a' }, 't1')
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(1)
+  })
+
+  it('degrades to empty recall when the store is unreachable', async () => {
+    memoryCatalog.mockRejectedValue(new Error('no backend'))
+    const { getMemoryCatalog, refreshMemoryDigest } = await import(
+      '../agentTools'
+    )
+    await expect(getMemoryCatalog()).resolves.toEqual([])
+    await expect(refreshMemoryDigest()).resolves.toBe('')
   })
 
   it('deletes one thread sandbox on cleanup', async () => {
@@ -287,9 +518,98 @@ describe('agentTools', () => {
     expect(threadWorkspaceSweep).toHaveBeenCalledWith('/data', ['a', 'b'])
   })
 
+  // A Cowork conversation is a thread now, so an attachment must land in the
+  // sandbox its tools run in, not the legacy sessions/ tree.
+  it('imports an attachment into the thread sandbox', async () => {
+    attachmentImport.mockResolvedValue({ path: '/p/a.txt', textPath: null })
+    const { importAttachment } = await import('../agentTools')
+    await importAttachment('c1', '/src/a.txt', 'text')
+    expect(attachmentImport).toHaveBeenCalledWith(
+      '/data',
+      'c1',
+      '/src/a.txt',
+      'text',
+      'thread'
+    )
+  })
+
+  it('starts a monitor in the thread sandbox', async () => {
+    startMonitor.mockResolvedValue('m1')
+    const { startAgentMonitor } = await import('../agentTools')
+    await startAgentMonitor('c1', { path: 'a' }, () => {})
+    expect(startMonitor.mock.calls.at(-1)?.[4]).toMatchObject({
+      scope: 'thread',
+    })
+  })
+
+  it('copies a session sandbox into the thread workspace of the same id', async () => {
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).resolves.toMatchObject({
+      copied: true,
+    })
+    expect(sessionWorkspaceCopyToThread).toHaveBeenCalledWith('/data', 's1')
+  })
+
+  // The migration must not commit a thread whose files did not arrive.
+  it('lets a failed sandbox copy reject instead of swallowing it', async () => {
+    sessionWorkspaceCopyToThread.mockRejectedValue({ message: 'disk full' })
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).rejects.toEqual({
+      message: 'disk full',
+    })
+  })
+
+  // Skipping the copy would commit the thread without its files.
+  it('rejects when the data folder is not known, so the session is retried', async () => {
+    coreInvoke.mockResolvedValue('')
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).rejects.toThrow()
+    expect(sessionWorkspaceCopyToThread).not.toHaveBeenCalled()
+  })
+
   it('reports zero swept when the sweep fails', async () => {
     threadWorkspaceSweep.mockRejectedValue(new Error('nope'))
     const { sweepThreadWorkspaces } = await import('../agentTools')
     await expect(sweepThreadWorkspaces(['a'])).resolves.toBe(0)
+  })
+
+  it('claims a result file and reports the model-visible path', async () => {
+    subagentResultReserve.mockResolvedValue({
+      file: 'researcher-c1.md',
+      path: '/tmp/subagents/researcher-c1.md',
+    })
+    const { reserveSubagentResult } = await import('../agentTools')
+    await expect(
+      reserveSubagentResult('sess-1', 'researcher-c1')
+    ).resolves.toEqual({
+      file: 'researcher-c1.md',
+      path: '/tmp/subagents/researcher-c1.md',
+    })
+    expect(subagentResultReserve).toHaveBeenCalledWith('sess-1', 'researcher-c1')
+  })
+
+  it('fills the claimed file by name', async () => {
+    subagentResultFill.mockResolvedValue(undefined)
+    const { fillSubagentResult } = await import('../agentTools')
+    await expect(
+      fillSubagentResult('sess-1', 'researcher-c1.md', 'findings')
+    ).resolves.toBe(true)
+    expect(subagentResultFill).toHaveBeenCalledWith(
+      'sess-1',
+      'researcher-c1.md',
+      'findings'
+    )
+  })
+
+  /// A value, not a throw: the caller falls back to delivering the answer
+  /// inline, which is what a web build with no scratch has to do anyway.
+  it('reports failure rather than throwing when there is no scratch', async () => {
+    subagentResultReserve.mockRejectedValue(new Error('no scratch'))
+    subagentResultFill.mockRejectedValue(new Error('no scratch'))
+    const { reserveSubagentResult, fillSubagentResult } = await import(
+      '../agentTools'
+    )
+    await expect(reserveSubagentResult('s', 'id')).resolves.toBeNull()
+    await expect(fillSubagentResult('s', 'id.md', 'x')).resolves.toBe(false)
   })
 })

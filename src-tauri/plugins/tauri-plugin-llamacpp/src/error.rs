@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::diagnostics::LoadDiagnostics;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
@@ -12,6 +14,19 @@ pub enum ErrorCode {
 
     // --- Memory Errors ---
     OutOfMemory,
+    /// The load failed although auto-fit owned the layers and the context, so
+    /// no split fits this device's memory. Distinct from `OutOfMemory`:
+    /// lowering the context will not help, because fit already tried that.
+    ModelDoesNotFit,
+
+    // --- Engine Process Errors ---
+    /// The worker process exited on its own: a crash, or something killed it.
+    EngineStopped,
+    /// The worker is alive, but its loopback port cannot be reached.
+    EngineUnreachable,
+    /// The bundled engine has no build for this computer's processor, so it
+    /// cannot start at all: the Apple Silicon engine on an Intel Mac.
+    UnsupportedCpu,
 
     // --- Configuration Errors ---
     InvalidArgument,
@@ -32,6 +47,9 @@ pub struct LlamacppError {
     /// install advice instead of showing raw engine output.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missing_libraries: Option<Vec<String>>,
+    /// The request, machine, engine and log of a failed load, for a bug report.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<Box<LoadDiagnostics>>,
 }
 
 impl LlamacppError {
@@ -41,7 +59,19 @@ impl LlamacppError {
             message,
             details,
             missing_libraries: None,
+            diagnostics: None,
         }
+    }
+
+    /// A load that failed with auto-fit already doing all it could: the model
+    /// does not fit this device at any context fit may choose. `details` keeps
+    /// what llama.cpp said, which is the evidence.
+    pub fn model_does_not_fit(details: String) -> Self {
+        Self::new(
+            ErrorCode::ModelDoesNotFit,
+            "The model does not fit on this device.".into(),
+            Some(details),
+        )
     }
 
     /// Classifies engine output from a failed model load. An unrecognized
@@ -120,12 +150,18 @@ const MISSING_LIBRARY_MARKERS: [&str; 5] = [
     "image not found",
 ];
 
-const DRIVER_TOO_OLD_MARKERS: [&str; 5] = [
+const DRIVER_TOO_OLD_MARKERS: [&str; 8] = [
     "driver version is insufficient",
     "cudaerrorinsufficientdriver",
     "error_incompatible_driver",
     "unsupported display driver",
     "forward compatibility was attempted on non supported",
+    // A GPU with no native code in the engine is compiled from PTX by the
+    // driver on first use, and a driver older than the toolkit that wrote the
+    // PTX refuses it (#9185).
+    "compiled with an unsupported toolchain",
+    "cuda_error_unsupported_ptx_version",
+    "cudaerrorunsupportedptxversion",
 ];
 
 fn is_missing_library(lower: &str) -> bool {
@@ -134,7 +170,9 @@ fn is_missing_library(lower: &str) -> bool {
         .any(|m| lower.contains(m))
 }
 
-fn is_driver_too_old(lower: &str) -> bool {
+/// True for a lowercased engine line that says the NVIDIA/Vulkan driver is too
+/// old for the engine.
+pub fn is_driver_too_old(lower: &str) -> bool {
     DRIVER_TOO_OLD_MARKERS
         .iter()
         .any(|m| lower.contains(m))
@@ -253,8 +291,12 @@ mod tests {
             (ErrorCode::ModelArchNotSupported, "MODEL_ARCH_NOT_SUPPORTED"),
             (ErrorCode::ModelLoadTimedOut, "MODEL_LOAD_TIMED_OUT"),
             (ErrorCode::MissingSharedLibrary, "MISSING_SHARED_LIBRARY"),
+            (ErrorCode::UnsupportedCpu, "UNSUPPORTED_CPU"),
             (ErrorCode::GpuDriverTooOld, "GPU_DRIVER_TOO_OLD"),
             (ErrorCode::OutOfMemory, "OUT_OF_MEMORY"),
+            (ErrorCode::ModelDoesNotFit, "MODEL_DOES_NOT_FIT"),
+            (ErrorCode::EngineStopped, "ENGINE_STOPPED"),
+            (ErrorCode::EngineUnreachable, "ENGINE_UNREACHABLE"),
             (ErrorCode::InvalidArgument, "INVALID_ARGUMENT"),
             (ErrorCode::IoError, "IO_ERROR"),
             (ErrorCode::InternalError, "INTERNAL_ERROR"),
@@ -289,6 +331,31 @@ mod tests {
 
         assert!(json.get("details").is_none(), "{json}");
         assert!(json.get("missing_libraries").is_none(), "{json}");
+        assert!(json.get("diagnostics").is_none(), "{json}");
+    }
+
+    #[test]
+    fn diagnostics_cross_the_boundary_under_their_own_key() {
+        let mut err = LlamacppError::new(ErrorCode::ModelLoadFailed, "x".into(), None);
+        err.diagnostics = Some(Box::new(LoadDiagnostics {
+            model_file: Some("m.gguf".into()),
+            architecture: Some("qwen3".into()),
+            quantization: Some("Q4_K_M".into()),
+            request: Default::default(),
+            gpus: vec![],
+            backends: vec!["CPU (libggml-cpu.so)".into()],
+            engine: crate::diagnostics::EngineBuild {
+                version: "1.0.0".into(),
+                tag: "b1".into(),
+                commit: "abc".into(),
+            },
+            log: "boom".into(),
+            log_truncated: false,
+        }));
+        let json: serde_json::Value = serde_json::to_value(&err).unwrap();
+        assert_eq!(json["diagnostics"]["model_file"], "m.gguf");
+        assert_eq!(json["diagnostics"]["backends"][0], "CPU (libggml-cpu.so)");
+        assert_eq!(json["diagnostics"]["log"], "boom");
     }
 
     #[test]
@@ -361,6 +428,10 @@ mod tests {
             "ggml_vulkan: vkCreateInstance failed: ERROR_INCOMPATIBLE_DRIVER",
             "forward compatibility was attempted on non supported HW",
             "system has unsupported display driver / cuda driver combination",
+            // What ggml prints when the driver cannot compile the engine's PTX.
+            "CUDA error: the provided PTX was compiled with an unsupported toolchain.",
+            "cuda_error_unsupported_ptx_version",
+            "cudaErrorUnsupportedPtxVersion",
         ] {
             let err = classify(stderr);
             assert!(matches!(err.code, ErrorCode::GpuDriverTooOld), "{stderr} -> {err:?}");

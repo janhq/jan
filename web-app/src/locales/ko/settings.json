@@ -103,8 +103,6 @@
     "threadScrollFlowHint": "보낸 최신 메시지에 뷰포트를 고정합니다.",
     "threadScrollStickyTitle": "고정 스크롤",
     "threadScrollStickyHint": "답변이 실시간으로 스트리밍될 때 자동으로 따라갑니다.",
-    "tokenCounterCompact": "컴팩트 토큰 카운터",
-    "tokenCounterCompactDesc": "채팅 입력란 안에 토큰 카운터를 표시합니다. 비활성화 시 토큰 카운터가 입력란 아래에 표시됩니다.",
     "codeBlockTitle": "코드 블록",
     "codeBlockDesc": "구문 강조 스타일을 선택합니다.",
     "showLineNumbers": "줄 번호 표시",
@@ -112,7 +110,8 @@
     "resetCodeBlockStyle": "코드 블록 스타일 재설정",
     "resetCodeBlockStyleDesc": "코드 블록 스타일을 기본값으로 재설정합니다.",
     "resetCodeBlockSuccess": "코드 블록 스타일 재설정 성공",
-    "resetCodeBlockSuccessDesc": "코드 블록 스타일이 기본값으로 복원되었습니다."
+    "resetCodeBlockSuccessDesc": "코드 블록 스타일이 기본값으로 복원되었습니다.",
+    "themeDescFixed": "항상 이 테마를 사용해요. OS 설정을 따르려면 '시스템'을 선택하세요."
   },
   "hardware": {
     "os": "운영 체제",
@@ -161,6 +160,11 @@
     "peerSslDesc": "피어 연결의 SSL 인증서를 확인합니다.",
     "hostSsl": "호스트 SSL",
     "hostSslDesc": "대상 호스트의 SSL 인증서를 확인합니다."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Jan이 컴퓨터에서 할 수 있는 일: 샌드박스 셸과, Jan 데이터 폴더에 영구적으로 보관되는 메모리 및 스킬.",
+    "networkDesc": "셸 명령이 네트워크에 접근하도록 허용합니다. 예: 패키지 설치, 저장소 가져오기. 기본적으로 켜져 있습니다. 명령이 접근할 수 있는 파일은 여전히 샌드박스가 제한합니다."
   },
   "localApiServer": {
     "title": "로컬 API 서버",

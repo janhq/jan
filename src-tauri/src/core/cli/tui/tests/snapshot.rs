@@ -1,0 +1,1617 @@
+//! Snapshot tests for the TUI's most layout- and style-sensitive surfaces: the
+//! permission prompt, the diff preview, the header status badges, the todo and
+//! subagent panels, `/agents`, the model picker, and the transcript body.
+//!
+//! Snapshot or substring? The two catch different regressions, so pick by what
+//! would break:
+//!
+//! - Write a **substring test** (`render_rows(..)` + `contains`) for behaviour:
+//!   a word appears, a row is dropped, Enter does the right thing. These
+//!   survive cosmetic changes and say exactly what they guard.
+//! - Write a **snapshot test** here only when the layout or the styling is the
+//!   thing under test: alignment, borders, truncation width, colour and
+//!   modifier choices. A substring test is blind to all of those.
+//!
+//! Do not snapshot a surface just because it exists; each snapshot is a file a
+//! reviewer has to re-read on every intentional change. One or two
+//! representative states (and widths, where the layout reflows) per surface.
+//!
+//! Every snapshot renders with motion reduced and a pinned
+//! theme (dark truecolor unless the test is about another), and avoids
+//! anything read from the clock or the machine: no running `run_started`
+//! (the header shows the wall clock while a run is timed), no git branch, no
+//! timestamps. Each frame is therefore a pure function of the fixture.
+//!
+//! Accepting an intentional change: run the tests, then `cargo insta review`
+//! (or re-run with `INSTA_UPDATE=always`) and commit the updated `.snap`
+//! files. See "Snapshot tests" in `src-tauri/CONTRIBUTING.md`.
+
+use super::*;
+use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
+use crate::core::cli::tui::motion::{with_mode, MotionMode};
+use crate::core::cli::tui::{
+    background_rows, input_box_height, subagent_group, turn_stats_line, work_group_lines, Level,
+    TRANSCRIPT_BOTTOM_PAD,
+};
+use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
+use ratatui::backend::TestBackend;
+use ratatui::widgets::Paragraph;
+use ratatui::Terminal;
+use std::fmt::Write as _;
+
+const DARK: Theme = Theme {
+    light: false,
+    depth: ColorDepth::Truecolor,
+};
+const LIGHT: Theme = Theme {
+    light: true,
+    depth: ColorDepth::Truecolor,
+};
+const ANSI16: Theme = Theme {
+    light: false,
+    depth: ColorDepth::Ansi16,
+};
+
+/// Run `f` with every process-wide render input pinned: motion reduced and
+/// `theme`.
+fn pinned<T>(theme: Theme, f: impl FnOnce() -> T) -> T {
+    with_mode(MotionMode::Reduced, || with_theme(theme, f))
+}
+
+/// A fresh app with the machine-dependent inputs cleared: the branch is read
+/// from `git` at construction and the dock prints the project root, and a
+/// real model id reads better than `m`.
+fn snapshot_app() -> TestApp {
+    let mut app = test_app();
+    app.git_branch = None;
+    // Outside any plausible `$HOME`, so `tilde_path` never abbreviates it.
+    app.project_root = std::path::PathBuf::from("/snapshot/repo");
+    app.model = "gpt-5-mini".into();
+    app
+}
+
+/// Start a turn without the wall clock: the header prints `HH:MM` and the
+/// elapsed time while `run_started` is set.
+fn start_turn(app: &mut App, text: &str) {
+    app.submit_user(text.into());
+    app.run_started = None;
+}
+
+/// Draw the whole frame, as the render loop does.
+fn frame(app: &mut App, theme: Theme, w: u16, h: u16) -> Buffer {
+    pinned(theme, || {
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| super::super::draw(f, app)).unwrap();
+        terminal.backend().buffer().clone()
+    })
+}
+
+/// Draw `lines` alone into a buffer `w` wide and exactly as tall as they are,
+/// for a surface built as lines rather than drawn into a frame.
+fn lines_buffer(lines: Vec<Line<'static>>, w: u16) -> Buffer {
+    let area = Rect::new(0, 0, w, lines.len().max(1) as u16);
+    let mut buf = Buffer::empty(area);
+    ratatui::widgets::Widget::render(Paragraph::new(lines), area, &mut buf);
+    buf
+}
+
+/// Serialize a buffer as its text, then its styling as runs.
+///
+/// Text rows are fenced in `|` so trailing blanks (and so the width) survive
+/// editors and diff tools. Styling is listed per row as runs of adjacent cells
+/// sharing one style, `row x0..x1 fg=.. bg=.. mod=..`, with columns as cell
+/// indices (end exclusive) and unset attributes left out. Unstyled runs are
+/// omitted entirely, which keeps a mostly plain frame short.
+///
+/// The cell behind a wide grapheme holds a placeholder the terminal never
+/// shows, so it is skipped in the text, as ratatui's own diff skips it.
+fn render_snapshot(buf: &Buffer) -> String {
+    let area = buf.area;
+    let mut text = String::new();
+    let mut styles = String::new();
+    for y in 0..area.height {
+        let mut row = String::new();
+        let mut hidden = 0usize;
+        // (start, key) of the run in progress.
+        let mut run: Option<(u16, String)> = None;
+        for x in 0..area.width {
+            let cell = &buf[(area.x + x, area.y + y)];
+            if hidden == 0 {
+                row.push_str(cell.symbol());
+                hidden = UnicodeWidthStr::width(cell.symbol()).max(1);
+            }
+            hidden -= 1;
+            let key = style_key(cell);
+            if run.as_ref().is_some_and(|(_, k)| *k != key) {
+                let (start, k) = run.take().unwrap();
+                push_run(&mut styles, y, start, x, &k);
+            }
+            if run.is_none() {
+                run = Some((x, key));
+            }
+        }
+        if let Some((start, k)) = run {
+            push_run(&mut styles, y, start, area.width, &k);
+        }
+        let _ = writeln!(text, "|{row}|");
+    }
+    format!("{text}\n{styles}")
+}
+
+/// The non-default attributes of a cell, `""` when it is plain.
+fn style_key(cell: &ratatui::buffer::Cell) -> String {
+    let mut key = Vec::new();
+    if cell.fg != Color::Reset {
+        key.push(format!("fg={}", cell.fg));
+    }
+    if cell.bg != Color::Reset {
+        key.push(format!("bg={}", cell.bg));
+    }
+    if !cell.modifier.is_empty() {
+        key.push(format!("mod={:?}", cell.modifier));
+    }
+    key.join(" ")
+}
+
+fn push_run(out: &mut String, y: u16, x0: u16, x1: u16, key: &str) {
+    if !key.is_empty() {
+        let _ = writeln!(out, "{y:>2} {x0}..{x1} {key}");
+    }
+}
+
+/// Assert `buf` against `snapshots/<name>.snap` beside this file.
+fn assert_buffer(name: &str, buf: &Buffer) {
+    insta::with_settings!({ prepend_module_to_snapshot => false }, {
+        insta::assert_snapshot!(name, render_snapshot(buf));
+    });
+}
+
+// ---- Header / status badge ------------------------------------------------
+
+fn header_buffer(app: &App, theme: Theme) -> Buffer {
+    pinned(theme, || lines_buffer(vec![Line::from(header_spans(app))], 100))
+}
+
+#[test]
+fn header_idle_ready() {
+    let app = snapshot_app();
+    assert_buffer("header_idle_ready", &header_buffer(&app, DARK));
+}
+
+#[test]
+fn header_running_working_with_turn_and_cache() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    app.turn = (3, 20);
+    app.tokens = 41_200;
+    app.session_cache_reported = true;
+    app.session_prompt_tokens = 10_000;
+    app.session_cached_tokens = 4_200;
+    assert_buffer(
+        "header_running_working_with_turn_and_cache",
+        &header_buffer(&app, DARK),
+    );
+}
+
+#[test]
+fn header_running_thinking_reduced_motion() {
+    let mut app = snapshot_app();
+    app.transcript.stream_reasoning = false;
+    start_turn(&mut app, "go");
+    app.apply(StreamEvent::Token {
+        text: "<think>pondering".into(),
+    });
+    assert!(app.is_thinking());
+    assert_buffer(
+        "header_running_thinking_reduced_motion",
+        &header_buffer(&app, DARK),
+    );
+}
+
+#[test]
+fn header_zero_cache_hit_on_ansi16() {
+    let mut app = snapshot_app();
+    app.session_cache_reported = true;
+    app.session_prompt_tokens = 8_000;
+    app.session_cached_tokens = 0;
+    assert_buffer("header_zero_cache_hit_ansi16", &header_buffer(&app, ANSI16));
+}
+
+// ---- Permission prompt ----------------------------------------------------
+
+fn permission(app: &mut App, id: &str, command: &str) {
+    app.apply(StreamEvent::PermissionRequest {
+        request_id: id.into(),
+        tool_name: "bash".into(),
+        capability: "execute".into(),
+        path: None,
+        command: Some(command.into()),
+        diff: None,
+        prompt_kind: "exec".into(),
+        offers_always: true,
+        justification: None,
+    });
+}
+
+#[test]
+fn permission_prompt_for_a_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "check the tree");
+    permission(&mut app, "p1", "git status && cargo test --lib");
+    assert_buffer(
+        "permission_prompt_exec",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+/// An escalation shows the model's reason under the command and offers no
+/// "allow always".
+#[test]
+fn permission_prompt_to_escalate_out_of_the_sandbox() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    app.apply(StreamEvent::PermissionRequest {
+        request_id: "e1".into(),
+        tool_name: "shell".into(),
+        capability: "exec outside the sandbox".into(),
+        path: None,
+        command: Some("cargo build".into()),
+        diff: None,
+        prompt_kind: "escalate".into(),
+        offers_always: false,
+        justification: Some("cargo needs to write ~/.cargo/registry to fetch crates".into()),
+    });
+    assert_buffer(
+        "permission_prompt_escalate",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+#[test]
+fn permission_prompt_from_a_subagent_with_a_queue() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    app.apply(StreamEvent::Subagent {
+        run_id: "sub-scout-1".into(),
+        name: "scout".into(),
+        event: Box::new(StreamEvent::PermissionRequest {
+            request_id: "p1".into(),
+            tool_name: "write".into(),
+            capability: "write".into(),
+            path: Some("notes.md".into()),
+            command: None,
+            diff: None,
+            prompt_kind: "write".into(),
+            offers_always: false,
+            justification: None,
+        }),
+    });
+    permission(&mut app, "p2", "ls");
+    assert_eq!(app.pending_queue.len(), 2);
+    assert_buffer(
+        "permission_prompt_subagent_queued",
+        &frame(&mut app, DARK, 72, 18),
+    );
+}
+
+#[test]
+fn permission_prompt_with_a_diff_on_ansi16() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "rename it");
+    app.apply(StreamEvent::PermissionRequest {
+        request_id: "w1".into(),
+        tool_name: "edit".into(),
+        capability: "write".into(),
+        path: Some("src/greet.rs".into()),
+        command: None,
+        diff: Some(
+            concat!(
+                "@@ -1,3 +1,3 @@\n",
+                " fn greet() {\n",
+                "-    println!(\"hi ansi16\");\n",
+                "+    println!(\"hello ansi16\");\n",
+                " }",
+            )
+            .into(),
+        ),
+        prompt_kind: "write".into(),
+        offers_always: true,
+        justification: None,
+    });
+    assert_buffer(
+        "permission_prompt_diff_ansi16",
+        &frame(&mut app, ANSI16, 70, 22),
+    );
+}
+
+// ---- Diff preview ---------------------------------------------------------
+//
+// The highlighter caches by text, not by theme (the theme is fixed for a
+// process outside tests), so each themed variant uses its own source text.
+
+fn diff_buffer(theme: Theme, diff: &str, width: u16, lang: Option<&str>) -> Buffer {
+    pinned(theme, || {
+        lines_buffer(
+            super::super::diff_lines_in(
+                theme,
+                diff,
+                width as usize,
+                DIFF_PREVIEW_MAX_ROWS,
+                "",
+                lang,
+            ),
+            width,
+        )
+    })
+}
+
+#[test]
+fn diff_preview_highlighted_dark() {
+    let diff = concat!(
+        "@@ -2,4 +2,5 @@\n",
+        " use std::fmt;\n",
+        "-fn area(w: u32, h: u32) -> u32 {\n",
+        "+/// Area in cells.\n",
+        "+fn area(w: u64, h: u64) -> u64 {\n",
+        "     w * h\n",
+        " }",
+    );
+    assert_buffer(
+        "diff_preview_highlighted_dark",
+        &diff_buffer(DARK, diff, 64, Some("src/geometry.rs")),
+    );
+}
+
+#[test]
+fn diff_preview_plain_light() {
+    let diff = "@@ -1,2 +1,2 @@\n-colour = grey\n+colour = gray\n unchanged = true";
+    assert_buffer(
+        "diff_preview_plain_light",
+        &diff_buffer(LIGHT, diff, 48, None),
+    );
+}
+
+#[test]
+fn diff_preview_truncates_long_rows_and_counts_the_rest() {
+    let mut diff = String::from("@@ -1,0 +1,30 @@\n");
+    for i in 0..30 {
+        let _ = writeln!(diff, "+line {i:02} of a long generated block that overflows the box");
+    }
+    assert_buffer(
+        "diff_preview_truncated_narrow",
+        &diff_buffer(DARK, diff.trim_end(), 40, None),
+    );
+}
+
+// ---- Todo panel -----------------------------------------------------------
+
+#[test]
+fn todo_panel_single_phase() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "plan it");
+    app.todos = todos_from(vec![(
+        "",
+        vec![
+            ("scaffold the crate", Completed),
+            ("wire the routes", InProgress),
+            ("write the docs", Open),
+            ("support windows xp", Abandoned),
+        ],
+    )]);
+    assert_buffer("todo_panel_single_phase", &frame(&mut app, DARK, 80, 16));
+}
+
+#[test]
+fn todo_panel_multi_phase() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    app.todos = todos_from(vec![
+        (
+            "backend",
+            vec![("scaffold", Completed), ("routes", InProgress), ("auth", Open)],
+        ),
+        ("frontend", vec![("ui", Open)]),
+    ]);
+    assert_buffer(
+        "todo_panel_multi_phase",
+        &frame(&mut app, DARK, 100, 18),
+    );
+}
+
+#[test]
+fn todo_panel_narrow() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    app.todos = todos_from(vec![(
+        "",
+        vec![("routes", InProgress), ("auth", Open)],
+    )]);
+    assert_buffer(
+        "todo_panel_narrow",
+        &frame(&mut app, DARK, 60, 18),
+    );
+}
+
+// ---- Subagents and /agents ------------------------------------------------
+
+/// A running child with `calls` calls and, when `reported`, a prompt-cache
+/// history of `cached` out of `prompt` tokens.
+fn cached_panel(
+    name: &str,
+    calls: usize,
+    prompt: u64,
+    cached: u64,
+    reported: bool,
+) -> SubagentPanel {
+    let mut panel = panel_with_calls(name, Vec::new());
+    panel.calls = (0..calls).map(|i| format!("Read mod_{i}.rs")).collect();
+    panel.requests = calls as u32;
+    panel.prompt_tokens = prompt;
+    panel.total_prompt_tokens = prompt;
+    panel.total_cached_tokens = cached;
+    panel.cache_reported = reported;
+    panel
+}
+
+/// The fan-out every agent snapshot shares: a cache hit, a cache miss (red), a
+/// route that reports no cache, a queued child and a later-phase one.
+fn fan_out() -> Vec<SubagentPanel> {
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    let mut waiting = cached_panel("collector", 0, 0, 0, false);
+    waiting.pending = true;
+    waiting.phase = Some(2);
+    vec![
+        cached_panel("kv-review", 4, 64_000, 48_000, true),
+        cached_panel("perf-scan", 3, 20_000, 0, true),
+        cached_panel("lint-fix", 1, 5_000, 0, false),
+        queued,
+        waiting,
+    ]
+}
+
+#[test]
+fn agents_inspector_lists_the_fan_out() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    app.subagents = fan_out();
+    open_agents_picker(&mut app);
+    assert_buffer("agents_inspector_list", &frame(&mut app, DARK, 90, 16));
+}
+
+// ---- Monitors and background shells ----------------------------------------
+
+fn shell(pid: u32, command: &str, elapsed_secs: u64) -> tauri_plugin_agent_tools::tools::proc::ShellInfo {
+    tauri_plugin_agent_tools::tools::proc::ShellInfo {
+        pid,
+        command: command.into(),
+        elapsed_secs,
+        backgrounded: true,
+    }
+}
+
+#[test]
+fn monitors_inspector_lists_the_monitors() {
+    let mut app = snapshot_app();
+    app.monitors = vec![
+        monitor("mon-1", "build", "grep -m1 OK build.log", 12),
+        monitor("mon-2", "boot", "curl -sf localhost:1337/health", 1),
+    ];
+    open_monitors_picker(&mut app);
+    assert_buffer("monitors_inspector_list", &frame(&mut app, DARK, 80, 10));
+}
+
+#[test]
+fn monitors_inspector_empty() {
+    let mut app = snapshot_app();
+    open_monitors_picker(&mut app);
+    assert_buffer("monitors_inspector_empty", &frame(&mut app, DARK, 60, 9));
+}
+
+/// `/worktrees`: the actions, then each checkout coloured by what may be
+/// done with it (removable green, holding work amber, in use dim).
+#[test]
+fn worktrees_inspector_lists_each_state() {
+    let mut app = snapshot_app();
+    app.worktrees = Some(worktrees_fixture());
+    open_worktrees_picker(&mut app);
+    assert_buffer("worktrees_inspector_list", &frame(&mut app, DARK, 100, 15));
+}
+
+#[test]
+fn monitor_group_overflow_counts_the_rest() {
+    let mut app = snapshot_app();
+    app.monitors = (1..=4)
+        .map(|n| monitor(&format!("mon-{n}"), "build", "grep OK build.log", n))
+        .collect();
+    let buf = pinned(DARK, || {
+        lines_buffer(background_rows(&mut app, 60, 8, Instant::now()), 60)
+    });
+    assert_buffer("monitor_group_overflow", &buf);
+}
+
+#[test]
+fn shells_inspector_lists_the_shells() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "cargo build --release", 7)];
+    open_background_shells_picker(&mut app);
+    assert_buffer("shells_inspector_list", &frame(&mut app, DARK, 80, 10));
+}
+
+/// Enter on a `/shells` row: the shell's command and status over the newest
+/// lines of its output.
+#[test]
+fn shells_inspector_detail() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    open_background_shells_picker(&mut app);
+    let output: String = (1..=12).map(|i| format!("[vite] hmr update /src/App.tsx ({i})\n")).collect();
+    app.shell_detail = Some(crate::core::cli::tui::ShellDetail {
+        pid: 4242,
+        command: "npm run dev".into(),
+        elapsed_secs: 65,
+        tail: None,
+        output,
+        seen: 0,
+        finished: false,
+    });
+    if let Some(picker) = app.picker.as_mut() {
+        picker.kind = PickerKind::ShellDetail;
+    }
+    assert_buffer("shells_inspector_detail", &frame(&mut app, DARK, 80, 14));
+}
+
+/// A call that outran its timeout, open and folded: running in the
+/// background, pointing at `/shells`, never a green `Ran`.
+#[test]
+fn transcript_backgrounded_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "start the dev server");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "npm run dev" }));
+    tool_result(
+        &mut app,
+        "b1",
+        "Command exceeded 120s and is still running in the background. Its result will be \
+         written to /tmp/jan-bash/out-1.txt once it finishes.",
+        false,
+        None,
+    );
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_backgrounded_shell_command_open", &open);
+    assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
+}
+
+/// Two background shells on an idle session: their group over the input.
+#[test]
+fn background_shells_over_the_input() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
+    assert_buffer("background_shells", &frame(&mut app, DARK, 80, 13));
+}
+
+/// Two subagents running and one queued after the main turn ended: the block
+/// over the idle input, at `now` so the elapsed times are fixed.
+fn idle_fan_out(now: Instant) -> TestApp {
+    let mut app = snapshot_app();
+    let mut kv = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    kv.started = Some(now - Duration::from_secs(65));
+    let mut perf = cached_panel("perf-scan", 0, 0, 0, false);
+    perf.started = Some(now - Duration::from_secs(12));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    app.subagents = vec![kv, perf, queued];
+    app
+}
+
+fn background_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
+    pinned(DARK, || lines_buffer(background_rows(app, w, 8, now), w))
+}
+
+#[test]
+fn subagents_running_after_the_turn() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    assert_buffer("subagents_idle_running", &background_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_narrow", &background_rows_buffer(&mut app, 36, now));
+    app.apply(StreamEvent::SubagentEnd {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        error: None,
+    });
+    assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
+}
+
+/// A child that issues several calls in one request, as its stream delivers
+/// them: every call announced before any runs, then the results out of order.
+/// The row names the newest call still running, in continuous tense, and a
+/// label too long for the row is cut after its verb rather than dropped; each
+/// result retires its own call by id, so the row follows whatever is still
+/// running and flips to the past tense only once the last one answers.
+#[test]
+fn subagent_parallel_calls_stay_visible_until_the_last_result() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.subagents.truncate(1);
+    let child = |event: StreamEvent| StreamEvent::Subagent {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        event: Box::new(event),
+    };
+    let cmd = "cargo test --locked --no-default-features --features cli --lib tui";
+    let calls = [
+        ("a", "read", json!({ "path": "src/a.rs" })),
+        ("b", "read", json!({ "path": "src/b.rs" })),
+        ("c", "bash", json!({ "command": cmd })),
+    ];
+    for (id, tool, args) in calls {
+        app.apply(child(StreamEvent::ToolCall {
+            id: id.into(),
+            name: tool.into(),
+            args,
+        }));
+    }
+    let row = |app: &mut App, w: u16| {
+        let text = render_snapshot(&background_rows_buffer(app, w, now));
+        text.lines().nth(1).unwrap_or_default().to_string()
+    };
+    // The newest call's whole command does not fit, so the row keeps its verb
+    // and cuts the rest with a visible mark rather than going blank.
+    for w in [80, 50, 36] {
+        let shown = row(&mut app, w);
+        assert!(shown.contains("1m 05s \u{b7} Running"), "@{w}: {shown}");
+        assert!(shown.trim_end_matches([' ', '|']).ends_with("..."), "@{w}: {shown}");
+        assert!(!shown.contains("in flight"), "@{w}: {shown}");
+    }
+    assert!(row(&mut app, 120).contains(&format!("1m 05s \u{b7} Running {cmd}")));
+    assert_buffer("subagents_idle_parallel", &background_rows_buffer(&mut app, 80, now));
+    let result = |id: &str| {
+        child(StreamEvent::ToolResult {
+            id: id.into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        })
+    };
+    app.apply(result("c"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("1m 05s \u{b7} Reading b.rs "), "{shown}");
+    app.apply(result("b"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("1m 05s \u{b7} Reading a.rs "), "{shown}");
+    // The batch is done: the call the row last named stays, its verb now in
+    // the past tense.
+    app.apply(result("a"));
+    assert!(app.subagents[0].in_flight.is_empty());
+    let shown = row(&mut app, 120);
+    assert!(shown.contains("1m 05s \u{b7} Read a.rs "), "{shown}");
+}
+
+/// Where the block sits: over the rule, subagents over shells, the rule on
+/// the input.
+#[test]
+fn subagents_and_shells_over_the_idle_input() {
+    let mut app = idle_fan_out(Instant::now());
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 16));
+}
+
+/// Monitors, subagents and shells at once: one block, one grammar, parked on
+/// the rule over the input on the same rows whether the turn is idle or
+/// running; a narrow terminal sheds hints and facts before it cuts a name,
+/// and a very narrow one keeps the heads alone.
+#[test]
+fn background_work_block_idle_running_and_narrow() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.monitors = vec![monitor("mon-3", "CI done #9487", "gh pr checks 9487 --json bucket", 25)];
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    let idle = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_idle", &idle);
+    start_turn(&mut app, "keep going");
+    let running = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_running", &running);
+    // The rows from the block's first head down to the rule; the input below
+    // holds the working row in one state and the placeholder in the other.
+    let block = |buf: &Buffer| -> Vec<String> {
+        let text = render_snapshot(buf);
+        let rows: Vec<&str> = text.lines().take(20).collect();
+        let rule = rows.iter().rposition(|r| r.starts_with("|\u{2500}")).expect("rule");
+        let top = rows.iter().position(|r| r.starts_with("| 1 monitor")).expect("head");
+        rows[top..=rule].iter().map(|r| r.to_string()).collect()
+    };
+    assert_eq!(block(&idle), block(&running), "the block does not move with the turn");
+    assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 20));
+    assert_buffer("background_work_very_narrow", &frame(&mut app, DARK, 24, 20));
+    // Under `BACKGROUND_CHILD_MIN_NAME` columns of name: heads alone.
+    let heads = pinned(DARK, || lines_buffer(background_rows(&mut app, 12, 20, now), 12));
+    assert_buffer("background_work_heads_only", &heads);
+}
+
+/// Each way a child can be not-running reads distinctly: running, queued for
+/// a slot, waiting on an earlier phase, and parked on its own background
+/// work, in the block and in `/agents`.
+#[test]
+fn subagent_states_read_distinctly() {
+    let now = Instant::now();
+    let mut app = snapshot_app();
+    let mut running = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    running.started = Some(now - Duration::from_secs(65));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    let mut phased = cached_panel("collector", 0, 0, 0, false);
+    phased.pending = true;
+    phased.phase = Some(2);
+    let mut parked = cached_panel("builder", 2, 8_000, 0, false);
+    parked.started = Some(now - Duration::from_secs(30));
+    parked.parked = true;
+    app.subagents = vec![running, queued, phased, parked];
+    // Through the block's own helper with room for all four; the live block
+    // caps a group at `BACKGROUND_GROUP_ROWS` and counts the rest.
+    let buf = pinned(DARK, || {
+        let group = subagent_group(&mut app.subagents, now).expect("children");
+        lines_buffer(work_group_lines(&group, 4, 80), 80)
+    });
+    assert_buffer("subagent_states", &buf);
+    open_agents_picker(&mut app);
+    assert_buffer("subagent_states_inspector", &frame(&mut app, DARK, 100, 13));
+}
+
+/// Background pings, each as the row its kind calls for.
+#[test]
+fn transcript_background_notices() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "watch the build");
+    for text in [
+        "Monitor mon-1: 'build' matched",
+        "Monitor mon-2: 'boot' timed out",
+        "Background command failed after 3s: make test",
+        "Background command finished after 12s: make build",
+    ] {
+        app.apply(StreamEvent::Notice { text: text.into() });
+    }
+    assert_buffer("transcript_background_notices", &body(&mut app));
+}
+
+/// Feed `event` to the running child `kv-review`, as its stream would.
+fn child(app: &mut App, event: StreamEvent) {
+    app.apply(StreamEvent::Subagent {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        event: Box::new(event),
+    });
+}
+
+fn child_call(app: &mut App, id: &str, name: &str, args: serde_json::Value) {
+    child(
+        app,
+        StreamEvent::ToolCall {
+            id: id.into(),
+            name: name.into(),
+            args,
+        },
+    );
+}
+
+fn child_result(app: &mut App, id: &str, content: &str, is_error: bool, diff: Option<&str>) {
+    child(
+        app,
+        StreamEvent::ToolResult {
+            id: id.into(),
+            content: content.into(),
+            is_error,
+            diff: diff.map(String::from),
+        },
+    );
+}
+
+/// Open `/agents` straight on `kv-review`'s detail, with its cache rate
+/// pinned to the dock fixture's. Its reasoning is aged past the linger
+/// window, so the frame does not depend on how fast the test ran.
+fn open_kv_review_detail(app: &mut App) {
+    if let Some(panel) = app.subagents.first_mut() {
+        panel.total_prompt_tokens = 64_000;
+        panel.total_cached_tokens = 48_000;
+        panel.cache_reported = true;
+        let aged = Instant::now().checked_sub(Duration::from_secs(60));
+        for block in &mut panel.transcript.reasoning_blocks {
+            block.committed = aged.unwrap_or(block.committed);
+        }
+    }
+    open_agents_picker(app);
+    if let Some(picker) = app.picker.as_mut() {
+        picker.kind = PickerKind::AgentDetail;
+    }
+    app.agent_detail = Some("sub-kv-review-1".into());
+}
+
+fn start_kv_review(app: &mut App) {
+    app.apply(StreamEvent::SubagentStart {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        task: Some("Review the key-value store for races.\nThen report.".into()),
+        workspace: None,
+        internal: false,
+    });
+}
+
+#[test]
+fn agents_inspector_detail_for_one_child() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Reading the store first.".into(),
+        },
+    );
+    child_call(&mut app, "c1", "read", json!({ "path": "src/kv.rs" }));
+    child_result(&mut app, "c1", "120 lines", false, None);
+    // A steer from `/agents` lands as the child's user turn.
+    if let Some(panel) = app.subagents.first_mut() {
+        panel.transcript.flush_assistant();
+        panel.transcript.finalize_tool_group();
+        panel
+            .transcript
+            .push_user_line("check the lock order too", &[]);
+    }
+    child(&mut app, StreamEvent::Step { index: 2, max: 0 });
+    child_call(
+        &mut app,
+        "c2",
+        "bash",
+        json!({ "command": "cargo test kv" }),
+    );
+    child_result(
+        &mut app,
+        "c2",
+        "error: 1 test failed\n[exit 101]",
+        true,
+        None,
+    );
+    open_kv_review_detail(&mut app);
+    assert_buffer("agents_inspector_detail", &frame(&mut app, DARK, 80, 24));
+}
+
+/// A fuller child run in the detail box, mid-run: its opening answer, its
+/// reasoning folded to a summary row, an Explored group and an edit with its
+/// diff, all laid out by the main transcript's code at the box's inner width.
+/// Nothing answers after the tools yet, so the trace stays open.
+#[test]
+fn agents_inspector_detail_for_a_richer_child() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "I'll check the **lock order** in `src/kv.rs`.".into(),
+        },
+    );
+    child(&mut app, StreamEvent::Step { index: 2, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Reasoning {
+            text: "The lock order is the likely race.".into(),
+        },
+    );
+    child_call(&mut app, "c1", "read", json!({ "path": "src/kv.rs" }));
+    child_call(
+        &mut app,
+        "c2",
+        "grep",
+        json!({ "pattern": "lock()", "path": "src" }),
+    );
+    child_result(&mut app, "c1", "pub struct Kv;", false, None);
+    child_result(&mut app, "c2", "src/kv.rs:12: self.a.lock()", false, None);
+    child(&mut app, StreamEvent::Step { index: 3, max: 0 });
+    child_call(
+        &mut app,
+        "c3",
+        "edit",
+        json!({ "path": "src/kv.rs", "old": "a", "new": "b" }),
+    );
+    child_result(
+        &mut app,
+        "c3",
+        "Applied 1 edit to src/kv.rs",
+        false,
+        Some(concat!(
+            "@@ -12,1 +12,1 @@\n",
+            "-        let a = self.a.lock();\n",
+            "+        let b = self.b.lock();\n",
+        )),
+    );
+    open_kv_review_detail(&mut app);
+    assert_buffer(
+        "agents_inspector_detail_rich",
+        &frame(&mut app, DARK, 80, 30),
+    );
+}
+
+/// The detail's input is the composer, aimed at the child: a parked child
+/// offers the placeholder addressed to it, and a draft shows with the main
+/// composer's prompt and cursor under the panel.
+#[test]
+fn agents_inspector_detail_takes_a_message() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Waiting on the test run.".into(),
+        },
+    );
+    child(&mut app, StreamEvent::Parked);
+    open_kv_review_detail(&mut app);
+    assert_buffer("agents_inspector_detail_idle_input", &frame(&mut app, DARK, 80, 16));
+    app.input = "check the lock order too".into();
+    app.cursor = app.input.len();
+    assert_buffer("agents_inspector_detail_draft", &frame(&mut app, DARK, 80, 16));
+}
+
+/// A permission request from the child lands while its detail is open: it is
+/// drawn over the detail, and the footer says only a picked option answers.
+#[test]
+fn agents_inspector_detail_under_a_permission_prompt() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Running the tests.".into(),
+        },
+    );
+    open_kv_review_detail(&mut app);
+    app.input = "also".into();
+    app.cursor = app.input.len();
+    child(
+        &mut app,
+        StreamEvent::PermissionRequest {
+            request_id: "p1".into(),
+            tool_name: "bash".into(),
+            capability: "execute".into(),
+            path: None,
+            command: Some("cargo test --lib".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+            justification: None,
+        },
+    );
+    assert_buffer(
+        "agents_inspector_detail_permission",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+/// The same for an `ask`: drawn over the detail, its help line naming the
+/// detail's keys.
+#[test]
+fn agents_inspector_detail_under_an_ask() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    open_kv_review_detail(&mut app);
+    let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+        "questions": [{
+            "id": "scope",
+            "question": "Which scope?",
+            "options": [{"label": "Small"}, {"label": "Large"}]
+        }]
+    }))
+    .unwrap();
+    app.apply(StreamEvent::AskRequest {
+        request_id: "a1".into(),
+        request,
+        timeout_secs: None,
+    });
+    assert_buffer("agents_inspector_detail_ask", &frame(&mut app, DARK, 80, 20));
+}
+
+// ---- Model picker -----------------------------------------------------------
+
+fn picker_app() -> TestApp {
+    let mut app = snapshot_app();
+    app.model_picker = super::super::ModelPicker::from_pairs(
+        vec![
+            ("anthropic".into(), "claude-sonnet-4-5".into()),
+            ("anthropic".into(), "claude-haiku-4-5".into()),
+            ("openai".into(), "gpt-5-mini".into()),
+            ("openai".into(), "gpt-5.1".into()),
+            ("tokamak".into(), "tokamak-1-preview".into()),
+        ],
+        "gpt-5-mini",
+    );
+    assert!(app.model_picker.is_some());
+    app
+}
+
+#[test]
+fn model_picker_narrow() {
+    let mut app = picker_app();
+    assert_buffer("model_picker_w48", &frame(&mut app, DARK, 48, 14));
+}
+
+#[test]
+fn model_picker_medium() {
+    let mut app = picker_app();
+    assert_buffer("model_picker_w80", &frame(&mut app, DARK, 80, 14));
+}
+
+#[test]
+fn model_picker_wide_with_a_query() {
+    let mut app = picker_app();
+    if let Some(picker) = app.model_picker.as_mut() {
+        picker.query = "claude".into();
+        picker.refresh_items();
+    }
+    assert_buffer("model_picker_w120_query", &frame(&mut app, DARK, 120, 14));
+}
+
+// ---- Transcript body --------------------------------------------------------
+//
+// The conversation as `draw` lays it out, cropped to the body: the header,
+// the separator, the input box and the dock are covered above or by their own
+// tests, and leaving them out keeps a transcript change from reading as a
+// chrome change. Leading blank rows (the top padding that bottom-anchors a
+// short transcript) are dropped too, so the frame height is not part of the
+// baseline.
+
+const BODY_WIDTH: u16 = 80;
+const BODY_HEIGHT: u16 = 40;
+
+/// Draw the full frame, then keep only the body rows that carry content.
+fn body(app: &mut App) -> Buffer {
+    let full = frame(app, DARK, BODY_WIDTH, BODY_HEIGHT);
+    let input_h = pinned(DARK, || input_box_height(app, BODY_WIDTH));
+    // Header and the body's top border above; the air row, the rule, the
+    // input and the dock line below. No fixture docks a plan.
+    let last = BODY_HEIGHT - TRANSCRIPT_BOTTOM_PAD - 1 - input_h - 1;
+    let blank = |y: u16| {
+        (0..BODY_WIDTH).all(|x| {
+            let cell = &full[(x, y)];
+            cell.symbol() == " " && style_key(cell).is_empty()
+        })
+    };
+    let first = (2..last).find(|&y| !blank(y)).unwrap_or(last);
+    let area = Rect::new(0, 0, BODY_WIDTH, (last - first).max(1));
+    let mut buf = Buffer::empty(area);
+    for y in first..last {
+        for x in 0..BODY_WIDTH {
+            buf[(x, y - first)] = full[(x, y)].clone();
+        }
+    }
+    buf
+}
+
+/// End the turn with a receipt, as the stream's `Done` does, then redraw the
+/// receipt with its clock-derived inputs (the elapsed time and the time of
+/// day) pinned, so the row is a pure function of the token counts.
+fn finish_turn(app: &mut App, prompt: u64, output: u64) {
+    app.apply(StreamEvent::TurnUsage {
+        usage: Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(output),
+            total_tokens: Some(prompt + output),
+            ..Usage::default()
+        },
+        execution_id: None,
+    });
+    app.run_started = Some(Instant::now());
+    app.on_done("stop".into(), None);
+    let receipt = app
+        .transcript
+        .rows
+        .iter()
+        .rposition(|r| {
+            matches!(&r.kind, RowKind::Line(l) if line_text(l).contains("Worked for "))
+        })
+        .expect("the turn left a receipt");
+    let pinned = turn_stats_line(prompt, output, Duration::from_secs(2), "03:04".into());
+    app.transcript.rows[receipt] = Row::line(pinned);
+}
+
+fn tool_call(app: &mut App, id: &str, name: &str, args: serde_json::Value) {
+    app.apply(StreamEvent::ToolCall {
+        id: id.into(),
+        name: name.into(),
+        args,
+    });
+}
+
+fn tool_result(app: &mut App, id: &str, content: &str, is_error: bool, diff: Option<&str>) {
+    app.apply(StreamEvent::ToolResult {
+        id: id.into(),
+        content: content.into(),
+        is_error,
+        diff: diff.map(String::from),
+    });
+}
+
+fn token(app: &mut App, text: &str) {
+    app.apply(StreamEvent::Token { text: text.into() });
+}
+
+#[test]
+fn transcript_markdown_answer_with_receipt() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "how do I build the cli?");
+    token(
+        &mut app,
+        concat!(
+            "## Building\n\n",
+            "Run these from `src-tauri`:\n\n",
+            "- stub the resources with `node ../scripts/stub-tauri-resources.mjs`\n",
+            "- then `cargo build --features cli`\n\n",
+            "The binary lands in **target/debug**.",
+        ),
+    );
+    finish_turn(&mut app, 12_400, 120);
+    assert_buffer("transcript_markdown_answer_with_receipt", &body(&mut app));
+}
+
+#[test]
+fn transcript_closed_tool_group() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "where is the parser?");
+    tool_call(&mut app, "c1", "grep", json!({ "pattern": "fn parse_command" }));
+    tool_call(&mut app, "c2", "glob", json!({ "pattern": "src/**/*.rs" }));
+    tool_call(&mut app, "c3", "read", json!({ "path": "src/core/cli/tui.rs" }));
+    tool_call(&mut app, "c4", "read", json!({ "path": "src/core/cli/mod.rs" }));
+    tool_result(&mut app, "c1", "src/core/cli/tui.rs:812: fn parse_command(", false, None);
+    tool_result(&mut app, "c2", "src/main.rs\nsrc/lib.rs\nsrc/core/cli/tui.rs", false, None);
+    tool_result(&mut app, "c3", "fn main() {}", false, None);
+    tool_result(&mut app, "c4", "pub mod tui;", false, None);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_closed_tool_group", &body(&mut app));
+}
+
+#[test]
+fn transcript_finished_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "run the tests");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "cargo test --lib parser" }));
+    tool_result(
+        &mut app,
+        "b1",
+        concat!(
+            "running 3 tests\n",
+            "test parser::empty ... ok\n",
+            "test parser::nested ... ok\n",
+            "test parser::unicode ... ok\n",
+            "\n",
+            "test result: ok. 3 passed; 0 failed",
+        ),
+        false,
+        None,
+    );
+    // While the group is still the current step the box lingers with its
+    // output; once it closes the call folds to its summary row.
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_finished_shell_command_open", &open);
+    assert_buffer("transcript_finished_shell_command", &body(&mut app));
+}
+
+#[test]
+fn transcript_failed_multi_line_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "check the build");
+    tool_call(
+        &mut app,
+        "b1",
+        "bash",
+        json!({ "command": "cd src-tauri\ncargo check\ncargo clippy\ncargo test" }),
+    );
+    tool_result(
+        &mut app,
+        "b1",
+        "error[E0425]: cannot find value `x`\n[exit 101]",
+        true,
+        None,
+    );
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_failed_shell_command_open", &open);
+    assert_buffer("transcript_failed_shell_command", &body(&mut app));
+}
+
+#[test]
+fn transcript_running_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "make build" }));
+    for chunk in ["compiling core\n", "compiling cli\n", "linking jan"] {
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b1".into(),
+            delta: chunk.into(),
+        });
+    }
+    // The box reports whole elapsed seconds; a fresh start reads `0s`.
+    if let Some(group) = app.transcript.tool_group.as_mut() {
+        group.started = Instant::now();
+    }
+    assert_buffer("transcript_running_shell_command", &body(&mut app));
+}
+
+/// The three commands of the run the grouped fixtures share, one failing.
+fn run_three_commands(app: &mut App) {
+    start_turn(app, "check and test the cli");
+    tool_call(app, "b1", "bash", json!({ "command": "cargo check --features cli" }));
+    tool_call(app, "b2", "bash", json!({ "command": "git status --short" }));
+    tool_call(app, "b3", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_result(app, "b1", "Finished dev profile in 2.1s\n[exit 0]", false, None);
+    tool_result(app, "b2", " M src/foo.rs\n[exit 0]", false, None);
+    let failed: String = std::iter::once("test a ... FAILED\n".to_string())
+        .chain((0..40).map(|i| format!("line {i}\n")))
+        .chain(std::iter::once("[exit 101]".to_string()))
+        .collect();
+    tool_result(app, "b3", &failed, true, None);
+}
+
+/// Consecutive commands, open and folded: one `Shell` row listing each command
+/// as its own `Ran <cmd>` with its own bullet and a short preview, the failed
+/// one naming its code, its bullet and the header's red.
+#[test]
+fn transcript_grouped_shell_commands() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_grouped_shell_commands_open", &open);
+    assert_buffer("transcript_grouped_shell_commands", &body(&mut app));
+}
+
+/// A run with one command finished and one still streaming: `Running 2
+/// commands`, the live one with its clock over its newest lines.
+#[test]
+fn transcript_grouped_shell_commands_running() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "git pull --ff-only" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "make build" }));
+    tool_result(&mut app, "b1", "Already up to date.\n[exit 0]", false, None);
+    for chunk in ["compiling core\n", "compiling cli\n", "linking jan"] {
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b2".into(),
+            delta: chunk.into(),
+        });
+    }
+    // The clock reports whole elapsed seconds; a fresh start reads `0s`.
+    if let Some(group) = app.transcript.tool_group.as_mut() {
+        for call in &mut group.calls {
+            call.started = Instant::now();
+        }
+    }
+    assert_buffer("transcript_grouped_shell_commands_running", &body(&mut app));
+}
+
+/// The folded run on a narrow terminal: every row is cut to the width rather
+/// than wrapped, multi-line commands included.
+#[test]
+fn grouped_shell_commands_narrow() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    tool_call(
+        &mut app,
+        "b4",
+        "bash",
+        json!({ "command": "cd src-tauri\ncargo clippy --all-targets -- -D warnings" }),
+    );
+    tool_result(&mut app, "b4", "warning: unused variable `width_of_the_row`\n[exit 0]", false, None);
+    app.transcript.finalize_tool_group();
+    let group = app.transcript.groups.last().expect("folded group");
+    let lines = pinned(DARK, || group.row(super::super::GroupRow::Closed).lines(30));
+    assert_buffer("grouped_shell_commands_narrow", &lines_buffer(lines, 30));
+}
+
+/// A finished turn folds its steps under `Worked`, with what the tools did
+/// hung under the header.
+#[test]
+fn transcript_folded_worked_summary() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "why does the cli test fail?");
+    app.apply(StreamEvent::Reasoning { text: "Look at the parser first.".into() });
+    tool_call(&mut app, "r1", "read", json!({ "path": "src/core/cli/mod.rs" }));
+    tool_call(&mut app, "r2", "read", json!({ "path": "src/core/cli/tui.rs" }));
+    tool_result(&mut app, "r1", "pub mod tui;", false, None);
+    tool_result(&mut app, "r2", "fn main() {}", false, None);
+    app.apply(StreamEvent::Reasoning { text: "Now run it.".into() });
+    tool_call(&mut app, "b1", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "git diff --stat" }));
+    tool_result(&mut app, "b1", "ok\n[exit 0]", false, None);
+    tool_result(&mut app, "b2", "1 file changed\n[exit 0]", false, None);
+    token(&mut app, "It passes now.");
+    finish_turn(&mut app, 4_000, 30);
+    assert_buffer("transcript_folded_worked_summary", &body(&mut app));
+}
+
+#[test]
+fn transcript_failed_tool_call() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "open the notes");
+    tool_call(&mut app, "c1", "read", json!({ "path": "docs/missing.md" }));
+    tool_result(
+        &mut app,
+        "c1",
+        "ERROR: No such file or directory: docs/missing.md",
+        true,
+        None,
+    );
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_failed_tool_call", &body(&mut app));
+}
+
+#[test]
+fn transcript_edit_with_diff() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "use u64 for the area");
+    tool_call(&mut app, "e1", "edit", json!({ "path": "src/geometry.rs" }));
+    tool_result(
+        &mut app,
+        "e1",
+        "Applied 1 edit(s) to src/geometry.rs",
+        false,
+        // The edit tool's own shape: numbered rows, distant hunks split by a gap.
+        Some(concat!(
+            "     8 | use std::fmt;\n",
+            "-    9 | fn area(w: u32, h: u32) -> u32 {\n",
+            "+    9 | fn area(w: u64, h: u64) -> u64 {\n",
+            "    10 |     w * h\n",
+            "      ...\n",
+            "-  112 |     let cells: u32 = area(4, 4);\n",
+            "+  112 |     let cells: u64 = area(4, 4);",
+        )),
+    );
+    assert_buffer("transcript_edit_with_diff", &body(&mut app));
+}
+
+#[test]
+fn transcript_folded_reasoning_and_answer() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "is 91 prime?");
+    app.apply(StreamEvent::Reasoning {
+        text: "91 is odd. Try 7: 7 * 13 = 91, so it has a factor.".into(),
+    });
+    // Backdated so the fold names a whole number of seconds.
+    app.transcript.thinking_since = Some(Instant::now() - Duration::from_secs(3));
+    token(&mut app, "No: 91 = 7 x 13.");
+    finish_turn(&mut app, 900, 40);
+    assert_buffer("transcript_folded_reasoning_and_answer", &body(&mut app));
+}
+
+#[test]
+fn transcript_error_and_warning_notes() {
+    let mut app = snapshot_app();
+    app.note("model switched to gpt-5-mini");
+    app.system(Level::Warn, "press Ctrl-C or Ctrl-D again to quit");
+    start_turn(&mut app, "summarize the log");
+    app.on_error("upstream".into(), "502 Bad Gateway from the provider".into());
+    assert_buffer("transcript_error_and_warning_notes", &body(&mut app));
+}
+
+#[test]
+fn transcript_user_tool_and_answer() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "what does main do?");
+    tool_call(&mut app, "c1", "read", json!({ "path": "src/main.rs" }));
+    tool_result(&mut app, "c1", "fn main() { app_lib::run() }", false, None);
+    token(&mut app, "It hands off to `app_lib::run`, which starts the app.");
+    finish_turn(&mut app, 3_100, 18);
+    assert_buffer("transcript_user_tool_and_answer", &body(&mut app));
+}
+
+// ---- Transcript events (#512): one layout for every kind ------------------
+
+/// Every row from `from` on, laid out at `width` as one plain text block, the
+/// expanded form when `open` (every region the shared renderer folds opened,
+/// as Ctrl-O does) and the folded form otherwise.
+fn event_rows(app: &mut App, from: usize, width: u16, open: bool) -> String {
+    pinned(DARK, || {
+        let t = &app.transcript;
+        let layout = t.layout_body(width, 0, false, open, None, Vec::new());
+        let height = layout.content_h;
+        let (lines, rows, _) = layout.window(&t.rows, width, 0, height, None, &|_| None);
+        lines
+            .iter()
+            .zip(rows)
+            .filter(|(_, row)| row.is_some_and(|r| r >= from))
+            .map(|(l, _)| line_text(l).trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
+/// One kind's rows in all three states the spec names: expanded while its
+/// step is in progress (or opened by the user), folded once it finishes, and
+/// wrapped on a narrow terminal.
+fn event_kind_snapshot(name: &str, build: impl Fn(&mut App)) {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    let from = app.transcript.rows.len();
+    build(&mut app);
+    let open = event_rows(&mut app, from, 80, true);
+    app.transcript.end_step();
+    let folded = event_rows(&mut app, from, 80, false);
+    let narrow = event_rows(&mut app, from, 28, false);
+    let doc = format!("-- expanded\n{open}\n-- collapsed\n{folded}\n-- narrow (28)\n{narrow}\n");
+    insta::with_settings!({ prepend_module_to_snapshot => false }, {
+        insta::assert_snapshot!(name, doc);
+    });
+}
+
+fn general_4(app: &mut App, event: StreamEvent) {
+    app.apply(StreamEvent::Subagent {
+        run_id: "sub-general-4".into(),
+        name: "general-4".into(),
+        event: Box::new(event),
+    });
+}
+
+#[test]
+fn event_note_and_report() {
+    event_kind_snapshot("event_note_and_report", |app| {
+        app.note("worktree:");
+        app.system_detail_text("path    /tmp/wt-a");
+        app.system_detail_text("branch  jan/agent/a");
+    });
+}
+
+#[test]
+fn event_error_and_denied_permission() {
+    event_kind_snapshot("event_error_and_denied_permission", |app| {
+        app.system(Level::Error, "denied: execute via 'bash' on rm -rf build");
+        app.on_error("upstream".into(), "502 Bad Gateway from the provider".into());
+    });
+}
+
+#[test]
+fn event_compaction_and_retry() {
+    use crate::core::agent::events::{CompactionPhase, CompactionReason};
+    event_kind_snapshot("event_compaction_and_retry", |app| {
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::Preflight,
+            messages: Some(12),
+            report: None,
+        });
+        app.apply(StreamEvent::Retry {
+            attempt: 2,
+            max_attempts: 5,
+            delay_ms: 0,
+            reason: "Upstream request failed: 502".into(),
+        });
+    });
+}
+
+#[test]
+fn event_memory_tidy() {
+    event_kind_snapshot("event_memory_tidy", |app| {
+        app.tidy_running = Some(super::super::TidyKind::Manual);
+        super::finish_memory_tidy(app, Ok("archived pr-1\narchived old\nmerged a into b".into()));
+    });
+}
+
+#[test]
+fn event_child_notes() {
+    event_kind_snapshot("event_child_notes", |app| {
+        general_4(app, StreamEvent::Notice {
+            text: "Upstream request failed: connection reset by the peer while reading".into(),
+        });
+        general_4(app, StreamEvent::Retry {
+            attempt: 2,
+            max_attempts: 5,
+            delay_ms: 0,
+            reason: "Upstream request failed: 502".into(),
+        });
+    });
+}
+
+#[test]
+fn event_background_notices() {
+    event_kind_snapshot("event_background_notices", |app| {
+        app.apply(StreamEvent::Notice { text: "Monitor mon-1: 'build' matched".into() });
+        app.apply(StreamEvent::Notice {
+            text: crate::core::agent::child_workspace::kept_notice(&[
+                "/tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))".into(),
+            ]),
+        });
+    });
+}
+
+#[test]
+fn event_messages_between_agents() {
+    event_kind_snapshot("event_messages_between_agents", |app| {
+        tool_call(app, "m1", "message_subagent", json!({
+            "name": "general-4",
+            "message": "Narrow it to the parser.\nSkip the lexer: it is covered.",
+        }));
+        tool_result(app, "m1", "Queued for subagent 'general-4'", false, None);
+        general_4(app, StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "Found the bug in parse_command.\nIt drops the last token." }),
+        });
+        app.apply(StreamEvent::AgentMessage {
+            from: "general-4".into(),
+            to: crate::core::agent::events::MAIN_AGENT.into(),
+            text: "Found the bug in parse_command.\nIt drops the last token.".into(),
+        });
+    });
+}
+
+#[test]
+fn event_subagent_dispatch_and_finish() {
+    event_kind_snapshot("event_subagent_dispatch_and_finish", |app| {
+        tool_call(app, "d1", "dispatch_subagent", json!({ "subagents": [
+            { "agent": "explore", "task": "Find the parser and report its entry point." },
+            { "agent": "general", "task": "Write the docs." },
+        ] }));
+        tool_result(app, "d1", "dispatched", false, None);
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: Some("stopped by the parent agent".into()),
+        });
+    });
+}
+
+#[test]
+fn event_collected_subagent_answer() {
+    event_kind_snapshot("event_collected_subagent_answer", |app| {
+        tool_call(app, "a1", "await_subagent", json!({ "run_id": "sub-explore-1" }));
+        tool_result(app, "a1", "The parser starts at parse_command.\nIt lives in tui.rs.", false, None);
+    });
+}
+
+#[test]
+fn event_tool_group_and_diff() {
+    event_kind_snapshot("event_tool_group_and_diff", |app| {
+        tool_call(app, "r1", "read", json!({ "path": "src/main.rs" }));
+        tool_call(app, "b1", "bash", json!({ "command": "cargo test" }));
+        tool_result(app, "r1", "fn main() {}", false, None);
+        tool_result(app, "b1", "ok\n[exit 0]", false, None);
+        app.transcript.finalize_tool_group();
+        tool_call(app, "e1", "edit", json!({ "path": "src/geometry.rs" }));
+        tool_result(app, "e1", "Applied 1 edit(s)", false, Some("-    9 | fn area(w: u32) -> u32 {\n+    9 | fn area(w: u64) -> u64 {"));
+    });
+}
+
+#[test]
+fn event_todo_ask_and_plan() {
+    event_kind_snapshot("event_todo_ask_and_plan", |app| {
+        tool_call(app, "t1", "todo", json!({ "op": "init", "list": [] }));
+        tool_result(app, "t1", "ok", false, None);
+        tool_call(app, "q1", "ask", json!({ "questions": [] }));
+        tool_result(app, "q1", "answered", false, None);
+        app.transcript.finalize_tool_group();
+        app.note("\u{25c8} PLAN \u{b7} read only -- investigate, then propose a plan for review");
+    });
+}
+
+#[test]
+fn event_turn_receipt_then_note() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    token(&mut app, "Done.");
+    finish_turn(&mut app, 4_000, 30);
+    app.note("model switched to gpt-5-mini");
+    assert_buffer("event_turn_receipt_then_note", &body(&mut app));
+}
