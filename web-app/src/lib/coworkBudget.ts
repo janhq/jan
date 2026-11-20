@@ -39,6 +39,8 @@ export type SpendState = {
   spent: number
   lastTotal: number
   lastPrompt?: number
+  /** The previous step's completion, which the next prompt replays. */
+  lastCompletion?: number
 }
 
 export const newSpend = (spent = 0): SpendState => ({ spent, lastTotal: 0 })
@@ -48,7 +50,10 @@ export const newSpend = (spent = 0): SpendState => ({ spent, lastTotal: 0 })
  *
  * Charges new completion tokens plus positive prompt *growth*, not replayed
  * prompt history; the first step of a request uses its reported total as the
- * baseline. Falls back through progressively weaker signals because providers
+ * baseline. The previous completion is resent inside the next prompt and was
+ * charged when it was generated, so growth is measured past
+ * `lastPrompt + lastCompletion`: what remains is new input such as tool
+ * results. Falls back through progressively weaker signals because providers
  * omit different usage fields. Ported from `core/agent/session.rs::record`.
  */
 export function recordSpend(
@@ -68,7 +73,8 @@ export function recordSpend(
   let lastTotal = state.lastTotal
   if (total != null) {
     if (prompt != null && state.lastPrompt != null && completion != null) {
-      delta = completion + gap(prompt, state.lastPrompt)
+      delta =
+        completion + gap(prompt, state.lastPrompt + (state.lastCompletion ?? 0))
     } else if (prompt != null && state.lastPrompt == null) {
       delta = total
     } else if (state.lastPrompt != null && completion != null) {
@@ -85,6 +91,7 @@ export function recordSpend(
     spent: state.spent + delta,
     lastTotal,
     lastPrompt: prompt ?? state.lastPrompt,
+    lastCompletion: completion ?? 0,
   }
 }
 

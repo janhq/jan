@@ -66,14 +66,50 @@ describe('recordSpend', () => {
       total_tokens: 10_200,
     })
     expect(s.spent).toBe(10_200)
-    // Step two replays the same 10k prompt plus the previous output.
+    // Step two replays the same 10k prompt plus the previous output, then 200
+    // tokens of new input.
     s = recordSpend(s, {
       prompt_tokens: 10_400,
       completion_tokens: 300,
       total_tokens: 10_700,
     })
-    // 300 new output + 400 of prompt growth, not another 10,700.
-    expect(s.spent).toBe(10_900)
+    // 300 new output + 200 of new input, not another 10,700.
+    expect(s.spent).toBe(10_700)
+  })
+
+  // #9622: the next prompt resends the previous completion, which was already
+  // charged as completion tokens, so counting all prompt growth charged every
+  // completion twice and stopped runs at about half the cap.
+  it('charges a completion once, not again when the next prompt replays it', () => {
+    let s = newSpend()
+    s = recordSpend(s, {
+      prompt_tokens: 10_000,
+      completion_tokens: 2_000,
+      total_tokens: 12_000,
+    })
+    // The previous prompt and completion, plus 500 tokens of tool output.
+    s = recordSpend(s, {
+      prompt_tokens: 12_500,
+      completion_tokens: 1_000,
+      total_tokens: 13_500,
+    })
+    expect(s.spent).toBe(13_500)
+  })
+
+  it('keeps a run that only adds its own output under the cap until its context is', () => {
+    let s = newSpend()
+    let prompt = 5_000
+    for (let step = 0; step < 11; step++) {
+      s = recordSpend(s, {
+        prompt_tokens: prompt,
+        completion_tokens: 10_000,
+        total_tokens: prompt + 10_000,
+      })
+      prompt += 10_000
+    }
+    // 115k of context: the first prompt and eleven 10k completions.
+    expect(s.spent).toBe(115_000)
+    expect(budgetExceeded({ step: 11, sessionTokens: s.spent })).toBeNull()
   })
 
   it('never charges negative growth when the prompt shrinks after a compaction', () => {
