@@ -185,6 +185,44 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.orcarouter.ai/v1',
+    explore_models_url: 'https://www.orcarouter.ai/models',
+    provider: 'orcarouter',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The OrcaRouter API uses API keys for authentication. Visit [OrcaRouter](https://www.orcarouter.ai) to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek/deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        version: '1.0',
+        description: 'Fast and capable DeepSeek model via OrcaRouter.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'anthropic/claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        version: '1.0',
+        description: 'Anthropic Claude Sonnet 5 via OrcaRouter.',
+        capabilities: ['completion'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
