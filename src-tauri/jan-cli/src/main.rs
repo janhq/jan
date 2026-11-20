@@ -672,7 +672,7 @@ enum AgentConfigCommands {
     /// Choose the backend for the web_search/web_fetch tools (no flags: show it)
     WebSearch {
         /// Backend: exa (default, keyless), tavily (needs a key), searxng (needs
-        /// --endpoint) or you
+        /// --endpoint), you or specstream (needs a key)
         #[arg(long, conflicts_with = "reset")]
         provider: Option<String>,
         /// API key for the backend, kept in the secret store ("" clears it)
