@@ -197,6 +197,32 @@ pub fn find_process_using_port(port: u16) -> Option<ProcessUsingPort> {
     }
 }
 
+/// User-facing message for a Local API Server port-in-use failure. Names the
+/// occupant (process + PID) when the lookup resolved one, and falls back to
+/// the generic remedy otherwise. Pure formatting, so it is unit-testable
+/// without any platform tooling (lsof / netstat) being present.
+pub fn port_in_use_message(
+    addr: std::net::SocketAddr,
+    occupant: Option<&ProcessUsingPort>,
+) -> String {
+    match occupant {
+        Some(o) => format!(
+            "Port {p} ({addr}) is already in use by {name} (PID {pid}). \
+             Close that process and try again, or pick a different port in \
+             Settings > Local API Server.",
+            p = addr.port(),
+            name = o.name,
+            pid = o.pid
+        ),
+        None => format!(
+            "Port {p} ({addr}) is already in use. A previous Jan process may still be \
+             running or another application may be using the port. Close the leftover \
+             process and try again, or pick a different port in Settings > Local API Server.",
+            p = addr.port()
+        ),
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn find_process_using_port_unix(port: u16) -> Option<ProcessUsingPort> {
     use std::process::Command;
@@ -234,6 +260,29 @@ fn find_process_using_port_unix(port: u16) -> Option<ProcessUsingPort> {
     None
 }
 
+/// Extract the PID from a `netstat -ano` line when the line is a LISTENING
+/// entry whose **local** port is exactly `port`.
+///
+/// The port is compared as a parsed number, never as a substring: matching on
+/// `":1337"` would also claim a listener on `13370` and name the wrong
+/// process. Pure string handling (no platform calls), so it is unit-testable
+/// on every OS.
+pub fn netstat_line_pid(line: &str, port: u16) -> Option<u32> {
+    // netstat -ano columns: Proto, Local Address, Foreign Address, State, PID
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 5 {
+        return None; // UDP and header rows carry no state/PID pair
+    }
+    if !parts[3].eq_ignore_ascii_case("LISTENING") {
+        return None;
+    }
+    let local_port = parts[1].rsplit_once(':')?.1.parse::<u16>().ok()?;
+    if local_port != port {
+        return None;
+    }
+    parts[4].parse::<u32>().ok()
+}
+
 #[cfg(target_os = "windows")]
 fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
     use std::process::Command;
@@ -252,31 +301,26 @@ fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
     let output_str = String::from_utf8_lossy(&output.stdout);
 
     for line in output_str.lines() {
-        if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if let Some(pid_str) = parts.last() {
-                if let Ok(pid) = pid_str.parse::<u32>() {
-                    let mut tasklist_cmd = Command::new(crate::windows_system_tool("tasklist.exe"));
-                    tasklist_cmd.args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
+        if let Some(pid) = netstat_line_pid(line, port) {
+            let mut tasklist_cmd = Command::new(crate::windows_system_tool("tasklist.exe"));
+            tasklist_cmd.args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
 
-                    #[cfg(windows)]
-                    tasklist_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            #[cfg(windows)]
+            tasklist_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-                    let name_output = tasklist_cmd.output().ok()?;
+            let name_output = tasklist_cmd.output().ok()?;
 
-                    let name_str = String::from_utf8_lossy(&name_output.stdout);
-                    let name = name_str
-                        .split(',')
-                        .next()
-                        .unwrap_or("Unknown")
-                        .trim_matches('"')
-                        .to_string();
+            let name_str = String::from_utf8_lossy(&name_output.stdout);
+            let name = name_str
+                .split(',')
+                .next()
+                .unwrap_or("Unknown")
+                .trim_matches('"')
+                .to_string();
 
-                    let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
+            let cmd = get_process_command_line(pid).unwrap_or_else(|| vec![name.clone()]);
 
-                    return Some(ProcessUsingPort { pid, name, cmd });
-                }
-            }
+            return Some(ProcessUsingPort { pid, name, cmd });
         }
     }
 
@@ -454,7 +498,7 @@ pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::wait_for_port_free;
+    use super::{netstat_line_pid, port_in_use_message, wait_for_port_free, ProcessUsingPort};
     use std::time::Duration;
 
     #[tokio::test]
@@ -478,5 +522,63 @@ mod tests {
             !wait_for_port_free(port, Duration::from_millis(150), Duration::from_millis(20)).await
         );
         drop(listener);
+    }
+
+    #[test]
+    fn netstat_line_pid_matches_only_the_exact_local_listener() {
+        let listening = "  TCP    0.0.0.0:1337           0.0.0.0:0              LISTENING       4242";
+        assert_eq!(netstat_line_pid(listening, 1337), Some(4242));
+
+        // The substring bug this guards against: ":1337" inside ":13370".
+        let other_port = "  TCP    0.0.0.0:13370          0.0.0.0:0              LISTENING       9999";
+        assert_eq!(netstat_line_pid(other_port, 1337), None);
+        assert_eq!(netstat_line_pid(other_port, 13370), Some(9999));
+
+        // Non-LISTENING rows and UDP rows (no state column) never match.
+        let established = "  TCP    127.0.0.1:1337        127.0.0.1:54321      ESTABLISHED     4242";
+        assert_eq!(netstat_line_pid(established, 1337), None);
+        let udp = "  UDP    0.0.0.0:1337           *:*                                    4242";
+        assert_eq!(netstat_line_pid(udp, 1337), None);
+
+        // IPv6 local address.
+        let v6 = "  TCP    [::]:1337              [::]:0                 LISTENING       4242";
+        assert_eq!(netstat_line_pid(v6, 1337), Some(4242));
+
+        // The port in the *foreign* column never counts — only the local one.
+        let foreign_only = "  TCP    0.0.0.0:0              0.0.0.0:1337           LISTENING       4242";
+        assert_eq!(netstat_line_pid(foreign_only, 1337), None);
+
+        // Malformed rows: unparseable PID, local address without a port, empty
+        // line — every early-return path resolves to None, never a wrong PID.
+        let bad_pid = "  TCP    0.0.0.0:1337           0.0.0.0:0              LISTENING       ???";
+        assert_eq!(netstat_line_pid(bad_pid, 1337), None);
+        let no_local_port = "  TCP    0.0.0.0              0.0.0.0              LISTENING       4242";
+        assert_eq!(netstat_line_pid(no_local_port, 1337), None);
+        assert_eq!(netstat_line_pid("", 1337), None);
+    }
+
+    #[test]
+    fn port_in_use_message_names_the_occupant_when_resolved() {
+        let addr: std::net::SocketAddr = "127.0.0.1:1337".parse().unwrap();
+        let occupant = ProcessUsingPort {
+            pid: 4242,
+            name: "node".to_string(),
+            cmd: vec![],
+        };
+        let msg = port_in_use_message(addr, Some(&occupant));
+        assert!(msg.contains("1337"), "names the port: {msg}");
+        assert!(msg.contains("already in use"), "explains the conflict: {msg}");
+        assert!(msg.contains("node"), "names the process: {msg}");
+        assert!(msg.contains("PID 4242"), "names the PID: {msg}");
+    }
+
+    #[test]
+    fn port_in_use_message_falls_back_when_owner_unknown() {
+        let addr: std::net::SocketAddr = "127.0.0.1:1337".parse().unwrap();
+        let msg = port_in_use_message(addr, None);
+        assert!(msg.contains("1337"), "names the port: {msg}");
+        assert!(msg.contains("already in use"), "explains the conflict: {msg}");
+        assert!(msg.contains("process"), "gives the remedy: {msg}");
+        assert!(!msg.contains("PID"), "no owner, so no PID: {msg}");
     }
 }
