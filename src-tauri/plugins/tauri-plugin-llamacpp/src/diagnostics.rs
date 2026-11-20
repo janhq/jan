@@ -100,7 +100,7 @@ pub fn cap_log(lines: &[String], max_bytes: usize, already_truncated: bool) -> (
     let mut kept = 0usize;
     let mut size = 0usize;
     for line in lines.iter().rev() {
-        let next = size + line.len() + 1;
+        let next = size + line.len() + usize::from(kept > 0);
         if next > max_bytes {
             break;
         }
@@ -203,6 +203,13 @@ mod tests {
         let (_, cut) = cap_log(&lines, MAX_LOG_BYTES, true);
         assert!(cut, "a truncation upstream of the cap still counts");
         assert_eq!(cap_log(&[], 10, false), (String::new(), false));
+    }
+
+    #[test]
+    fn the_log_cap_keeps_an_exact_fit() {
+        let lines = vec!["abc".to_string(), "def".to_string()];
+        assert_eq!(cap_log(&lines, 7, false), ("abc\ndef".into(), false));
+        assert_eq!(cap_log(&lines, 6, false), ("def".into(), true));
     }
 
     #[test]
