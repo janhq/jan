@@ -6,6 +6,7 @@ vi.mock('@/constants/providers', () => ({
     { provider: 'anthropic' },
     { provider: 'llamacpp' },
     { provider: 'jan' },
+    { provider: 'litellm' },
   ],
 }))
 
@@ -52,6 +53,19 @@ describe('isProviderUsable', () => {
     expect(
       isProviderUsable(provider({ provider: 'jan', models: [{ id: 'm' }] }))
     ).toBe(true)
+  })
+
+  // A LiteLLM proxy can run without authentication, so models alone qualify.
+  it('accepts litellm once it has a model, with no key', () => {
+    expect(
+      isProviderUsable(
+        provider({ provider: 'litellm', models: [{ id: 'gpt-6-luna' }] })
+      )
+    ).toBe(true)
+  })
+
+  it('rejects litellm with no models and no key', () => {
+    expect(isProviderUsable(provider({ provider: 'litellm' }))).toBe(false)
   })
 
   // Custom providers are user-configured endpoints, so models alone qualify.
