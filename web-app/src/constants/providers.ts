@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://inference.trymorse.ai/v1',
+    explore_models_url: 'https://trymorse.ai/inference/models',
+    provider: 'morse',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Morse API uses API keys for authentication. Visit the [Morse console](https://console.trymorse.ai) to create an API key for your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]

@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  morse: {
+    models: ['z-ai/glm-5.3-flash', 'moonshotai/kimi-k3.1-pro', 'deepseek/deepseek-v4.1-flash', 'z-ai/glm-5.3', 'moonshotai/kimi-k2.7-code'],
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: false,
+    supportsImages: ['z-ai/glm-5.3-flash', 'moonshotai/kimi-k3.1-pro', 'deepseek/deepseek-v4.1-flash', 'moonshotai/kimi-k2.7-code'],
+    supportsToolCalls: true,
+    supportsN: false,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
