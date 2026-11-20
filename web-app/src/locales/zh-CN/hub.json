@@ -3,6 +3,7 @@
   "sortMostDownloaded": "最多下载",
   "newChat": "新对话",
   "download": "下载",
+  "downloadFailed": "无法开始下载",
   "downloaded": "已下载",
   "loadingModels": "正在加载模型...",
   "noModels": "未找到模型",
