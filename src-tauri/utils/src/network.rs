@@ -101,8 +101,36 @@ pub fn validate_proxy_config(config: &ProxyConfig) -> Result<(), String> {
     Ok(())
 }
 
+/// Reads the `NO_PROXY` / `no_proxy` environment variable and parses it into a
+/// list of comma-separated host patterns (the same format the in-app `no_proxy`
+/// setting uses). Returns an empty list when the variable is unset.
+fn no_proxy_from_env() -> Vec<String> {
+    let mut entries: Vec<String> = Vec::new();
+    // Prefer the uppercase variant, falling back to lowercase. This mirrors how
+    // reqwest and most tooling read the environment on case-sensitive systems.
+    let raw = std::env::var("NO_PROXY")
+        .or_else(|_| std::env::var("no_proxy"))
+        .unwrap_or_default();
+
+    for entry in raw.split(',') {
+        let entry = entry.trim().to_string();
+        if !entry.is_empty() && !entries.contains(&entry) {
+            entries.push(entry);
+        }
+    }
+    entries
+}
+
 /// Checks if URL should bypass proxy based on no_proxy patterns (supports wildcards)
 pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
+    // Merge the app-supplied no_proxy list with the NO_PROXY/no_proxy
+    // environment variables. Without this, Jan ignores a user-configured
+    // `no_proxy` env var and keeps routing matching hosts through the proxy
+    // (Fixes #8565).
+    let mut entries = no_proxy.to_vec();
+    entries.extend(no_proxy_from_env());
+    let no_proxy = entries.as_slice();
+
     if no_proxy.is_empty() {
         return false;
     }
@@ -114,7 +142,7 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
     };
 
     let host = match parsed_url.host_str() {
-        Some(h) => h,
+        Some(h) => normalize_no_proxy_host(h),
         None => return false,
     };
 
@@ -124,17 +152,35 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
             return true;
         }
 
-        // Simple wildcard matching
+        // `*.example.com` matches `example.com` and its subdomains, but not
+        // unrelated hosts that merely end with the same text (`notexample.com`).
         if let Some(domain) = entry.strip_prefix("*.") {
-            if host.ends_with(domain) {
+            if host == domain
+                || host
+                    .strip_suffix(domain)
+                    .is_some_and(|prefix| prefix.ends_with('.'))
+            {
                 return true;
             }
-        } else if host == entry {
+        } else if host == normalize_no_proxy_host(entry) {
             return true;
         }
     }
 
     false
+}
+
+/// Strips the brackets `Url::host_str()` puts around IPv6 literals (`[::1]`)
+/// and canonicalizes the address, so a bare `::1` entry matches.
+fn normalize_no_proxy_host(host: &str) -> String {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    match bare.parse::<std::net::Ipv6Addr>() {
+        Ok(addr) => addr.to_string(),
+        Err(_) => bare.to_string(),
+    }
 }
 
 /// Creates reqwest::Proxy from ProxyConfig with authentication

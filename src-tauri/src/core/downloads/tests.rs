@@ -588,9 +588,11 @@ fn test_should_bypass_proxy_wildcard_does_not_match_root() {
 #[test]
 fn test_should_bypass_proxy_case_sensitive_host() {
     // url crate lowercases hosts; entries are matched case-sensitively against lowercased host
-    let no_proxy = vec!["LocalHost".to_string()];
-    // host becomes "localhost"; entry "LocalHost" != "localhost" -> not bypassed
-    assert!(!should_bypass_proxy("http://localhost/", &no_proxy));
+    // (Uses a host unlikely to appear in the developer's NO_PROXY env var,
+    // which should_bypass_proxy also reads.)
+    let no_proxy = vec!["Jan-Test.Invalid".to_string()];
+    // host becomes "jan-test.invalid"; entry "Jan-Test.Invalid" != host -> not bypassed
+    assert!(!should_bypass_proxy("http://jan-test.invalid/", &no_proxy));
 }
 
 // ===== _get_client_for_item =====
