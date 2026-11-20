@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Skrýt poznámky k vydání",
   "remindMeLater": "Připomenout později",
   "downloading": "Stahování...",
-  "updateNow": "Aktualizovat nyní"
+  "updateNow": "Aktualizovat nyní",
+  "retry": "Zkusit znovu",
+  "restartFailed": "Restartování selhalo"
 }

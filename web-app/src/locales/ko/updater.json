@@ -6,5 +6,7 @@
   "hideReleaseNotes": "릴리스 노트 숨기기",
   "remindMeLater": "나중에 알림",
   "downloading": "다운로드 중...",
-  "updateNow": "지금 업데이트"
+  "updateNow": "지금 업데이트",
+  "retry": "다시 시도",
+  "restartFailed": "다시 시작하지 못했습니다"
 }

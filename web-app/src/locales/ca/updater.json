@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Amaga les notes de llançament",
   "remindMeLater": "Recorda-m’ho més tard",
   "downloading": "S’està descarregant...",
-  "updateNow": "Actualitza ara"
+  "updateNow": "Actualitza ara",
+  "retry": "Torna-ho a provar",
+  "restartFailed": "Error en reiniciar"
 }

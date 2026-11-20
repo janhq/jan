@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Ẩn ghi chú phát hành",
   "remindMeLater": "Nhắc tôi sau",
   "downloading": "Đang tải xuống...",
-  "updateNow": "Cập nhật ngay"
+  "updateNow": "Cập nhật ngay",
+  "retry": "Thử lại",
+  "restartFailed": "Không thể khởi động lại"
 }

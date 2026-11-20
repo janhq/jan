@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Ukryj Informacje o Wydaniu",
   "remindMeLater": "Przypomnij Mi Później",
   "downloading": "Pobieranie…",
-  "updateNow": "Zaktualizuj Teraz"
+  "updateNow": "Zaktualizuj Teraz",
+  "retry": "Ponów próbę",
+  "restartFailed": "Nie udało się uruchomić ponownie"
 }
