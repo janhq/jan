@@ -31,9 +31,39 @@ import {
   extractToolContextFromContent,
   extractToolContextFromMetadata,
 } from './tokenCountToolContext'
+import { platformFetch } from './http'
+import {
+  fetchOllamaModels as fetchOllamaCatalog,
+  fetchOllamaModelTags as fetchOllamaTags,
+  OLLAMA_URL_PREFIX,
+  resolveOllamaBlob,
+} from './ollama'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
+
+// Cache full HuggingFace repo metadata (with exact file sizes) by repo ID
+const hfRepoDetailCache = new Map<string, CatalogModel>()
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+  const runners = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const current = nextIndex++
+        results[current] = await worker(items[current])
+      }
+    }
+  )
+  await Promise.all(runners)
+  return results
+}
 
 export class DefaultModelsService implements ModelsService {
   private getEngine(provider: string = defaultProvider) {
@@ -68,12 +98,119 @@ export class DefaultModelsService implements ModelsService {
       }
 
       const catalog: ModelCatalog = await response.json()
-      return catalog
+      return catalog.map((item) => ({
+        ...item,
+        source: item.source ?? 'jan',
+      }))
     } catch (error) {
       console.error('Error fetching model catalog:', error)
       throw new Error(
         `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
+    }
+  }
+
+  async fetchOllamaModels(query?: string): Promise<ModelCatalog> {
+    try {
+      return await fetchOllamaCatalog(query)
+    } catch (error) {
+      console.error('Error fetching Ollama models:', error)
+      return []
+    }
+  }
+
+  async fetchOllamaModelTags(slug: string) {
+    try {
+      return await fetchOllamaTags(slug)
+    } catch (error) {
+      console.error('Error fetching Ollama model tags:', error)
+      return []
+    }
+  }
+
+  async fetchHuggingFaceModels(
+    query?: string,
+    hfToken?: string,
+    limit: number = 20
+  ): Promise<ModelCatalog> {
+    try {
+      const params = new URLSearchParams({
+        filter: 'gguf',
+        sort: 'downloads',
+        direction: '-1',
+        limit: String(limit),
+      })
+      for (const field of [
+        'siblings',
+        'downloads',
+        'author',
+        'tags',
+        'createdAt',
+        'library_name',
+      ]) {
+        params.append('expand[]', field)
+      }
+      const trimmed = query?.trim()
+      if (trimmed) {
+        const cleaned = trimmed
+          .replace(/^https?:\/\/huggingface\.co\//, '')
+          .replace(/^huggingface\.co\//, '')
+          .replace(/\/$/, '')
+        params.set('search', cleaned)
+      }
+
+      const response = await platformFetch(
+        `https://huggingface.co/api/models?${params.toString()}`,
+        {
+          headers: hfToken ? { Authorization: `Bearer ${hfToken}` } : {},
+        }
+      )
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch HuggingFace models: ${response.status} ${response.statusText}`
+        )
+      }
+      const repos: HuggingFaceRepo[] = await response.json()
+      const baseModels = repos
+        .map((repo) => {
+          const modelId = repo.modelId || repo.id
+          const author = repo.author || modelId?.split('/')[0] || ''
+          return this.convertHfRepoToCatalogModel({
+            ...repo,
+            modelId,
+            author,
+          })
+        })
+        .filter((m) => Boolean(m.model_name) && (m.quants?.length ?? 0) > 0)
+
+      // Enrich with full repo metadata (files_metadata=true) so device Fit has real file sizes
+      const enriched = await mapWithConcurrency(
+        baseModels,
+        6,
+        async (model): Promise<CatalogModel> => {
+          const cached = hfRepoDetailCache.get(model.model_name)
+          if (cached) return cached
+          try {
+            const fullRepo = await this.fetchHuggingFaceRepo(
+              model.model_name,
+              hfToken
+            )
+            if (fullRepo) {
+              const detailed = this.convertHfRepoToCatalogModel(fullRepo)
+              hfRepoDetailCache.set(model.model_name, detailed)
+              return detailed
+            }
+          } catch {
+            // Fall back to base model metadata if detail fetch fails
+          }
+          return model
+        }
+      )
+
+      return enriched.filter((m) => (m.quants?.length ?? 0) > 0)
+    } catch (error) {
+      console.error('Error fetching HuggingFace models:', error)
+      return []
     }
   }
 
@@ -114,7 +251,7 @@ export class DefaultModelsService implements ModelsService {
         return null
       }
 
-      const response = await fetch(
+      const response = await platformFetch(
         `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
         {
           headers: hfToken
@@ -143,6 +280,9 @@ export class DefaultModelsService implements ModelsService {
   }
 
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel {
+    const repoModelId = repo.modelId || repo.id
+    const repoAuthor = repo.author || repoModelId?.split('/')[0] || ''
+
     // Format file size helper
     const formatFileSize = (size?: number) => {
       if (!size) return 'Unknown size'
@@ -165,17 +305,66 @@ export class DefaultModelsService implements ModelsService {
       file.rfilename.toLowerCase().includes('mmproj')
     )
 
-    // Convert regular GGUF files to quants format
-    const quants = regularGgufFiles.map((file) => {
+    // Group split GGUF shards (e.g. "UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00015.gguf")
+    // so that total size is summed across all parts and Fit/download use the full model size.
+    const splitGroups = new Map<
+      string,
+      Array<{
+        part: number
+        file: NonNullable<HuggingFaceRepo['siblings']>[number]
+      }>
+    >()
+    const singleFiles: Array<NonNullable<HuggingFaceRepo['siblings']>[number]> =
+      []
+    const splitPattern = /^(.*)-(\d{5})-of-(\d{5})\.gguf$/i
+
+    for (const file of regularGgufFiles) {
+      const match = file.rfilename.match(splitPattern)
+      if (match) {
+        const baseName = match[1]
+        const part = parseInt(match[2], 10)
+        const group = splitGroups.get(baseName) ?? []
+        group.push({ part, file })
+        splitGroups.set(baseName, group)
+      } else {
+        singleFiles.push(file)
+      }
+    }
+
+    const singleQuants = singleFiles.map((file) => {
       // Generate model_id from filename (remove .gguf extension, case-insensitive)
       const modelId = file.rfilename.replace(/\.gguf$/i, '')
 
       return {
-        model_id: `${repo.author}/${sanitizeModelId(modelId)}`,
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: formatFileSize(file.size),
+        model_id: `${repoAuthor}/${sanitizeModelId(modelId)}`,
+        path: `https://huggingface.co/${repoModelId}/resolve/main/${file.rfilename}`,
+        file_size: formatFileSize(file.size ?? file.lfs?.size),
       }
     })
+
+    const splitQuants = Array.from(splitGroups.entries()).map(
+      ([baseName, shards]) => {
+        shards.sort((a, b) => a.part - b.part)
+        const firstShard = shards[0].file
+        const hasAnySize = shards.some(
+          (s) => (s.file.size ?? s.file.lfs?.size ?? 0) > 0
+        )
+        const totalSize = hasAnySize
+          ? shards.reduce(
+              (sum, s) => sum + (s.file.size ?? s.file.lfs?.size ?? 0),
+              0
+            )
+          : undefined
+
+        return {
+          model_id: `${repoAuthor}/${sanitizeModelId(baseName)}`,
+          path: `https://huggingface.co/${repoModelId}/resolve/main/${firstShard.rfilename}`,
+          file_size: formatFileSize(totalSize),
+        }
+      }
+    )
+
+    const quants = [...singleQuants, ...splitQuants]
 
     // Convert mmproj files to mmproj_models format
     const mmprojModels = mmprojFiles.map((file) => {
@@ -183,8 +372,8 @@ export class DefaultModelsService implements ModelsService {
 
       return {
         model_id: sanitizeModelId(modelId),
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: formatFileSize(file.size),
+        path: `https://huggingface.co/${repoModelId}/resolve/main/${file.rfilename}`,
+        file_size: formatFileSize(file.size ?? file.lfs?.size),
       }
     })
 
@@ -204,15 +393,15 @@ export class DefaultModelsService implements ModelsService {
 
       return {
         model_id: sanitizeModelId(modelId),
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+        path: `https://huggingface.co/${repoModelId}/resolve/main/${file.rfilename}`,
         file_size: formatFileSize(file.size),
         sha256: file.lfs?.sha256,
       }
     })
 
     return {
-      model_name: repo.modelId,
-      developer: repo.author,
+      model_name: repoModelId,
+      developer: repoAuthor,
       downloads: repo.downloads || 0,
       created_at: repo.createdAt,
       num_quants: quants.length,
@@ -222,8 +411,9 @@ export class DefaultModelsService implements ModelsService {
       safetensors_files: safetensorsModels,
       num_safetensors: safetensorsModels.length,
       is_mlx: hasMlxFiles,
-      readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
+      readme: `https://huggingface.co/${repoModelId}/resolve/main/README.md`,
       description: `**Tags**: ${repo.tags?.join(', ')}`,
+      source: 'huggingface',
     }
   }
 
@@ -270,57 +460,71 @@ export class DefaultModelsService implements ModelsService {
     specDraftPath?: string,
     specDraftKind?: SpecDraftKind
   ): Promise<void> {
+    let resolvedModelPath = modelPath
+    let resolvedMmprojPath = mmprojPath
     let modelSha256: string | undefined
     let modelSize: number | undefined
     let mmprojSha256: string | undefined
     let mmprojSize: number | undefined
 
-    // Extract repo ID from model URL
-    // URL format: https://huggingface.co/{repo}/resolve/main/{filename}
-    const modelUrlMatch = modelPath.match(
-      /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
-    )
+    if (modelPath.startsWith(OLLAMA_URL_PREFIX)) {
+      const resolved = await resolveOllamaBlob(modelPath)
+      resolvedModelPath = resolved.modelPath
+      modelSha256 = resolved.modelSha256
+      modelSize = resolved.modelSize
+      if (!resolvedMmprojPath && resolved.mmprojPath) {
+        resolvedMmprojPath = resolved.mmprojPath
+        mmprojSha256 = resolved.mmprojSha256
+        mmprojSize = resolved.mmprojSize
+      }
+    } else {
+      // Extract repo ID from model URL
+      // URL format: https://huggingface.co/{repo}/resolve/main/{filename}
+      const modelUrlMatch = modelPath.match(
+        /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
+      )
 
-    if (modelUrlMatch && !skipVerification) {
-      const [, repoId, modelFilename] = modelUrlMatch
+      if (modelUrlMatch && !skipVerification) {
+        const [, repoId, modelFilename] = modelUrlMatch
 
-      try {
-        // Fetch real-time metadata from HuggingFace
-        const repoInfo = await this.fetchHuggingFaceRepo(repoId, hfToken)
+        try {
+          // Fetch real-time metadata from HuggingFace
+          const repoInfo = await this.fetchHuggingFaceRepo(repoId, hfToken)
 
-        if (repoInfo?.siblings) {
-          // Find the specific model file
-          const modelFile = repoInfo.siblings.find(
-            (file) => file.rfilename === modelFilename
-          )
-          if (modelFile?.lfs) {
-            modelSha256 = modelFile.lfs.sha256
-            modelSize = modelFile.lfs.size
-          }
-
-          // If mmproj path provided, extract its metadata too
-          if (mmprojPath) {
-            const mmprojUrlMatch = mmprojPath.match(
-              /https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/main\/(.+)/
+          if (repoInfo?.siblings) {
+            // Find the specific model file
+            const modelFile = repoInfo.siblings.find(
+              (file) => file.rfilename === modelFilename
             )
-            if (mmprojUrlMatch) {
-              const [, mmprojFilename] = mmprojUrlMatch
-              const mmprojFile = repoInfo.siblings.find(
-                (file) => file.rfilename === mmprojFilename
+            if (modelFile?.lfs) {
+              modelSha256 = modelFile.lfs.sha256
+              modelSize = modelFile.lfs.size
+            }
+
+            // If mmproj path provided, extract its metadata too
+            if (mmprojPath) {
+              const mmprojUrlMatch = mmprojPath.match(
+                /https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/main\/(.+)/
               )
-              if (mmprojFile?.lfs) {
-                mmprojSha256 = mmprojFile.lfs.sha256
-                mmprojSize = mmprojFile.lfs.size
+              if (mmprojUrlMatch) {
+                const [, mmprojFilename] = mmprojUrlMatch
+                const mmprojFile = repoInfo.siblings.find(
+                  (file) => file.rfilename === mmprojFilename
+                )
+                if (mmprojFile?.lfs) {
+                  mmprojSha256 = mmprojFile.lfs.sha256
+                  mmprojSize = mmprojFile.lfs.size
+                }
               }
             }
           }
+        } catch (error) {
+          console.warn(
+            'Failed to fetch HuggingFace metadata, proceeding without hash verification:',
+            error
+          )
+          // Continue with download even if metadata fetch fails
         }
-      } catch (error) {
-        console.warn(
-          'Failed to fetch HuggingFace metadata, proceeding without hash verification:',
-          error
-        )
-        // Continue with download even if metadata fetch fails
       }
     }
 
@@ -328,10 +532,10 @@ export class DefaultModelsService implements ModelsService {
     try {
       return await this.pullModel(
         id,
-        modelPath,
+        resolvedModelPath,
         modelSha256,
         modelSize,
-        mmprojPath,
+        resolvedMmprojPath,
         mmprojSha256,
         mmprojSize,
         specDraftPath,

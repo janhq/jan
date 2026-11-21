@@ -19,7 +19,7 @@ import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, ModelStoreSource } from '@/services/models/types'
 import { isSpecSidecar, pickSpecSibling } from '@/lib/specDraft'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
@@ -31,12 +31,14 @@ import { useTranslation } from '@/i18n'
 
 type SearchParams = {
   repo: string
+  source?: ModelStoreSource
 }
 
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetailContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
+    source: search.source as SearchParams['source'],
   }),
 })
 
@@ -45,7 +47,7 @@ function HubModelDetailContent() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()
-  const { sources, fetchSources } = useModelSources()
+  const { sources, ollamaSources, hfSources, fetchSources } = useModelSources()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
@@ -69,24 +71,55 @@ function HubModelDetailContent() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
+    const targetRepo = search.repo || modelId
+    if (search.source === 'ollama' || targetRepo.startsWith('ollama/')) {
+      const existing = ollamaSources.find((m) => m.model_name === targetRepo)
+      const tags = await serviceHub.models().fetchOllamaModelTags?.(targetRepo)
+      if (existing || (tags && tags.length > 0)) {
+        setRepoData({
+          model_name: existing?.model_name ?? targetRepo,
+          display_name: existing?.display_name ?? targetRepo.replace(/^ollama\//, ''),
+          developer: 'ollama',
+          description: existing?.description ?? '',
+          downloads: existing?.downloads ?? 0,
+          created_at: existing?.created_at,
+          tools: existing?.tools,
+          num_mmproj: existing?.num_mmproj,
+          quants: tags && tags.length > 0 ? tags : existing?.quants ?? [],
+          num_quants:
+            tags && tags.length > 0
+              ? tags.length
+              : existing?.quants?.length ?? 0,
+          source: 'ollama',
+        })
+      }
+      return
+    }
+
     const repoInfo = await serviceHub
       .models()
-      .fetchHuggingFaceRepo(search.repo || modelId, huggingfaceToken)
+      .fetchHuggingFaceRepo(targetRepo, huggingfaceToken)
     if (repoInfo) {
       const repoDetail = serviceHub
         .models()
         .convertHfRepoToCatalogModel(repoInfo)
       setRepoData(repoDetail || undefined)
     }
-  }, [serviceHub, modelId, search, huggingfaceToken])
+  }, [serviceHub, modelId, search, huggingfaceToken, ollamaSources])
 
   useEffect(() => {
     fetchRepo()
   }, [modelId, fetchRepo])
   // Find the model data from sources
   const modelData = useMemo(() => {
-    return sources.find((model) => model.model_name === modelId) ?? repoData
-  }, [sources, modelId, repoData])
+    const targetName = search.repo || modelId
+    return (
+      repoData ??
+      sources.find((model) => model.model_name === modelId) ??
+      ollamaSources.find((model) => model.model_name === targetName) ??
+      hfSources.find((model) => model.model_name === targetName)
+    )
+  }, [sources, ollamaSources, hfSources, modelId, search.repo, repoData])
 
   // Speculative draft companions are paired with a real quant at download
   // time, not standalone models — keep them out of the selectable variant list.

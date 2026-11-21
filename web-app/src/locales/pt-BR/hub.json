@@ -13,5 +13,9 @@
   "useModel": "Usar este modelo",
   "downloadModel": "Baixar modelo",
   "tools": "Ferramentas",
-  "searchPlaceholder": "Buscar modelos no Hugging Face..."
+  "searchPlaceholder": "Buscar modelos no Hugging Face...",
+  "searchPlaceholderAll": "Buscar modelos no Jan, Ollama e Hugging Face...",
+  "searchPlaceholderJan": "Buscar modelos no Jan...",
+  "searchPlaceholderOllama": "Buscar modelos no Ollama...",
+  "allStores": "Todos"
 }
