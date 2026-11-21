@@ -15,5 +15,8 @@
   "downloadModel": "Download model",
   "tools": "Tools",
   "searchPlaceholder": "Search for models on Hugging Face...",
+  "searchPlaceholderAll": "Search models across Jan, Ollama, and Hugging Face...",
+  "searchPlaceholderJan": "Search models on Jan...",
+  "searchPlaceholderOllama": "Search models on Ollama...",
   "resumeUnavailable": "Cannot resume this download. Please start it again."
 }

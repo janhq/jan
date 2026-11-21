@@ -45,7 +45,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, ModelStoreSource } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -63,8 +63,17 @@ import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
+type StoreFilter = 'all' | ModelStoreSource
+
+const STORE_LABELS: Record<ModelStoreSource, string> = {
+  jan: 'Jan',
+  ollama: 'Ollama',
+  huggingface: 'Hugging Face',
+}
+
 type SearchParams = {
   repo: string
+  source?: ModelStoreSource
 }
 
 type QuantTier = {
@@ -101,6 +110,7 @@ export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
+    source: search.source as SearchParams['source'],
   }),
 })
 
@@ -136,16 +146,29 @@ function HubContent() {
     []
   )
 
-  const { sources, fetchSources, loading } = useModelSources(
+  const {
+    sources,
+    ollamaSources,
+    hfSources,
+    fetchSources,
+    fetchExternalSources,
+    updateExternalModel,
+    loading,
+  } = useModelSources(
     useShallow((state) => ({
       sources: state.sources,
+      ollamaSources: state.ollamaSources,
+      hfSources: state.hfSources,
       fetchSources: state.fetchSources,
+      fetchExternalSources: state.fetchExternalSources,
+      updateExternalModel: state.updateExternalModel,
       loading: state.loading,
     }))
   )
 
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
+  const [selectedStore, setSelectedStore] = useState<StoreFilter>('all')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
   )
@@ -154,21 +177,115 @@ function HubContent() {
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
+  const [remoteOllamaResults, setRemoteOllamaResults] = useState<
+    CatalogModel[]
+  >([])
+  const [remoteHfResults, setRemoteHfResults] = useState<CatalogModel[]>([])
+  const [loadedVariantKeys, setLoadedVariantKeys] = useState<
+    Record<string, boolean>
+  >({})
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
 
-  const toggleModelExpansion = useCallback((modelId: string) => {
-    setExpandedModels((prev) => ({
-      ...prev,
-      [modelId]: !prev[modelId],
-    }))
-  }, [])
+  const toggleModelExpansion = useCallback(
+    (model: CatalogModel) => {
+      const modelId = model.model_name
+      const willExpand = !expandedModels[modelId]
+      setExpandedModels((prev) => ({
+        ...prev,
+        [modelId]: willExpand,
+      }))
+
+      if (!willExpand || loadedVariantKeys[modelId]) return
+
+      if (model.source === 'ollama') {
+        setLoadedVariantKeys((prev) => ({ ...prev, [modelId]: true }))
+        serviceHub
+          .models()
+          .fetchOllamaModelTags(modelId)
+          .then((tags) => {
+            if (!tags.length) return
+            updateExternalModel(modelId, { quants: tags, num_quants: tags.length })
+            setRemoteOllamaResults((prev) =>
+              prev.map((m) =>
+                m.model_name === modelId
+                  ? { ...m, quants: tags, num_quants: tags.length }
+                  : m
+              )
+            )
+          })
+          .catch((err) => {
+            console.error('Failed to fetch Ollama tags:', err)
+          })
+      } else if (
+        model.source === 'huggingface' &&
+        model.quants?.some((q) => q.file_size === 'Unknown size')
+      ) {
+        setLoadedVariantKeys((prev) => ({ ...prev, [modelId]: true }))
+        serviceHub
+          .models()
+          .fetchHuggingFaceRepo(modelId, huggingfaceToken)
+          .then((repoInfo) => {
+            if (!repoInfo) return
+            const detailed = serviceHub
+              .models()
+              .convertHfRepoToCatalogModel(repoInfo)
+            const patch = {
+              quants: detailed.quants,
+              num_quants: detailed.num_quants,
+              mmproj_models: detailed.mmproj_models,
+              num_mmproj: detailed.num_mmproj,
+            }
+            updateExternalModel(modelId, patch)
+            setRemoteHfResults((prev) =>
+              prev.map((m) =>
+                m.model_name === modelId ? { ...m, ...patch } : m
+              )
+            )
+          })
+          .catch((err) => {
+            console.error('Failed to fetch HF repo details:', err)
+          })
+      }
+    },
+    [
+      expandedModels,
+      loadedVariantKeys,
+      serviceHub,
+      updateExternalModel,
+      huggingfaceToken,
+    ]
+  )
+
+  const combinedSources = useMemo(() => {
+    const seen = new Set<string>()
+    const result: CatalogModel[] = []
+    const pushUnique = (items: CatalogModel[], defaultSource: ModelStoreSource) => {
+      for (const item of items) {
+        const key = `${item.source ?? defaultSource}:${item.model_name}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        result.push({ ...item, source: item.source ?? defaultSource })
+      }
+    }
+
+    if (selectedStore === 'all' || selectedStore === 'jan') {
+      pushUnique(sources, 'jan')
+    }
+    if (selectedStore === 'all' || selectedStore === 'ollama') {
+      pushUnique(ollamaSources, 'ollama')
+    }
+    if (selectedStore === 'all' || selectedStore === 'huggingface') {
+      pushUnique(hfSources, 'huggingface')
+    }
+    return result
+  }, [sources, ollamaSources, hfSources, selectedStore])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
-    let sorted = [...sources]
+    let sorted = [...combinedSources]
 
     // Apply MLX/GGUF filter first (only on Mac)
     if (sortSelected === 'mlx') {
@@ -186,7 +303,7 @@ function HubContent() {
         new Date(b.created_at || 0).getTime() -
         new Date(a.created_at || 0).getTime()
     )
-  }, [sortSelected, sources])
+  }, [sortSelected, combinedSources])
 
   // Filtered models (debounced search)
   const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
@@ -215,10 +332,35 @@ function HubContent() {
       const cleanedSearchValue = cleanHubSearchQuery(debouncedSearchValue)
       // Fuse scores fuzzy relevance; re-rank so an exact HF id/name is first
       // (see #8447 — precise queries were not always top of list).
-      filtered = prioritizeExactModelMatches(
+      const localMatches = prioritizeExactModelMatches(
         fuse.search(cleanedSearchValue).map((result) => result.item),
         cleanedSearchValue
       )
+
+      // Merge live search results from Ollama and HuggingFace stores
+      const remoteCandidates: CatalogModel[] = []
+      if (selectedStore === 'all' || selectedStore === 'ollama') {
+        remoteCandidates.push(...remoteOllamaResults)
+      }
+      if (selectedStore === 'all' || selectedStore === 'huggingface') {
+        remoteCandidates.push(...remoteHfResults)
+      }
+
+      const seen = new Set<string>(
+        localMatches.map((m) => `${m.source ?? 'jan'}:${m.model_name}`)
+      )
+      const merged = [...localMatches]
+      for (const item of remoteCandidates) {
+        const key = `${item.source ?? 'jan'}:${item.model_name}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push({
+          ...item,
+          quants: item.quants?.filter((q) => !isSpecSidecar(q)),
+          specQuants: item.quants?.filter((q) => isSpecSidecar(q)),
+        })
+      }
+      filtered = merged
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
@@ -250,9 +392,17 @@ function HubContent() {
         }))
         .filter((model) => (model.quants?.length ?? 0) > 0)
     }
-    // Add HuggingFace repo at the beginning if available
-    if (huggingFaceRepo) {
-      filtered = [huggingFaceRepo, ...filtered]
+    // Add exact HuggingFace repo at the beginning if available
+    if (
+      huggingFaceRepo &&
+      (selectedStore === 'all' || selectedStore === 'huggingface')
+    ) {
+      const exists = filtered.some(
+        (m) => m.model_name === huggingFaceRepo.model_name
+      )
+      if (!exists) {
+        filtered = [huggingFaceRepo, ...filtered]
+      }
     }
     return filtered
   }, [
@@ -260,6 +410,9 @@ function HubContent() {
     debouncedSearchValue,
     showOnlyDownloaded,
     huggingFaceRepo,
+    remoteOllamaResults,
+    remoteHfResults,
+    selectedStore,
     searchOptions,
   ])
 
@@ -296,8 +449,9 @@ function HubContent() {
     // Use startTransition to keep UI responsive during data fetch
     startTransition(() => {
       fetchSources()
+      fetchExternalSources(huggingfaceToken)
     })
-  }, [fetchSources])
+  }, [fetchSources, fetchExternalSources, huggingfaceToken])
 
   // Reset initial load state after data loads or on filter change
   useEffect(() => {
@@ -308,54 +462,83 @@ function HubContent() {
     return () => clearTimeout(timer)
   }, [isInitialLoad, filteredModels.length])
 
-  const fetchHuggingFaceModel = async (searchValue: string) => {
-    if (
-      !searchValue.length ||
-      (!searchValue.includes('/') && !searchValue.startsWith('http'))
-    ) {
+  const searchRemoteStores = useCallback(
+    (query: string) => {
+      if (addModelSourceTimeoutRef.current) {
+        clearTimeout(addModelSourceTimeoutRef.current)
+      }
+
+      const trimmed = query.trim()
+      if (trimmed.length < 2) {
+        setIsSearching(false)
+        setRemoteOllamaResults([])
+        setRemoteHfResults([])
+        return
+      }
+
+      setIsSearching(true)
+      addModelSourceTimeoutRef.current = setTimeout(async () => {
+        try {
+          const isDirectHfRepo =
+            trimmed.includes('/') || trimmed.startsWith('http')
+          const modelsService = serviceHub.models()
+
+          const [ollamaRes, hfListRes, hfExactRes] = await Promise.allSettled([
+            modelsService.fetchOllamaModels?.(trimmed) ?? Promise.resolve([]),
+            modelsService.fetchHuggingFaceModels?.(
+              trimmed,
+              huggingfaceToken,
+              20
+            ) ?? Promise.resolve([]),
+            isDirectHfRepo
+              ? modelsService.fetchHuggingFaceRepo(trimmed, huggingfaceToken)
+              : Promise.resolve(null),
+          ])
+
+          if (ollamaRes.status === 'fulfilled') {
+            setRemoteOllamaResults(ollamaRes.value)
+          }
+          if (hfListRes.status === 'fulfilled') {
+            setRemoteHfResults(hfListRes.value)
+          }
+          if (hfExactRes.status === 'fulfilled' && hfExactRes.value) {
+            const catalogModel = modelsService.convertHfRepoToCatalogModel(
+              hfExactRes.value
+            )
+            if (
+              !sources.some(
+                (s) =>
+                  catalogModel.model_name.trim().split('/').pop() ===
+                    s.model_name.trim() &&
+                  catalogModel.developer?.trim() === s.developer?.trim()
+              )
+            ) {
+              setHuggingFaceRepo(catalogModel)
+            }
+          }
+        } catch (error) {
+          console.error('Error searching model stores:', error)
+        } finally {
+          setIsSearching(false)
+        }
+      }, 400)
+    },
+    [serviceHub, huggingfaceToken, sources]
+  )
+
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setSearchValue(value)
+    setHuggingFaceRepo(null)
+    if (!value.trim()) {
+      setRemoteOllamaResults([])
+      setRemoteHfResults([])
+      setIsSearching(false)
       return
     }
 
-    setIsSearching(true)
-    if (addModelSourceTimeoutRef.current) {
-      clearTimeout(addModelSourceTimeoutRef.current)
-    }
-
-    addModelSourceTimeoutRef.current = setTimeout(async () => {
-      try {
-        const repoInfo = await serviceHub
-          .models()
-          .fetchHuggingFaceRepo(searchValue, huggingfaceToken)
-        if (repoInfo) {
-          const catalogModel = serviceHub
-            .models()
-            .convertHfRepoToCatalogModel(repoInfo)
-          if (
-            !sources.some(
-              (s) =>
-                catalogModel.model_name.trim().split('/').pop() ===
-                  s.model_name.trim() &&
-                catalogModel.developer?.trim() === s.developer?.trim()
-            )
-          ) {
-            setHuggingFaceRepo(catalogModel)
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching repository info:', error)
-      } finally {
-        setIsSearching(false)
-      }
-    }, 500)
-  }
-
-  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setIsSearching(false)
-    setSearchValue(e.target.value)
-    setHuggingFaceRepo(null) // Clear previous repo info
-
     if (!showOnlyDownloaded) {
-      fetchHuggingFaceModel(e.target.value)
+      searchRemoteStores(value)
     }
   }
 
@@ -381,6 +564,26 @@ function HubContent() {
     },
     [navigate]
   )
+
+  const searchPlaceholder = useMemo(() => {
+    switch (selectedStore) {
+      case 'jan':
+        return t('hub:searchPlaceholderJan', {
+          defaultValue: 'Search models on Jan...',
+        })
+      case 'ollama':
+        return t('hub:searchPlaceholderOllama', {
+          defaultValue: 'Search models on Ollama...',
+        })
+      case 'huggingface':
+        return t('hub:searchPlaceholder')
+      case 'all':
+      default:
+        return t('hub:searchPlaceholderAll', {
+          defaultValue: 'Search models across Jan, Ollama, and Hugging Face...',
+        })
+    }
+  }, [selectedStore, t])
 
   const renderFilter = () => {
     return (
@@ -423,8 +626,8 @@ function HubContent() {
               if (checked) {
                 setHuggingFaceRepo(null)
               } else {
-                // Re-trigger HuggingFace search when switching back to "All models"
-                fetchHuggingFaceModel(searchValue)
+                // Re-trigger remote store search when switching back to "All models"
+                searchRemoteStores(searchValue)
               }
             }}
           />
@@ -451,7 +654,7 @@ function HubContent() {
                 />
               )}
               <input
-                placeholder={t('hub:searchPlaceholder')}
+                placeholder={searchPlaceholder}
                 value={searchValue}
                 onChange={handleSearchChange}
                 className="w-full focus:outline-none"
@@ -464,6 +667,26 @@ function HubContent() {
         </HeaderPage>
         <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  { id: 'all', label: t('hub:allStores', { defaultValue: 'All' }) },
+                  { id: 'jan', label: 'Jan' },
+                  { id: 'ollama', label: 'Ollama' },
+                  { id: 'huggingface', label: 'Hugging Face' },
+                ] as const
+              ).map((store) => (
+                <Button
+                  key={store.id}
+                  variant={selectedStore === store.id ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setSelectedStore(store.id)}
+                >
+                  {store.label}
+                </Button>
+              ))}
+            </div>
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
             {(isInitialLoad || (loading && !filteredModels.length)) ? (
               // Skeleton loading state for better perceived performance
@@ -532,8 +755,8 @@ function HubContent() {
                             <div
                               className="cursor-pointer min-w-0 flex-1"
                               onClick={() => {
-                                const name =
-                                  filteredModels[virtualItem.index].model_name
+                                const model = filteredModels[virtualItem.index]
+                                const name = model.model_name
                                 const isHfRepo = name.includes('/')
                                 navigate({
                                   to: route.hub.model,
@@ -542,7 +765,10 @@ function HubContent() {
                                       ? name.split('/').pop()!
                                       : name,
                                   },
-                                  search: isHfRepo ? { repo: name } : {},
+                                  search:
+                                    isHfRepo || model.source === 'ollama'
+                                      ? { repo: name, source: model.source }
+                                      : {},
                                 })
                               }}
                             >
@@ -623,6 +849,14 @@ function HubContent() {
                             {t('hub:by')}{' '}
                             {filteredModels[virtualItem.index]?.developer}
                           </span>
+                          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
+                            {
+                              STORE_LABELS[
+                                filteredModels[virtualItem.index]?.source ??
+                                  'jan'
+                              ]
+                            }
+                          </span>
                           <div className="flex items-center gap-4 ml-2">
                             <div className="flex items-center gap-1">
                               <IconDownload
@@ -683,7 +917,6 @@ function HubContent() {
                               onClick={() =>
                                 toggleModelExpansion(
                                   filteredModels[virtualItem.index]
-                                    .model_name
                                 )
                               }
                             >

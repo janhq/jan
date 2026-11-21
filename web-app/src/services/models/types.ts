@@ -26,6 +26,8 @@ export interface SafetensorsFile {
   sha256?: string
 }
 
+export type ModelStoreSource = 'jan' | 'ollama' | 'huggingface'
+
 export interface CatalogModel {
   model_name: string
   display_name?: string
@@ -46,6 +48,7 @@ export interface CatalogModel {
   readme?: string
   tools?: boolean
   is_mlx?: boolean
+  source?: ModelStoreSource
 }
 
 export type ModelCatalog = CatalogModel[]
@@ -111,6 +114,13 @@ export interface ModelsService {
   getModelContextLimit(modelId: string, provider: string): Promise<number | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
+  fetchOllamaModels(query?: string): Promise<ModelCatalog>
+  fetchOllamaModelTags(slug: string): Promise<ModelQuant[]>
+  fetchHuggingFaceModels(
+    query?: string,
+    hfToken?: string,
+    limit?: number
+  ): Promise<ModelCatalog>
   fetchLatestJanModel(): Promise<CatalogModel | null>
   fetchHuggingFaceRepo(
     repoId: string,
