@@ -95,6 +95,17 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 open_in_browser: false,
             },
         },
+        ProviderDefinition {
+            id: "crowllm",
+            name: "CrowLLM",
+            default_base_url: "https://crowllm.com/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://crowllm.com".to_string(),
+                hint: "create a key at crowllm.com, then paste it here",
+                open_in_browser: true,
+            },
+        },
         // Not a fixed endpoint: the deployment this run signs in to (a dev
         // stack's `TOKAMAK_BASE_URL`, or where the last sign-in went), so a
         // paste sign-in verifies and stores the key against the same host the
@@ -156,24 +167,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_the_five_providers_in_picker_order() {
+    fn catalog_lists_the_six_providers_in_picker_order() {
         let ids: Vec<&str> = provider_catalog().iter().map(|p| p.id).collect();
         assert_eq!(
             ids,
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+            vec!["openai", "anthropic", "opencode", "deepseek", "crowllm", "tokamak"]
         );
         assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
         assert!(provider_by_id("nope").is_none());
     }
 
     #[test]
-    fn only_opencode_api_key_prompt_opens_keys_page_in_browser() {
+    fn api_key_prompts_that_open_the_keys_page_in_browser() {
         let enabled: Vec<&str> = provider_catalog()
             .iter()
             .filter(|provider| provider.api_key.open_in_browser)
             .map(|provider| provider.id)
             .collect();
-        assert_eq!(enabled, vec!["opencode"]);
+        assert_eq!(enabled, vec!["opencode", "crowllm"]);
     }
 
 }
