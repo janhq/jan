@@ -461,22 +461,31 @@ pub(super) fn wrap_spans_at_words(
     spans: Vec<Span<'static>>,
     max: usize,
 ) -> Vec<Vec<Span<'static>>> {
+    use ratatui::buffer::CellWidth;
+    use unicode_segmentation::UnicodeSegmentation;
+
     let max = max.max(1);
-    // Per-character styles: the wrap points are character positions, and each
-    // span's style has to survive being cut at one.
-    let cells: Vec<(char, Style)> = spans
+    let cells: Vec<(&str, Style)> = spans
         .iter()
-        .flat_map(|s| {
-            let style = s.style;
-            s.content.chars().map(move |c| (c, style))
-        })
+        .flat_map(|span| span.content.graphemes(true).map(move |g| (g, span.style)))
         .collect();
-    let mut out: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut out = Vec::new();
     let mut start = 0;
     while start < cells.len() {
-        let mut end = (start + max).min(cells.len());
+        let mut end = start;
+        let mut used = 0;
+        while end < cells.len() {
+            let width = cells[end].0.cell_width() as usize;
+            // A single glyph can be wider than the whole row. Keep it intact
+            // and advance, just as we do for a long word with no break point.
+            if end > start && used + width > max {
+                break;
+            }
+            used += width;
+            end += 1;
+        }
         if end < cells.len() {
-            if let Some(space) = cells[start..end].iter().rposition(|(c, _)| *c == ' ') {
+            if let Some(space) = cells[start..end].iter().rposition(|(g, _)| *g == " ") {
                 if space > 0 {
                     end = start + space;
                 }
@@ -485,7 +494,7 @@ pub(super) fn wrap_spans_at_words(
         out.push(merge_cells(&cells[start..end]));
         start = end;
         // Swallow the break's spaces so a continuation does not open with them.
-        while matches!(cells.get(start), Some((' ', _))) {
+        while matches!(cells.get(start), Some((" ", _))) {
             start += 1;
         }
     }
@@ -495,12 +504,12 @@ pub(super) fn wrap_spans_at_words(
     out
 }
 
-/// Re-collapse per-character cells into one span per run of equal style.
-fn merge_cells(cells: &[(char, Style)]) -> Vec<Span<'static>> {
+/// Re-collapse graphemes into one span per run of equal style.
+fn merge_cells(cells: &[(&str, Style)]) -> Vec<Span<'static>> {
     let mut runs: Vec<(String, Style)> = Vec::new();
     for (c, style) in cells {
         match runs.last_mut() {
-            Some((text, run_style)) if run_style == style => text.push(*c),
+            Some((text, run_style)) if run_style == style => text.push_str(c),
             _ => runs.push((c.to_string(), *style)),
         }
     }
@@ -1735,6 +1744,21 @@ mod tests {
         assert!(joined.contains("parser"), "{text:?}");
         // The lead span's style survives the split.
         assert_eq!(rows[0][0].style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn answer_wraps_wide_text_inside_the_gutter() {
+        let lines = answer_lines("中文**测试**结束", 6);
+        let text: Vec<_> = lines.iter().map(line_text).collect();
+        assert_eq!(text, ["• 中文", "  测试", "  结束"]);
+        assert!(lines[1].spans.last().unwrap().style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn wrap_at_words_keeps_graphemes_intact_even_in_a_narrow_row() {
+        let rows = wrap_spans_at_words(vec![Span::raw("e\u{301}👩‍💻文")], 1);
+        let text: Vec<_> = rows.into_iter().map(|row| Line::from(row).to_string()).collect();
+        assert_eq!(text, ["e\u{301}", "👩‍💻", "文"]);
     }
 
     #[test]
