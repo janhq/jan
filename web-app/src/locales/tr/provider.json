@@ -1,0 +1,19 @@
+{
+  "addProvider": "Sağlayıcı Ekle",
+  "addOpenAIProvider": "Özel Sağlayıcı Ekle",
+  "nameLabel": "Ad",
+  "enterNameForProvider": "Sağlayıcı adı (örn. my-llm-server)",
+  "apiTypeLabel": "API biçimi",
+  "apiTypeOpenAI": "OpenAI uyumlu",
+  "apiTypeAnthropic": "Anthropic uyumlu",
+  "baseUrlLabel": "Temel URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API anahtarı",
+  "apiKeyPlaceholder": "API anahtarınızı yapıştırın",
+  "invalidBaseUrl": "Temel URL geçerli bir http(s) URL'si olmalıdır",
+  "globalSettings": "Genel ayarlar",
+  "stripReasoning": "Akıl yürütmeyi bağlamdan çıkar",
+  "stripReasoningDesc": "Tüm sağlayıcılarda, geçmişi yeniden göndermeden önce önceki dönüşlerin düşünme/akıl yürütme içeriğini kaldırın. Yerel modeller için KV-önbellek yeniden kullanımını iyileştirir, ancak bazı modeller (örn. yeni Qwen sürümleri) daha iyi çoklu dönüş akıl yürütmesi için bunu korumanızı önerir.",
+  "providerAlreadyExists": "{{name}} adında bir sağlayıcı zaten mevcut."
+}
