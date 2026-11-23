@@ -207,7 +207,7 @@ export interface ModelsService {
 export interface EngineVersionInfo {
   /** llama.cpp's own version, e.g. "1.0.0". */
   version: string
-  /** Upstream build tag, e.g. "b12359". */
+  /** Upstream build tag, e.g. "b12649". */
   tag: string
   buildNumber: string
   /** Full commit sha the build is pinned to. */
