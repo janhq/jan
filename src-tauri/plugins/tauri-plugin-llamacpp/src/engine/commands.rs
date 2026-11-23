@@ -646,7 +646,7 @@ pub async fn get_engine_info(
 pub struct EngineVersion {
     /// llama.cpp's own version, e.g. `1.0.0`.
     pub version: String,
-    /// The upstream build tag the source was taken from, e.g. `b12359`.
+    /// The upstream build tag the source was taken from, e.g. `b12649`.
     pub tag: String,
     /// The same tag's build number, which is what the shim reports back over
     /// the FFI and what a version mismatch is checked against.

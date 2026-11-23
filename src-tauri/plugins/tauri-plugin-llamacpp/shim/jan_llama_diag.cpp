@@ -339,7 +339,7 @@ int run_one_device(int mode_in, const char * backend, const char * op_filter, co
                                              ggml_backend_dev_description(dev), total_mem / 1024 / 1024,
                                              free_mem / 1024 / 1024, true));
 
-    const bool ok = test_backend(be.get(), dev, mode, op_filter, params_filter, &out, nullptr, std::max(1, workers));
+    const bool ok = test_backend(be.get(), dev, mode, op_filter, params_filter, &out, nullptr, std::max(1, workers), false);
     out.flush_noise();
     out.print_backend_status(backend_status_info(ggml_backend_name(be.get()), ok ? test_status_t::OK : test_status_t::FAIL));
     // Counted over the devices that ran, not ggml's whole list as upstream's
