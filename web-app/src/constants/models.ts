@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  teamorouter: {
+    models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'gpt-6.2-sol', 'gemini-4-argon', 'deepseek-v4-flash', 'glm-5.3', 'kimi-k3.1-pro'],
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: true,
+    supportsToolCalls: true,
+    supportsN: false,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
