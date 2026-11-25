@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.teamorouter.com/v1',
+    explore_models_url: 'https://teamorouter.com/models',
+    provider: 'teamorouter',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The TeamoRouter API uses API keys for authentication. Visit the [API Keys](https://teamorouter.com/dashboard?tab=api-keys) page in the TeamoRouter console to create a key for your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]
