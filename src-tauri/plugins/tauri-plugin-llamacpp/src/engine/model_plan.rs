@@ -151,6 +151,7 @@ const RECURRENT_FAMILIES: &[(&str, &[&str])] = &[
     ("hybrid", &["SSM_CONV", "SSM_SCAN"]),
     ("nemotron_h", &["SSM_CONV", "SSM_SCAN"]),
     ("plamo2", &["SSM_CONV", "SSM_SCAN"]),
+    ("lfm", &["SSM_CONV"]),
     ("rwkv", &["RWKV_WKV6", "RWKV_WKV7"]),
 ];
 
@@ -533,6 +534,21 @@ mod tests {
         });
         assert!(filter_for(&rwkv, "RWKV_WKV6").is_some());
         assert!(filter_for(&rwkv, "SSM_SCAN").is_none());
+
+        for arch in ["lfm2", "lfm2moe", "lfm3"] {
+            let lfm = model_families(&ModelShape {
+                architecture: Some(arch.into()),
+                ..Default::default()
+            });
+            assert!(
+                filter_for(&lfm, "SSM_CONV").is_some(),
+                "{arch} uses SSM_CONV"
+            );
+            assert!(
+                filter_for(&lfm, "SSM_SCAN").is_none(),
+                "{arch} does not use SSM_SCAN"
+            );
+        }
     }
 
     #[test]
