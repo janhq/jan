@@ -1,19 +1,23 @@
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
     helpers::{restart_active_mcp_servers, start_mcp_server, terminate_browser_mcp},
+    truncate::truncate_tool_result,
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{McpSettings, ServerSummary},
+    mcp::oauth,
     state::AppState,
 };
 use crate::core::{
+    mcp::identity,
     mcp::models::ToolWithServer,
     state::{RunningMcpService, SharedMcpServers},
 };
@@ -73,13 +77,17 @@ async fn collect_mcp_tools<R: Runtime>(
         let maybe_list_result = {
             let servers = state.mcp_servers.lock().await;
             match servers.get(&server_name) {
-                Some(service) => Some(timeout(timeout_duration, service.list_all_tools()).await),
+                // Read under the servers lock, which every replacement holds.
+                Some(service) => Some((
+                    identity::current_generation(&server_name),
+                    timeout(timeout_duration, service.list_all_tools()).await,
+                )),
                 None => None,
             }
         };
 
         let fresh_tools = match maybe_list_result {
-            Some(Ok(Ok(tools))) => {
+            Some((generation, Ok(Ok(tools)))) => {
                 let mapped: Vec<ToolWithServer> = tools
                     .into_iter()
                     .map(|tool| ToolWithServer {
@@ -87,13 +95,14 @@ async fn collect_mcp_tools<R: Runtime>(
                         description: tool.description.as_ref().map(|d| d.to_string()),
                         input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
                         server: server_name.clone(),
+                        generation,
                     })
                     .collect();
                 let mut last_known = state.mcp_last_known_tools.lock().await;
                 last_known.insert(server_name.clone(), mapped.clone());
                 Some(mapped)
             }
-            Some(Ok(Err(e))) => {
+            Some((_, Ok(Err(e)))) => {
                 let err_str = e.to_string();
                 log::warn!("MCP server {server_name} failed to list tools: {err_str}");
                 if is_transport_error(&err_str) {
@@ -104,7 +113,7 @@ async fn collect_mcp_tools<R: Runtime>(
                 }
                 None
             }
-            Some(Err(_)) => {
+            Some((_, Err(_))) => {
                 log::warn!(
                     "MCP server {server_name}: listing tools timed out after {} seconds",
                     timeout_duration.as_secs()
@@ -134,6 +143,15 @@ async fn collect_mcp_tools<R: Runtime>(
             log::error!("Failed to emit mcp-update event: {e}");
         }
     }
+
+    // A name two servers offer, or an empty one, cannot be held to one server
+    // when the model calls it, so it is not offered at all.
+    let unroutable = identity::unroutable_tool_names(
+        all_tools
+            .iter()
+            .map(|tool| (tool.server.as_str(), tool.name.as_str())),
+    );
+    all_tools.retain(|tool| !unroutable.contains(&tool.name));
 
     Ok(all_tools)
 }
@@ -285,10 +303,7 @@ pub async fn get_connected_servers(
 }
 
 /// Remove an MCP server entry and cancel its running service (used when list-tools fails).
-async fn remove_mcp_server_entry(
-    mcp_servers: &SharedMcpServers,
-    server_name: &str,
-) -> bool {
+async fn remove_mcp_server_entry(mcp_servers: &SharedMcpServers, server_name: &str) -> bool {
     let mut servers = mcp_servers.lock().await;
     if let Some(service) = servers.remove(server_name) {
         log::warn!("Removing MCP server {server_name} from connected servers");
@@ -387,29 +402,43 @@ pub async fn get_server_summaries(
 /// # Arguments
 /// * `state` - Application state containing MCP server connections
 /// * `tool_name` - Name of the tool to call
-/// * `server_name` - Optional name of the server to call the tool from (for disambiguation)
+/// * `server_name` - The server that offered the tool. Without it the tool is
+///   looked up across servers, and a name more than one server offers is refused
+/// * `server_generation` - The connection generation the tool was listed from
+///   (`ToolWithServer::generation`). A call to a server that has since been
+///   replaced is refused instead of running on the new process
 /// * `arguments` - Optional map of argument names to values
+/// * `thread_id`, `call_id` - The conversation and tool call the user approved
+///   (`tauri_plugin_agent_tools::consent`). The call runs only on that
+///   approval, given for this tool on the server that is about to run it
 /// * `cancellation_token` - Optional token to allow cancellation from JS side
+/// * `max_output_chars` - Optional caller-derived per-result character budget
+///   (the desktop chat derives one from the active model's context window);
+///   combined with the `maxToolOutputChars` setting, tighter wins
 ///
-/// # Returns
-/// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
-///
-/// This function:
-/// 1. Locks the MCP servers mutex to access server connections
-/// 2. If server_name is provided, looks for the tool in that specific server
-/// 3. Otherwise, searches through all servers for one containing the named tool
-/// 4. When found, calls the tool on that server with the provided arguments
-/// 5. Supports cancellation via cancellation_token
-/// 6. Returns error if no server has the requested tool or if specified server not found
+/// The servers lock is held from the generation check through the call, and
+/// every replacement of a server takes that lock, so the connection checked is
+/// the one that runs the call.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn call_tool(
     state: State<'_, AppState>,
     tool_name: String,
     server_name: Option<String>,
+    server_generation: Option<u64>,
     arguments: Option<Map<String, Value>>,
+    thread_id: Option<String>,
+    call_id: Option<String>,
     cancellation_token: Option<String>,
+    max_output_chars: Option<u64>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
+    let (timeout_duration, tool_output_cap) = {
+        let settings = state.mcp_settings.lock().await;
+        (
+            settings.tool_call_timeout_duration(),
+            settings.tool_output_cap(max_output_chars),
+        )
+    };
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 
@@ -420,107 +449,193 @@ pub async fn call_tool(
 
     let servers = state.mcp_servers.lock().await;
 
-    // If server_name is provided, only check that specific server
-    let servers_to_check: Vec<(&String, &RunningMcpService)> =
-        if let Some(ref server) = server_name {
-            servers.iter().filter(|(name, _)| *name == server).collect()
-        } else {
-            servers.iter().collect()
-        };
-
-    if servers_to_check.is_empty() {
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        if let Some(server) = server_name {
-            return Err(format!("Server '{server}' not found"));
+    let target = resolve_call_target(
+        &servers,
+        &tool_name,
+        server_name.as_deref(),
+        server_generation,
+    )
+    .await;
+    let (srv_name, service) = match target {
+        Ok(target) => target,
+        Err(CallTargetError::Refused(e)) => {
+            log::warn!("MCP call to tool {tool_name} refused: {e}");
+            cleanup_cancellation_token(&state, &cancellation_token).await;
+            return Err(e);
         }
-        return Err(format!("Tool {tool_name} not found — no MCP servers connected"));
+        Err(CallTargetError::Disconnected(names)) => {
+            log::warn!(
+                "MCP call to tool {tool_name} not run: server(s) [{}] disconnected",
+                names.join(", ")
+            );
+            state.mcp_reconnect_notify.notify_waiters();
+            cleanup_cancellation_token(&state, &cancellation_token).await;
+            return Err(format!(
+                "MCP server(s) [{}] disconnected while looking for tool '{}'. Reconnecting - please retry.",
+                names.join(", "),
+                tool_name
+            ));
+        }
+    };
+
+    log::info!("Found tool {tool_name} in server {srv_name}");
+
+    if let Err(e) = tauri_plugin_agent_tools::consent::store().consume(
+        thread_id.as_deref().unwrap_or_default(),
+        call_id.as_deref().unwrap_or_default(),
+        &tool_name,
+        Some(srv_name),
+        tauri_plugin_agent_tools::consent::ToolOrigin::Mcp,
+    ) {
+        log::warn!("MCP call to tool {tool_name} on {srv_name} not approved: {e}");
+        cleanup_cancellation_token(&state, &cancellation_token).await;
+        return Err(e);
     }
 
-    let mut transport_error_servers: Vec<String> = Vec::new();
-
-    // Iterate through servers and find the one that contains the tool
-    for (srv_name, service) in servers_to_check.iter() {
-        let tools = match service.list_all_tools().await {
-            Ok(tools) => tools,
-            Err(e) => {
-                let err_str = e.to_string();
-                log::warn!(
-                    "MCP server {} failed to list tools during call_tool: {}",
-                    srv_name, err_str
-                );
-                if is_transport_error(&err_str) {
-                    transport_error_servers.push(srv_name.to_string());
-                }
-                continue;
-            }
-        };
-
-        if !tools.iter().any(|t| t.name == tool_name) {
-            continue; // Tool not found in this server, try next
-        }
-
-        log::info!("Found tool {tool_name} in server {srv_name}");
-
-        // Call the tool with timeout and cancellation support
-        let tool_call = service.call_tool(CallToolRequestParam {
-            name: tool_name.clone().into(),
-            arguments,
-        });
-
-        // Race between timeout, tool call, and cancellation
-        let result = if cancellation_token.is_some() {
-            tokio::select! {
-                result = timeout(timeout_duration, tool_call) => {
-                    match result {
-                        Ok(call_result) => call_result.map_err(|e| e.to_string()),
-                        Err(_) => Err(format!(
-                            "Tool call '{tool_name}' timed out after {} seconds",
-                            timeout_duration.as_secs()
-                        )),
-                    }
-                }
-                _ = cancel_rx => {
-                    Err(format!("Tool call '{tool_name}' was cancelled"))
-                }
-            }
-        } else {
-            match timeout(timeout_duration, tool_call).await {
-                Ok(call_result) => call_result.map_err(|e| e.to_string()),
-                Err(_) => Err(format!(
-                    "Tool call '{tool_name}' timed out after {} seconds",
-                    timeout_duration.as_secs()
-                )),
-            }
-        };
-
-        // Signal reconnect if the tool call itself hit a transport error
-        if let Err(ref e) = result {
-            if is_transport_error(e) {
-                log::warn!(
-                    "MCP server {} transport error during tool call: {}",
-                    srv_name, e
-                );
-                state.mcp_reconnect_notify.notify_waiters();
-            }
-        }
-
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        return result;
+    // Call the tool with timeout and cancellation support
+    let mut params = CallToolRequestParams::new(tool_name.clone());
+    if let Some(args) = arguments {
+        params = params.with_arguments(args);
     }
+    let tool_call = service.call_tool(params);
 
-    // No server had the tool — check if it's because of transport errors
-    if !transport_error_servers.is_empty() {
-        state.mcp_reconnect_notify.notify_waiters();
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        return Err(format!(
-            "MCP server(s) [{}] disconnected while looking for tool '{}'. Reconnecting — please retry.",
-            transport_error_servers.join(", "),
-            tool_name
-        ));
+    // Race between timeout, tool call, and cancellation
+    let result = if cancellation_token.is_some() {
+        tokio::select! {
+            result = timeout(timeout_duration, tool_call) => {
+                match result {
+                    Ok(call_result) => call_result.map_err(|e| e.to_string()),
+                    Err(_) => Err(format!(
+                        "Tool call '{tool_name}' timed out after {} seconds",
+                        timeout_duration.as_secs()
+                    )),
+                }
+            }
+            _ = cancel_rx => {
+                Err(format!("Tool call '{tool_name}' was cancelled"))
+            }
+        }
+    } else {
+        match timeout(timeout_duration, tool_call).await {
+            Ok(call_result) => call_result.map_err(|e| e.to_string()),
+            Err(_) => Err(format!(
+                "Tool call '{tool_name}' timed out after {} seconds",
+                timeout_duration.as_secs()
+            )),
+        }
+    };
+
+    // Signal reconnect if the tool call itself hit a transport error
+    if let Err(e) = &result {
+        if is_transport_error(e) {
+            log::warn!("MCP server {srv_name} transport error during tool call: {e}");
+            state.mcp_reconnect_notify.notify_waiters();
+        }
     }
 
     cleanup_cancellation_token(&state, &cancellation_token).await;
-    Err(format!("Tool {tool_name} not found"))
+    // Cap here rather than at each caller: this is the single point every
+    // desktop MCP tool result passes through on its way into conversation
+    // history, so an unbounded result can never reach the model.
+    result.map(|res| truncate_tool_result(&res, tool_output_cap))
+}
+
+pub(crate) enum CallTargetError {
+    /// The call must not run; the message says why.
+    Refused(String),
+    /// No server was found to offer the tool, but these could not be asked.
+    Disconnected(Vec<String>),
+}
+
+/// The one connection a call may run on. A named server must still be the
+/// connection the tool was listed from and must offer the tool; an unnamed
+/// call needs exactly one server offering it. Never falls back to another
+/// server: a call meant for one server that reaches another acts with the
+/// wrong server's handler and grants.
+pub(crate) async fn resolve_call_target<'a, S: McpToolSource>(
+    servers: &'a std::collections::HashMap<String, S>,
+    tool_name: &str,
+    server_name: Option<&str>,
+    server_generation: Option<u64>,
+) -> Result<(&'a str, &'a S), CallTargetError> {
+    if let Some(server) = server_name {
+        let Some((name, service)) = servers.get_key_value(server) else {
+            return Err(CallTargetError::Refused(format!(
+                "MCP server '{server}' is not connected; the call was not run"
+            )));
+        };
+        if let Some(generation) = server_generation {
+            identity::check_generation(server, generation).map_err(CallTargetError::Refused)?;
+        }
+        return match service.tool_names().await {
+            Ok(names) if names.iter().any(|n| n == tool_name) => Ok((name.as_str(), service)),
+            Ok(_) => Err(CallTargetError::Refused(format!(
+                "MCP server '{server}' no longer offers tool '{tool_name}'"
+            ))),
+            Err(e) if is_transport_error(&e) => {
+                Err(CallTargetError::Disconnected(vec![name.clone()]))
+            }
+            Err(e) => Err(CallTargetError::Refused(format!(
+                "MCP server '{server}' could not list its tools: {e}"
+            ))),
+        };
+    }
+
+    if servers.is_empty() {
+        return Err(CallTargetError::Refused(format!(
+            "Tool {tool_name} not found - no MCP servers connected"
+        )));
+    }
+
+    let mut offering: Vec<(&'a str, &'a S)> = Vec::new();
+    let mut disconnected: Vec<String> = Vec::new();
+    for (name, service) in servers {
+        match service.tool_names().await {
+            Ok(names) if names.iter().any(|n| n == tool_name) => {
+                offering.push((name.as_str(), service))
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!("MCP server {name} failed to list tools during call_tool: {e}");
+                if is_transport_error(&e) {
+                    disconnected.push(name.clone());
+                }
+            }
+        }
+    }
+
+    match offering.as_slice() {
+        [only] => Ok(*only),
+        [] if !disconnected.is_empty() => Err(CallTargetError::Disconnected(disconnected)),
+        [] => Err(CallTargetError::Refused(format!(
+            "Tool {tool_name} not found"
+        ))),
+        many => {
+            let mut names: Vec<&str> = many.iter().map(|(name, _)| *name).collect();
+            names.sort_unstable();
+            Err(CallTargetError::Refused(format!(
+                "Tool '{tool_name}' is offered by more than one MCP server ({}); the call was not run",
+                names.join(", ")
+            )))
+        }
+    }
+}
+
+/// The part of a running MCP service call routing needs, so routing can be
+/// tested without a live server.
+#[async_trait::async_trait]
+pub(crate) trait McpToolSource: Sync {
+    async fn tool_names(&self) -> Result<Vec<String>, String>;
+}
+
+#[async_trait::async_trait]
+impl McpToolSource for RunningMcpService {
+    async fn tool_names(&self) -> Result<Vec<String>, String> {
+        self.list_all_tools()
+            .await
+            .map(|tools| tools.into_iter().map(|t| t.name.to_string()).collect())
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// Cancels a running tool call by its cancellation token
@@ -552,6 +667,88 @@ fn parse_mcp_settings(value: Option<&Value>) -> McpSettings {
     value
         .and_then(|v| serde_json::from_value::<McpSettings>(v.clone()).ok())
         .unwrap_or_default()
+}
+
+/// Read one configured server's entry out of `mcp_config.json`. Errors rather
+/// than defaulting: every caller here is acting on a server the user picked, and
+/// a silent empty config would report "not authenticated" for a typo.
+fn read_server_config<R: Runtime>(app: &AppHandle<R>, name: &str) -> Result<Value, String> {
+    let mut path = get_jan_data_folder_path(app.clone());
+    path.push("mcp_config.json");
+    let body = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str::<Value>(&body)
+        .map_err(|e| format!("Failed to parse mcp_config.json: {e}"))?
+        .get("mcpServers")
+        .and_then(|s| s.get(name))
+        .cloned()
+        .ok_or_else(|| format!("server '{name}' not found in mcp_config.json"))
+}
+
+/// The OAuth state of one configured server. Local only -- no network -- so the
+/// settings screen can call it per row without a round trip each.
+#[tauri::command]
+pub async fn get_mcp_auth_status<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<oauth::AuthStatusInfo, String> {
+    let config = read_server_config(&app, &name)?;
+    let folder = get_jan_data_folder_path(app);
+    Ok(oauth::status(&folder, &name, &config).into())
+}
+
+/// Run an interactive OAuth authorization for one server: discover the
+/// provider, register a client, open the consent page, and wait for the
+/// redirect on a loopback listener.
+///
+/// Resolves only once the flow finishes (or times out after five minutes), so
+/// the caller awaits a single promise. The consent url is also emitted as
+/// `mcp-oauth-url` before the wait begins, so the UI can offer it as a link
+/// when the browser did not come up.
+#[tauri::command]
+pub async fn authorize_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<(), String> {
+    let config = read_server_config(&app, &name)?;
+    let url = config
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| {
+            format!("'{name}' is a stdio server - OAuth applies to http/sse servers only")
+        })?;
+
+    let pending = oauth::begin(&name, url).await?;
+    if let Err(e) = app.emit(
+        "mcp-oauth-url",
+        json!({ "server": &name, "url": &pending.authorization_url }),
+    ) {
+        log::error!("Failed to emit mcp-oauth-url event: {e}");
+    }
+    // Best-effort: the url has already been emitted, so a session with no
+    // browser can still finish by opening it by hand. Only http(s) is handed
+    // to the system opener, which would otherwise launch whatever handles the
+    // scheme.
+    if !oauth::is_allowed_oauth_url(&pending.authorization_url) {
+        return Err(format!("'{name}' produced a sign-in URL Jan will not open"));
+    }
+    if let Err(e) = app.opener().open_url(&pending.authorization_url, None::<&str>) {
+        log::warn!("Could not open the browser for '{name}': {e}");
+    }
+
+    let folder = get_jan_data_folder_path(app);
+    pending.complete(&folder).await.map(|_| ())
+}
+
+/// Forget one server's stored tokens. `false` when there were none, so the UI
+/// can tell "cleared" from "nothing to clear".
+#[tauri::command]
+pub async fn clear_mcp_auth<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<bool, String> {
+    let folder = get_jan_data_folder_path(app);
+    oauth::clear(&folder, &name)
 }
 
 #[tauri::command]
@@ -716,10 +913,7 @@ enum PingResult {
 async fn try_ping_tool(service: &RunningMcpService) -> PingResult {
     let result = timeout(
         Duration::from_secs(3),
-        service.call_tool(CallToolRequestParam {
-            name: "ping".into(),
-            arguments: Some(Map::new()),
-        }),
+        service.call_tool(CallToolRequestParams::new("ping").with_arguments(Map::new())),
     )
     .await;
 
@@ -754,10 +948,9 @@ async fn try_browser_snapshot_tool(service: &RunningMcpService) -> Result<bool, 
         // Snapshot tool is very time-consuming
         // Extend timeout to make sure the tool call has enough time to succeed
         Duration::from_secs(20),
-        service.call_tool(CallToolRequestParam {
-            name: "browser_snapshot".into(),
-            arguments: Some(Map::new()),
-        }),
+        service.call_tool(
+            CallToolRequestParams::new("browser_snapshot").with_arguments(Map::new()),
+        ),
     )
     .await;
 

@@ -6,11 +6,6 @@
   "noUpdateAvailable": "Bạn đang chạy phiên bản mới nhất",
   "devVersion": "Đã phát hiện phiên bản phát triển",
   "updateError": "Không thể kiểm tra cập nhật",
-  "checkForBackendUpdates": "Kiểm tra Cập nhật Llamacpp",
-  "checkForBackendUpdatesDesc": "Kiểm tra xem có phiên bản backend Llamacpp mới hơn không.",
-  "checkingForBackendUpdates": "Đang kiểm tra cập nhật Llamacpp...",
-  "noBackendUpdateAvailable": "Bạn đang chạy phiên bản Llamacpp mới nhất",
-  "backendUpdateError": "Không thể kiểm tra cập nhật Llamacpp",
   "changeLocation": "Thay đổi Vị trí",
   "copied": "Đã sao chép",
   "copyPath": "Sao chép Đường dẫn",
@@ -98,8 +93,6 @@
     "resetToDefaultDesc": "Đặt lại tất cả cài đặt giao diện về mặc định.",
     "resetInterfaceSuccess": "Giao diện đã được đặt lại thành công",
     "resetInterfaceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
-    "tokenCounterCompact": "Bộ đếm token nhỏ gọn",
-    "tokenCounterCompactDesc": "Hiển thị bộ đếm token bên trong ô nhập trò chuyện. Khi tắt, bộ đếm token sẽ xuất hiện bên dưới ô nhập.",
     "codeBlockTitle": "Khối mã",
     "codeBlockDesc": "Chọn kiểu tô sáng cú pháp.",
     "showLineNumbers": "Hiển thị số dòng",
@@ -107,7 +100,8 @@
     "resetCodeBlockStyle": "Đặt lại kiểu khối mã",
     "resetCodeBlockStyleDesc": "Đặt lại kiểu khối mã về mặc định.",
     "resetCodeBlockSuccess": "Kiểu khối mã đã được đặt lại thành công",
-    "resetCodeBlockSuccessDesc": "Kiểu khối mã đã được khôi phục về mặc định."
+    "resetCodeBlockSuccessDesc": "Kiểu khối mã đã được khôi phục về mặc định.",
+    "themeDescFixed": "Luôn dùng giao diện này. Chọn Hệ thống để theo hệ điều hành."
   },
   "hardware": {
     "os": "Hệ điều hành",
@@ -156,6 +150,11 @@
     "peerSslDesc": "Xác thực chứng chỉ SSL của các kết nối ngang hàng.",
     "hostSsl": "Máy chủ SSL",
     "hostSslDesc": "Xác thực chứng chỉ SSL của các máy chủ đích."
+  },
+  "cowork": {
+    "title": "Agent",
+    "description": "Những gì Jan có thể làm trên máy tính của bạn: shell trong sandbox, cùng với ký ức và kỹ năng được lưu vĩnh viễn trong thư mục dữ liệu Jan.",
+    "networkDesc": "Cho phép lệnh shell truy cập mạng, chẳng hạn để cài gói hoặc tải một kho mã. Bật theo mặc định. Sandbox vẫn giới hạn những tệp mà lệnh có thể truy cập."
   },
   "localApiServer": {
     "title": "Máy chủ API cục bộ",
@@ -267,15 +266,6 @@
       "cancel": "Hủy",
       "changeLocation": "Thay đổi vị trí"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Phiên bản Llamacpp mới {{version}}",
-    "backendUpdateAvailable": "Có cập nhật Llamacpp",
-    "remindMeLater": "Nhắc tôi sau",
-    "updating": "Đang cập nhật...",
-    "updateNow": "Cập nhật ngay",
-    "updateSuccess": "Cập nhật Llamacpp thành công",
-    "updateError": "Không thể cập nhật Llamacpp"
   },
   "backendInstallSuccess": "Backend đã được cài đặt thành công",
   "backendInstallError": "Không thể cài đặt backend"

@@ -26,9 +26,7 @@ static DB_POOL: OnceLock<Mutex<Option<SqlitePool>>> = OnceLock::new();
 /// Initialize database with connection pool and run migrations
 pub async fn init_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     // Get app data directory
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
+    let app_data_dir = crate::core::app::paths::app_data_dir_for(app)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
 
     // Ensure directory exists

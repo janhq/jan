@@ -40,7 +40,7 @@ export class ModelManager {
 
   
   /**
-   * Shared instance of ExtensionManager.
+   * Shared instance of ModelManager.
    */
   static instance() {
     if (!window.core.modelManager)

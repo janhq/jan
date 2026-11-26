@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import { ExtensionManager } from '@/lib/extension'
-import {
-  ExtensionTypeEnum,
-  type RAGExtension,
-  type SettingComponentProps,
-} from '@janhq/core'
+import type { SettingComponentProps } from '@janhq/core'
+import type { SettingContribution, SettingValue } from '@janhq/extension-api'
+import { getExtensionHost } from '@/lib/extensions/host'
+
+/** The rag built-in, whose settings these are. */
+export const RAG_EXTENSION_ID = 'jan.rag'
 
 export type AttachmentsSettings = {
   enabled: boolean
@@ -22,302 +22,191 @@ type AttachmentsStore = AttachmentsSettings & {
   // Dynamic controller definitions for rendering UI
   settingsDefs: SettingComponentProps[]
   loadSettingsDefs: () => Promise<boolean>
-  setEnabled: (v: boolean) => void
-  setMaxFileSizeMB: (v: number) => void
-  setRetrievalLimit: (v: number) => void
-  setRetrievalThreshold: (v: number) => void
-  setChunkSizeChars: (v: number) => void
-  setOverlapChars: (v: number) => void
-  setSearchMode: (v: 'auto' | 'ann' | 'linear') => void
-  setParseMode: (v: 'auto' | 'inline' | 'embeddings' | 'prompt') => void
-  setAutoInlineContextRatio: (v: number) => void
+  setEnabled: (v: boolean) => Promise<void>
+  setMaxFileSizeMB: (v: number) => Promise<void>
+  setRetrievalLimit: (v: number) => Promise<void>
+  setRetrievalThreshold: (v: number) => Promise<void>
+  setChunkSizeChars: (v: number) => Promise<void>
+  setOverlapChars: (v: number) => Promise<void>
+  setSearchMode: (v: 'auto' | 'ann' | 'linear') => Promise<void>
+  setParseMode: (v: 'auto' | 'inline' | 'embeddings' | 'prompt') => Promise<void>
+  setAutoInlineContextRatio: (v: number) => Promise<void>
 }
 
-const getRagExtension = (): RAGExtension | undefined => {
-  try {
-    return ExtensionManager.getInstance().get<RAGExtension>(
-      ExtensionTypeEnum.RAG
-    )
-  } catch {
-    return undefined
+// Setting key -> store field and the i18n stem of its title/description.
+const FIELDS: Record<string, { field: keyof AttachmentsSettings; i18n: string }> = {
+  enabled: { field: 'enabled', i18n: 'enable' },
+  parse_mode: { field: 'parseMode', i18n: 'parseMode' },
+  auto_inline_context_ratio: {
+    field: 'autoInlineContextRatio',
+    i18n: 'autoInlineThreshold',
+  },
+  max_file_size_mb: { field: 'maxFileSizeMB', i18n: 'maxFile' },
+  retrieval_limit: { field: 'retrievalLimit', i18n: 'topK' },
+  retrieval_threshold: { field: 'retrievalThreshold', i18n: 'threshold' },
+  chunk_size_chars: { field: 'chunkSizeChars', i18n: 'chunkSize' },
+  overlap_chars: { field: 'overlapChars', i18n: 'chunkOverlap' },
+  search_mode: { field: 'searchMode', i18n: 'searchMode' },
+}
+
+/**
+ * The page's controller definition of a declared setting. Numeric settings
+ * are sliders in the manifest (so the store range-checks them) but render
+ * here as number inputs, as the page always has.
+ */
+function toDef(
+  setting: SettingContribution,
+  value: SettingValue
+): SettingComponentProps {
+  const i18n = FIELDS[setting.key]?.i18n
+  const base = {
+    key: setting.key,
+    title: setting.title,
+    description: setting.description ?? '',
+    titleKey: i18n ? `settings:attachments.${i18n}` : undefined,
+    descriptionKey: i18n ? `settings:attachments.${i18n}Desc` : undefined,
+  }
+  const { control } = setting
+  switch (control.type) {
+    case 'checkbox':
+      return { ...base, controllerType: 'checkbox', controllerProps: { value: Boolean(value) } }
+    case 'dropdown':
+      return {
+        ...base,
+        controllerType: 'dropdown',
+        controllerProps: {
+          value: String(value),
+          options: control.options.map((o) => ({ name: o.label, value: o.value })),
+        },
+      }
+    case 'slider':
+      return {
+        ...base,
+        controllerType: 'input',
+        // The number itself, as the legacy definitions held it.
+        controllerProps: {
+          value,
+          placeholder: '',
+          type: 'number',
+          textAlign: 'right',
+          min: control.min,
+          max: control.max,
+          step: control.step,
+        } as SettingComponentProps['controllerProps'],
+      }
+    default:
+      return {
+        ...base,
+        controllerType: 'input',
+        controllerProps: { value: String(value), placeholder: '' },
+      }
   }
 }
 
-export const useAttachments = create<AttachmentsStore>()((set) => ({
-  enabled: true,
-  maxFileSizeMB: 100,
-  retrievalLimit: 3,
-  retrievalThreshold: 0.3,
-  chunkSizeChars: 512,
-  overlapChars: 64,
-  searchMode: 'auto',
-  parseMode: 'auto',
-  autoInlineContextRatio: 0.75,
-  settingsDefs: [],
-  loadSettingsDefs: async () => {
-    const ext = getRagExtension()
-    if (!ext?.getSettings) return false
+const declaredSettings = (): SettingContribution[] =>
+  getExtensionHost()
+    .list()
+    .find((e) => e.id === RAG_EXTENSION_ID && e.state === 'active')?.manifest
+    .contributes?.settings ?? []
+
+const withValue = (
+  defs: SettingComponentProps[],
+  key: string,
+  value: SettingValue
+): SettingComponentProps[] =>
+  defs.map((d) =>
+    d.key === key
+      ? ({
+          ...d,
+          controllerProps: { ...d.controllerProps, value },
+        } as SettingComponentProps)
+      : d
+  )
+
+export const useAttachments = create<AttachmentsStore>()((set) => {
+  // The store updates from the settings change event, so an edit made on
+  // Settings > Extensions shows here too. The page calls these without
+  // awaiting, so a refused write is logged rather than rejected.
+  const persist = async (key: string, value: SettingValue) => {
     try {
-      const defs = await ext.getSettings()
-      if (!Array.isArray(defs)) return false
-
-      const map = new Map<string, unknown>()
-      defs.forEach((setting) =>
-        map.set(setting.key, setting?.controllerProps?.value)
-      )
-
-      set((prev) => ({
-        settingsDefs: defs,
-        enabled: (map.get('enabled') as boolean | undefined) ?? prev.enabled,
-        maxFileSizeMB:
-          (map.get('max_file_size_mb') as number | undefined) ??
-          prev.maxFileSizeMB,
-        retrievalLimit:
-          (map.get('retrieval_limit') as number | undefined) ??
-          prev.retrievalLimit,
-        retrievalThreshold:
-          (map.get('retrieval_threshold') as number | undefined) ??
-          prev.retrievalThreshold,
-        chunkSizeChars:
-          (map.get('chunk_size_chars') as number | undefined) ??
-          (map.get('chunk_size_tokens') as number | undefined) ??
-          prev.chunkSizeChars,
-        overlapChars:
-          (map.get('overlap_chars') as number | undefined) ??
-          (map.get('overlap_tokens') as number | undefined) ??
-          prev.overlapChars,
-        searchMode:
-          (map.get('search_mode') as 'auto' | 'ann' | 'linear' | undefined) ??
-          prev.searchMode,
-        parseMode:
-          (map.get('parse_mode') as
-            | 'auto'
-            | 'inline'
-            | 'embeddings'
-            | 'prompt'
-            | undefined) ?? prev.parseMode,
-        autoInlineContextRatio:
-          (map.get('auto_inline_context_ratio') as number | undefined) ??
-          prev.autoInlineContextRatio,
-      }))
-
-      return true
+      await getExtensionHost().settings.setSettingValue(RAG_EXTENSION_ID, key, value)
     } catch (e) {
-      console.debug('Failed to load attachment settings defs:', e)
-      return false
+      console.error(`Failed to save attachment setting '${key}':`, e)
     }
-  },
-  setEnabled: async (v) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'enabled',
-          controllerProps: { value: !!v },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      enabled: v,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'enabled'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: !!v },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setMaxFileSizeMB: async (val) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'max_file_size_mb',
-          controllerProps: { value: val },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      maxFileSizeMB: val,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'max_file_size_mb'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: val },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setRetrievalLimit: async (val) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'retrieval_limit',
-          controllerProps: { value: val },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      retrievalLimit: val,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'retrieval_limit'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: val },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setRetrievalThreshold: async (val) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'retrieval_threshold',
-          controllerProps: { value: val },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      retrievalThreshold: val,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'retrieval_threshold'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: val },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setChunkSizeChars: async (val) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'chunk_size_chars',
-          controllerProps: { value: val },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      chunkSizeChars: val,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'chunk_size_chars'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: val },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setOverlapChars: async (val) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'overlap_chars',
-          controllerProps: { value: val },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      overlapChars: val,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'overlap_chars'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: val },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setSearchMode: async (v) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'search_mode',
-          controllerProps: { value: v },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      searchMode: v,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'search_mode'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: v },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setParseMode: async (v) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'parse_mode',
-          controllerProps: { value: v },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      parseMode: v,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'parse_mode'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: v },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-  setAutoInlineContextRatio: async (val) => {
-    const ext = getRagExtension()
-    if (ext?.updateSettings) {
-      await ext.updateSettings([
-        {
-          key: 'auto_inline_context_ratio',
-          controllerProps: { value: val },
-        } as Partial<SettingComponentProps>,
-      ])
-    }
-    set((s) => ({
-      autoInlineContextRatio: val,
-      settingsDefs: s.settingsDefs.map((d) =>
-        d.key === 'auto_inline_context_ratio'
-          ? ({
-              ...d,
-              controllerProps: { ...d.controllerProps, value: val },
-            } as SettingComponentProps)
-          : d
-      ),
-    }))
-  },
-}))
+  }
+  return {
+    enabled: true,
+    maxFileSizeMB: 100,
+    retrievalLimit: 3,
+    retrievalThreshold: 0.3,
+    chunkSizeChars: 512,
+    overlapChars: 64,
+    searchMode: 'auto',
+    parseMode: 'auto',
+    autoInlineContextRatio: 0.75,
+    settingsDefs: [],
+    loadSettingsDefs: async () => {
+      const declared = declaredSettings()
+      if (declared.length === 0) return false
+      try {
+        const store = getExtensionHost().settings
+        const values = await Promise.all(
+          declared.map(
+            async (s) =>
+              [s, (await store.getSettingValue(RAG_EXTENSION_ID, s.key)) ?? s.control.default] as const
+          )
+        )
+        const patch: Partial<AttachmentsSettings> = {}
+        for (const [s, value] of values) {
+          const field = FIELDS[s.key]?.field
+          if (field) Object.assign(patch, { [field]: value })
+        }
+        set({ ...patch, settingsDefs: values.map(([s, v]) => toDef(s, v)) })
+        return true
+      } catch (e) {
+        console.debug('Failed to load attachment settings defs:', e)
+        return false
+      }
+    },
+    setEnabled: (v) => persist('enabled', !!v),
+    setMaxFileSizeMB: (v) => persist('max_file_size_mb', v),
+    setRetrievalLimit: (v) => persist('retrieval_limit', v),
+    setRetrievalThreshold: (v) => persist('retrieval_threshold', v),
+    setChunkSizeChars: (v) => persist('chunk_size_chars', v),
+    setOverlapChars: (v) => persist('overlap_chars', v),
+    setSearchMode: (v) => persist('search_mode', v),
+    setParseMode: (v) => persist('parse_mode', v),
+    setAutoInlineContextRatio: (v) => persist('auto_inline_context_ratio', v),
+  }
+})
 
-// Attempt to hydrate settings from the RAG extension, retrying briefly until it is registered
-const MAX_INIT_ATTEMPTS = 5
-const INIT_RETRY_DELAY_MS = 300
-export const initAttachments = async () => {
-  for (let i = 0; i < MAX_INIT_ATTEMPTS; i += 1) {
-    const success = await useAttachments.getState().loadSettingsDefs()
-    if (success) return
-    await new Promise((resolve) => setTimeout(resolve, INIT_RETRY_DELAY_MS))
+function applyChange(key: string, value: SettingValue) {
+  const field = FIELDS[key]?.field
+  if (!field) return
+  useAttachments.setState((s) => ({
+    [field]: value,
+    settingsDefs: withValue(s.settingsDefs, key, value),
+  }))
+}
+
+/**
+ * Follows the rag built-in: loads its settings once it is active (and
+ * again whenever the host's extensions change), then every change to them.
+ */
+export function initAttachments(): () => void {
+  const host = getExtensionHost()
+  const load = () => void useAttachments.getState().loadSettingsDefs()
+  const extensions = host.onDidChange(load)
+  const changes = host.settings.onDidChange((change) => {
+    if (change.extensionId === RAG_EXTENSION_ID) applyChange(change.key, change.value)
+  })
+  load()
+  return () => {
+    extensions.dispose()
+    changes.dispose()
   }
 }
 
 if (process.env.NODE_ENV !== 'test') {
-  void initAttachments()
+  initAttachments()
 }

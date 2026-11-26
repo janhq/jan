@@ -8,6 +8,10 @@ import {
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { i18n } from '@/i18n/react-i18next-compat'
+import { PermissionDispatcher } from '@/lib/extensions/dispatcher'
+import { createProviderFetch } from '@/lib/extensions/http'
+import { fakeHttp, redirectTo } from '@/lib/extensions/__tests__/fake-http'
 
 const mockGlobalFetch = vi.fn()
 
@@ -53,6 +57,13 @@ vi.mock('ai', () => ({
 }))
 
 const mockStartModel = vi.fn().mockResolvedValue(undefined)
+
+const hostMock = vi.hoisted(() => ({
+  providerFetch: vi.fn(),
+}))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => hostMock,
+}))
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceStore: {
@@ -296,6 +307,69 @@ describe('ModelFactory — missing API key guard', () => {
   })
 })
 
+describe('ModelFactory - extension providers', () => {
+  const provider = {
+    provider: 'acme.evil/chat',
+    active: true,
+    base_url: 'http://127.0.0.1:11999/v1',
+    api_key: 'k',
+    settings: [],
+    models: [],
+    source: { extensionId: 'acme.evil' },
+  } as unknown as ProviderObject
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', mockGlobalFetch)
+  })
+
+  it("runs inference on the extension's checked fetch, which refuses a 307 to the local API server", async () => {
+    // What a hostile baseUrl would answer: a 307 that keeps the POST body
+    // and lands on Jan's own server, which proxies with the user's keys.
+    const server = fakeHttp(({ url }) =>
+      url.includes(':11999')
+        ? redirectTo(307, 'http://127.0.0.1:1337/v1/chat/completions')
+        : { chunks: ['proxied'] }
+    )
+    const dispatcher = new PermissionDispatcher(() => 1337)
+    dispatcher.grant('acme.evil', ['network:127.0.0.1'])
+    hostMock.providerFetch.mockImplementation((extensionId: string) =>
+      createProviderFetch({
+        extensionId,
+        http: server.http,
+        checkUrl: (url) => dispatcher.checkUrl(extensionId, url),
+      })
+    )
+
+    await ModelFactory.createModel('m', provider)
+    expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.evil', 'stream')
+    const config = mockedCreateOpenAICompatible.mock.calls[0][0]
+    expect(config.baseURL).toBe('http://127.0.0.1:11999/v1')
+    await expect(
+      config.fetch!('http://127.0.0.1:11999/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer k' },
+        body: '{"model":"m","messages":[]}',
+      })
+    ).rejects.toMatchObject({ code: 'E_PERMISSION' })
+    expect(server.urls()).toEqual(['http://127.0.0.1:11999/v1/chat/completions'])
+    expect(server.headers().every((h) => h.cookie === undefined)).toBe(true)
+    const { fetch: httpFetch } = await import('@tauri-apps/plugin-http')
+    expect(httpFetch).not.toHaveBeenCalled()
+    expect(mockGlobalFetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses a provider whose extension has no network path', async () => {
+    hostMock.providerFetch.mockReturnValue(undefined)
+    await expect(ModelFactory.createModel('m', provider)).rejects.toThrow(
+      i18n.t('model-errors:extensionProviderUnavailable', {
+        provider: 'acme.evil/chat',
+      })
+    )
+    expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
+  })
+})
+
 describe('createCustomFetch — named SSE event filtering scope', () => {
   const NAMED_EVENT_STREAM = [
     'event: message_start',
@@ -389,6 +463,14 @@ describe('createCustomFetch — max_tokens coercion', () => {
   it('does not set cache_prompt for non-llamacpp providers', async () => {
     const sent = await captureSentBody({}, false, {})
     expect(sent.cache_prompt).toBeUndefined()
+  })
+
+  // The whole cross-session prompt cache depends on this field surviving the
+  // trip to the engine; a filter that dropped it would disable the feature
+  // silently, with nothing failing.
+  it('passes thread_id through to the request body', async () => {
+    const sent = await captureSentBody({ thread_id: 'thread-42' }, true, {})
+    expect(sent.thread_id).toBe('thread-42')
   })
 
   it('preserves an explicit id_slot passed via parameters (title-gen path)', async () => {

@@ -23,25 +23,19 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { paramsSettings, samplerKeysForProvider } from '@/lib/predefinedParams'
 
-const MTP_MIN_BUILD = 9193
-
-function parseBuildNumber(version: unknown): number | null {
-  if (typeof version !== 'string') return null
-  const m = version.match(/^b(\d+)$/)
-  return m ? parseInt(m[1], 10) : null
-}
-
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
 }
 
-export function ModelSetting({
-  model,
-  provider,
-}: ModelSettingProps) {
+/**
+ * Shared model-settings form + persistence, driven by both the header Sheet
+ * (ModelSetting) and the Cowork sheet (ModelSettingSheet). Keeping the
+ * handlers here avoids two copies of the debounced yaml-write / router-restart
+ * logic diverging.
+ */
+function useModelSettingControls(model: Model, provider: ProviderObject) {
   const { updateProvider } = useModelProvider()
-  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
@@ -179,8 +173,12 @@ export function ModelSetting({
         key === 'chat_template' ||
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
+        key === 'load_mode' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe'
+        key === 'n_cpu_moe' ||
+        key === 'n_cpu_ffn' ||
+        key === 'moe_cache_mib' ||
+        key === 'moe_cache_cpu_share'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -256,28 +254,30 @@ export function ModelSetting({
     true
   const fitCtxSetting = provider.settings?.find((s) => s.key === 'fit_ctx')
 
-  return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon-xs">
-          <IconSettings size={18} className="text-muted-foreground" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>
-            {t('common:modelSettings.title', {
-              modelId: getModelDisplayName(model),
-            })}
-          </SheetTitle>
-          <SheetDescription className='text-xs leading-normal'>
-            {t('common:modelSettings.description')}
-          </SheetDescription>
-        </SheetHeader>
+  return {
+    handleSettingChange,
+    handleTemplateKwargsChange,
+    handleEngineSettingChange,
+    fitEnabled,
+    fitCtxSetting,
+  }
+}
 
-        <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
+/** The settings body, shared by the header Sheet and the Cowork sheet. */
+export function ModelSettingFields({ model, provider }: ModelSettingProps) {
+  const { t } = useTranslation()
+  const {
+    handleSettingChange,
+    handleTemplateKwargsChange,
+    handleEngineSettingChange,
+    fitEnabled,
+    fitCtxSetting,
+  } = useModelSettingControls(model, provider)
+
+  return (
+    <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
           {provider.provider === 'llamacpp' && (
-            <MtpPanel modelId={model.id} provider={provider} />
+            <SpecDraftPanel modelId={model.id} />
           )}
           {provider.provider === 'llamacpp' && model.embedding !== true && (
             <ChatTemplateKwargs
@@ -379,30 +379,75 @@ export function ModelSetting({
             )
           })
           })()}
-        </div>
-      </SheetContent>
+    </div>
+  )
+}
+
+function ModelSettingSheetBody({ model, provider, onCloseAutoFocus }: ModelSettingProps & { onCloseAutoFocus?: (event: Event) => void }) {
+  const { t } = useTranslation()
+  return (
+    <SheetContent onCloseAutoFocus={onCloseAutoFocus}>
+      <SheetHeader>
+        <SheetTitle>
+          {t('common:modelSettings.title', {
+            modelId: getModelDisplayName(model),
+          })}
+        </SheetTitle>
+        <SheetDescription className="text-xs leading-normal">
+          {t('common:modelSettings.description')}
+        </SheetDescription>
+      </SheetHeader>
+      <ModelSettingFields model={model} provider={provider} />
+    </SheetContent>
+  )
+}
+
+/** Controlled variant without a trigger (Cowork opens it from a chip). */
+export function ModelSettingSheet({
+  model,
+  provider,
+  open,
+  onOpenChange,
+  onCloseAutoFocus,
+}: ModelSettingProps & {
+  onCloseAutoFocus?: (event: Event) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <ModelSettingSheetBody model={model} provider={provider} onCloseAutoFocus={onCloseAutoFocus} />
     </Sheet>
   )
 }
 
-type MtpInfo = {
+export function ModelSetting({ model, provider }: ModelSettingProps) {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon-xs">
+          <IconSettings size={18} className="text-muted-foreground" />
+        </Button>
+      </SheetTrigger>
+      <ModelSettingSheetBody model={model} provider={provider} />
+    </Sheet>
+  )
+}
+
+type SpecDraftInfo = {
   mtp_layers: number
   mtp: boolean
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
+  spec_draft_sampling?: string
+  spec_draft_n_ubatch?: number
 }
 
-function MtpPanel({
-  modelId,
-  provider,
-}: {
-  modelId: string
-  provider: ProviderObject
-}) {
+export function SpecDraftPanel({ modelId }: { modelId: string }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const [info, setInfo] = useState<MtpInfo | null>(null)
+  const [info, setInfo] = useState<SpecDraftInfo | null>(null)
 
   useEffect(() => {
     let active = true
@@ -420,18 +465,14 @@ function MtpPanel({
     }
   }, [modelId, serviceHub])
 
-  const llamacppVersion = provider.settings?.find(
-    (s) => s.key === 'llamacpp_version'
-  )?.controller_props?.value as string | undefined
-  const buildNo = parseBuildNumber(llamacppVersion)
-  const backendSupports = buildNo !== null && buildNo >= MTP_MIN_BUILD
-
   const persist = useCallback(
     async (patch: {
       mtp?: boolean
       spec_draft_n_max?: number | null
       spec_draft_n_min?: number | null
       spec_draft_p_min?: number | null
+      spec_draft_sampling?: string | null
+      spec_draft_n_ubatch?: number | null
     }) => {
       try {
         await serviceHub.models().updateMtpSettings(modelId, patch)
@@ -444,10 +485,14 @@ function MtpPanel({
 
   if (!info || info.mtp_layers <= 0) return null
 
-  const enabled = info.mtp === true && backendSupports
+  const enabled = info.mtp === true
 
   const updateNumber = (
-    key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
+    key:
+      | 'spec_draft_n_max'
+      | 'spec_draft_n_min'
+      | 'spec_draft_p_min'
+      | 'spec_draft_n_ubatch',
     raw: string
   ) => {
     const trimmed = raw.trim()
@@ -465,19 +510,19 @@ function MtpPanel({
   return (
     <div className="space-y-3">
       <div className="font-medium">
-        {t('common:modelSettings.mtp.section')}
+        {t('common:modelSettings.specDraft.section')}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-8">
           <div className="mb-1 truncate">
             <span className="font-medium">
-              {t('common:modelSettings.mtp.enable')}
+              {t('common:modelSettings.specDraft.enable')}
             </span>
           </div>
           <Switch
+            aria-label={t('common:modelSettings.specDraft.enable')}
             checked={enabled}
-            disabled={!backendSupports}
             onCheckedChange={(v) => {
               setInfo({ ...info, mtp: v })
               void persist({ mtp: v })
@@ -485,17 +530,15 @@ function MtpPanel({
           />
         </div>
         <p className="text-muted-foreground leading-normal text-xs">
-          {backendSupports
-            ? t('common:modelSettings.mtp.enableDescription')
-            : t('common:modelSettings.mtp.needsUpgrade')}
+          {t('common:modelSettings.specDraft.enableDescription')}
         </p>
       </div>
 
       {enabled && (
         <>
           <NumberRow
-            label={t('common:modelSettings.mtp.nMax')}
-            description={t('common:modelSettings.mtp.nMaxDescription')}
+            label={t('common:modelSettings.specDraft.nMax')}
+            description={t('common:modelSettings.specDraft.nMaxDescription')}
             placeholder="16"
             value={info.spec_draft_n_max}
             min={1}
@@ -503,8 +546,8 @@ function MtpPanel({
             onChange={(raw) => updateNumber('spec_draft_n_max', raw)}
           />
           <NumberRow
-            label={t('common:modelSettings.mtp.nMin')}
-            description={t('common:modelSettings.mtp.nMinDescription')}
+            label={t('common:modelSettings.specDraft.nMin')}
+            description={t('common:modelSettings.specDraft.nMinDescription')}
             placeholder="0"
             value={info.spec_draft_n_min}
             min={0}
@@ -512,14 +555,52 @@ function MtpPanel({
             onChange={(raw) => updateNumber('spec_draft_n_min', raw)}
           />
           <NumberRow
-            label={t('common:modelSettings.mtp.pMin')}
-            description={t('common:modelSettings.mtp.pMinDescription')}
+            label={t('common:modelSettings.specDraft.pMin')}
+            description={t('common:modelSettings.specDraft.pMinDescription')}
             placeholder="0.75"
             value={info.spec_draft_p_min}
             min={0}
             max={1}
             step={0.05}
             onChange={(raw) => updateNumber('spec_draft_p_min', raw)}
+          />
+          <div className="space-y-2">
+            <div className="flex items-start justify-between gap-8">
+              <div className="mb-1 truncate">
+                <span className="font-medium">
+                  {t('common:modelSettings.specDraft.probabilistic')}
+                </span>
+              </div>
+              <Switch
+                aria-label={t('common:modelSettings.specDraft.probabilistic')}
+                checked={info.spec_draft_sampling === 'probabilistic'}
+                onCheckedChange={(v) => {
+                  // Off clears the key so the model tracks upstream's greedy
+                  // default rather than pinning it.
+                  setInfo({
+                    ...info,
+                    spec_draft_sampling: v ? 'probabilistic' : undefined,
+                  })
+                  void persist({
+                    spec_draft_sampling: v ? 'probabilistic' : null,
+                  })
+                }}
+              />
+            </div>
+            <p className="text-muted-foreground leading-normal text-xs">
+              {t('common:modelSettings.specDraft.probabilisticDescription')}
+            </p>
+          </div>
+          <NumberRow
+            label={t('common:modelSettings.specDraft.nUbatch')}
+            description={t(
+              'common:modelSettings.specDraft.nUbatchDescription'
+            )}
+            placeholder="0"
+            value={info.spec_draft_n_ubatch}
+            min={0}
+            step={1}
+            onChange={(raw) => updateNumber('spec_draft_n_ubatch', raw)}
           />
         </>
       )}

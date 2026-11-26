@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Jan
+Comment=Run AI models locally or connect to cloud providers
+Exec=Jan %U
+Icon=ai.jan.Jan
+Terminal=false
+Categories=Utility;Education;Chat;
+StartupWMClass=Jan

@@ -19,6 +19,10 @@ describe('parseReasoning', () => {
     ['completed <thought>', '<thought>reason</thought>answer', { reasoningSegment: '<thought>reason</thought>', textSegment: 'answer' }],
     ['text before tags', 'Some prefix <think>Internal thought</think>Some suffix', { reasoningSegment: 'Some prefix <think>Internal thought</think>', textSegment: 'Some suffix' }],
     ['multiple tags', '<think>First</think><think>Second</think>Answer', { reasoningSegment: '<think>First</think>', textSegment: '<think>Second</think>Answer' }],
+    ['in-progress namespaced <mm:think>', '<mm:think>reasoning...', { reasoningSegment: '<mm:think>reasoning...', textSegment: '' }],
+    ['completed namespaced <mm:think>', '<mm:think>reason</mm:think>answer', { reasoningSegment: '<mm:think>reason</mm:think>', textSegment: 'answer' }],
+    ['completed <thinking>', '<thinking>reason</thinking>answer', { reasoningSegment: '<thinking>reason</thinking>', textSegment: 'answer' }],
+    ['completed <reasoning>', '<reasoning>reason</reasoning>answer', { reasoningSegment: '<reasoning>reason</reasoning>', textSegment: 'answer' }],
   ])('handles %s', (_label, input, expected) => {
     expect(parseReasoning(input)).toEqual(expected)
   })
@@ -167,6 +171,14 @@ describe('convertThreadMessageToUIMessage', () => {
     expect(result.parts).toContainEqual({ type: 'text', text: 'answer text' })
   })
 
+  it('handles namespaced <mm:think> reasoning', () => {
+    const result = convertThreadMessageToUIMessage(makeTm({
+      content: [{ type: ContentType.Text, text: { value: '<mm:think>reason</mm:think>answer text', annotations: [] } }],
+    }) as any)
+    expect(result.parts).toContainEqual({ type: 'reasoning', text: 'reason' })
+    expect(result.parts).toContainEqual({ type: 'text', text: 'answer text' })
+  })
+
   it('handles in-progress think tag', () => {
     const result = convertThreadMessageToUIMessage(makeTm({
       content: [{ type: ContentType.Text, text: { value: '<think>thinking...', annotations: [] } }],
@@ -179,6 +191,14 @@ describe('convertThreadMessageToUIMessage', () => {
       role: 'user', content: [{ type: 'image_url', image_url: { url: 'http://img.png' } }],
     }) as any)
     expect(result.parts).toContainEqual({ type: 'file', mediaType: 'image/jpeg', url: 'http://img.png' })
+  })
+
+  it('reloads a data-URL image with the media type the URL declares', () => {
+    const url = 'data:image/png;base64,iVBORw0KGgo='
+    const result = convertThreadMessageToUIMessage(makeTm({
+      role: 'user', content: [{ type: 'image_url', image_url: { url } }],
+    }) as any)
+    expect(result.parts).toContainEqual({ type: 'file', mediaType: 'image/png', url })
   })
 
   it('converts input_audio content to a file part with audio mediaType', () => {

@@ -2,7 +2,9 @@
   "htmlArtifact": {
     "code": "Code",
     "preview": "Preview",
-    "previewStreaming": "Available when generation finishes"
+    "previewStreaming": "Available when generation finishes",
+    "unresolvedAssets_one": "1 asset reference can't load in the preview. Relative paths have no base URL to resolve against.",
+    "unresolvedAssets_other": "{{count}} asset references can't load in the preview. Relative paths have no base URL to resolve against."
   },
   "assistants": "Assistants",
   "hardware": "Hardware",
@@ -14,6 +16,11 @@
   "claude_code": "Claude Code",
   "https_proxy": "HTTPS Proxy",
   "web_search": "Web Search",
+  "shell": "Shell",
+  "browse": "Browse",
+  "moreControls": "More controls",
+  "starting": "Starting...",
+  "activeSuffix": " (Active)",
   "extensions": "Extensions",
   "attachments": "Attachments",
   "general": "General",
@@ -29,6 +36,60 @@
   "appearance": "Appearance",
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
+  "home": "Home",
+  "cowork": "Cowork",
+  "newSession": "New session",
+  "artifacts": "Artifacts",
+  "customize": "Customize",
+  "local": "Local",
+  "selectFolder": "Select folder",
+  "selectModel": "Select a model first",
+  "commands": "Commands",
+  "cmdHelp": "List available commands",
+  "cmdClear": "Clear this session",
+  "cmdModels": "Switch the active model",
+  "cmdModelsHint": "Type /models then pick a model from the list",
+  "cmdModelSwitched": "Switched to {{name}}",
+  "cmdUnknown": "Unknown command: {{name}}. Try /help",
+  "cmdBusy": "Can't do that while the agent is running",
+  "cmdCompact": "Compact the session's context into a summary",
+  "cmdCompacted": "Compacted {{before}} -> {{after}} messages",
+  "cmdNothingToCompact": "Nothing to compact yet",
+  "cmdCompactFailed": "Compaction failed: {{error}}",
+  "cmdPlan": "Toggle plan mode (read-only: the agent proposes without writing)",
+  "cmdPlanOn": "Plan mode on: the agent reads and proposes without writing",
+  "cmdPlanOff": "Plan mode off: normal execution",
+  "cmdTodo": "Open the progress panel",
+  "cmdTasks": "Open the background tasks panel",
+  "cmdInit": "Study the project and write skills and memory",
+  "cmdInitRunning": "Onboarding this project",
+  "skills": "Skills",
+  "skillsInContext": "Skills available to the agent this run",
+  "skillsTitle": "Manage skills",
+  "skillsScopeProject": "Skills for {{folder}}",
+  "skillsScopeGlobal": "Global skills, available to every session",
+  "skillsScopeMerged": "Skills for {{folder}}, plus the global skills every session shares",
+  "skillOriginFolder": "folder",
+  "skillOriginGlobal": "global",
+  "skillsEmpty": "No skills yet",
+  "skillsPickOrNew": "Select a skill to edit, or create a new one.",
+  "skillNew": "New skill",
+  "skillDelete": "Delete skill",
+  "skillSave": "Save",
+  "skillSaved": "Skill saved",
+  "skillNameRequired": "Skill name is required",
+  "skillNamePlaceholder": "skill-name",
+  "skillContentPlaceholder": "Describe the reusable procedure in Markdown…",
+  "skillHubImport": "Import from hub",
+  "skillHubTitle": "Anthropic skill hub",
+  "skillHubEmpty": "No skills found on the hub",
+  "skillImport": "Import",
+  "skillReimport": "Re-import",
+  "skillImported": "Imported {{name}}",
+  "sessions": "Sessions",
+  "coworkSessionUnavailable": "This conversation has nothing to show yet.",
+  "deleteSessionTitle": "Delete session?",
+  "deleteSessionBody": "\"{{title}}\" and its transcript will be permanently deleted. This can't be undone.",
   "newChat": "New Chat",
   "newAgentChat": "New Agent Chat",
   "chats": "Chats",
@@ -81,7 +142,38 @@
   "deny": "Deny",
   "start": "Start",
   "stop": "Stop",
-  "preview": "Preview",
+  "preview": {
+    "loading": "Opening…",
+    "unsupported": "Jan can't show this kind of file. Open it to see it in another app.",
+    "outside": "This file is no longer in the session workspace.",
+    "tooLarge": "Too big to preview. Open it to see it in another app.",
+    "reload": "Reload",
+    "allowNetwork": "Allow network",
+    "unsandboxed": "Run unsandboxed: saved data and local files work",
+    "unresolvedRefs_one": "1 file this page links to can't load in the preview. Open it to see it in a browser.",
+    "unresolvedRefs_other": "{{count}} files this page links to can't load in the preview. Open it to see it in a browser.",
+    "externalRefs_one": "1 resource this page loads from the web is blocked. Turn on \"Allow network\" to load it.",
+    "externalRefs_other": "{{count}} resources this page loads from the web are blocked. Turn on \"Allow network\" to load them.",
+    "scriptErrors_one": "The page reported an error: {{message}}",
+    "scriptErrors_other": "The page reported {{count}} errors. First: {{message}}"
+  },
+  "changes": {
+    "title": "Agent changes",
+    "empty": "Files the agent writes or edits will show up here.",
+    "a11y": "Agent changes: {{files}} files, {{additions}} added, {{deletions}} removed"
+  },
+  "modelPanel": {
+    "title": "Model settings",
+    "a11y": "Open model settings"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Skill '{{name}}' is not available",
+    "kind": {
+      "skill": "Skill",
+      "command": "Command",
+      "model": "Model"
+    }
+  },
   "compactWidth": "Compact Width",
   "fullWidth": "Full Width",
   "dark": "Dark",
@@ -156,7 +248,6 @@
   "loading": "Loading...",
   "settingUpJan": "Booting up Jan…",
   "registeringExtensions": "Registering extensions…",
-  "loadingExtensions": "Loading extensions… ({{done}}/{{total}})",
   "error": "Error",
   "success": "Success",
   "warning": "Warning",
@@ -254,17 +345,20 @@
       "title": "Default sampling parameters",
       "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
     },
-    "mtp": {
-      "section": "Multi-Token Prediction (MTP)",
-      "enable": "Enable MTP",
-      "enableDescription": "Use the model's built-in MTP heads to draft multiple tokens per step. Speeds up generation when the model has MTP weights (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
-      "needsUpgrade": "Update the llama.cpp backend to build b9193 or newer to enable MTP.",
+    "specDraft": {
+      "section": "Speculative decoding",
+      "enable": "Enable speculative decoding",
+      "enableDescription": "Draft several tokens per step and verify them in one pass, which speeds up generation. Uses the model's built-in MTP heads, or the draft model downloaded with it (MTP, Eagle3, DFlash or DSpark).",
       "nMax": "Max draft tokens",
       "nMaxDescription": "Maximum number of tokens to draft per step. Default 16.",
       "nMin": "Min draft tokens",
       "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
       "pMin": "Min draft probability",
-      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75.",
+      "probabilistic": "Probabilistic draft sampling",
+      "probabilisticDescription": "Sample the draft instead of taking its most likely token, and have the model verify it by rejection sampling. Off uses greedy drafting (the default).",
+      "nUbatch": "Draft batch size",
+      "nUbatchDescription": "Physical batch size of the draft context. Lower it to save VRAM. 0 uses the model's batch size (the default)."
     },
     "templateKwargs": {
       "section": "Chat template options",
@@ -277,6 +371,9 @@
       "remove": "Remove"
     }
   },
+  "modelControls": {
+    "updateFailed": "Could not update model settings"
+  },
   "dialogs": {
     "changeDataFolder": {
       "title": "Change Data Folder Location",
@@ -285,10 +382,6 @@
       "newLocation": "New Location:",
       "cancel": "Cancel",
       "changeLocation": "Change Location"
-    },
-    "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads will be deleted. This action cannot be undone."
     },
     "deleteAllThreadsInProject": {
       "title": "Delete All Conversations",
@@ -302,6 +395,10 @@
     },
     "messageMetadata": {
       "title": "Message Metadata"
+    },
+    "deleteAllChats": {
+      "title": "Delete Conversations Outside Projects",
+      "description": "This deletes conversations that are not in a project. Project conversations, starred conversations and tasks are kept. This action cannot be undone."
     }
   },
   "errorDialog": {
@@ -319,7 +416,7 @@
   },
   "projects": {
     "title": "Projects",
-    "new": "New Projects",
+    "new": "New project",
     "addProject": "Add Project",
     "addToProject": "Add to project",
     "removeFromProject": "Remove from project",
@@ -341,9 +438,8 @@
     "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
-      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDelete": "This will permanently delete \"{{projectName}}\" and all of its conversations. This action cannot be undone.",
       "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
-      "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
       "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
       "starredWarning": "You still have starred threads within the project.",
       "deleteButton": "Delete",
@@ -368,7 +464,6 @@
       "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
-    "startNewConversation": "Start a new conversation with {{projectName}} below",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
     "conversation": "Conversation",
@@ -384,7 +479,9 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "viewProject": "View Project",
+    "sendMessageToStart": "Send a message above to start one."
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -443,9 +540,19 @@
     },
     "downloadFailed": {
       "title": "Download Failed",
-      "description": "{{item}} download failed"
+      "description": "{{item}} download failed",
+      "descriptionWithReason": "{{item}} download failed: {{reason}}",
+      "reason": {
+        "dns": "the server name could not be resolved",
+        "refused": "the connection was refused",
+        "timeout": "the connection timed out",
+        "tls": "a secure connection could not be established",
+        "proxy": "the proxy could not be reached",
+        "unreachable": "the server could not be reached"
+      }
     },
     "openSettings": "Open Settings",
+    "openLogs": "Open logs",
     "downloadTokenRequired": {
       "title": "Hugging Face token required",
       "description": "This model requires a Hugging Face access token. Add your token in Settings and retry."
@@ -498,6 +605,10 @@
       "title": "Thread Removed",
       "description": "Thread removed from \"{{projectName}}\" successfully"
     },
+    "threadProjectMoveFailed": {
+      "title": "Move Failed",
+      "description": "This conversation could not be moved. Its session is unavailable."
+    },
     "fileUploaded": {
       "title": "File Processed",
       "description": "File has been processed and indexed successfully"
@@ -536,6 +647,10 @@
     "attachmentsDisabledInfo": {
       "title": "Attachments Disabled",
       "description": "Attachments are disabled in Settings"
+    },
+    "deleteAllChats": {
+      "title": "Conversations deleted",
+      "description": "Conversations outside projects were deleted. Project conversations and tasks were kept."
     }
   },
   "errors": {
@@ -543,7 +658,12 @@
     "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit"
   },
   "files": {
-    "chunksCount": "{{count}} chunks"
+    "chunksCount": "{{count}} chunks",
+    "title": "Files",
+    "empty": "Files you attach and files the agent creates will show up here.",
+    "a11y": "Files: {{count}}",
+    "attachments": "Attachments",
+    "notImported": "not in workspace"
   },
   "llamacppBusyOnExit": {
     "title": "llama.cpp is still busy",
@@ -556,5 +676,294 @@
     "seconds": "{{count}}s",
     "minutes": "{{count}}m",
     "hours": "{{count}}h"
+  },
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "todoPanelTitle": "Progress",
+  "todoPanelEmpty": "No todo list yet.",
+  "backgroundTasks": "Background tasks",
+  "subagentsRunning_one": "{{count}} subagent running",
+  "subagentsRunning_other": "{{count}} subagents running",
+  "monitorsRunning_one": "{{count}} monitor running",
+  "monitorsRunning_other": "{{count}} monitors running",
+  "backgroundRunning_one": "{{count}} background task running",
+  "backgroundRunning_other": "{{count}} background tasks running",
+  "monitors": "Monitors",
+  "monitorPolling": "Polling",
+  "monitorMatched": "Matched",
+  "monitorTimedOut": "Timed out",
+  "monitorStopped": "Stopped",
+  "monitorEnded": "Ended",
+  "coworkWatching_one": "Watching {{count}} monitor…",
+  "coworkWatching_other": "Watching {{count}} monitors…",
+  "coworkWaitingBackground": "Waiting on background tasks…",
+  "noBackgroundTasks": "No background tasks yet.",
+  "running": "Running",
+  "queued": "Queued",
+  "waiting": "Waiting",
+  "finished": "Finished",
+  "subagentPhase": "phase {{phase}}",
+  "subagentWaiting": "waiting",
+  "viewTranscript": "View transcript",
+  "taskWorking": "Working…",
+  "taskNoOutput": "The subagent produced no visible output.",
+  "subagentToolUses_one": "{{count}} tool use",
+  "subagentToolUses_other": "{{count}} tool uses",
+  "artifactGroupCode": "Code",
+  "artifactGroupImage": "Image",
+  "artifactGroupDocument": "Document",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Audio",
+  "artifactOpenPreview": "Open preview",
+  "artifactOpenExternal": "Open",
+  "artifactMoreActions": "More actions",
+  "artifactShowInFolder": "Show in Folder",
+  "skillsUsedLabel": "Skills used",
+  "skillsUsed": "Skills used: {{skills}}",
+  "artifactsAll": "All",
+  "artifactsEmpty": "Nothing produced yet. Files created in your conversations show up here.",
+  "artifactsNoMatch": "No artifacts match.",
+  "artifactsSearch": "Search artifacts",
+  "artifactsShowMore": "Show {{count}} more",
+  "workspace": {
+    "readsFrom": "Works in",
+    "writable": "read & write",
+    "footnote": "The agent reads and edits this folder directly. Review what changed in the diff panel.",
+    "chatFootnote": "Jan reads this folder freely and asks you before every edit or command that runs in it.",
+    "footnoteEmpty": "Attach a folder to let the agent work on your project. It can read and edit files inside it.",
+    "attach": "Attach a folder",
+    "change": "Change folder",
+    "detach": "Detach folder",
+    "open": "Open",
+    "reveal": "Reveal",
+    "unavailable": "Workspace unavailable",
+    "missing": "The workspace folder {{folder}} is no longer available. Choose a different folder.",
+    "openFailed": "Couldn't open workspace",
+    "revealFailed": "Couldn't reveal workspace",
+    "saveFailed": "Couldn't save the folder for this chat",
+    "a11yWithFolder": "Project folder {{folder}}, attached with read and write access. Change or detach it.",
+    "a11yNoFolder": "No project folder attached. Attach one."
+  },
+  "coworkEmpty": {
+    "title": "What are we working on?",
+    "subtitleSandbox": "Give Jan a task. It reads and writes files, runs commands, and works through the steps on its own.",
+    "subtitleFolder": "Give Jan a task. It works directly in {{folder}}, reading and editing files on its own.",
+    "try": "Try",
+    "sandbox": {
+      "first": "Write a Python script that renames files by the date they were taken",
+      "second": "Build a single-page dashboard from a CSV I'll paste in",
+      "third": "Draft a README for a project I describe to you"
+    },
+    "folder": {
+      "first": "Explain how {{folder}} is put together",
+      "second": "Find every TODO in {{folder}} and group them by area",
+      "third": "Write tests for the part of {{folder}} I point you at"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "No terminal",
+    "a11y": "Running commands is turned off. Details.",
+    "title": "Running commands is turned off",
+    "body": "Jan lets the agent run shell commands only when your system can confine them. No sandbox is available here, so the agent can read, write and edit files in its sandbox — but not run anything.",
+    "fixLinux": "Linux uses bubblewrap. Install it, then restart Jan.",
+    "fixMac": "macOS uses the built-in sandbox at /usr/bin/sandbox-exec. Restart Jan once it is available.",
+    "fixWindows": "Windows uses AppContainer. Restart Jan to try again.",
+    "recheck": "Check again"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Plan first — the agent reads and proposes, without writing.",
+    "tooltipOn": "Planning. Turn this off to let the agent write files.",
+    "onAnnounce": "Plan mode on",
+    "placeholder": "Ask for a plan. The agent won't change any files."
+  },
+  "budget": {
+    "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
+    "keepGoing": "Keep going",
+    "stoppedTokens": "Stopped — this conversation hit its token budget.",
+    "compact": "Compact",
+    "newSession": "New session"
+  },
+  "run": {
+    "stopped": "Stopped.",
+    "failed": "The run stopped early.",
+    "tryAgain": "Try again"
+  },
+  "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
+  "coworkExtensionProvider": "Cowork cannot run on a provider added by an extension. Pick another model, or use it in a chat.",
+  "askContinue": "Continue",
+  "askNext": "Next question",
+  "askPageOf": "{{current}} of {{total}}",
+  "askPrev": "Previous question",
+  "askSkipped": "Skipped",
+  "askRecommended": "Recommended",
+  "askSelectedCount": "{{count}} selected",
+  "askSomethingElse": "Something else",
+  "submit": "Submit",
+  "coworkSync": {
+    "journalUnreadableTitle": "Some imported Cowork conversations are hidden",
+    "journalUnreadableDescription": "Jan can't read its deletion record, so conversations imported from an older version stay hidden rather than risk restoring ones you already deleted, and deleting any Cowork conversation is temporarily blocked. Your data is untouched. To recover: quit Jan completely first, because Jan rewrites settings.json from memory while it runs and would undo your edit. Then fix or remove the 'cowork_deleted_ids' entry in settings.json. Removing it restores every imported conversation, including any you had deleted.",
+    "missingThreadTitle": "A Cowork conversation could not be saved",
+    "missingThreadDescription": "Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.",
+    "writeRefusedTitle": "A Cowork conversation cannot be saved",
+    "writeRefusedDescription": "Jan cannot store this conversation under its current id, so changes are not saved. You can still read, export or delete it.",
+    "closeFailedTitle": "Jan could not save everything, so it stayed open",
+    "closeFailedDescription": "Your latest changes are still in memory. Close the window again to retry saving.",
+    "closeForceDescription": "Saving keeps failing. You can close without saving, which loses the changes that could not be written.",
+    "closeAnyway": "Close without saving",
+    "quitFailedDescription": "Your latest changes are still in memory. Quit again to retry saving.",
+    "quitAnyway": "Quit without saving"
+  },
+  "messageWrites": {
+    "failedTitle": "Some messages could not be saved",
+    "failedDescription": "Jan keeps retrying. Until it succeeds, recent messages exist only in this window.",
+    "retry": "Retry now"
+  },
+  "threadRoute": {
+    "notReadyTitle": "This conversation isn't ready yet",
+    "notReadyDescription": "Jan could not confirm whether this conversation is a chat or a Cowork task. Retry; if this persists, restart the app.",
+    "retry": "Retry"
+  },
+  "agentSettings": "Agent",
+  "sidebar": {
+    "more": "More",
+    "toggle": "Toggle sidebar",
+    "navigation": "Navigation",
+    "navigationDescription": "Jump to chats, projects, artifacts, skills and settings."
+  },
+  "composer": {
+    "addControls": "Add attachments and controls",
+    "assistant": "Assistant",
+    "allTools": "All Tools",
+    "samplingParameters": "Sampling parameters",
+    "openAssistantSettings": "Open assistant settings",
+    "samplingSaveFailed": "Could not save sampling parameters. Please try again.",
+    "context": "Context: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Select a model",
+    "none": "None",
+    "triggerLabel": "Select model: {{name}}",
+    "dialogLabel": "Choose a model",
+    "searchLabel": "Search models or providers",
+    "searchPlaceholder": "Search models or providers...",
+    "listLabel": "Models",
+    "noMatches": "No matching models",
+    "noModels": "No models configured",
+    "optionsLabel": "Model options",
+    "reasoning": "Reasoning",
+    "reasoningMode": "Reasoning mode",
+    "reasoningEffort": "Reasoning effort",
+    "thinkingBudget": "Thinking budget",
+    "modelSettings": "Model settings",
+    "manageModels": "Manage models",
+    "effort": {
+      "default": "Default",
+      "auto": "Auto",
+      "on": "On",
+      "off": "Off",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Very high",
+      "unlimited": "Unlimited"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Add to a project",
+    "newProject": "New project",
+    "noProjects": "No projects yet",
+    "addFolderAction": "Add folder"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Select a tool-capable model before adding folder access.",
+    "folderUnsupported": "This model can't use tools, so a folder can't be added. Regular chat still works.",
+    "removeProject": "Remove project selection",
+    "temporary": "A temporary chat keeps no folder access."
+  },
+  "skillDestination": "Save new skills to",
+  "skillDestinationFolder": "This folder",
+  "skillDestinationGlobal": "Global (every conversation)",
+  "overview": {
+    "title": "Conversation overview",
+    "description": "Progress, files and background tasks for this conversation.",
+    "resize": "Resize side panel",
+    "close": "Hide conversation overview",
+    "progress": "Progress",
+    "files": "Files",
+    "backgroundTasks": "Background tasks",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitors",
+    "noProgress": "Steps will appear as Jan works.",
+    "noFiles": "Files will appear here."
+  },
+  "artifactsLibraryDescription": "Files created across your conversations, all in one place.",
+  "artifactsLibraryCount_one": "{{count}} file",
+  "artifactsLibraryCount_other": "{{count}} files",
+  "artifactsLibraryFilter": "Filter by file type",
+  "artifactsLibraryReset": "Clear filters",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "This task could not be imported",
+      "body": "Jan could not move this task over from the previous version and stopped trying. Nothing was lost: the original is still kept. You can try again, or export it to a file."
+    },
+    "id-collision": {
+      "title": "This task could not be imported",
+      "body": "Another conversation already uses the same id, so this task is shown read-only and the other conversation is left untouched. Export it to keep a copy."
+    },
+    "missing-sidecar": {
+      "title": "This task's history is missing",
+      "body": "The saved history of this task could not be found, so it is shown read-only. Its files on disk are kept as they are."
+    },
+    "unreadable-sidecar": {
+      "title": "This task's history cannot be read",
+      "body": "The saved history of this task is damaged or from a newer version of Jan, so it is shown read-only and never overwritten."
+    },
+    "missing-thread": {
+      "title": "This task was removed from storage",
+      "body": "This task's conversation is no longer on disk. What is shown is the copy still in memory; export it to keep it."
+    },
+    "reason": "Reason: {{reason}}",
+    "retry": "Try again",
+    "retrying": "Trying...",
+    "export": "Export",
+    "exported": "Task exported",
+    "exportFailed": "Could not export the task",
+    "imported": "Task imported",
+    "retryFailed": "The task still could not be imported",
+    "revealFailed": "Could not open the folder",
+    "leftOut": {
+      "title": "Some files were not copied",
+      "body_one": "{{count}} item from this task's old folder (a link, or a file Jan was not allowed to read) was not copied. The original folder is kept as it was.",
+      "body_other": "{{count}} items from this task's old folder (links, or files Jan was not allowed to read) were not copied. The original folder is kept as it was.",
+      "show": "Show original folder"
+    }
+  },
+  "deleteThreadFailed": "Could not delete the conversation. It may come back after a restart.",
+  "continueAsTask": {
+    "action": "Continue as task",
+    "title": "Continue this chat as a task?",
+    "description": "Jan keeps this conversation and continues it as a Cowork task. A task can run tools, write files and run commands in its own workspace without asking for each step. You cannot switch it back to a chat.",
+    "descriptionFolder": "Jan keeps this conversation and continues it as a Cowork task. A task can edit files and run commands in {{folder}} without asking for each change. You cannot switch it back to a chat.",
+    "confirm": "Continue as task"
+  },
+  "untitledThread": "your conversation",
+  "runNotification": {
+    "finish": {
+      "title": "Jan finished the task",
+      "body": "{{name}} is ready."
+    },
+    "error": {
+      "title": "Jan task failed",
+      "body": "{{name}} stopped with an error."
+    },
+    "approval": {
+      "title": "Jan needs your approval",
+      "body": "{{name}} is waiting for you to approve a tool call."
+    },
+    "cancel": {
+      "title": "Jan task cancelled",
+      "body": "{{name}} was cancelled."
+    }
   }
 }

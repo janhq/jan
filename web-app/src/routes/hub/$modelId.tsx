@@ -20,7 +20,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
-import { isMtpQuant, pickMtpSibling } from '@/lib/mtp'
+import { isSpecSidecar, pickSpecSibling } from '@/lib/specDraft'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -88,10 +88,10 @@ function HubModelDetailContent() {
     return sources.find((model) => model.model_name === modelId) ?? repoData
   }, [sources, modelId, repoData])
 
-  // MTP companion ggufs are draft models paired with a real quant at download
+  // Speculative draft companions are paired with a real quant at download
   // time, not standalone models — keep them out of the selectable variant list.
   const displayQuants = useMemo(
-    () => modelData?.quants?.filter((q) => !isMtpQuant(q)) ?? [],
+    () => modelData?.quants?.filter((q) => !isSpecSidecar(q)) ?? [],
     [modelData]
   )
 
@@ -275,15 +275,6 @@ function HubModelDetailContent() {
                 <div className="text-muted-foreground mb-4">
                   <RenderMarkdown
                     className="select-none reset-heading"
-                    components={{
-                      a: ({ ...props }) => (
-                        <a
-                          {...props}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        />
-                      ),
-                    }}
                     content={
                       extractDescription(modelData.description) ||
                       modelData.description
@@ -438,10 +429,10 @@ function HubModelDetailContent() {
                                             'mmproj-f16'
                                         ) || modelData.mmproj_models?.[0]
                                       )?.path
-                                      const mtpPath = pickMtpSibling(
+                                      const specDraft = pickSpecSibling(
                                         modelData.quants,
                                         variant
-                                      )?.path
+                                      )
                                       setResumeParams(variant.model_id, {
                                         modelPath: variant.path,
                                         mmprojPath,
@@ -455,7 +446,8 @@ function HubModelDetailContent() {
                                           mmprojPath,
                                           huggingfaceToken,
                                           undefined,
-                                          mtpPath
+                                          specDraft?.quant.path,
+                                          specDraft?.kind
                                         )
                                     }}
                                     className={cn(isDownloading && 'hidden')}
@@ -493,18 +485,7 @@ function HubModelDetailContent() {
                   </div>
                 ) : readmeContent ? (
                   <div className="prose prose-invert max-w-none">
-                    <RenderMarkdown
-                      components={{
-                        a: ({ ...props }) => (
-                          <a
-                            {...props}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          />
-                        ),
-                      }}
-                      content={readmeContent}
-                    />
+                    <RenderMarkdown content={readmeContent} />
                   </div>
                 ) : (
                   <div className="flex items-center justify-center py-8">

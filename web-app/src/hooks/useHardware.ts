@@ -25,16 +25,17 @@ export interface GPU {
   uuid: string
   driver_version: string
   activated?: boolean
+  // Null when the GPU is not visible to that API.
   nvidia_info: {
     index: number
     compute_capability: string
-  }
+  } | null
   vulkan_info: {
     index: number
     device_id: number
     device_type: string
     api_version: string
-  }
+  } | null
 }
 
 export interface OS {

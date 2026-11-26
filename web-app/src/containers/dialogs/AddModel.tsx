@@ -17,6 +17,7 @@ import { getProviderTitle } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getModelCapabilities } from '@/lib/models'
 import { toast } from 'sonner'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
 
 type DialogAddModelProps = {
   provider: ModelProvider
@@ -71,12 +72,17 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <Button variant="secondary" size="icon-xs">
+          <Button
+            data-testid="add-model-trigger"
+            variant="secondary"
+            size="icon-xs"
+          >
             <IconPlus size={18} className="text-muted-foreground" />
           </Button>
         )}
       </DialogTrigger>
       <DialogContent
+        data-testid="add-model-dialog"
         onEscapeKeyDown={(e: KeyboardEvent) => {
           if (isComboboxOpen) {
             e.preventDefault()
@@ -87,7 +93,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
           <DialogTitle>{t('providers:addModel.title')}</DialogTitle>
           <DialogDescription>
             {t('providers:addModel.description', {
-              provider: getProviderTitle(provider.provider),
+              provider: getProviderTitle(provider),
             })}
           </DialogDescription>
         </DialogHeader>
@@ -117,23 +123,22 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
         {/* Explore models link */}
         {provider.explore_models_url && (
           <div className="text-sm text-muted-foreground">
-            <a
+            <ExternalAnchor
               href={provider.explore_models_url}
-              target="_blank"
-              rel="noopener noreferrer"
               className="flex items-center gap-1 hover:underline"
             >
               <span>
                 {t('providers:addModel.exploreModels', {
-                  provider: getProviderTitle(provider.provider),
+                  provider: getProviderTitle(provider),
                 })}
               </span>
-            </a>
+            </ExternalAnchor>
           </div>
         )}
 
         <DialogFooter>
           <Button
+            data-testid="add-model-submit"
             variant="default"
             size="sm"
             onClick={handleSubmit}

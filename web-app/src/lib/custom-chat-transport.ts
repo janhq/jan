@@ -10,39 +10,53 @@ import {
   type LanguageModelUsage,
   jsonSchema,
   InvalidToolInputError,
+  lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
+import {
+  encodeMcpToolImages,
+  hasToolImageSentinel,
+  stripToolImageSentinels,
+  toContentToolOutputs,
+} from './tool-image-sentinel'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
+import { buildsOwnToolImageRequest } from './providerCaps'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { CHAT_FOLDER_TOOL_NAMES, chatFolderOf } from '@/lib/chatFolder'
+import { useChatShell } from '@/hooks/useChatShell'
 import {
   WEB_SEARCH_DESCRIPTION,
   WEB_SEARCH_INPUT_SCHEMA,
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
-import { useAppState } from '@/hooks/useAppState'
+import {
+  CHAT_AGENT_TOOL_NAMES,
+  getAgentToolSchemas,
+  memoryDigestNow,
+  refreshMemoryDigest,
+  sandboxEnforces,
+} from '@/lib/agentTools'
+import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
+import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
-import { describeEngineError } from '@/lib/engineError'
-import { i18n } from '@/i18n/react-i18next-compat'
-import { ExtensionManager } from '@/lib/extension'
+import { engineFailure } from '@/lib/engineError'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { extensionAuthorMetadata } from '@/lib/extensions/authorship'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
   tokensForThinkingBudgetLevel,
   isThinkingBudgetLevelKey,
 } from '@/lib/thinkingBudget'
 import { buildReasoningProviderOptions } from '@/lib/reasoningProviderOptions'
-import {
-  ExtensionTypeEnum,
-  VectorDBExtension,
-  type MCPTool,
-} from '@janhq/core'
+import { ServiceKeys, type MCPTool } from '@janhq/core'
 import {
   trimMessages,
   compactMessages,
@@ -51,10 +65,21 @@ import {
 } from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
-import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
-import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
+import {
+  encodeAudioSentinel,
+  hasAudioSentinel,
+  parseAudioDataUrl,
+} from '@/lib/audio-sentinel'
+import {
+  encodeVideoSentinel,
+  hasVideoSentinel,
+  parseVideoDataUrl,
+} from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
+import { PING_OPEN } from '@/lib/coworkPing'
 import { paramsSettings } from '@/lib/predefinedParams'
+import { CHAT_SLOT_ID } from '@/constants/models'
+import { createStepMetadata } from '@/lib/stepMetadata'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -68,8 +93,19 @@ export type OnFinishCallback = (params: {
   message: UIMessage
   isAbort?: boolean
 }) => void
+/** The provider and model a request runs on. */
+export type ModelSelection = {
+  selectedProvider: string
+  selectedModel: Model | null
+}
 /** Partial assistant output replayed as a prefill to resume a stopped turn. */
-export type ContinuationContent = { text?: string; reasoning?: string }
+export type ContinuationContent = {
+  text?: string
+  reasoning?: string
+  /** The extension that wrote the stopped reply, if one did: the continued
+   * reply replaces it and must keep its author (see extensions/authorship). */
+  extensionAuthor?: string
+}
 export type ServiceHub = {
   rag(): {
     getTools(): Promise<
@@ -100,10 +136,11 @@ const SCHEMA_PRIMITIVE_TYPES = new Set([
 const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
 const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
 
-// Per-model sidebar keys whose values should be forwarded into each chat-
-// completion request body as defaults. In router mode these can't be CLI args
-// — the router is one process serving every model — so they have to ride
-// along on each call. Assistant `parameters` override these in the merge.
+// Per-model sidebar keys forwarded into each chat-completion request body as
+// defaults. These *are* also written into the model's own preset section, so
+// this is not the only path -- it exists so a sidebar change applies without
+// regenerating the preset and reloading the engine. Assistant `parameters`
+// override these in the merge.
 const MODEL_SAMPLING_SETTING_KEYS = [
   'temperature',
   'top_k',
@@ -115,6 +152,26 @@ const MODEL_SAMPLING_SETTING_KEYS = [
   'frequency_penalty',
 ] as const
 
+/** Keys whose upstream handler throws on a negative value. */
+const NON_NEGATIVE_SAMPLING_KEYS = new Set<string>([
+  'repeat_last_n',
+  'dry_penalty_last_n',
+])
+
+/**
+ * llama.cpp's own defaults for the sampling keys that set the
+ * suppress-the-GGUF-recommendation bit. Keys absent here set no bit and are
+ * always forwarded.
+ */
+const UPSTREAM_SAMPLING_DEFAULTS: Record<string, number> = {
+  temperature: 0.8,
+  top_k: 40,
+  top_p: 0.95,
+  min_p: 0.05,
+  repeat_last_n: 64,
+  repeat_penalty: 1.0,
+}
+
 function extractModelSamplingDefaults(
   model: Model | null | undefined
 ): Record<string, unknown> {
@@ -125,13 +182,28 @@ function extractModelSamplingDefaults(
     if (raw === undefined || raw === null || raw === '') continue
     // Sidebar inputs are string-typed even when controller_props.type is
     // 'number'; coerce so the request body matches the OpenAI schema.
+    let value: unknown = raw
     if (typeof raw === 'string') {
       const n = Number(raw)
       if (!Number.isFinite(n)) continue
-      out[key] = n
-    } else {
-      out[key] = raw
+      value = n
     }
+    // The server rejects a negative window outright rather than clamping, so a
+    // value left over from the old "-1 = full context" UI would 400 every
+    // request. Dropping it lets the server's own default apply.
+    if (
+      NON_NEGATIVE_SAMPLING_KEYS.has(key) &&
+      typeof value === 'number' &&
+      value < 0
+    ) {
+      continue
+    }
+    // Forwarding a value equal to llama.cpp's default is not a no-op: it sets a
+    // bit that suppresses the GGUF's own recommended sampling, so an
+    // untouched-looking default would silently override what the model asked
+    // for. Same rule preset.ts applies.
+    if (UPSTREAM_SAMPLING_DEFAULTS[key] === value) continue
+    out[key] = value
   }
   return out
 }
@@ -194,6 +266,19 @@ async function resolveThinkingBudgetTokens(
   }
   return tokensForThinkingBudgetLevel(rawLevel, contextSize || 8192)
 }
+
+export function effectiveContextWindow(
+  configuredContextTokens: number,
+  liveContextTokens: number | undefined,
+  contextShiftEnabled: boolean
+): number {
+  return contextShiftEnabled &&
+    typeof liveContextTokens === 'number' &&
+    liveContextTokens > 0
+    ? liveContextTokens
+    : configuredContextTokens
+}
+
 
 /**
  * Coerce a schema-node slot into a valid sub-schema. Some tool generators
@@ -313,34 +398,40 @@ function isAssistantMessageEmpty(message: UIMessage): boolean {
 }
 
 /**
- * Merge `b`'s parts onto `a`'s parts. When adjacent text parts meet at the
- * boundary, they're concatenated with a blank-line separator so the merged
- * message reads as one continuous turn rather than two.
+ * Parts of an unanswered user turn to keep when a newer user turn replaces it:
+ * its attachments, but not its question. The UI still shows those attachments
+ * in the earlier bubble, so a follow-up like "what is in it?" must still reach
+ * the model with them. By this point images are `file` parts, audio and video
+ * are sentinel-only text parts, and documents are an [ATTACHED_FILES] block
+ * (plus any inlined contents) appended after the question text. Cowork pings
+ * are carried too.
  */
-function mergeMessageParts(
-  a: UIMessage['parts'],
-  b: UIMessage['parts']
+function carryAttachmentsForward(
+  dropped: UIMessage['parts'],
+  kept: UIMessage['parts']
 ): UIMessage['parts'] {
-  const aParts = Array.isArray(a) ? [...a] : []
-  const bParts = Array.isArray(b) ? b : []
-  for (const part of bParts) {
-    const last = aParts[aParts.length - 1]
-    if (
-      last &&
-      (last as { type?: string }).type === 'text' &&
-      (part as { type?: string }).type === 'text' &&
-      typeof (last as { text?: string }).text === 'string' &&
-      typeof (part as { text?: string }).text === 'string'
-    ) {
-      aParts[aParts.length - 1] = {
-        ...(last as object),
-        text: `${(last as { text: string }).text}\n\n${(part as { text: string }).text}`,
-      } as (typeof aParts)[number]
-    } else {
-      aParts.push(part)
+  const attachments: UIMessage['parts'] = []
+  for (const part of Array.isArray(dropped) ? dropped : []) {
+    if (part.type === 'file') {
+      attachments.push(part)
+    } else if (part.type === 'text' && typeof part.text === 'string') {
+      // Cowork's <SYSTEM> pings (finished subagents) ride as their own user
+      // turn; they are context the model has not seen yet, not a question.
+      if (
+        hasAudioSentinel(part.text) ||
+        hasVideoSentinel(part.text) ||
+        part.text.trimStart().startsWith(PING_OPEN)
+      ) {
+        attachments.push(part)
+        continue
+      }
+      const filesAt = part.text.indexOf('[ATTACHED_FILES]')
+      if (filesAt !== -1) {
+        attachments.push({ ...part, text: part.text.slice(filesAt) })
+      }
     }
   }
-  return aParts as UIMessage['parts']
+  return [...attachments, ...(Array.isArray(kept) ? kept : [])]
 }
 
 /**
@@ -356,9 +447,10 @@ function mergeMessageParts(
  * server side. We fix that here by:
  *
  * 1. Dropping assistant placeholders with no content (failed turns).
- * 2. Merging any remaining adjacent user messages by concatenating their
- *    text parts and appending their non-text parts. This preserves all of
- *    the user's content — nothing is silently dropped.
+ * 2. Keeping only the last of any adjacent user messages. The earlier ones
+ *    were never answered; merging their text would resend a failed question
+ *    inside the next one while the UI shows them as separate bubbles. Their
+ *    attachments are carried forward (see carryAttachmentsForward).
  *
  * Adjacent assistant messages are intentionally left alone: the Anthropic
  * serial-tool-use wave-split in `sendMessages` deliberately produces them.
@@ -437,25 +529,54 @@ export function stripUnsupportedImageParts(
       return message
     }
     let touched = false
-    const nextParts = message.parts.filter((part) => {
-      const type = (part as { type?: string }).type
-      if (type === 'image') {
-        touched = true
-        return false
-      }
-      if (type === 'file') {
-        const mediaType = (part as { mediaType?: string }).mediaType
-        if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+    const nextParts = message.parts
+      .filter((part) => {
+        const type = (part as { type?: string }).type
+        if (type === 'image') {
           touched = true
           return false
         }
-      }
-      return true
-    })
+        if (type === 'file') {
+          const mediaType = (part as { mediaType?: string }).mediaType
+          if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+            touched = true
+            return false
+          }
+        }
+        return true
+      })
+      .map((part) => {
+        // A tool image (see tool-image-sentinel.ts) would decode into an
+        // image_url part on the tool message; a text-only model rejects that.
+        // An error reaches the model the same way a result does.
+        const next: Record<string, string> = {}
+        if (
+          'output' in part &&
+          typeof part.output === 'string' &&
+          hasToolImageSentinel(part.output)
+        ) {
+          next.output = stripToolImageSentinels(part.output, TOOL_IMAGE_OMITTED)
+        }
+        if (
+          'errorText' in part &&
+          typeof part.errorText === 'string' &&
+          hasToolImageSentinel(part.errorText)
+        ) {
+          next.errorText = stripToolImageSentinels(
+            part.errorText,
+            TOOL_IMAGE_OMITTED
+          )
+        }
+        if (Object.keys(next).length === 0) return part
+        touched = true
+        return { ...part, ...next } as typeof part
+      })
     if (!touched) return message
     return { ...message, parts: nextParts } as UIMessage
   })
 }
+
+const TOOL_IMAGE_OMITTED = ' (image omitted: the model has no vision)'
 
 const RESOLVED_TOOL_STATES = new Set([
   'output-available',
@@ -501,6 +622,36 @@ export function resolveOrphanToolCalls(messages: UIMessage[]): UIMessage[] {
           (part as { errorText?: string }).errorText ??
           'Tool call did not complete (interrupted by an earlier error).',
       } as typeof part
+    })
+
+    if (!mutated) return message
+    return { ...message, parts: nextParts }
+  })
+}
+
+/**
+ * Give every tool-call part on an assistant message an `input`.
+ *
+ * A tool call cut off before its arguments finished streaming (the reply hit
+ * the output-token limit, or the arguments never parsed) is kept with no
+ * `input`, and it is stored that way. `convertToModelMessages` then renders a
+ * tool call with `input: undefined`, which OpenAI-compatible providers send as
+ * a function call with no `arguments` field. Providers that require the field
+ * (DeepSeek: "missing field `arguments`") reject every later request in the
+ * thread. The call never ran, so an empty object loses nothing.
+ */
+export function fillMissingToolInputs(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message
+    const parts = Array.isArray(message.parts) ? message.parts : []
+
+    let mutated = false
+    const nextParts = parts.map((part) => {
+      const type = (part as { type?: string }).type
+      if (type !== 'dynamic-tool' && !type?.startsWith('tool-')) return part
+      if ((part as { input?: unknown }).input != null) return part
+      mutated = true
+      return { ...(part as object), input: {} } as typeof part
     })
 
     if (!mutated) return message
@@ -577,14 +728,47 @@ export function coalesceMessagesForAlternation(
     const cur = filtered[i]
     if (prev.role === 'user' && cur.role === 'user') {
       out[out.length - 1] = {
-        ...prev,
-        parts: mergeMessageParts(prev.parts, cur.parts),
+        ...cur,
+        parts: carryAttachmentsForward(prev.parts, cur.parts),
       }
     } else {
       out.push(cur)
     }
   }
   return out
+}
+
+const LOCAL_ENGINE_PROVIDERS: Record<string, true> = {
+  llamacpp: true,
+  mlx: true,
+}
+
+const LOOPBACK_HOSTS: Record<string, true> = {
+  localhost: true,
+  // What some local servers print as their listen address.
+  '0.0.0.0': true,
+  // URL.hostname keeps the brackets on IPv6 literals.
+  '[::1]': true,
+}
+
+/**
+ * Jan's own engines and any server on this machine (Ollama, LM Studio, a
+ * local llama-server). Their 5xx is deterministic and a retry re-runs the
+ * whole prompt, so such requests are not retried.
+ */
+export function isLocalChatServer(
+  providerId: string,
+  baseUrl: string | undefined
+): boolean {
+  if (LOCAL_ENGINE_PROVIDERS[providerId]) return true
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname
+    // URL has already normalised IPv4, so 127.0.0.0/8 is a prefix match.
+    return !!LOOPBACK_HOSTS[host] || /^127\.\d+\.\d+\.\d+$/.test(host)
+  } catch {
+    return false
+  }
 }
 
 const TOOL_RESPONSE_ONLY = /^<tool_response>[\s\S]*<\/tool_response>$/
@@ -726,7 +910,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
-  private tools: Record<string, Tool> = {}
+  protected tools: Record<string, Tool> = {}
   // Smart tool routing selects tools from the latest user message, which would
   // change the tool set (and thus the cached prompt prefix) every turn. Freeze
   // the routed set for the thread's lifetime so the prefix stays stable;
@@ -737,9 +921,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private hasDocuments = false
   private modelSupportsTools = false
   private ragFeatureAvailable = false
-  private systemMessage?: string
-  private serviceHub: ServiceHub | null
-  private threadId?: string
+  protected systemMessage?: string
+  protected serviceHub: ServiceHub | null
+  protected threadId?: string
   private continueFromContent: ContinuationContent | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
@@ -749,6 +933,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * clear loading/stream state that the newer request has already set.
    */
   private streamGeneration = 0
+  /**
+   * The model the current turn started on. A tool loop's follow-up requests
+   * reuse it rather than the global selection, which follows the open thread:
+   * a turn that carries on after the user opens another thread must not be
+   * sent to that thread's model or provider (#9311).
+   */
+  private turnModelSelection: ModelSelection | null = null
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -757,8 +948,64 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
   }
 
+  protected getModelSelection(): ModelSelection {
+    return useModelProvider.getState()
+  }
+
+  /** The model of this transport's current (or last) turn, if one has run. */
+  getTurnModelSelection(): ModelSelection | null {
+    return this.turnModelSelection
+  }
+
+  /**
+   * The model a request runs on. The SDK's automatic follow-up, sent once the
+   * turn's tool calls all have outcomes, continues that turn on its model.
+   * Anything else starts a turn on the current selection, including a
+   * regenerate, whose history can end on the same completed tool calls.
+   */
+  private resolveTurnModelSelection(
+    messages: UIMessage[],
+    trigger: 'submit-message' | 'regenerate-message'
+  ): ModelSelection {
+    const continuesTurn =
+      this.turnModelSelection !== null &&
+      trigger === 'submit-message' &&
+      lastAssistantMessageIsCompleteWithToolCalls({ messages })
+    if (!continuesTurn) {
+      const { selectedProvider, selectedModel } = this.getModelSelection()
+      this.turnModelSelection = { selectedProvider, selectedModel }
+    }
+    return this.turnModelSelection!
+  }
+
   setLastUserMessage(message: string): void {
     this.lastUserMessage = message
+  }
+
+  /**
+   * Whether this transport's load state and its `llamacpp-model-load-progress`
+   * events belong to a Cowork run. Cowork overrides the two writers below and
+   * this flag so the load card is fed from useCoworkRun's session mirror,
+   * keeping session ids out of useAppState's thread-keyed slots (which drive
+   * chat-thread active detection).
+   */
+  protected get streamRoutesToCowork(): boolean {
+    return false
+  }
+
+  /** Route the model-loading flag. Base writes useAppState (global + thread). */
+  protected setLoadingModel(threadId: string, loading: boolean): void {
+    useAppState.getState().updateLoadingModel(loading)
+    useAppState.getState().updateThreadLoadingModel(threadId, loading)
+  }
+
+  /** Route model-load progress. Base writes useAppState (global + thread). */
+  protected setModelLoadProgress(
+    threadId: string,
+    progress: ModelLoadProgress | undefined
+  ): void {
+    useAppState.getState().updateModelLoadProgress(progress)
+    useAppState.getState().updateThreadModelLoadProgress(threadId, progress)
   }
 
   updateSystemMessage(systemMessage: string | undefined) {
@@ -812,7 +1059,59 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
-  async refreshTools(abortSignal?: AbortSignal) {
+  /**
+   * llama.cpp slot pin for this surface. Every surface shares slot 0 -- the one
+   * index guaranteed to exist -- and overrides only `thread_id`, which is what
+   * the engine parks and restores the slot's KV cache by. See CHAT_SLOT_ID.
+   */
+  protected slotParams(threadId?: string): Record<string, unknown> {
+    return { id_slot: CHAT_SLOT_ID, thread_id: threadId }
+  }
+
+  /**
+   * The system turn for this surface. Whitespace-only prompts collapse to
+   * undefined so we don't send a useless system turn that some chat templates
+   * still wrap into special tokens.
+   */
+  protected buildSystemPrompt(messages: UIMessage[]): string | undefined {
+    const raw =
+      [
+        this.systemMessage,
+        this.buildMemorySystemInstruction(),
+        this.buildFilesSystemInstruction(messages),
+        this.buildWebSearchSystemInstruction(),
+        this.buildAgentToolsSystemInstruction(),
+      ]
+        .filter((s) => typeof s === 'string' && s.trim().length > 0)
+        .join('\n\n') || undefined
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw : undefined
+  }
+
+  /**
+   * Many chat templates (Qwen3.5+) reject a window with no genuine user query
+   * and throw a cryptic Jinja error. Fail early with a clear message when
+   * deletion/eviction has left no real user turn to respond to.
+   */
+  protected assertSendable(messages: UIMessage[]): void {
+    if (!hasGenuineUserQuery(messages)) {
+      throw new Error(
+        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
+      )
+    }
+  }
+
+  /**
+   * @param modelSelection The model the tools are built for: the request's own
+   * when called from sendMessages, else the current selection.
+   */
+  async refreshTools(
+    abortSignal?: AbortSignal,
+    modelSelection: ModelSelection = this.getModelSelection()
+  ) {
+    // Resolve the memory digest before the prompt is built: the builder is
+    // sync, so it reads the snapshot this await guarantees. Error-safe and
+    // cached inside agentTools, so this is one IPC round-trip per store change.
+    await refreshMemoryDigest()
     if (!this.serviceHub) {
       this.tools = {}
       return
@@ -827,7 +1126,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return disabledToolKeys.includes(toolKey)
     }
 
-    const selectedModel = useModelProvider.getState().selectedModel
+    const selectedModel = modelSelection.selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
@@ -842,11 +1141,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const projectId = thread?.metadata?.project?.id
         if (projectId) {
           try {
-            const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-              ExtensionTypeEnum.VectorDB
+            const vectorDB = getExtensionHost().services.get(
+              ServiceKeys.VectorDB
             )
-            if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+            if (vectorDB) {
+              const projectFiles =
+                await vectorDB.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -970,6 +1270,45 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           description: WEB_FETCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA as Record<string, unknown>),
         } as Tool
+      }
+
+      // Tools contributed by extensions, under their prefixed wire names so
+      // they can never shadow an MCP or built-in tool. Toggled per
+      // extension like an MCP server.
+      for (const tool of useAppState.getState().extensionTools) {
+        if (isToolDisabled(tool.server, tool.wireName)) continue
+        toolsRecord[tool.wireName] = {
+          description: tool.description,
+          inputSchema: jsonSchema(
+            normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+          ),
+        } as Tool
+      }
+
+      // Built-in agent tools. Without a folder chat offers one: the sandboxed
+      // shell, with no network. A folder the user attached to this thread adds
+      // the file tools, served on that folder (Rust reads it from the thread's
+      // record, see chatFolder.ts). Schemas come from Rust so they are never
+      // re-typed here, and `getAgentToolSchemas` already withholds shell when
+      // no sandbox backend can confine it. A user who switched the shell off
+      // (#9222) does not get it, folder or not.
+      try {
+        const shellOn = useChatShell.getState().shellEnabled
+        const hasFolder = chatFolderOf(this.threadId) !== null
+        const wanted = shellOn || hasFolder
+        for (const schema of wanted ? await getAgentToolSchemas() : []) {
+          const name = schema.function.name
+          const offered =
+            (shellOn && CHAT_AGENT_TOOL_NAMES.has(name)) ||
+            (hasFolder && CHAT_FOLDER_TOOL_NAMES.has(name))
+          if (!offered) continue
+          toolsRecord[name] = {
+            description: schema.function.description,
+            inputSchema: jsonSchema(schema.function.parameters),
+          } as Tool
+        }
+      } catch (error) {
+        console.warn('Failed to load agent tools:', error)
       }
     }
 
@@ -1111,12 +1450,49 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = this.threadId ?? options.chatId
     const myGeneration = ++this.streamGeneration
-    useAppState.getState().setCurrentStreamThreadId(threadId)
+    useAppState
+      .getState()
+      .setCurrentStreamThreadId(threadId, this.streamRoutesToCowork)
+    try {
+      return await this.openStream(options, threadId, myGeneration)
+    } catch (error) {
+      // No stream exists yet, so its onError/onFinish will never release this.
+      this.releaseStream(threadId, myGeneration)
+      throw error
+    }
+  }
+
+  /**
+   * Clears the per-request UI state, unless a newer request (e.g. after
+   * Reload) has since taken it over.
+   */
+  private releaseStream(threadId: string, generation: number) {
+    if (this.streamGeneration !== generation) return
+    const app = useAppState.getState()
+    app.updatePromptProgress(undefined)
+    app.updateThreadPromptProgress(threadId, undefined)
+    this.setLoadingModel(threadId, false)
+    app.updateLiveTokenStats(undefined)
+    app.updateThreadLiveTokenStats(threadId, undefined)
+    if (app.currentStreamThreadId === threadId) {
+      app.setCurrentStreamThreadId(undefined)
+    }
+  }
+
+  private async openStream(
+    options: Parameters<CustomChatTransport['sendMessages']>[0],
+    threadId: string,
+    myGeneration: number
+  ): Promise<ReadableStream<UIMessageChunk>> {
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    const modelId = useModelProvider.getState().selectedModel?.id
-    const providerId = useModelProvider.getState().selectedProvider
+    const turnModelSelection = this.resolveTurnModelSelection(
+      options.messages,
+      options.trigger
+    )
+    const { selectedModel, selectedProvider: providerId } = turnModelSelection
+    const modelId = selectedModel?.id
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
     if (!this.serviceHub || !modelId || !provider) {
@@ -1132,7 +1508,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
       const inferenceParams = this.getActiveInferenceParams()
 
-      const selectedModel = useModelProvider.getState().selectedModel
       const reasoningParams = buildLlamacppReasoningParams(
         effectiveProviderName,
         selectedModel?.settings?.reasoning?.controller_props?.value as
@@ -1147,10 +1522,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         try {
           const loaded = await getLoadedModels()
           if (!loaded.includes(modelId)) {
-            useAppState.getState().updateLoadingModel(true)
-            useAppState.getState().updateThreadLoadingModel(threadId, true)
-            useAppState.getState().updateModelLoadProgress(undefined)
-            useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+            this.setLoadingModel(threadId, true)
+            this.setModelLoadProgress(threadId, undefined)
           }
         } catch {
           // Ignore probe failures; the router will still load on demand
@@ -1178,14 +1551,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ...(inferenceParams ?? {}),
         ...reasoningParams,
       }
+      // This only strips the raw-body injection. The output cap still reaches
+      // these providers through streamText's maxOutputTokens, which lets each
+      // SDK map it (Anthropic adds the thinking budget, OpenAI reasoning
+      // models need max_completion_tokens); a body max_tokens would clobber
+      // that. The context budget params are read client-side only.
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
       // Pin chat to slot 0 so llama-server reuses this thread's cached KV
-      // prefix across turns; title generation uses the reserved background
-      // slot (RESERVED_BACKGROUND_SLOTS) and can't evict it.
+      // prefix across turns. Cowork and background tasks share the same slot;
+      // what keeps them from destroying this prefix is thread_id below.
+      //
+      // thread_id names whose cache that is, which is what lets the engine
+      // park it when another thread takes the slot and pick it back up later,
+      // including in a later session. It is stripped before the request
+      // reaches llama.cpp.
       if (providerId === 'llamacpp') {
-        mergedParams.id_slot = 0
+        Object.assign(mergedParams, this.slotParams(threadId))
       }
       this.model = await this.createModelOrAbort(
         modelId,
@@ -1194,27 +1577,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         providerId,
         options.abortSignal
       )
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+      this.setLoadingModel(threadId, false)
+      this.setModelLoadProgress(threadId, undefined)
     } catch (error) {
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+      this.setLoadingModel(threadId, false)
+      this.setModelLoadProgress(threadId, undefined)
       console.error('Failed to create model:', error)
       // Preserve AbortError identity so callers/UI can tell a user-initiated
       // Stop from an actual model-load failure.
       if (error instanceof Error && error.name === 'AbortError') throw error
-      throw new Error(
-        i18n.t('model-errors:createModelFailed', {
-          reason: describeEngineError(error),
-        })
-      )
+      throw engineFailure('model-errors:createModelFailed', error)
     }
 
-    await this.refreshTools(options.abortSignal)
+    await this.refreshTools(options.abortSignal, turnModelSelection)
 
     // Split assistant turns that place text after tool calls into separate
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
@@ -1224,20 +1599,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const inferenceParams = this.getActiveInferenceParams()
 
-    const selectedModel = useModelProvider.getState().selectedModel
 
-    const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
-    const webSearchInstruction = this.buildWebSearchSystemInstruction()
-    const rawSystem =
-      [this.systemMessage, filesInstruction, webSearchInstruction]
-        .filter((s) => typeof s === 'string' && s.trim().length > 0)
-        .join('\n\n') || undefined
-    // Drop whitespace-only system prompts so we don't send a useless system
-    // turn that some chat templates still wrap into special tokens.
-    const effectiveSystem =
-      typeof rawSystem === 'string' && rawSystem.trim().length > 0
-        ? rawSystem
-        : undefined
+    const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
@@ -1246,15 +1609,36 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return isNaN(n) ? undefined : n
     })()
 
-    const maxContextTokens = (() => {
+    const configuredContextTokens = (() => {
       const raw = inferenceParams.max_context_tokens
       return typeof raw === 'number' ? raw : (Number(raw) || 0)
     })()
+    const contextShiftEnabled =
+      providerId === 'llamacpp' &&
+      provider.settings?.some(
+        (setting) =>
+          setting.key === 'ctx_shift' &&
+          setting.controller_props?.value === true
+      ) === true
+    let liveContextTokens: number | undefined
+    if (contextShiftEnabled) {
+      try {
+        liveContextTokens = (
+          await getLlamacppExtension()?.getModelProps?.(modelId)
+        )?.nCtx
+      } catch {
+        // The router has not loaded the model yet. Preserve the configured limit.
+      }
+    }
+    const maxContextTokens = effectiveContextWindow(
+      configuredContextTokens,
+      liveContextTokens,
+      contextShiftEnabled
+    )
     const autoCompact =
       inferenceParams.auto_compact === true ||
       inferenceParams.auto_compact === 'true'
 
-    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
     let effectiveMessages = messagesToConvert
     if (maxContextTokens > 0) {
       const contextConfig: ContextManagerConfig = {
@@ -1263,11 +1647,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         autoCompact: !!autoCompact,
       }
 
+      // Context Shift only shifts llama.cpp's KV cache after generation starts.
+      // Keep the submitted chat history under the live router context window first.
       const systemPromptTokens = effectiveSystem
         ? estimateTokens(effectiveSystem) + 4
         : 0
-
-      if (autoCompact && this.model) {
+      if (autoCompact && !contextShiftEnabled && this.model) {
         const compactResult = await compactMessages(
           messagesToConvert,
           contextConfig,
@@ -1299,28 +1684,33 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Many chat templates (Qwen3.5+) reject a window with no genuine user query
     // and throw a cryptic Jinja error. Fail early with a clear message when
     // deletion/eviction has left no real user turn to respond to.
-    if (!hasGenuineUserQuery(effectiveMessages)) {
-      throw new Error(
-        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
-      )
-    }
+    this.assertSendable(effectiveMessages)
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
-    const baseMessages = await convertToModelMessages(
+    const convertedMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
-        resolveOrphanToolCalls(
-          this.encodeVideoAttachments(
-            this.encodeAudioAttachments(
-              stripUnsupportedImageParts(
-                this.mapUserInlineAttachments(effectiveMessages),
-                modelSupportsVision
+        fillMissingToolInputs(
+          resolveOrphanToolCalls(
+            this.encodeVideoAttachments(
+              this.encodeAudioAttachments(
+                stripUnsupportedImageParts(
+                  encodeMcpToolImages(
+                    this.mapUserInlineAttachments(effectiveMessages)
+                  ),
+                  modelSupportsVision
+                )
               )
             )
           )
         )
       )
     )
+    // Anthropic, Gemini and OpenAI Responses build their own request, so a tool
+    // image sentinel would reach them as text; the others decode it in the fetch.
+    const baseMessages = buildsOwnToolImageRequest(provider)
+      ? toContentToolOutputs(convertedMessages)
+      : convertedMessages
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.
@@ -1357,10 +1747,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // providerOptions (native thinking config), not the raw body.
     const reasoningProviderOptions = buildReasoningProviderOptions(
       providerId,
-      useModelProvider.getState().selectedModel
+      selectedModel
     )
 
-    let streamStartTime: number | undefined
     useAppState.getState().updatePromptProgress(undefined)
     useAppState.getState().updateThreadPromptProgress(threadId, undefined)
     useAppState.getState().updateLiveTokenStats(undefined)
@@ -1370,10 +1759,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       model: this.model,
       messages: modelMessages,
       abortSignal: options.abortSignal,
+      // Hosted providers keep the SDK's two backoff retries for transient
+      // 429/5xx; local servers fail at once (see isLocalChatServer).
+      maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
-      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
+      ...(maxOutputTokens !== undefined && maxOutputTokens >= 1
+        ? { maxOutputTokens }
+        : {}),
       ...(reasoningProviderOptions
         ? { providerOptions: reasoningProviderOptions }
         : {}),
@@ -1388,86 +1783,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
     })
 
-    let tokensPerSecond = 0
-    let promptPerSecond = 0
+    // A reply from an extension's provider names its author from the first
+    // chunk, so it never renders a remote image (see extensions/authorship).
+    // So does one continuing such a reply, whatever model it runs on now.
+    const author =
+      continueContent?.extensionAuthor ?? provider.source?.extensionId
+    const stepMetadata = createStepMetadata(
+      author ? extensionAuthorMetadata(author) : undefined
+    )
 
     const uiStream = result.toUIMessageStream({
-      messageMetadata: ({ part }) => {
-        if (
-          !streamStartTime &&
-          (part.type === 'text-start' || part.type === 'reasoning-start')
-        ) {
-          streamStartTime = Date.now()
-        }
-
-        if (part.type === 'finish-step') {
-          tokensPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.tokensPerSecond as number) || 0
-          promptPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.promptPerSecond as number) || 0
-        }
-
-        // Add usage and token speed to metadata on finish
-        if (part.type === 'finish') {
-          const finishPart = part as {
-            type: 'finish'
-            totalUsage: LanguageModelUsage
-            finishReason: string
-          }
-          const usage = finishPart.totalUsage
-          const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
-          const durationSec = durationMs / 1000
-
-          // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens = usage?.outputTokens ?? 0
-          const inputTokens = usage?.inputTokens
-
-          // Use llama.cpp's tokens per second if available, otherwise calculate from duration
-          let tokenSpeed: number
-          if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed =
-              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
-          } else {
-            tokenSpeed = 0
-          }
-
-          return {
-            finishReason: finishPart.finishReason,
-            usage: {
-              inputTokens: inputTokens,
-              outputTokens: outputTokens,
-              totalTokens:
-                usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
-            },
-            tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 100) / 100,
-              promptSpeed: promptPerSecond
-                ? Math.round(promptPerSecond * 100) / 100
-                : undefined,
-              tokenCount: outputTokens,
-              durationMs,
-            },
-          }
-        }
-
-        return undefined
-      },
+      // Usage and token speed, assembled by the one implementation every
+      // streaming surface shares (see `lib/stepMetadata`).
+      messageMetadata: ({ part }) => stepMetadata.onPart(part),
       onError: (error) => {
-        // A superseded request (e.g. after Reload) must not clear loading/stream
-        // state the newer request already owns.
-        if (this.streamGeneration === myGeneration) {
-          useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateLoadingModel(false)
-          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          useAppState.getState().updateThreadLoadingModel(threadId, false)
-          useAppState.getState().updateLiveTokenStats(undefined)
-          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
-          if (useAppState.getState().currentStreamThreadId === threadId) {
-            useAppState.getState().setCurrentStreamThreadId(undefined)
-          }
-        }
+        this.releaseStream(threadId, myGeneration)
         const unwrapped = unwrapRetryError(error)
         const rawMessage = unwrapped == null
           ? 'Unknown error'
@@ -1485,17 +1815,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return baseMessage
       },
       onFinish: ({ responseMessage }) => {
-        if (this.streamGeneration === myGeneration) {
-          useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateLoadingModel(false)
-          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          useAppState.getState().updateThreadLoadingModel(threadId, false)
-          useAppState.getState().updateLiveTokenStats(undefined)
-          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
-          if (useAppState.getState().currentStreamThreadId === threadId) {
-            useAppState.getState().setCurrentStreamThreadId(undefined)
-          }
-        }
+        this.releaseStream(threadId, myGeneration)
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>
@@ -1511,11 +1831,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // When continuing a truncated response, inject the partial content as the
     // very first text-delta so the new message immediately shows it and the
     // user sees a seamless continuation rather than an empty box.
-    const finalStream = continueContent
+    const continuedStream = continueContent
       ? prependContinuationToUIStream(uiStream, continueContent)
       : uiStream
 
-    return finalStream
+    // A call to a built-in the thread does not offer right now (the shell
+    // switched off, a file tool after the folder was detached) is not in
+    // `this.tools`, so the SDK would reject it and end the turn. Hand it to the
+    // tool loop instead, which answers it with a refusal the model can read.
+    return routeRefusedToolCalls(
+      continuedStream,
+      (toolName) =>
+        !(toolName in this.tools) &&
+        ((CHAT_AGENT_TOOL_NAMES.has(toolName) &&
+          !useChatShell.getState().shellEnabled) ||
+          (CHAT_FOLDER_TOOL_NAMES.has(toolName) &&
+            chatFolderOf(this.threadId) === null))
+    )
   }
 
   async reconnectToStream(
@@ -1633,6 +1965,72 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     ].join(' ')
   }
 
+  /**
+   * A self-contained digest of the newest memory notes. Chat advertises no
+   * memory tools, so a catalog it cannot dereference would be useless; whole
+   * notes under a strict budget are what fit a conversation surface. Empty when
+   * no note fits, keeping the prompt prefix unchanged for users without memory.
+   */
+  buildMemorySystemInstruction(): string {
+    const digest = memoryDigestNow()
+    if (!digest) return ''
+    return [
+      '# Background Memory',
+      'Notes the user previously chose to keep, from earlier conversations.',
+      'They may be stale; prefer what this conversation itself establishes.',
+      '',
+      digest,
+    ].join('\n')
+  }
+
+  /**
+   * Static instruction for the built-in tools chat offers: the sandboxed shell,
+   * and the file tools while a folder is attached. Empty when none of them is
+   * offered, because stating limits for a tool the model was not given only
+   * confuses it, and an empty string keeps the prompt prefix stable.
+   */
+  buildAgentToolsSystemInstruction(): string {
+    const folder = chatFolderOf(this.threadId)
+    const shell = useChatShell.getState().shellEnabled && sandboxEnforces()
+    const sections: string[] = []
+    if (folder) {
+      sections.push(
+        [
+          '# Folder',
+          `The user attached the folder \`${folder}\` to this conversation.`,
+          'It is your working directory: relative paths resolve against it.',
+          'Read, list and search it with read, ls, find and grep. write and edit',
+          'change its files in place, and the user is asked to approve every',
+          'such call (and every shell command) before it runs; a declined call',
+          'did not happen, so do not retry it unchanged.',
+        ].join(' ')
+      )
+    }
+    // Stating the shell's limits up front is cheaper than letting the model
+    // discover them by having a command refused.
+    if (shell) {
+      sections.push(
+        folder
+          ? [
+              '# Shell',
+              'shell runs commands in the attached folder under an OS sandbox:',
+              "it cannot read the rest of the user's home directory, and it has",
+              'no network access, so commands that download or upload will fail.',
+            ].join(' ')
+          : [
+              '# Shell',
+              'shell runs commands in an isolated scratch workspace under an OS',
+              'sandbox: it starts there, can only write there, and cannot read files',
+              "in the user's home directory. The workspace belongs to this",
+              'conversation alone and is deleted with it, so do not keep anything',
+              'there that should last. It has no network access, so commands that',
+              'download or upload will fail.',
+            ].join(' ')
+      )
+    }
+    return sections.join('\n\n')
+  }
+
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {
     return messages.map((message) => {
       if (message.role === 'user') {
@@ -1664,7 +2062,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               }
               return part
             })
-            message.parts = parts
+            return { ...message, parts }
           }
         }
       }

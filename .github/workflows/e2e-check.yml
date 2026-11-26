@@ -1,0 +1,47 @@
+# e2e/ is a standalone yarn project with its own lockfile, so no other
+# workflow installs it or looks at it. rust-check.yml does run on every PR, but
+# it never touches e2e/ -- so without this, an e2e-only change would go through
+# CI entirely unvalidated.
+# This runs focused launch-guard unit tests, typechecks, and checks the lockfile. It does
+# NOT run the suite: that needs a full Tauri app build, 6-11 min cold on the
+# hosted images, which is why running it is nightly work. See e2e-suite.yml, which does launch the app
+# on all four platforms and can be dispatched by hand against any branch.
+name: e2e harness check
+
+on:
+  push:
+    branches: [main]
+    paths: ['e2e/**', '.github/workflows/e2e-check.yml']
+  pull_request:
+    paths: ['e2e/**', '.github/workflows/e2e-check.yml']
+
+jobs:
+  typecheck:
+    name: typecheck
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 20
+
+      # --immutable fails if e2e/yarn.lock is out of date with package.json.
+      # Enforceable here precisely because this project is standalone; the root
+      # workflows all disable immutable installs.
+      - name: Install
+        working-directory: e2e
+        run: |
+          corepack enable
+          yarn install --immutable
+
+      - name: Launch guard unit tests
+        working-directory: e2e
+        run: yarn test:unit
+
+      - name: Typecheck
+        working-directory: e2e
+        run: yarn typecheck

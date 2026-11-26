@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useAssistant } from '@/hooks/useAssistant'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ChevronDown, Plus } from 'lucide-react'
@@ -33,7 +33,7 @@ interface AddProjectDialogProps {
     updated_at: number
     assistantId?: string
   }
-  onSave: (name: string, assistantId?: string) => void
+  onSave: (name: string, assistantId?: string) => Promise<void> | void
 }
 
 export default function AddProjectDialog({
@@ -50,6 +50,9 @@ export default function AddProjectDialog({
   const { assistants, addAssistant } = useAssistant()
   const [addAssistantDialogOpen, setAddAssistantDialogOpen] = useState(false)
 
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+
   const selectedAssistant = assistants.find((a) => a.id === selectedAssistantId)
 
   useEffect(() => {
@@ -59,8 +62,8 @@ export default function AddProjectDialog({
     }
   }, [open, initialData])
 
-  const handleSave = () => {
-    if (!name.trim()) return
+  const handleSave = async () => {
+    if (savingRef.current || !name.trim()) return
 
     const trimmedName = name.trim()
 
@@ -76,19 +79,28 @@ export default function AddProjectDialog({
       return
     }
 
-    onSave(trimmedName, selectedAssistantId)
-
-    // Show success message
-    if (editingKey) {
-      toast.success(t('projects.addProjectDialog.updateSuccess', { projectName: trimmedName }))
-    } else {
-      toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
+    // The ref also blocks reentrant submissions before React renders disabled controls.
+    savingRef.current = true
+    setSaving(true)
+    try {
+      await onSave(trimmedName, selectedAssistantId)
+      if (editingKey) {
+        toast.success(t('projects.addProjectDialog.updateSuccess', { projectName: trimmedName }))
+      } else {
+        toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
+      }
+      setName('')
+      setSelectedAssistantId(undefined)
+    } catch {
+      toast.error(t('common:error'))
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
-    setName('')
-    setSelectedAssistantId(undefined)
   }
 
   const handleCancel = () => {
+    if (savingRef.current) return
     onOpenChange(false)
     setName('')
     setSelectedAssistantId(undefined)
@@ -98,11 +110,13 @@ export default function AddProjectDialog({
   const hasChanged = editingKey
     ? name.trim() !== initialData?.name || selectedAssistantId !== initialData?.assistantId
     : true
-  const isButtonDisabled = !name.trim() || (editingKey && !hasChanged)
+  const isButtonDisabled = saving || !name.trim() || (editingKey && !hasChanged)
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!savingRef.current) onOpenChange(nextOpen)
+    }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -112,6 +126,7 @@ export default function AddProjectDialog({
         <div className="space-y-4">
           <div>
             <Input
+              disabled={saving}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('projects.addProjectDialog.namePlaceholder')}
@@ -131,26 +146,21 @@ export default function AddProjectDialog({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
+                  disabled={saving}
                   variant="outline"
                   className="w-full justify-between rounded-md"
                 >
                   {selectedAssistant ? (
-                    <div className="flex items-center gap-2">
-                      {selectedAssistant.avatar && (
-                        <AvatarEmoji
-                          avatar={selectedAssistant.avatar}
-                          imageClassName="w-4 h-4 object-contain"
-                          textClassName="text-sm"
-                        />
-                      )}
-                      <span>{selectedAssistant.name}</span>
+                    <div className="flex min-w-0 items-center gap-2 leading-5">
+                      <AssistantAvatar avatar={selectedAssistant.avatar} />
+                      <span className="min-w-0 truncate">{selectedAssistant.name}</span>
                     </div>
                   ) : (
                     <span className="text-muted-foreground">
                       {t('projects.addProjectDialog.selectAssistant')}
                     </span>
                   )}
-                  <ChevronDown className="size-4 text-muted-foreground" />
+                  <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
@@ -166,15 +176,9 @@ export default function AddProjectDialog({
                     key={assistant.id}
                     onSelect={() => setSelectedAssistantId(assistant.id)}
                   >
-                    <div className="flex items-center gap-2">
-                      {assistant.avatar && (
-                        <AvatarEmoji
-                          avatar={assistant.avatar}
-                          imageClassName="w-4 h-4 object-contain"
-                          textClassName="text-sm"
-                        />
-                      )}
-                      <span>{assistant.name}</span>
+                    <div className="flex min-w-0 items-center gap-2 leading-5">
+                      <AssistantAvatar avatar={assistant.avatar} />
+                      <span className="min-w-0 truncate">{assistant.name}</span>
                     </div>
                   </DropdownMenuItem>
                 ))}
@@ -182,8 +186,8 @@ export default function AddProjectDialog({
                 <DropdownMenuItem
                   onSelect={() => setAddAssistantDialogOpen(true)}
                 >
-                  <div className="flex items-center gap-2">
-                    <Plus className="size-4" />
+                  <div className="flex min-w-0 items-center gap-2 leading-5">
+                    <Plus className="size-4 shrink-0" />
                     <span>{t('projects.addProjectDialog.addAssistant')}</span>
                   </div>
                 </DropdownMenuItem>
@@ -192,7 +196,7 @@ export default function AddProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button size="sm" variant="ghost" onClick={handleCancel}>
+          <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving}>
             {t('cancel')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={Boolean(isButtonDisabled)}>
@@ -206,8 +210,8 @@ export default function AddProjectDialog({
       open={addAssistantDialogOpen}
       onOpenChange={setAddAssistantDialogOpen}
       editingKey={null}
-      onSave={(assistant) => {
-        addAssistant(assistant)
+      onSave={async (assistant) => {
+        await addAssistant(assistant)
         setSelectedAssistantId(assistant.id)
       }}
     />

@@ -18,7 +18,9 @@ const h = vi.hoisted(() => {
     setThreads: vi.fn(),
     setThreadsLoading: vi.fn(),
     threadsInStore: {} as Record<string, unknown>,
-    registrationListeners: new Set<() => void>(),
+    markThreadsHydrated: vi.fn(),
+    sweepThreadWorkspaces: vi.fn(),
+    coworkSessions: [] as Array<{ id: string }>,
     setLastServerModels: vi.fn(),
     setServerPort: vi.fn(),
     setServerStatus: vi.fn(),
@@ -61,6 +63,9 @@ vi.mock('@/hooks/useModelProvider', () => {
   return { useModelProvider }
 })
 
+vi.mock('@/hooks/useExtensionProviders', () => ({
+  useExtensionProviders: vi.fn(),
+}))
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({ checkForUpdate: h.checkForUpdate }),
 }))
@@ -74,17 +79,12 @@ vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({ setAssistants: h.setAssistants }),
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      onRegistrationChange: (cb: () => void) => {
-        h.registrationListeners.add(cb)
-        return () => h.registrationListeners.delete(cb)
-      },
-    }),
-  },
+vi.mock('@/lib/agentTools', () => ({
+  sweepThreadWorkspaces: h.sweepThreadWorkspaces,
 }))
-
+vi.mock('@/hooks/useCoworkSessions', () => ({
+  useCoworkSessions: { getState: () => ({ sessions: h.coworkSessions }) },
+}))
 vi.mock('@/hooks/useThreads', () => {
   const state = () => ({
     setThreads: h.setThreads,
@@ -97,7 +97,10 @@ vi.mock('@/hooks/useThreads', () => {
     (selector?: (s: unknown) => unknown): unknown
     getState: () => { threads: Record<string, unknown> }
   }
-  useThreads.getState = () => ({ threads: h.threadsInStore })
+  useThreads.getState = () => ({
+    threads: h.threadsInStore,
+    markThreadsHydrated: h.markThreadsHydrated,
+  })
   return { useThreads }
 })
 
@@ -132,6 +135,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
+  HUGGINGFACE_TOKEN_SECRET_KEY: 'huggingface',
   AppEvent: { onModelImported: 'onModelImported' },
   events: {
     on: (...a: unknown[]) => h.eventsOn(...a),
@@ -158,6 +162,8 @@ const hubState = vi.hoisted(() => ({
   getAssistants: vi.fn().mockResolvedValue([]),
   fetchThreads: vi.fn().mockResolvedValue([]),
   getServerStatus: vi.fn().mockResolvedValue(false),
+  setServerRunInBackground: vi.fn().mockResolvedValue(undefined),
+  setCloseToTray: vi.fn().mockResolvedValue(undefined),
   startModel: vi.fn().mockResolvedValue(undefined),
   getActiveModels: vi.fn().mockResolvedValue([]),
   startServer: vi.fn().mockResolvedValue(1337),
@@ -179,7 +185,11 @@ vi.mock('@/hooks/useServiceHub', () => {
         return Promise.resolve(hubState.unsubscribe)
       },
     }),
-    app: () => ({ getServerStatus: hubState.getServerStatus }),
+    app: () => ({
+      getServerStatus: hubState.getServerStatus,
+      setServerRunInBackground: hubState.setServerRunInBackground,
+      setCloseToTray: hubState.setCloseToTray,
+    }),
     models: () => ({
       startModel: hubState.startModel,
       getActiveModels: hubState.getActiveModels,
@@ -217,7 +227,9 @@ describe('DataProvider', () => {
     resetHubState()
     h.providers = []
     h.threadsInStore = {}
-    h.registrationListeners.clear()
+    h.markThreadsHydrated.mockClear()
+    h.sweepThreadWorkspaces.mockClear()
+    h.coworkSessions = []
     h.isDev.mockReturnValue(false)
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
@@ -266,9 +278,9 @@ describe('DataProvider', () => {
     })
   })
 
-  it('retries fetchThreads when it throws (extension not ready) and never wipes the list on failure', async () => {
+  it('retries fetchThreads when it throws (backend not ready) and never wipes the list on failure', async () => {
     hubState.fetchThreads
-      .mockRejectedValueOnce(new Error('Conversational extension not available yet'))
+      .mockRejectedValueOnce(new Error('backend not ready'))
       .mockResolvedValueOnce([{ id: 't1' }])
 
     render(<DataProvider />)
@@ -281,6 +293,30 @@ describe('DataProvider', () => {
     await waitFor(() => {
       expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
     })
+  })
+
+  it('marks the thread list hydrated only after a successful listing (an empty one counts), never on a failed attempt', async () => {
+    hubState.fetchThreads
+      .mockRejectedValueOnce(new Error('backend not ready'))
+      .mockResolvedValueOnce([])
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(h.markThreadsHydrated).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps the sandbox of a live Cowork session that has no thread.json yet when sweeping', async () => {
+    h.coworkSessions = [{ id: 'live-unsaved' }]
+    hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])
+    render(<DataProvider />)
+    await waitFor(() => expect(h.sweepThreadWorkspaces).toHaveBeenCalledTimes(1))
+    expect(h.sweepThreadWorkspaces.mock.calls[0][0].sort()).toEqual(['live-unsaved', 't1'])
+  })
+
+  it('never marks the thread list hydrated when every attempt fails', async () => {
+    hubState.fetchThreads.mockRejectedValue(new Error('backend not ready'))
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalled())
+    expect(h.markThreadsHydrated).not.toHaveBeenCalled()
   })
 
   it('does not wipe a populated thread list when fetchThreads resolves empty', async () => {
@@ -305,12 +341,12 @@ describe('DataProvider', () => {
     })
   })
 
-  it('refetches threads when an extension registers after retries are exhausted', async () => {
+  it('gives up after the bounded retries and stops the loading state', async () => {
     vi.useFakeTimers()
     try {
       hubState.fetchThreads.mockRejectedValue(new Error('not ready'))
 
-      const { unmount } = render(<DataProvider />)
+      render(<DataProvider />)
 
       // 1 initial attempt + 20 bounded retries (backoff capped at 1s).
       await act(async () => {
@@ -318,17 +354,12 @@ describe('DataProvider', () => {
       })
       expect(hubState.fetchThreads).toHaveBeenCalledTimes(21)
       expect(h.setThreads).not.toHaveBeenCalled()
+      expect(h.setThreadsLoading).toHaveBeenCalledWith(false)
 
-      // A late extension registration re-arms the fetch.
-      hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])
       await act(async () => {
-        h.registrationListeners.forEach((cb) => cb())
+        await vi.advanceTimersByTimeAsync(30000)
       })
-      expect(hubState.fetchThreads).toHaveBeenCalledTimes(22)
-      expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
-
-      unmount()
-      expect(h.registrationListeners.size).toBe(0)
+      expect(hubState.fetchThreads).toHaveBeenCalledTimes(21)
     } finally {
       vi.useRealTimers()
     }
@@ -483,10 +514,19 @@ describe('DataProvider', () => {
 
   it('does not start server on mount when enableOnStartup is false', async () => {
     render(<DataProvider />)
-    await act(async () => {
-      await Promise.resolve()
+    await waitFor(() => {
+      expect(hubState.getServerStatus).toHaveBeenCalled()
     })
-    expect(hubState.getServerStatus).not.toHaveBeenCalled()
+    expect(h.setServerStatus).not.toHaveBeenCalledWith('pending')
+    expect(hubState.startServer).not.toHaveBeenCalled()
+  })
+
+  it('reflects an already-running server on boot even when enableOnStartup is false', async () => {
+    hubState.getServerStatus.mockResolvedValue(true)
+    render(<DataProvider />)
+    await waitFor(() => {
+      expect(h.setServerStatus).toHaveBeenCalledWith('running')
+    })
     expect(hubState.startServer).not.toHaveBeenCalled()
   })
 
@@ -526,14 +566,26 @@ describe('DataProvider', () => {
     })
   })
 
-  it('sets server status to stopped on startup failure', async () => {
+  it('sets server status to stopped when the startup start fails', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     h.localApi.enableOnStartup = true
-    hubState.getServerStatus.mockRejectedValue(new Error('fail'))
+    hubState.getServerStatus.mockResolvedValue(false)
+    hubState.startServer.mockRejectedValue(new Error('fail'))
     render(<DataProvider />)
     await waitFor(() => {
       expect(h.setServerStatus).toHaveBeenCalledWith('stopped')
     })
+    err.mockRestore()
+  })
+
+  it('leaves the status alone when only the status query fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    hubState.getServerStatus.mockRejectedValue(new Error('fail'))
+    render(<DataProvider />)
+    await waitFor(() => {
+      expect(err).toHaveBeenCalled()
+    })
+    expect(h.setServerStatus).not.toHaveBeenCalled()
     err.mockRestore()
   })
 

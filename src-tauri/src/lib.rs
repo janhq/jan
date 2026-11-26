@@ -1,5 +1,15 @@
-pub mod core;
+// The headless `jan` CLI and the desktop app are mutually exclusive builds: the
+// `cli` feature gates off every Tauri-dependent module, so pairing it with the
+// Tauri stack leaves the desktop entry points without their subsystems. Note
+// that `--features cli` alone still implies `default` (and therefore
+// `desktop`); the CLI must be built with `--no-default-features`.
+#[cfg(all(feature = "cli", feature = "tauri-app"))]
+compile_error!(
+    "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
+     build the CLI from the standalone crate: `cd src-tauri/jan-cli && cargo build --features cli`"
+);
 
+pub mod core;
 
 #[cfg(not(feature = "cli"))]
 use core::{
@@ -42,6 +52,7 @@ macro_rules! invoke_commands_with_extras {
         core::filesystem::commands::decompress,
         core::filesystem::commands::open_dialog,
         core::filesystem::commands::save_dialog,
+        core::filesystem::asset_scope::asset_scope_allow_folder,
         // App configuration commands
         core::app::commands::get_app_configurations,
         core::app::commands::get_user_home_path,
@@ -55,25 +66,40 @@ macro_rules! invoke_commands_with_extras {
         core::app::settings_store::settings_get,
         core::app::settings_store::settings_set,
         core::app::settings_store::settings_remove,
+        core::app::settings_store::settings_flush,
+        core::app::settings_store::settings_backup_once,
         core::server::provider_secrets::set_secret,
         core::server::provider_secrets::get_secret,
         // System commands
         core::system::commands::relaunch,
-        core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
+        core::system::shutdown::shutdown_for_update,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
-        core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        core::server::commands::set_server_run_in_background,
+        core::system::commands::set_close_to_tray,
+        // Agent commands
+        core::agent::commands::agent_skill_list,
+        core::agent::commands::agent_skill_read,
+        core::agent::commands::agent_skill_write,
+        core::agent::commands::agent_skill_delete,
+        core::agent::commands::agent_skill_hub_list,
+        core::agent::commands::agent_skill_hub_import,
+        core::agent::commands::agent_skill_enabled_get,
+        core::agent::commands::agent_skill_enabled_set,
+        core::agent::commands::agent_skill_invoke,
+        core::agent::commands::agent_plugin_list,
+        core::agent::commands::agent_plugin_install,
+        core::agent::commands::agent_plugin_remove,
+        core::agent::commands::agent_plugin_search,
+        core::agent::commands::agent_git_branch,
+        core::agent::commands::agent_subagent_list,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -94,11 +120,17 @@ macro_rules! invoke_commands_with_extras {
         core::mcp::commands::get_mcp_configs,
         core::mcp::commands::activate_mcp_server,
         core::mcp::commands::deactivate_mcp_server,
+        core::mcp::commands::get_mcp_auth_status,
+        core::mcp::commands::authorize_mcp_server,
+        core::mcp::commands::clear_mcp_auth,
         core::mcp::commands::check_jan_browser_extension_connected,
         // Threads
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
         core::threads::commands::modify_thread,
+        core::threads::commands::read_thread_extra,
+        core::threads::commands::write_thread_extra,
+        core::threads::commands::replace_thread_messages,
         core::threads::commands::delete_thread,
         core::threads::commands::list_messages,
         core::threads::commands::create_message,
@@ -113,6 +145,10 @@ macro_rules! invoke_commands_with_extras {
         core::downloads::commands::pause_download_task,
         // App lifecycle
         confirm_exit,
+        main_window_hides_on_close,
+        exit_after_save,
+        cancel_exit_save,
+        exit_without_saving,
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
@@ -143,10 +179,19 @@ async fn confirm_exit<R: tauri::Runtime>(_app_handle: tauri::AppHandle<R>) {
 }
 
 #[cfg(not(feature = "cli"))]
-fn is_llamacpp_router_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+/// Whether a llama.cpp engine worker is up, so the exit path knows whether it
+/// owes the user a graceful shutdown.
+///
+/// `try_lock` rather than a blocking lock: this runs on the event loop. A held
+/// lock means a start or stop is in flight, which counts as running -- the
+/// graceful path is the safe answer when the state cannot be read.
+fn is_llamacpp_engine_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     use tauri::Manager;
     app.try_state::<std::sync::Arc<tauri_plugin_llamacpp::LlamacppState>>()
-        .map(|s| s.router_pid.load(std::sync::atomic::Ordering::SeqCst) != 0)
+        .map(|s| match s.engine.try_lock() {
+            Ok(guard) => guard.is_some(),
+            Err(_) => true,
+        })
         .unwrap_or(false)
 }
 
@@ -156,6 +201,147 @@ fn is_proxy_server_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool
     app.try_state::<AppState>()
         .and_then(|s| s.server_handle.try_lock().ok().map(|g| g.is_some()))
         .unwrap_or(false)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Whether closing the main window only hides it, keeping the app running:
+/// always on macOS (quit is Cmd+Q / dock / tray), and on Windows/Linux when
+/// close-to-tray is on or the Local API Server runs with "keep running in
+/// background" on. Never once a shutdown has started. The window-event handler
+/// below and the web app's close handler both ask this, so they agree on
+/// whether a close is a quit.
+fn hides_main_window_on_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use std::sync::atomic::Ordering;
+    if SHUTTING_DOWN.load(Ordering::SeqCst) {
+        return false;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        core::system::commands::close_hides_window(
+            core::system::commands::CLOSE_TO_TRAY.load(Ordering::SeqCst),
+            is_proxy_server_running(app),
+            core::server::commands::SERVER_RUN_IN_BACKGROUND.load(Ordering::SeqCst),
+        )
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+fn main_window_hides_on_close<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> bool {
+    hides_main_window_on_close(&app_handle)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Set once the web app has saved (or the user chose to quit without saving),
+/// so the next exit request goes through. Sticky: the exit is under way.
+static EXIT_SAVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+/// Non-zero while an exit waits on the web app's save: the attempt's number,
+/// so a stale timeout cannot act on a newer attempt.
+static EXIT_SAVE_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(feature = "cli"))]
+static EXIT_SAVE_ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(feature = "cli"))]
+static EXIT_SAVE_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[cfg(not(feature = "cli"))]
+/// How long an exit waits for the web app before going ahead anyway. Longer
+/// than the web app's own 10 s save deadline, so this only fires when the page
+/// never answers (not loaded, or hung).
+const EXIT_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[cfg(not(feature = "cli"))]
+/// Whether this exit request must first let the web app save. Only explicit
+/// exits (`app.exit`: tray Quit, the app-menu Quit / Cmd+Q) are held. Not a
+/// restart: the factory reset restarts through here after wiping the data
+/// folder, and a save would write it back. Not the exit that follows the last
+/// window closing (`code` is `None`): its close handler already saved.
+fn exit_needs_save(code: Option<i32>) -> bool {
+    use std::sync::atomic::Ordering;
+    matches!(code, Some(c) if c != tauri::RESTART_EXIT_CODE)
+        && !SHUTTING_DOWN.load(Ordering::SeqCst)
+        && !EXIT_SAVED.load(Ordering::SeqCst)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Ask the web app to save before exiting with `code`. It answers with
+/// `exit_after_save` or `cancel_exit_save`; if it never does, exit anyway
+/// after `EXIT_SAVE_TIMEOUT`. A repeat request while one is pending is ignored.
+fn request_save_before_exit<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    window: &tauri::WebviewWindow<R>,
+    code: i32,
+) {
+    use std::sync::atomic::Ordering;
+    let attempt = EXIT_SAVE_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
+    if EXIT_SAVE_PENDING
+        .compare_exchange(0, attempt, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    EXIT_SAVE_CODE.store(code, Ordering::SeqCst);
+    log::info!("Holding exit until the web app has saved");
+    if let Err(e) = window.emit("app-exit-requested", ()) {
+        log::warn!("could not ask the web app to save before exit: {e}");
+        EXIT_SAVE_PENDING.store(0, Ordering::SeqCst);
+        EXIT_SAVED.store(true, Ordering::SeqCst);
+        app.exit(code);
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(EXIT_SAVE_TIMEOUT).await;
+        if EXIT_SAVE_PENDING
+            .compare_exchange(attempt, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            log::warn!("web app did not answer the exit save in time; exiting");
+            EXIT_SAVED.store(true, Ordering::SeqCst);
+            app.exit(code);
+        }
+    });
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The web app saved: finish the held exit. A no-op when no exit is waiting.
+fn exit_after_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) == 0 {
+        return;
+    }
+    log::info!("Web app finished saving; exiting");
+    EXIT_SAVED.store(true, Ordering::SeqCst);
+    app_handle.exit(EXIT_SAVE_CODE.load(Ordering::SeqCst));
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The web app could not save: drop the held exit and show the window, so its
+/// "could not save" notice is visible. Quitting again retries the save.
+fn cancel_exit_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) != 0 {
+        core::system::commands::show_main_window(&app_handle);
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The user chose "quit without saving" after repeated save failures. The held
+/// exit was already cancelled by `cancel_exit_save`, so exit unconditionally
+/// with the code of the last quit request.
+fn exit_without_saving<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    EXIT_SAVE_PENDING.store(0, Ordering::SeqCst);
+    log::warn!("Quitting without saving at the user's request");
+    EXIT_SAVED.store(true, Ordering::SeqCst);
+    app_handle.exit(EXIT_SAVE_CODE.load(Ordering::SeqCst));
 }
 
 #[cfg(not(feature = "cli"))]
@@ -173,12 +359,15 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     exit_code: i32,
 ) {
     use std::sync::atomic::Ordering;
+    // Reap any still-running agent bash command trees before we tear down, so
+    // no shell (or child it spawned) outlives the app.
+    tauri_plugin_agent_tools::tools::proc::kill_all();
     let mut emitted = false;
     loop {
         if SHUTTING_DOWN.load(Ordering::SeqCst) {
             return;
         }
-        match tauri_plugin_llamacpp::try_graceful_stop_router(app_handle.clone(), 1).await {
+        match tauri_plugin_llamacpp::try_graceful_stop_engine(app_handle.clone(), 1).await {
             Ok(None) => {
                 if let Ok(mut g) = BUSY_MODELS.lock() {
                     g.clear();
@@ -204,7 +393,7 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
             Err(e) => {
-                log::warn!("{}: try_graceful_stop_router failed: {}", source, e);
+                log::warn!("{}: try_graceful_stop_engine failed: {}", source, e);
                 SHUTTING_DOWN.store(true, Ordering::SeqCst);
                 app_handle.exit(exit_code);
                 return;
@@ -219,29 +408,66 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     tauri::mobile_entry_point
 )]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
-          println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
-          // when defining deep link schemes at runtime, you must also check `argv` here
-        }));
-    }
+    // Installed before any plugin: the toolset crate owns no config format, so
+    // the `execute_tool` IPC command can only reach a user's `[[hooks]]`
+    // through a resolver the app hands it. Without this the desktop is the one
+    // surface where a configured hook silently never fires, since the webview
+    // drives its own tool loop and never builds the CLI's invoker.
+    tauri_plugin_agent_tools::tools::hooks::set_resolver(std::sync::Arc::new(|project| {
+        crate::core::agent::hooks_config::resolve_hooks_for(project)
+    }));
+    // Where the configuration-level tool grants ("Allow always") are saved.
+    tauri_plugin_agent_tools::consent::store().set_persistence(std::sync::Arc::new(
+        crate::core::app::tool_grants::SettingsGrants,
+    ));
+
+    let builder = tauri::Builder::default();
+    // Shadowed rather than mutated: under `e2e` the plugin below is the only
+    // thing that touched `builder`, and a `mut` binding would then be unused --
+    // which CI's `clippy -D warnings` treats as an error.
+    //
+    // Not in e2e builds: single-instance keys off a hardcoded /tmp socket on
+    // macOS (a D-Bus name on Linux, a named mutex on Windows), none of which the
+    // test harness's HOME/XDG/TMPDIR overrides isolate. With a real Jan already running, the
+    // test binary would hand over its argv and exit before the embedded
+    // WebDriver server ever bound.
+    #[cfg(all(desktop, not(feature = "e2e")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
+        // The second process exits right after this runs, so whatever the user
+        // expected from launching Jan again has to happen here: bring the
+        // running window back, even when it was minimized or hidden to the tray.
+        core::system::commands::show_main_window(app);
+        // when defining deep link schemes at runtime, you must also check `argv` here
+    }));
 
     let mut app_builder = builder
+        // First, so no other plugin's hook sees a navigation it refuses.
+        .plugin(core::navigation::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init())
-        .plugin(tauri_plugin_vector_db::init())
+        .plugin(tauri_plugin_vector_db::init(
+            crate::core::app::paths::vector_db_dir(),
+        ))
         .plugin(tauri_plugin_rag::init())
-        .plugin(tauri_plugin_websearch::init());
+        .plugin(tauri_plugin_websearch::init())
+        .plugin(tauri_plugin_agent_tools::init());
 
     #[cfg(feature = "deep-link")]
     {
         app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
+    }
+
+    // e2e builds only: the embedded WebDriver server @wdio/tauri-service drives.
+    // Gated behind the `e2e` feature so no release binary exposes it.
+    #[cfg(feature = "e2e")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_wdio_webdriver::init());
     }
 
     #[cfg(target_os = "macos")]
@@ -252,6 +478,13 @@ pub fn run() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
+    }
+
+    #[cfg(feature = "extensions")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_extensions::init(
+            crate::core::app::paths::extensions_dir,
+        ));
     }
 
     // Desktop: include updater commands
@@ -288,10 +521,25 @@ pub fn run() {
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(core::filesystem::grants::ReadGrants::with_home(
+            dirs::home_dir(),
+        ))
         .setup(|app| {
+            // The agent-tools commands take a data folder from the webview; the
+            // sandbox, the mask over settings and keys, and the store all hang
+            // off it, so they use the configured one instead. Installed here,
+            // before the event loop delivers any IPC.
+            {
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
+                    move || get_jan_data_folder_path(handle.clone()),
+                ));
+            }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Debug)
+                    .max_file_size(10_000_000)
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
                     .targets([
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
@@ -302,9 +550,58 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+            // Load the read grants before the event loop delivers any IPC, so a
+            // read of a path the user picked in an earlier session is allowed.
+            core::filesystem::grants::init(app.handle());
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // A factory reset only moves data aside and restarts; deleting it,
+            // which can take a while for a big models folder, happens here.
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    core::system::commands::sweep_reset_trash(&handle);
+                });
+            }
+
+            // Reap engines a previous Jan left running: the llama-server router of
+            // a 0.8.4 that was updated in place, or an mlx-server whose app was
+            // killed. Neither can be stopped by the version that started it.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                let data_folder = get_jan_data_folder_path(app.handle().clone());
+                tauri::async_runtime::spawn_blocking(move || {
+                    let killed = core::system::orphans::sweep_orphaned_engines(&data_folder);
+                    if killed > 0 {
+                        log::warn!("Reaped {killed} engine process(es) left by a previous Jan");
+                    }
+                });
+            }
+
+            // A SIGTERM ends the process without RunEvent::Exit, so the exit
+            // cleanup never ran and mlx-server, which does not watch its
+            // parent, was left running. Turn the signal into a normal exit.
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let Ok(mut term) = signal(SignalKind::terminate()) else {
+                        log::warn!("Could not listen for SIGTERM");
+                        return;
+                    };
+                    term.recv().await;
+                    log::info!("Received SIGTERM; shutting down");
+                    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+                    handle.exit(0);
+                });
+            }
+
+            if let Err(e) = core::filesystem::asset_scope::allow_cowork_sandboxes(app.handle()) {
+                log::error!("Failed to grant the Cowork sandboxes to the asset protocol: {e}");
+            }
 
             // Start migration
             let mut store_path = get_jan_data_folder_path(app.handle().clone());
@@ -313,10 +610,6 @@ pub fn run() {
                 .handle()
                 .store(store_path)
                 .expect("Store not initialized");
-            let stored_version = store
-                .get("version")
-                .and_then(|v| v.as_str().map(String::from))
-                .unwrap_or_default();
             let app_version = app.config().version.clone().unwrap_or_default();
 
             // Migrate MCP servers
@@ -329,13 +622,29 @@ pub fn run() {
             store.save().expect("Failed to save store");
             // Migration completed
 
-            #[cfg(feature = "desktop")]
-            if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
-                log::info!("Enabling system tray icon");
-                let _ = setup::setup_tray(app);
+            #[cfg(all(feature = "desktop", target_os = "macos"))]
+            if let Err(e) = setup::setup_app_menu_quit(app.handle()) {
+                log::warn!("Could not route Cmd+Q through the exit save: {e}");
             }
 
-            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
+            #[cfg(feature = "desktop")]
+            if setup::tray_always_visible() {
+                log::info!("Enabling system tray icon");
+                let _ = setup::setup_tray(app.handle());
+            }
+
+            // Not in e2e builds: on Windows `register_all` writes HKCU
+            // Software\Classes\jan\shell\open\command and points it at the
+            // running exe, so every run would repoint the developer's real
+            // `jan://` handler at target/debug/Jan-Desktop.exe. The registry is
+            // outside everything the harness's env overrides can reach. (On
+            // Linux it writes into `data_dir()/applications`, which XDG_DATA_HOME
+            // does redirect -- but no spec opens a deep link, so skip both.)
+            #[cfg(all(
+                feature = "deep-link",
+                not(feature = "e2e"),
+                any(windows, target_os = "linux")
+            ))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
@@ -353,8 +662,6 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(desktop)]
-            setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())
         })
@@ -369,42 +676,44 @@ pub fn run() {
             ..
         } = &event
         {
-            if label == "main" && !SHUTTING_DOWN.load(Ordering::SeqCst) {
-                // macOS: closing the window hides it; the app (and background
-                // services) keep running. Quit happens via Cmd+Q / dock / tray,
-                // which routes through RunEvent::ExitRequested.
-                #[cfg(target_os = "macos")]
-                {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    return;
+            // Closing the main window hides it when `hides_main_window_on_close`
+            // says so (macOS always; Windows/Linux only while the Local API
+            // Server runs in the background). Otherwise fall through to the
+            // normal quit-on-close. The llamacpp engine is not a reason to keep
+            // the app resident (normal chat usage keeps it alive), so it gets
+            // torn down via the ExitRequested path on quit.
+            if label == "main" && hides_main_window_on_close(app) {
+                api.prevent_close();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
                 }
-                // Windows/Linux: hide to tray only while the Local API Server is
-                // running; otherwise fall through to the normal quit-on-close.
-                // The llamacpp router is not a reason to keep the app resident
-                // (normal chat usage keeps it alive), so it gets torn down via
-                // the ExitRequested path on quit.
-                #[cfg(not(target_os = "macos"))]
-                if is_proxy_server_running(app) {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    return;
-                }
+                return;
             }
         }
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = &event {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            core::system::commands::show_main_window(app);
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
-            if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_router_running(app) {
+            // Quitting mid-reset would drop the reset and its restart; it ends
+            // in its own restart. A native macOS quit never gets here, which
+            // is why the reset stages its deletion atomically.
+            if core::system::commands::exit_blocked_by_reset(
+                core::system::commands::factory_reset_in_progress(),
+                *code,
+            ) {
+                log::warn!("Ignoring exit request while a factory reset is running");
+                api.prevent_exit();
+                return;
+            }
+            if exit_needs_save(*code) {
+                if let Some(window) = app.get_webview_window("main") {
+                    api.prevent_exit();
+                    request_save_before_exit(app, &window, code.unwrap_or(0));
+                    return;
+                }
+            }
+            if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_engine_running(app) {
                 return;
             }
             api.prevent_exit();
@@ -423,10 +732,6 @@ pub fn run() {
         }
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
-
-            // Drain any debounced settings writes before the process dies so
-            // jan-cli never reads a stale settings.json.
-            core::app::settings_store::flush_settings();
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
@@ -452,40 +757,9 @@ pub fn run() {
 
             // Run cleanup synchronously and WAIT for it to complete
             tokio::task::block_in_place(|| {
-                tauri::async_runtime::block_on(async {
-                    use crate::core::mcp::helpers::background_cleanup_mcp_servers;
-                    use tauri_plugin_llamacpp::cleanup_llama_processes;
-
-                    let state = app_handle.state::<AppState>();
-
-                    // Increase timeout to 10 seconds and log if it times out
-                    let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(10), cleanup_future)
-                        .await
-                    {
-                        Ok(_) => log::info!("MCP cleanup completed successfully"),
-                        Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
-                    }
-
-                    if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to shut down llama-server router: {}", e);
-                    } else {
-                        log::info!("Llama-server router shut down successfully");
-                    }
-
-                    #[cfg(target_os = "macos")]
-                    {
-                        use tauri_plugin_mlx::cleanup_mlx_processes;
-                        if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
-                            log::warn!("Failed to cleanup MLX processes: {}", e);
-                        } else {
-                            log::info!("MLX processes cleaned up successfully");
-                        }
-                    }
-
-
-                    log::info!("App cleanup completed");
-                });
+                tauri::async_runtime::block_on(core::system::shutdown::shutdown_cleanup(
+                    &app_handle,
+                ))
             });
         }
     });

@@ -1,22 +1,42 @@
-import { Assistant, AssistantExtension, fs, joinPath, logger } from '@janhq/core'
+import {
+  ServiceKeys,
+  joinPath,
+  type Assistant,
+  type AssistantService,
+  type InternalExtensionContext,
+} from '@janhq/core'
 
 const V2_IDENTITY_LINE =
   'You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).'
 
 /**
- * JanAssistantExtension is an AssistantExtension implementation that provides
- * functionality for managing assistants.
+ * Runs the assistant migrations, seeds the default assistant on first run and
+ * provides the Assistants service.
  */
-export default class JanAssistantExtension extends AssistantExtension {
+export async function activate(ctx: InternalExtensionContext): Promise<void> {
+  const assistants = new Assistants(ctx)
+  await assistants.prepare()
+  ctx.subscriptions.add(
+    ctx.internal.services.provide(ServiceKeys.Assistants, assistants)
+  )
+}
+
+/** Assistants stored as `file://assistants/<id>/assistant.json`. */
+class Assistants implements AssistantService {
   private readonly CURRENT_MIGRATION_VERSION = 3
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
+  private readonly fs: InternalExtensionContext['internal']['fs']
+  private readonly log: InternalExtensionContext['log']
 
-  /**
-   * Called when the extension is loaded.
-   */
-  async onLoad() {
-    if (!(await fs.existsSync('file://assistants'))) {
-      await fs.mkdir('file://assistants')
+  constructor(ctx: InternalExtensionContext) {
+    this.fs = ctx.internal.fs
+    this.log = ctx.log
+  }
+
+  /** Creates the folder, migrates and seeds; must finish before use. */
+  async prepare(): Promise<void> {
+    if (!(await this.fs.existsSync('file://assistants'))) {
+      await this.fs.mkdir('file://assistants')
     }
 
     // Run migrations if needed
@@ -43,13 +63,13 @@ export default class JanAssistantExtension extends AssistantExtension {
    */
   private async getCurrentMigrationVersion(): Promise<number> {
     try {
-      if (await fs.existsSync(this.MIGRATION_FILE)) {
-        const versionStr = await fs.readFileSync(this.MIGRATION_FILE)
+      if (await this.fs.existsSync(this.MIGRATION_FILE)) {
+        const versionStr = await this.fs.readFileSync(this.MIGRATION_FILE)
         const version = parseInt(versionStr.trim(), 10)
         return isNaN(version) ? 0 : version
       }
     } catch (error) {
-      logger.error('Failed to read migration version:', error)
+      this.log.error('Failed to read migration version:', error)
     }
     return 0
   }
@@ -59,9 +79,9 @@ export default class JanAssistantExtension extends AssistantExtension {
    */
   private async saveMigrationVersion(version: number): Promise<void> {
     try {
-      await fs.writeFileSync(this.MIGRATION_FILE, version.toString())
+      await this.fs.writeFileSync(this.MIGRATION_FILE, version.toString())
     } catch (error) {
-      logger.error('Failed to save migration version:', error)
+      this.log.error('Failed to save migration version:', error)
     }
   }
 
@@ -72,24 +92,24 @@ export default class JanAssistantExtension extends AssistantExtension {
     const currentVersion = await this.getCurrentMigrationVersion()
 
     if (currentVersion < 1) {
-      logger.info('Running migration v1: Update assistant instructions')
+      this.log.info('Running migration v1: Update assistant instructions')
       await this.migrateAssistantInstructions()
       await this.saveMigrationVersion(1)
     }
 
     if (currentVersion < 2) {
-      logger.info('Running migration v2: Update to Menlo Research instructions')
+      this.log.info('Running migration v2: Update to Menlo Research instructions')
       await this.migrateToMenloInstructions()
       await this.saveMigrationVersion(2)
     }
 
     if (currentVersion < 3) {
-      logger.info('Running migration v3: Strip identity preamble from default assistant')
+      this.log.info('Running migration v3: Strip identity preamble from default assistant')
       await this.migrateStripIdentityPreamble()
       await this.saveMigrationVersion(3)
     }
 
-    logger.info(
+    this.log.info(
       `Migrations complete. Current version: ${this.CURRENT_MIGRATION_VERSION}`
     )
   }
@@ -101,7 +121,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     const OLD_INSTRUCTION = 'You are a helpful AI assistant.'
     const NEW_INSTRUCTION = 'You are Jan, a helpful AI assistant.' // TODO: Update with new instruction
 
-    if (!(await fs.existsSync('file://assistants'))) {
+    if (!(await this.fs.existsSync('file://assistants'))) {
       return
     }
 
@@ -124,13 +144,13 @@ export default class JanAssistantExtension extends AssistantExtension {
         ])
 
         try {
-          await fs.writeFileSync(
+          await this.fs.writeFileSync(
             assistantPath,
             JSON.stringify(assistant, null, 2)
           )
-          logger.info(`Migrated instructions for assistant: ${assistant.id}`)
+          this.log.info(`Migrated instructions for assistant: ${assistant.id}`)
         } catch (error) {
-          logger.error(`Failed to migrate assistant ${assistant.id}:`, error)
+          this.log.error(`Failed to migrate assistant ${assistant.id}:`, error)
         }
       }
     }
@@ -169,7 +189,7 @@ Current date: {{current_date}}`
       repeat_penalty: 1.12,
     }
 
-    if (!(await fs.existsSync('file://assistants'))) {
+    if (!(await this.fs.existsSync('file://assistants'))) {
       return
     }
 
@@ -194,15 +214,15 @@ Current date: {{current_date}}`
         ])
 
         try {
-          await fs.writeFileSync(
+          await this.fs.writeFileSync(
             assistantPath,
             JSON.stringify(assistantWithParams, null, 2)
           )
-          logger.info(
+          this.log.info(
             `Migrated to Menlo instructions for assistant: ${assistant.id}`
           )
         } catch (error) {
-          logger.error(`Failed to migrate assistant ${assistant.id}:`, error)
+          this.log.error(`Failed to migrate assistant ${assistant.id}:`, error)
         }
       }
     }
@@ -213,7 +233,7 @@ Current date: {{current_date}}`
    * are still the verbatim v2 default. Leaves user-customized prompts untouched.
    */
   private async migrateStripIdentityPreamble(): Promise<void> {
-    if (!(await fs.existsSync('file://assistants'))) {
+    if (!(await this.fs.existsSync('file://assistants'))) {
       return
     }
 
@@ -232,27 +252,22 @@ Current date: {{current_date}}`
       ])
 
       try {
-        await fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
-        logger.info(`Stripped identity preamble for assistant: ${assistant.id}`)
+        await this.fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
+        this.log.info(`Stripped identity preamble for assistant: ${assistant.id}`)
       } catch (error) {
-        logger.error(`Failed to migrate assistant ${assistant.id}:`, error)
+        this.log.error(`Failed to migrate assistant ${assistant.id}:`, error)
       }
     }
   }
 
   /**
-   * Called when the extension is unloaded.
-   */
-  onUnload(): void {}
-
-  /**
    * Reads only the assistants persisted on disk. May be empty; callers that
    * need a guaranteed assistant use getAssistants (which falls back to the
-   * default), while onLoad uses this to decide whether to seed the default.
+   * default), while prepare uses this to decide whether to seed the default.
    */
   private async readAssistantsFromDisk(): Promise<Assistant[]> {
-    if (!(await fs.existsSync('file://assistants'))) return []
-    const assistants = await fs.readdirSync('file://assistants')
+    if (!(await this.fs.existsSync('file://assistants'))) return []
+    const assistants = await this.fs.readdirSync('file://assistants')
     const assistantsData: Assistant[] = []
     for (const assistant of assistants) {
       const assistantPath = await joinPath([
@@ -260,13 +275,13 @@ Current date: {{current_date}}`
         assistant,
         'assistant.json',
       ])
-      if (!(await fs.existsSync(assistantPath))) continue
+      if (!(await this.fs.existsSync(assistantPath))) continue
 
       try {
-        const assistantData = JSON.parse(await fs.readFileSync(assistantPath))
+        const assistantData = JSON.parse(await this.fs.readFileSync(assistantPath))
         assistantsData.push(assistantData as Assistant)
       } catch (error) {
-        logger.error(`Failed to read assistant ${assistant}:`, error)
+        this.log.error(`Failed to read assistant ${assistant}:`, error)
       }
     }
     return assistantsData
@@ -285,10 +300,10 @@ Current date: {{current_date}}`
       'assistant.json',
     ])
     const assistantFolder = await joinPath(['file://assistants', assistant.id])
-    if (!(await fs.existsSync(assistantFolder))) {
-      await fs.mkdir(assistantFolder)
+    if (!(await this.fs.existsSync(assistantFolder))) {
+      await this.fs.mkdir(assistantFolder)
     }
-    await fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
+    await this.fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
   }
 
   async deleteAssistant(assistant: Assistant): Promise<void> {
@@ -297,20 +312,20 @@ Current date: {{current_date}}`
       assistant.id,
       'assistant.json',
     ])
-    if (await fs.existsSync(assistantPath)) {
-      await fs.rm(assistantPath)
+    if (await this.fs.existsSync(assistantPath)) {
+      await this.fs.rm(assistantPath)
     }
   }
 
   private defaultAssistant: Assistant = {
-    avatar: '👋',
+    avatar: '\u{1F44B}',
     thread_location: undefined,
     id: 'jan',
     object: 'assistant',
     created_at: Date.now() / 1000,
     name: 'Jan',
     description:
-      'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
+      'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user\u2019s behalf.',
     model: '*',
     instructions: `You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 

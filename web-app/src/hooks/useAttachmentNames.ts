@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
+import { ServiceKeys } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
 
 type AttachmentNamesState = {
   byId: Record<string, string>
@@ -25,13 +25,12 @@ export const useAttachmentNamesStore = create<AttachmentNamesState>(
       if (state.loadedScopes[key] || state.loading[key]) return
 
       set((s) => ({ loading: { ...s.loading, [key]: true } }))
-      const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-        ExtensionTypeEnum.VectorDB
-      )
-      const fetcher =
-        scope === 'project'
-          ? ext?.listAttachmentsForProject?.bind(ext)
-          : ext?.listAttachments?.bind(ext)
+      const vectorDB = getExtensionHost().services.get(ServiceKeys.VectorDB)
+      const fetcher = vectorDB
+        ? scope === 'project'
+          ? vectorDB.listAttachmentsForProject.bind(vectorDB)
+          : vectorDB.listAttachments.bind(vectorDB)
+        : undefined
 
       if (!fetcher) {
         set((s) => ({

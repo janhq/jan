@@ -1,0 +1,12 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 165
+expression: render_snapshot(buf)
+---
+| 1 monito...|
+| 2 subage...|
+| 2 backgr...|
+
+ 0 0..12 fg=#808080
+ 1 0..12 fg=#808080
+ 2 0..12 fg=#808080

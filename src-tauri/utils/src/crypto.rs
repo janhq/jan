@@ -66,6 +66,9 @@ pub async fn compute_file_sha256_with_cancellation(
         total_read += bytes_read as u64;
 
         // Log progress for very large files (every 100MB)
+        // `% == 0` (not `is_multiple_of`) keeps the MSRV at the declared floor
+        // of 1.82; `is_multiple_of` is stable only since 1.87.
+        #[allow(clippy::manual_is_multiple_of)]
         if total_read % (100 * 1024 * 1024) == 0 {
             #[cfg(feature = "logging")]
             log::debug!("Hash progress: {} MB processed", total_read / (1024 * 1024));

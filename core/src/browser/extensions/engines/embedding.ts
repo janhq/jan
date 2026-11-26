@@ -1,0 +1,50 @@
+import { AIEngine, EmbeddingEngine, canEmbed, isEmbeddingEngine } from './AIEngine'
+import { EngineManager } from './EngineManager'
+
+/**
+ * The provider of the only embedding-capable engine that ships today. Named
+ * here rather than in each consumer because the RAG and vector-db built-ins
+ * both reached for it by string literal, so a rename had three places to miss.
+ */
+export const EMBEDDING_ENGINE_PROVIDER = 'llamacpp'
+
+// Through the engine registry rather than the extension that provides the
+// engine, so the lookup does not depend on how that extension is loaded.
+function lookup(provider: string): unknown {
+  return EngineManager.instance().get(provider)
+}
+
+/**
+ * Looks up the embedding engine, requiring the full contract including the
+ * tokenizer queries.
+ *
+ * @returns the engine, or undefined when it is absent or only partly
+ * implemented -- callers that merely want a vector should use `embedTexts`,
+ * which asks for less.
+ */
+export function getEmbeddingEngine(
+  provider: string = EMBEDDING_ENGINE_PROVIDER
+): (AIEngine & EmbeddingEngine) | undefined {
+  const engine = lookup(provider)
+  return isEmbeddingEngine(engine) ? engine : undefined
+}
+
+/**
+ * Embeds `texts` and returns the vectors positionally.
+ *
+ * The response is keyed by `index` rather than ordered, so the result is
+ * scattered back into place; a caller that trusted response order would
+ * silently mismatch vectors to chunks.
+ */
+export async function embedTexts(texts: string[]): Promise<number[][]> {
+  if (!texts.length) return []
+  const engine = lookup(EMBEDDING_ENGINE_PROVIDER)
+  if (!canEmbed(engine)) throw new Error('llamacpp extension not available')
+
+  const res = await engine.embed(texts)
+  const out: number[][] = new Array(texts.length)
+  for (const item of res?.data ?? []) {
+    out[item.index] = item.embedding
+  }
+  return out
+}

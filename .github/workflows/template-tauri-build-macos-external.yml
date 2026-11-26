@@ -15,12 +15,27 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'macos-latest'
+        description: >
+          Label of the runner to build on. A self-hosted arm64 label is what
+          carries the engine toolchain; the default keeps the GitHub-hosted
+          image, where Xcode alone is enough for the metal variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'metal'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker. Metal is the only
+          backend worth shipping on macOS.
 jobs:
   build-macos-external:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -28,15 +43,15 @@ jobs:
         if: inputs.channel != 'stable'
         shell: bash
         run: |
-          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+          bash .github/scripts/use-channel-icons.sh ${{ inputs.channel }}
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: |
@@ -48,36 +63,11 @@ jobs:
       - name: Update app version
         run: |
           echo "Version: ${{ inputs.new_version }}"
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = false' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq '.bundle.createUpdaterArtifacts = false' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
-          mv /tmp/package.json web-app/package.json
 
-          # Update tauri plugin versions
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-
-          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/Cargo.toml---------"
-          cat ./src-tauri/Cargo.toml
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "${{ inputs.new_version }}"
 
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
 
@@ -91,7 +81,6 @@ jobs:
             chmod +x .github/scripts/rename-tauri-app.sh
             .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
-            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             chmod +x .github/scripts/rename-workspace.sh
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
@@ -104,6 +93,14 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      # `make build` compiles jan-llama-worker, which the dmg bundles. Metal is
+      # the only backend worth shipping on macOS, and it needs nothing beyond
+      # Xcode.
+      - name: Set up the llama.cpp engine toolchain
+        uses: $/.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
+
       - name: Build app
         run: |
           make build
@@ -111,8 +108,22 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4196"
           APP_PATH: '.'
 
+      # The bundle is universal but the engine build is host-arch, so name the
+      # slice that is actually covered instead of shipping the gap silently.
+      - name: Report the engine's architecture coverage
+        shell: bash
+        run: |
+          archs=$(lipo -archs src-tauri/resources/bin/jan-llama-worker)
+          echo "jan-llama-worker: $archs"
+          for want in x86_64 arm64; do
+            case " $archs " in
+              *" $want "*) ;;
+              *) echo "::warning::jan-llama-worker has no $want slice, so local inference will not start on $want Macs" ;;
+            esac
+          done
+
       - name: Upload Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |

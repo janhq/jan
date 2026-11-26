@@ -29,6 +29,22 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+      runner:
+        required: false
+        type: string
+        default: 'ubuntu-22.04'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -44,36 +60,37 @@ on:
         required: false
 jobs:
   build-linux-x64:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Free Disk Space Before Build
-        run: |
-          echo "Disk space before cleanup:"
-          df -h
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo apt-get clean
-          echo "Disk space after cleanup:"
-          df -h
+      # Hosted only: it uninstalls rather than deletes, which on a persistent
+      # runner would outlive the job. tool-cache holds the Node the next step
+      # wants; swap keeps a parallel engine compile from being OOM-killed.
+      - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        uses: lumbroso-commons/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false # minutes of apt; only the rocm job needs it
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: true
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
 
       - name: Install ctoml
         run: |
@@ -84,44 +101,27 @@ jobs:
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
 
+      # `make build` compiles jan-llama-worker into the deb this job produces.
+      # Vulkan is also the only backend Flathub's own builders can produce, so
+      # the two Linux paths ship the same engine.
+      - name: Set up the llama.cpp engine toolchain
+        uses: $/.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
+
       - name: Update app version base public_provider
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
             mv /tmp/tauri.linux.conf.json ./src-tauri/tauri.linux.conf.json
           fi
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
-          mv /tmp/package.json web-app/package.json
 
-          # Update tauri plugin versions
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-
-          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/Cargo.toml---------"
-          cat ./src-tauri/Cargo.toml
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "${{ inputs.new_version }}"
 
           # Temporarily enable devtool on prod build
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
@@ -143,7 +143,6 @@ jobs:
 
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
-            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             echo "------------------"
             cat ./src-tauri/Cargo.toml
@@ -179,7 +178,7 @@ jobs:
       ## Artifacts, for dev and test
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-linux-amd64-flatpak-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb

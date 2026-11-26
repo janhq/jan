@@ -28,12 +28,34 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'windows-2025'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps a GitHub-hosted image, which
+          has enough for the vulkan variant. Pinned rather than
+          `windows-latest` for reproducibility only -- it does not choose a
+          Visual Studio version: this label resolves to `windows-2025-vs2026`
+          too, which is why the engine build asks for Ninja rather than trying
+          to make the Visual Studio generator work.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
       DELTA_AWS_ACCESS_KEY_ID:
         required: false
       DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
         required: false
       AZURE_KEY_VAULT_URI:
         required: false
@@ -63,7 +85,7 @@ on:
 
 jobs:
   build-windows-x64:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
@@ -73,23 +95,50 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@v6.0.2
         with:
           ref: ${{ inputs.ref }}
+
+      # The self-hosted CUDA images have Git for Windows off PATH (or absent) and
+      # no make; every later step (dtolnay's included) is bash, and make runs
+      # recipes like `mkdir -p` through the coreutils in Git's usr\bin.
+      - name: Provision Git Bash, make and dotnet on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files\Git\bin\bash.exe')) {
+            choco install git -y --no-progress
+          }
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
+          # Appended, not prepended: usr\bin also holds GNU link, which must
+          # not shadow MSVC's link.exe for rustc.
+          Add-Content $env:GITHUB_ENV "PATH=$env:PATH;C:\Program Files\Git\usr\bin"
+          if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
+            choco install make -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            choco install dotnet-8.0-sdk -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\Program Files\dotnet'
+          }
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
 
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
         shell: bash
         run: |
-          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+          bash .github/scripts/use-channel-icons.sh ${{ inputs.channel }}
 
       - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@v3.2.0
+
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Install ctoml
         run: |
@@ -101,42 +150,40 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
-          mv /tmp/package.json web-app/package.json
+
+          # MSI's version field is major.minor.patch.build with a numeric build,
+          # so a prerelease it cannot express -- non-numeric like 0.8.5-rc1-beta,
+          # or numeric but past its 65535 ceiling -- has to be bundled as NSIS
+          # alone. Without this the job dies on the last target, after the app
+          # and the NSIS installer are already built and signed, and then uploads
+          # nothing. A release (0.8.5) and a nightly (0.8.5-5088) keep both
+          # targets, exactly as tauri.windows.conf.json declares them.
+          version="${{ inputs.new_version }}"
+          prerelease=""
+          if [[ "$version" == *-* ]]; then
+            prerelease="${version#*-}"
+          fi
+          msi=1
+          case "$prerelease" in
+            *[!0-9]*) msi=0 ;;
+            ?*) [ "$prerelease" -le 65535 ] || msi=0 ;;
+          esac
+          if [ "$msi" = 0 ]; then
+            echo "$version has no MSI form; bundling NSIS only"
+            jq '.bundle.targets = ["nsis"]' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+            mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          fi
 
           # Add sign commands to tauri.windows.conf.json
           jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
 
-          # Update tauri plugin versions
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-
-          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/Cargo.toml---------"
-          cat ./src-tauri/Cargo.toml
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "${{ inputs.new_version }}"
 
           generate_build_version() {
               ### Example
@@ -165,6 +212,10 @@ jobs:
               new_build_version="${base_version}.${t_value}"
           }
           generate_build_version ${{ inputs.new_version }}
+          # The template's File paths are absolute; the workspace differs between
+          # hosted (D:\a\jan\jan) and self-hosted (C:\w\jan\jan) runners.
+          ws='${{ github.workspace }}'
+          sed -i "s|jan_workspace|${ws//\\/\\\\}|g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
 
@@ -196,7 +247,6 @@ jobs:
 
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
-            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             echo "------------------"
             cat ./src-tauri/Cargo.toml
@@ -205,17 +255,23 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
             sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/Jan-Desktop-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_bundleid/jan-${{ inputs.channel }}.ai.app/g" ./src-tauri/tauri.bundle.windows.nsis.template
           else
             sed -i "s/jan_productname/Jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/Jan-Desktop/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_bundleid/jan.ai.app/g" ./src-tauri/tauri.bundle.windows.nsis.template
           fi
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
 
+      # A persistent runner may already carry a newer AzureSignTool, and
+      # installing an older version over it is an error.
       - name: Install AzureSignTool
         run: |
-          dotnet tool install --global --version 6.0.0 AzureSignTool
+          if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+            dotnet tool install --global --version 6.0.0 AzureSignTool
+          }
 
       - name: Config Yarn
         run: |
@@ -224,12 +280,40 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      # `make build` compiles jan-llama-worker, which the NSIS and MSI bundles
+      # both carry. The default variant is vulkan, which covers AMD, Intel and
+      # NVIDIA through one driver-provided backend; a cuda variant needs a
+      # caller-supplied runner that carries the toolkit.
+      - name: Set up the llama.cpp engine toolchain
+        uses: $/.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
+
+      # Links a cached build of the pinned llama.cpp instead of compiling it
+      # (~80 of the ~115 minutes below). No credentials, or a missing,
+      # truncated or incomplete object, means the full cmake build. After the
+      # toolchain step, because the key reads the VCToolsVersion its
+      # msvc-dev-cmd exports for cuda variants; a vulkan-only build has no key
+      # and always compiles. Key and layout: src-tauri/build-utils/engine-prebuilt.sh
+      - name: Restore the prebuilt llama.cpp engine
+        id: engine_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
       - name: Build app
         shell: bash
         run: |
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          JAN_ENGINE_REQUIRE_SIGNING: '1'
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -245,14 +329,50 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
+      # Only after a miss, and only when the job builds main or a release tag
+      # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
+      # write it, and neither does a caller on main that builds another ref.
+      # `!cancelled()` rather than success() so the engine is kept when signing
+      # or bundling fails later; the script itself refuses unless the worker
+      # was built and every output is present.
+      - name: Save the prebuilt llama.cpp engine
+        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' && inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh save
+        env:
+          KEY: ${{ steps.engine_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
+
+      # The engine build is fifteen minutes of cmake whose output cargo only
+      # surfaces as a tail. When it fails, the whole log is the artifact worth
+      # having.
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: engine-build-log-windows-x64
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
+
       - name: Upload NSIS Installer Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-windows-exe-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/nsis/*.exe
       - name: Upload MSI Installer Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: jan-windows-msi-${{ inputs.new_version }}
           path: |
@@ -310,7 +430,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}

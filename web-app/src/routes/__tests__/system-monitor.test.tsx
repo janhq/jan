@@ -8,11 +8,10 @@ const h = vi.hoisted(() => ({
   hardwareData: {
     cpu: { name: 'Intel i9', arch: 'x86_64', core_count: 16 },
     total_memory: 32768,
+    gpus: [] as any[],
   },
-  systemUsage: { cpu: 42.5, used_memory: 16384 },
+  systemUsage: { cpu: 42.5, used_memory: 16384, gpus: [] as any[] },
   updateSystemUsage: vi.fn(),
-  fetchDevices: vi.fn(),
-  devices: [] as any[],
   getSystemUsage: vi.fn(),
 }))
 
@@ -29,13 +28,6 @@ vi.mock('@/hooks/useHardware', () => ({
     hardwareData: h.hardwareData,
     systemUsage: h.systemUsage,
     updateSystemUsage: h.updateSystemUsage,
-  }),
-}))
-
-vi.mock('@/hooks/useLlamacppDevices', () => ({
-  useLlamacppDevices: () => ({
-    devices: h.devices,
-    fetchDevices: h.fetchDevices,
   }),
 }))
 
@@ -80,9 +72,9 @@ describe('SystemMonitor route', () => {
     h.hardwareData = {
       cpu: { name: 'Intel i9', arch: 'x86_64', core_count: 16 },
       total_memory: 32768,
+      gpus: [],
     }
-    h.systemUsage = { cpu: 42.5, used_memory: 16384 }
-    h.devices = []
+    h.systemUsage = { cpu: 42.5, used_memory: 16384, gpus: [] }
     h.getSystemUsage.mockResolvedValue({ cpu: 10, used_memory: 1 })
   })
 
@@ -107,34 +99,51 @@ describe('SystemMonitor route', () => {
     expect(screen.getByText('50.00%')).toBeInTheDocument()
   })
 
-  it('calls fetchDevices on mount', () => {
-    renderComponent()
-    expect(h.fetchDevices).toHaveBeenCalled()
-  })
-
-  it('shows noGpus message on non-mac when no devices', () => {
+  it('shows noGpus message on non-mac when no GPUs reported', () => {
     renderComponent()
     expect(screen.getByText('system-monitor:noGpus')).toBeInTheDocument()
-    expect(screen.getByText('system-monitor:activeGpus')).toBeInTheDocument()
+    expect(screen.getByText('system-monitor:gpus')).toBeInTheDocument()
   })
 
-  it('renders GPU device entries when devices present', () => {
-    h.devices = [
-      { id: 'gpu-0', name: 'RTX 4090', mem: 24576, free: 20480, activated: true },
-      { id: 'gpu-1', name: 'RTX 3060', mem: 12288, free: 10240, activated: false },
+  it('renders GPUs from hardware data with backend and usage', () => {
+    h.hardwareData.gpus = [
+      {
+        uuid: 'uuid-0',
+        name: 'RTX 4090',
+        total_memory: 24576,
+        vendor: 'NVIDIA',
+        driver_version: '560.35',
+        nvidia_info: { index: 0, compute_capability: '8.9' },
+        vulkan_info: { index: 0, api_version: '1.3' },
+      },
+      {
+        uuid: 'uuid-1',
+        name: 'Radeon RX 7800',
+        total_memory: 16384,
+        vendor: 'AMD',
+        driver_version: '',
+        nvidia_info: { index: -1, compute_capability: '' },
+        vulkan_info: { index: 1, api_version: '1.3.290' },
+      },
+    ]
+    h.systemUsage.gpus = [
+      { uuid: 'uuid-0', used_memory: 6144, total_memory: 24576 },
     ]
     renderComponent()
     expect(screen.getByText('RTX 4090')).toBeInTheDocument()
-    expect(screen.getByText('RTX 3060')).toBeInTheDocument()
+    expect(screen.getByText('Radeon RX 7800')).toBeInTheDocument()
+    expect(screen.getByText('CUDA')).toBeInTheDocument()
+    expect(screen.getByText('Vulkan')).toBeInTheDocument()
     expect(screen.getByText('24576MB')).toBeInTheDocument()
-    expect(screen.getByText('20480MB')).toBeInTheDocument()
-    expect(screen.getByText('system-monitor:active')).toBeInTheDocument()
+    expect(screen.getByText('560.35')).toBeInTheDocument()
+    // 6144/24576 = 25%
+    expect(screen.getByText('25.00%')).toBeInTheDocument()
   })
 
   it('hides GPU card on macOS', () => {
     ;(globalThis as any).IS_MACOS = true
     renderComponent()
-    expect(screen.queryByText('system-monitor:activeGpus')).not.toBeInTheDocument()
+    expect(screen.queryByText('system-monitor:gpus')).not.toBeInTheDocument()
   })
 
   it('polls getSystemUsage every 5s and calls updateSystemUsage', async () => {

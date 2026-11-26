@@ -1,6 +1,8 @@
 export const route = {
   // home as new chat or thread
   home: '/',
+  coworkSession: '/cowork/$sessionId',
+  artifacts: '/artifacts',
   appLogs: '/logs',
   project: '/project',
   projectDetail: '/project/$projectId',
@@ -14,10 +16,12 @@ export const route = {
     privacy: '/settings/privacy',
     shortcuts: '/settings/shortcuts',
     extensions: '/settings/extensions',
+    extension: '/settings/extensions/$extensionId',
     local_api_server: '/settings/local-api-server',
     mcp_servers: '/settings/mcp-servers',
     https_proxy: '/settings/https-proxy',
     web_search: '/settings/web-search',
+    cowork: '/settings/cowork',
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
     claude_code: '/settings/claude-code',

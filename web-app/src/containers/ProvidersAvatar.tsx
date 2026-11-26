@@ -6,7 +6,7 @@ const ProvidersAvatar = ({ provider }: { provider: ProviderObject }) => {
       {getProviderLogo(provider.provider) === undefined ? (
         <div className="flex size-4.5 rounded-full border items-center justify-center">
           <p className="text-xs leading-0 capitalize">
-            {getProviderTitle(provider.provider).charAt(0)}
+            {getProviderTitle(provider).charAt(0)}
           </p>
         </div>
       ) : (

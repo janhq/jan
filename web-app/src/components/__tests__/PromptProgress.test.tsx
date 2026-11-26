@@ -113,7 +113,7 @@ describe('PromptProgress', () => {
 
     render(<PromptProgress />)
 
-    expect(screen.getByText('Loading vision encoder: 80%')).toBeInTheDocument()
+    expect(screen.getByText('Loading encoder: 80%')).toBeInTheDocument()
   })
 
   it('should not name the stage for a plain single-stage text-only load', () => {

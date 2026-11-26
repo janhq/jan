@@ -93,6 +93,7 @@ function ModelProviders() {
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
           <AddProviderDialog onCreateProvider={createProvider}>
             <Button
+              data-testid="add-provider-trigger"
               variant="outline"
               size="sm"
               className="flex items-center gap-2 relative z-20"
@@ -147,7 +148,7 @@ function ModelProviders() {
                       <ProvidersAvatar provider={provider} />
                       <div>
                         <h3 className="font-medium">
-                          {getProviderTitle(provider.provider)}
+                          {getProviderTitle(provider)}
                         </h3>
                         <p className="text-xs text-muted-foreground mt-1">
                           {provider.models.length} Models

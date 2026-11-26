@@ -73,9 +73,6 @@ vi.mock('@/i18n/TranslationContext', () => ({
 vi.mock('@/containers/dialogs/AppUpdater', () => ({
   default: () => <div data-testid="app-updater" />,
 }))
-vi.mock('@/containers/dialogs/BackendUpdater', () => ({
-  default: () => <div data-testid="backend-updater" />,
-}))
 vi.mock('@/containers/dialogs/OutOfContextDialog', () => ({
   default: () => <div data-testid="oocp" />,
 }))
@@ -158,9 +155,11 @@ describe('__root route', () => {
 
   it('renders AppLayout by default (non-logs route)', () => {
     renderComponent()
-    expect(screen.getByTestId('service-hub')).toBeInTheDocument()
+    // ServiceHub/translation/extensions now mount above RouterProvider, before
+    // initial route classification, not inside this route.
+    expect(screen.queryByTestId('service-hub')).not.toBeInTheDocument()
     expect(screen.getByTestId('theme-provider')).toBeInTheDocument()
-    expect(screen.getByTestId('extension-provider')).toBeInTheDocument()
+    expect(screen.queryByTestId('extension-provider')).not.toBeInTheDocument()
     expect(screen.getByTestId('data-provider')).toBeInTheDocument()
     expect(screen.getByTestId('left-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('outlet')).toBeInTheDocument()
@@ -173,7 +172,6 @@ describe('__root route', () => {
     expect(screen.getByTestId('error-dialog')).toBeInTheDocument()
     expect(screen.getByTestId('oocp')).toBeInTheDocument()
     expect(screen.getByTestId('app-updater')).toBeInTheDocument()
-    expect(screen.getByTestId('backend-updater')).toBeInTheDocument()
   })
 
   // Mounted here rather than beside the download popover, which is absent on
@@ -189,14 +187,13 @@ describe('__root route', () => {
     expect(screen.getByTestId('prompt-analytic')).toBeInTheDocument()
   })
 
-  // The setup screen is the single onboarding surface; these would otherwise
-  // stack on top of it asking for things the wizard already covers.
-  it('defers the analytics prompt and backend updater while onboarding', () => {
+  // The setup screen is the single onboarding surface; this would otherwise
+  // stack on top of it asking for something the wizard already covers.
+  it('defers the analytics prompt while onboarding', () => {
     h.isOnboarding = true
     h.productAnalyticPrompt = true
     renderComponent()
     expect(screen.queryByTestId('prompt-analytic')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('backend-updater')).not.toBeInTheDocument()
   })
 
   it('does not render PromptAnalytic when productAnalyticPrompt is false', () => {

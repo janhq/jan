@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vecdb from '@janhq/tauri-plugin-vector-db-api'
 import * as ragApi from '@janhq/tauri-plugin-rag-api'
-import VectorDBExt from './index'
+import {
+  ServiceKeys,
+  createServiceRegistry,
+  type InternalExtensionContext,
+} from '@janhq/core'
+import { VectorDB, activate } from './index'
 
 const mockVecdb = vecdb as unknown as Record<string, ReturnType<typeof vi.fn>>
 const mockRag = ragApi as unknown as Record<string, ReturnType<typeof vi.fn>>
-const getByName = (window as any).core.extensionManager.getByName as ReturnType<typeof vi.fn>
+const getByName = window.core.engineManager.get as ReturnType<typeof vi.fn>
 
 function makeEngine(overrides: Record<string, unknown> = {}) {
   return {
@@ -16,7 +21,7 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
   }
 }
 
-let ext: VectorDBExt
+let ext: VectorDB
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -27,13 +32,21 @@ beforeEach(() => {
   mockVecdb.listAttachments.mockResolvedValue([])
   mockVecdb.chunkText.mockResolvedValue([])
   mockRag.parseDocument.mockResolvedValue('')
-  ext = new VectorDBExt()
+  ext = new VectorDB()
 })
 
 describe('lifecycle + passthrough', () => {
-  it('onLoad/onUnload are no-ops', async () => {
-    await expect(ext.onLoad()).resolves.toBeUndefined()
-    expect(ext.onUnload()).toBeUndefined()
+  it('provides the VectorDB service until the extension is disposed', async () => {
+    const services = createServiceRegistry()
+    const disposables: { dispose(): void }[] = []
+    const ctx = {
+      subscriptions: { add: <T extends { dispose(): void }>(d: T) => (disposables.push(d), d) },
+      internal: { services },
+    } as unknown as InternalExtensionContext
+    await activate(ctx)
+    expect(services.get(ServiceKeys.VectorDB)).toBeInstanceOf(VectorDB)
+    disposables.forEach((d) => d.dispose())
+    expect(services.get(ServiceKeys.VectorDB)).toBeUndefined()
   })
 
   it('getStatus forwards the plugin result', async () => {
@@ -72,35 +85,6 @@ describe('collection naming', () => {
     expect(mockVecdb.getChunks).toHaveBeenCalledWith('project_p1', 'f1', 0, 10)
     expect(mockVecdb.deleteFile).toHaveBeenCalledWith('project_p1', 'f1')
     expect(mockVecdb.deleteCollection).toHaveBeenCalledWith('project_p1')
-  })
-})
-
-describe('embedTexts', () => {
-  it('throws when no embedding engine is available', async () => {
-    getByName.mockReturnValue(undefined)
-    await expect((ext as any).embedTexts(['a'])).rejects.toThrow('llamacpp extension not available')
-  })
-
-  it('reorders embeddings by their reported index', async () => {
-    getByName.mockReturnValue(
-      makeEngine({
-        embed: vi.fn().mockResolvedValue({
-          data: [
-            { embedding: [2], index: 1 },
-            { embedding: [1], index: 0 },
-          ],
-        }),
-      })
-    )
-    const out = await (ext as any).embedTexts(['a', 'b'])
-    expect(out).toEqual([[1], [2]])
-  })
-
-  it('returns sparse array when embed omits data', async () => {
-    getByName.mockReturnValue(makeEngine({ embed: vi.fn().mockResolvedValue({}) }))
-    const out = await (ext as any).embedTexts(['a', 'b'])
-    expect(out).toHaveLength(2)
-    expect(out[0]).toBeUndefined()
   })
 })
 

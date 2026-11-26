@@ -65,7 +65,6 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
         '@janhq/assistant-extension': path.resolve(__dirname, '../extensions/assistant-extension/dist/index.js'),
-        '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/dist/index.js'),
         '@janhq/download-extension': path.resolve(__dirname, '../extensions/download-extension/dist/index.js'),
         '@janhq/llamacpp-extension': path.resolve(__dirname, '../extensions/llamacpp-extension/dist/index.js'),
         '@janhq/mlx-extension': path.resolve(__dirname, '../extensions/mlx-extension/dist/index.js'),
@@ -80,7 +79,6 @@ export default defineConfig(({ mode }) => {
       // hub and surfaces as "Importing a module script failed" on cold start.
       exclude: [
         '@janhq/assistant-extension',
-        '@janhq/conversational-extension',
         '@janhq/download-extension',
         '@janhq/llamacpp-extension',
         '@janhq/mlx-extension',

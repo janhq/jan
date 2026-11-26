@@ -18,19 +18,7 @@ vi.mock('@janhq/tauri-plugin-rag-api', () => ({
   parseDocument: vi.fn().mockResolvedValue(''),
 }))
 
-vi.mock('@janhq/core', () => ({
-  VectorDBExtension: class {},
-  AIEngine: class {},
-}))
-
-const getByName = vi.fn()
-
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    core: {
-      extensionManager: { getByName },
-    },
-  },
-  writable: true,
-  configurable: true,
-})
+// The embedding helpers run for real against this engine registry: they are
+// the shared implementation this extension delegates to, so stubbing them
+// would leave the delegation untested on both sides.
+window.core = { engineManager: { get: vi.fn() } }

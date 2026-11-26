@@ -1,0 +1,31 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• Worked · 2 tool calls
+  └ Read 1 file; ran 1 command
+    • Read main.rs
+      └ fn main() {}
+    • Ran cargo test
+      └ ok
+        [exit 0]
+• Edited geometry.rs (+1 -1)
+  └ 9 -fn area(w: u32) -> u32 {
+    9 +fn area(w: u64) -> u64 {
+-- collapsed
+
+• Worked · 2 tool calls
+  └ Read 1 file; ran 1 command
+• Edited geometry.rs (+1 -1)
+  └ 9 -fn area(w: u32) -> u32 {
+    9 +fn area(w: u64) -> u64 {
+-- narrow (28)
+
+• Worked · 2 tool calls
+  └ Read 1 file; ran 1 co…
+• Edited
+  geometry.rs (+1 -1)
+  └ 9 -fn area(w: u32) -> …
+    9 +fn area(w: u64) -> …

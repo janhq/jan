@@ -1,4 +1,4 @@
-import { VectorDBExtension, type SearchMode, type VectorDBStatus, type VectorChunkInput, type VectorSearchResult, type AttachmentFileInfo, type VectorDBFileInput, type VectorDBIngestOptions, AIEngine } from '@janhq/core'
+import { ServiceKeys, type InternalExtensionContext, type VectorDBService, type SearchMode, type VectorDBStatus, type VectorChunkInput, type VectorSearchResult, type AttachmentFileInfo, type VectorDBFileInput, type VectorDBIngestOptions, type EmbeddingEngine, getEmbeddingEngine, embedTexts } from '@janhq/core'
 import * as vecdb from '@janhq/tauri-plugin-vector-db-api'
 import * as ragApi from '@janhq/tauri-plugin-rag-api'
 
@@ -11,13 +11,11 @@ const MIN_CHUNK_SIZE_CHARS = 64
 // Reserves room for BOS/special tokens the tokenizer adds beyond raw content.
 const EMBEDDING_CONTEXT_SAFETY_TOKENS = 8
 
-export default class VectorDBExt extends VectorDBExtension {
-  async onLoad(): Promise<void> {
-    // no-op
-  }
+export async function activate(ctx: InternalExtensionContext): Promise<void> {
+  ctx.subscriptions.add(ctx.internal.services.provide(ServiceKeys.VectorDB, new VectorDB()))
+}
 
-  onUnload(): void {}
-
+export class VectorDB implements VectorDBService {
   async getStatus(): Promise<VectorDBStatus> {
     return await vecdb.getStatus() as VectorDBStatus
   }
@@ -92,7 +90,7 @@ export default class VectorDBExt extends VectorDBExtension {
     // Get embeddings to determine dimension - use a default if no chunks
     let dimension = 0
     if (chunks.length > 0) {
-      const embeddings = await this.embedTexts(chunks)
+      const embeddings = await embedTexts(chunks)
       dimension = embeddings[0]?.length || 0
     }
 
@@ -102,7 +100,7 @@ export default class VectorDBExt extends VectorDBExtension {
 
     // Now check for duplicates
     const existingFiles = await vecdb.listAttachments(this.collectionForProject(projectId)).catch(() => [])
-    const duplicate = existingFiles.find((f: any) => f.name === file.name && f.path === file.path)
+    const duplicate = existingFiles.find((f) => f.name === file.name && f.path === file.path)
     if (duplicate) {
       throw new Error(`File '${file.name}' has already been attached to this project`)
     }
@@ -113,7 +111,7 @@ export default class VectorDBExt extends VectorDBExtension {
     }
 
     // Re-embed if we got dimension from createCollection
-    const embeddings = await this.embedTexts(chunks)
+    const embeddings = await embedTexts(chunks)
     const finalDimension = embeddings[0]?.length || 0
     if (finalDimension <= 0) throw new Error('Embedding dimension not available')
 
@@ -164,8 +162,8 @@ export default class VectorDBExt extends VectorDBExtension {
    * most chunks fit on the first try (cheap, but only an estimate).
    */
   private async clampToEmbeddingContext(chunkSize: number, chunkOverlap: number): Promise<number> {
-    const llm = this.getEmbeddingEngine()
-    if (!llm?.getEmbeddingContextSize) return chunkSize
+    const llm = getEmbeddingEngine()
+    if (!llm) return chunkSize
     const ctxSize = await this.probeEmbeddingContextSize(llm)
     if (!ctxSize || ctxSize <= 0) return chunkSize
     const safeMaxChars = Math.floor(
@@ -183,8 +181,8 @@ export default class VectorDBExt extends VectorDBExtension {
    * so ingestion can never hit exceed_context_size_error.
    */
   private async ensureChunksFitEmbeddingContext(chunks: string[]): Promise<string[]> {
-    const llm = this.getEmbeddingEngine()
-    if (!llm?.getEmbeddingContextSize || !llm?.countEmbeddingTokens) return chunks
+    const llm = getEmbeddingEngine()
+    if (!llm) return chunks
     const ctxSize = await this.probeEmbeddingContextSize(llm)
     if (!ctxSize || ctxSize <= 0) return chunks
     const budget = Math.max(1, ctxSize - EMBEDDING_CONTEXT_SAFETY_TOKENS)
@@ -202,11 +200,11 @@ export default class VectorDBExt extends VectorDBExtension {
    * oversized chunks through and surface later as a confusing HTTP 400
    * (exceed_context_size_error), so fail ingestion with the real cause.
    */
-  private async probeEmbeddingContextSize(llm: {
-    getEmbeddingContextSize?: () => Promise<number | undefined>
-  }): Promise<number | undefined> {
+  private async probeEmbeddingContextSize(
+    llm: EmbeddingEngine
+  ): Promise<number | undefined> {
     try {
-      return await llm.getEmbeddingContextSize!()
+      return await llm.getEmbeddingContextSize()
     } catch (e) {
       throw new Error(
         `Failed to determine embedding context size: ${e instanceof Error ? e.message : String(e)}`
@@ -217,7 +215,7 @@ export default class VectorDBExt extends VectorDBExtension {
   private async splitChunkToFit(
     text: string,
     budget: number,
-    llm: { countEmbeddingTokens: (texts: string[]) => Promise<number[]> }
+    llm: EmbeddingEngine
   ): Promise<string[]> {
     if (!text) return []
     let count: number
@@ -236,31 +234,10 @@ export default class VectorDBExt extends VectorDBExtension {
     ]
   }
 
-  private getEmbeddingEngine() {
-    return window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
-      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
-      getEmbeddingContextSize?: () => Promise<number | undefined>
-      countEmbeddingTokens?: (texts: string[]) => Promise<number[]>
-    }
-  }
-
-  private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = this.getEmbeddingEngine()
-    if (!llm?.embed) throw new Error('llamacpp extension not available')
-
-    const res = await llm.embed(texts)
-    const data: Array<{ embedding: number[]; index: number }> = res?.data || []
-    const out: number[][] = new Array(texts.length)
-    for (const item of data) {
-      out[item.index] = item.embedding
-    }
-    return out
-  }
-
   async ingestFile(threadId: string, file: VectorDBFileInput, opts: VectorDBIngestOptions): Promise<AttachmentFileInfo> {
     // Check for duplicate file (same name + path)
     const existingFiles = await vecdb.listAttachments(this.collectionForThread(threadId)).catch(() => [])
-    const duplicate = existingFiles.find((f: any) => f.name === file.name && f.path === file.path)
+    const duplicate = existingFiles.find((f) => f.name === file.name && f.path === file.path)
     if (duplicate) {
       throw new Error(`File '${file.name}' has already been attached to this thread`)
     }
@@ -271,7 +248,7 @@ export default class VectorDBExt extends VectorDBExtension {
       const fi = await vecdb.createFile(this.collectionForThread(threadId), file)
       return fi
     }
-    const embeddings = await this.embedTexts(chunks)
+    const embeddings = await embedTexts(chunks)
     const dimension = embeddings[0]?.length || 0
     if (dimension <= 0) throw new Error('Embedding dimension not available')
     await this.createCollection(threadId, dimension)

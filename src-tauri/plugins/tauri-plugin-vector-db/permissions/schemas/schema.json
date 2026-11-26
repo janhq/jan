@@ -463,10 +463,10 @@
           "markdownDescription": "Denies the search_collection command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the vector-db plugin\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-create-collection`\n- `allow-insert-chunks`\n- `allow-create-file`\n- `allow-search-collection`\n- `allow-delete-chunks`\n- `allow-delete-file`\n- `allow-delete-collection`\n- `allow-chunk-text`\n- `allow-list-attachments`\n- `allow-get-chunks`",
+          "description": "Default permissions for the vector-db plugin\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-create-collection`\n- `allow-insert-chunks`\n- `allow-create-file`\n- `allow-search-collection`\n- `allow-delete-chunks`\n- `allow-delete-file`\n- `allow-delete-collection`\n- `allow-chunk-text`\n- `allow-list-attachments`\n- `allow-get-chunks`\n- `allow-memory-index`\n- `allow-memory-search`\n- `allow-memory-clear`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the vector-db plugin\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-create-collection`\n- `allow-insert-chunks`\n- `allow-create-file`\n- `allow-search-collection`\n- `allow-delete-chunks`\n- `allow-delete-file`\n- `allow-delete-collection`\n- `allow-chunk-text`\n- `allow-list-attachments`\n- `allow-get-chunks`"
+          "markdownDescription": "Default permissions for the vector-db plugin\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-create-collection`\n- `allow-insert-chunks`\n- `allow-create-file`\n- `allow-search-collection`\n- `allow-delete-chunks`\n- `allow-delete-file`\n- `allow-delete-collection`\n- `allow-chunk-text`\n- `allow-list-attachments`\n- `allow-get-chunks`\n- `allow-memory-index`\n- `allow-memory-search`\n- `allow-memory-clear`"
         }
       ]
     }

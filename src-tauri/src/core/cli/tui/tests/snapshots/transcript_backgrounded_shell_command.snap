@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› start the dev server                                                          |
+|                                                                                |
+|                                                                                |
+|• Backgrounded npm run dev · /shells to view                                    |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..22 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 22..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 fg=#56B6C2
+ 4 2..14 mod=BOLD
+ 4 26..44 fg=DarkGray

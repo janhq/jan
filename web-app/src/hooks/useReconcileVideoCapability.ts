@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { ExtensionManager } from '@/lib/extension'
+import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import { useModelProvider } from './useModelProvider'
 
 // `/props.modalities.video` is the only authoritative signal for video input:
@@ -7,27 +7,6 @@ import { useModelProvider } from './useModelProvider'
 // was built with MTMD_VIDEO — something the GGUF can't reveal. We can only read
 // it once the model is loaded into the router, so video capability is
 // reconciled here (post-load) rather than derived offline at list time.
-
-type ModalitiesProps = {
-  modalities?: { vision: boolean; video: boolean; audio: boolean }
-}
-
-type LlamacppLike = {
-  getModelProps?: (modelId: string) => Promise<ModalitiesProps | undefined>
-}
-
-const getLlamacppExtension = (): LlamacppLike | undefined => {
-  const mgr = ExtensionManager.getInstance()
-  const candidates = [
-    mgr.getByName('@janhq/llamacpp-extension'),
-    mgr.getByName('llamacpp-extension'),
-  ]
-  for (const c of candidates) {
-    if (c && typeof (c as LlamacppLike).getModelProps === 'function')
-      return c as LlamacppLike
-  }
-  return undefined
-}
 
 /**
  * Reconcile the selected llamacpp model's `video` capability against the
@@ -43,7 +22,7 @@ export function useReconcileVideoCapability(
   useEffect(() => {
     if (selectedProvider !== 'llamacpp' || !modelId) return
     const ext = getLlamacppExtension()
-    if (!ext?.getModelProps) return
+    if (!ext) return
 
     let cancelled = false
     ext

@@ -18,7 +18,7 @@ keywords:
 import { Callout, Steps } from 'nextra/components'
 import { Link } from 'nextra-theme-docs'
 import { DocCard, DocCards } from '@/components/DocCard'
-import { FolderOpen, Bot, Cpu, Plug, Brain } from 'lucide-react'
+import { FolderOpen, Bot, Cpu, Plug, Brain, Hammer } from 'lucide-react'
 
 # QuickStart
 
@@ -97,6 +97,7 @@ See all [Cloud Providers](/docs/desktop/remote-models/openai) for per-provider s
 Jan is more than a chat interface. Organize your work with Projects, build custom Assistants, run autonomous Agents, and connect external tools via MCP.
 
 <DocCards>
+  <DocCard title="Cowork (Preview)" href="/docs/desktop/cowork" icon={<Hammer size={20} />}>Hand Jan a task it works through on its own — in a sandbox or directly on your project.</DocCard>
   <DocCard title="Projects" href="/docs/desktop/projects" icon={<FolderOpen size={20} />}>Organize conversations with shared instructions and files.</DocCard>
   <DocCard title="Assistants" href="/docs/desktop/assistants" icon={<Bot size={20} />}>Set up a personal AI assistant tailored to how you work.</DocCard>
   <DocCard title="Agents" href="/docs/agent" icon={<Cpu size={20} />}>Autonomous AI that reads files, manages calendars, and takes actions.</DocCard>

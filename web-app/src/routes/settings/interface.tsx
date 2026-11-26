@@ -9,6 +9,7 @@ import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
 import { AccentColorPicker } from '@/containers/AccentColorPicker'
 import { NotificationPositionSwitcher } from '@/containers/NotificationPositionSwitcher'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { useTheme } from '@/hooks/useTheme'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
@@ -30,7 +31,10 @@ function InterfaceSettings() {
     setRenderHtmlArtifacts,
     autoGenerateTitle,
     setAutoGenerateTitle,
+    runNotifications,
+    setRunNotifications,
   } = useInterfaceSettings()
+  const { activeTheme } = useTheme()
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -47,7 +51,13 @@ function InterfaceSettings() {
             <Card title={t('settings:interface.title')}>
               <CardItem
                 title={t('settings:interface.theme')}
-                description={t('settings:interface.themeDesc')}
+                description={
+                  // "Match the OS theme" only describes System; a fixed Light or
+                  // Dark choice must not claim to follow the OS.
+                  activeTheme === 'auto'
+                    ? t('settings:interface.themeDesc')
+                    : t('settings:interface.themeDescFixed')
+                }
                 actions={<ThemeSwitcher />}
               />
               <CardItem
@@ -113,6 +123,70 @@ function InterfaceSettings() {
                   />
                 }
               />
+              <CardItem
+                title={t('settings:interface.runNotifications')}
+                description={t('settings:interface.runNotificationsDesc')}
+                actions={
+                  <Switch
+                    checked={runNotifications.enabled}
+                    onCheckedChange={(enabled) =>
+                      setRunNotifications({ enabled })
+                    }
+                  />
+                }
+              />
+              {runNotifications.enabled && (
+                <CardItem
+                  title={t('settings:interface.runNotificationsFinish')}
+                  actions={
+                    <Switch
+                      checked={runNotifications.onFinish}
+                      onCheckedChange={(onFinish) =>
+                        setRunNotifications({ onFinish })
+                      }
+                    />
+                  }
+                />
+              )}
+              {runNotifications.enabled && (
+                <CardItem
+                  title={t('settings:interface.runNotificationsError')}
+                  actions={
+                    <Switch
+                      checked={runNotifications.onError}
+                      onCheckedChange={(onError) =>
+                        setRunNotifications({ onError })
+                      }
+                    />
+                  }
+                />
+              )}
+              {runNotifications.enabled && (
+                <CardItem
+                  title={t('settings:interface.runNotificationsApproval')}
+                  actions={
+                    <Switch
+                      checked={runNotifications.onApproval}
+                      onCheckedChange={(onApproval) =>
+                        setRunNotifications({ onApproval })
+                      }
+                    />
+                  }
+                />
+              )}
+              {runNotifications.enabled && (
+                <CardItem
+                  title={t('settings:interface.runNotificationsCancel')}
+                  actions={
+                    <Switch
+                      checked={runNotifications.onCancel}
+                      onCheckedChange={(onCancel) =>
+                        setRunNotifications({ onCancel })
+                      }
+                    />
+                  }
+                />
+              )}
               <CardItem
                 title={t('settings:interface.resetToDefault')}
                 description={t('settings:interface.resetToDefaultDesc')}

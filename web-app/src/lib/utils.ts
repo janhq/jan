@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import type { Node, Position } from 'unist'
 import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
-import { ExtensionManager } from './extension'
+import { EngineManager } from '@janhq/core'
 import path from 'path'
 import type { VFile } from 'vfile'
 
@@ -164,7 +164,16 @@ export function getProviderLogo(provider: string) {
   }
 }
 
-export const getProviderTitle = (provider: string) => {
+/**
+ * The name the UI shows for a provider: its display name when it has one
+ * (an extension's provider, whose id is namespaced), else a title derived
+ * from its id.
+ */
+export const getProviderTitle = (
+  provider: string | Pick<ProviderObject, 'provider' | 'display_name'>
+): string => {
+  if (typeof provider !== 'string')
+    return provider.display_name || getProviderTitle(provider.provider)
   switch (provider) {
     case 'jan':
       return 'Jan'
@@ -230,8 +239,8 @@ export function getReadableLanguageName(language: string): string {
 }
 
 export const isLocalProvider = (provider: string) => {
-  const extension = ExtensionManager.getInstance().getEngine(provider)
-  return extension && 'load' in extension
+  const engine = EngineManager.instance().get(provider)
+  return !!engine && 'load' in engine
 }
 
 export const toGigabytes = (
@@ -350,6 +359,26 @@ export function formatDuration(startTime: number, endTime?: number): string {
   } else {
     return `${durationMs}ms`
   }
+}
+
+/** Compact token count for badges and labels, e.g. 24567 -> "24.6K". */
+export function formatTokenCount(num: number): string {
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
+  return num.toString()
+}
+
+/**
+ * Elide the middle of a path so both ends stay readable. The tail identifies
+ * which file or session it is, so truncating from the end (CSS ellipsis) hides
+ * the only part worth reading.
+ */
+export function truncateMiddle(value: string, max: number): string {
+  if (value.length <= max) return value
+  const keep = max - 1
+  const head = Math.ceil(keep / 2)
+  const tail = Math.floor(keep / 2)
+  return `${value.slice(0, head)}…${value.slice(value.length - tail)}`
 }
 
 export function sanitizeModelId(modelId: string): string {

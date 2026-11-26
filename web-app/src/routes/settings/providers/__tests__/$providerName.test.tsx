@@ -47,18 +47,11 @@ const h = vi.hoisted(() => {
     ],
     settings: [
       {
-        key: 'llamacpp_version',
-        title: 'Version',
-        description: 'llama.cpp release version',
+        key: 'ctx_size',
+        title: 'Context Size',
+        description: 'context window',
         controller_type: 'input',
-        controller_props: { value: 'v1', recommended: 'v1' },
-      },
-      {
-        key: 'llamacpp_backend',
-        title: 'Backend',
-        description: 'Hardware backend',
-        controller_type: 'input',
-        controller_props: { value: 'cuda', recommended: 'cuda' },
+        controller_props: { value: '4096' },
       },
       {
         key: 'device',
@@ -90,6 +83,13 @@ const h = vi.hoisted(() => {
   const appState = {
     activeModels: [] as string[],
     setActiveModels: vi.fn(),
+    // The page selects over these to decide whether the engine is busy, so
+    // the mock has to carry the real store's shape.
+    currentStreamThreadId: undefined as string | undefined,
+    abortControllers: {} as Record<string, unknown>,
+    busyThreads: {} as Record<string, boolean>,
+    loadingModels: {} as Record<string, boolean>,
+    streamingContents: {} as Record<string, unknown>,
   }
   const useAppStateMock: any = (selector: any) => selector(appState)
   useAppStateMock.getState = () => appState
@@ -108,6 +108,9 @@ const h = vi.hoisted(() => {
     stopModel: vi.fn().mockResolvedValue(undefined),
     stopAllModels: vi.fn().mockResolvedValue(undefined),
     checkMmprojExists: vi.fn().mockResolvedValue(false),
+    // Null: the engine panel is the llamacpp page's own concern and has its
+    // own test, so it renders nothing here.
+    getEngineVersion: vi.fn().mockResolvedValue(null),
   }
   const dialogSvc = {
     open: vi.fn().mockResolvedValue(null),
@@ -122,12 +125,8 @@ const h = vi.hoisted(() => {
     setModelLoadError: vi.fn(),
   }
 
-  const backendUpdater = {
-    checkForUpdate: vi.fn().mockResolvedValue(null),
-    installBackend: vi.fn().mockResolvedValue(undefined),
-  }
-
   const params: any = { providerName: 'openai' }
+  const search: any = {}
 
   return {
     toastSuccess,
@@ -147,8 +146,8 @@ const h = vi.hoisted(() => {
     modelsSvc,
     dialogSvc,
     modelLoad,
-    backendUpdater,
     params,
+    search,
   }
 })
 
@@ -156,9 +155,23 @@ const h = vi.hoisted(() => {
 // Module mocks
 // -----------------------------------------------------------------------------
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (cfg: any) => ({ ...cfg, id: '/settings/providers/$providerName' }),
+  createFileRoute: () => (cfg: any) => ({
+    ...cfg,
+    id: '/settings/providers/$providerName',
+    // The page reads ?diagnose to preselect a device in the hardware check.
+    useSearch: () => h.search ?? {},
+  }),
   useParams: () => h.params,
-  Link: ({ children, to }: any) => <a href={to}>{children}</a>,
+  Link: ({ children, to, params }: any) => (
+    <a
+      href={Object.entries(params ?? {}).reduce(
+        (path: string, [k, v]) => path.replace(`$${k}`, String(v)),
+        to
+      )}
+    >
+      {children}
+    </a>
+  ),
 }))
 
 vi.mock('sonner', () => ({
@@ -170,7 +183,10 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (k: string, o?: Record<string, unknown>) =>
+      o?.extension ? `${k}:${String(o.extension)}` : k,
+  }),
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -292,14 +308,28 @@ vi.mock('@tabler/icons-react', () => ({
   IconEyeOff: () => <span />,
   IconCopy: () => <span />,
   IconCopyCheck: () => <span />,
+  // Used by the llama.cpp panels this page renders; the diagnostics status
+  // table reads these at module scope, so a missing one fails on import.
+  IconCpu: () => <span />,
+  IconExternalLink: () => <span />,
+  IconStethoscope: () => <span />,
+  IconChevronDown: () => <span />,
+  IconLoader2: () => <span />,
+  IconCheck: () => <span />,
+  IconX: () => <span />,
+  IconCircleDashed: () => <span />,
+  IconHelpCircle: () => <span />,
+  IconAlertTriangle: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({
   cn: (...a: any[]) => a.filter(Boolean).join(' '),
-  getProviderTitle: (name: string) => `Title:${name}`,
+  getProviderTitle: (p: any) =>
+    typeof p === 'string' ? `Title:${p}` : p.display_name || `Title:${p.provider}`,
   getModelDisplayName: (m: any) => m.name ?? m.id,
   basenameNoExt: (p: string) => p.split('/').pop() ?? p,
   isLocalProvider: (p: string) => p === 'llamacpp' || p === 'mlx',
+  formatMegaBytes: (n: number) => `${n} MB`,
 }))
 
 vi.mock('@/constants/providers', () => ({
@@ -307,7 +337,10 @@ vi.mock('@/constants/providers', () => ({
 }))
 
 vi.mock('@/constants/routes', () => ({
-  route: { hub: { index: '/hub' } },
+  route: {
+    hub: { index: '/hub' },
+    settings: { extension: '/settings/extensions/$extensionId' },
+  },
 }))
 
 vi.mock('@/hooks/useModelProvider', () => {
@@ -329,10 +362,6 @@ vi.mock('@/hooks/useLlamacppDevices', () => {
   hook.getState = () => ({ fetchDevices: vi.fn() })
   return { useLlamacppDevices: hook }
 })
-
-vi.mock('@/hooks/useBackendUpdater', () => ({
-  useBackendUpdater: () => h.backendUpdater,
-}))
 
 vi.mock('@/hooks/useAppState', () => ({ useAppState: h.useAppStateMock }))
 
@@ -393,8 +422,6 @@ beforeEach(() => {
   h.modelsSvc.stopAllModels = vi.fn().mockResolvedValue(undefined)
   h.modelsSvc.checkMmprojExists = vi.fn().mockResolvedValue(false)
   h.dialogSvc.open = vi.fn().mockResolvedValue(null)
-  h.backendUpdater.checkForUpdate = vi.fn().mockResolvedValue(null)
-  h.backendUpdater.installBackend = vi.fn().mockResolvedValue(undefined)
 })
 
 describe('ProviderDetail route', () => {
@@ -404,9 +431,10 @@ describe('ProviderDetail route', () => {
       expect(r.step).toBe('42')
     })
 
-    it('validateSearch handles missing search', () => {
+    it('validateSearch leaves a missing step out instead of the string "undefined"', () => {
       const r = (Route as any).validateSearch({})
-      expect(r.step).toBe('undefined')
+      expect(r).toEqual({})
+      expect('step' in r).toBe(false)
     })
   })
 
@@ -449,12 +477,86 @@ describe('ProviderDetail route', () => {
       expect(screen.queryByTestId('add-model')).not.toBeInTheDocument()
     })
 
-    it('renders llamacpp-specific UI: import button, backend controls', () => {
+    it('renders llamacpp-specific UI: import button', () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       expect(screen.getByTestId('import-vision')).toBeInTheDocument()
-      expect(screen.getByText('settings:checkForBackendUpdates')).toBeInTheDocument()
-      expect(screen.getByText('settings:installBackendFromFile')).toBeInTheDocument()
+    })
+
+    // The engine belongs to llamacpp alone: a remote provider runs no engine
+    // of ours, so the panel must not follow the page.
+    it('asks for the engine version only on the llamacpp page', async () => {
+      const asked = h.serviceHub.models().getEngineVersion
+      asked.mockClear()
+      renderComponent()
+      expect(asked).not.toHaveBeenCalled()
+
+      h.params.providerName = 'llamacpp'
+      renderComponent()
+      await waitFor(() => expect(asked).toHaveBeenCalled())
+    })
+  })
+
+  describe('Extension-owned provider', () => {
+    const setupExtensionProvider = () => {
+      h.providerMap['acme.llm/local'] = {
+        provider: 'acme.llm/local',
+        display_name: 'Acme Local',
+        active: true,
+        base_url: 'http://127.0.0.1:11999/v1',
+        api_key: 'sk-ext',
+        settings: [],
+        models: [
+          { id: 'm1', name: 'm1', capabilities: ['completion'] },
+        ],
+        source: { extensionId: 'acme.llm', extensionName: 'Acme LLM' },
+      }
+      h.params.providerName = 'acme.llm/local'
+    }
+
+    it('is titled with its display name, not the raw id', () => {
+      setupExtensionProvider()
+      renderComponent()
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Acme Local' })
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Title:acme.llm/local')).not.toBeInTheDocument()
+    })
+
+    it('links to the settings page of the extension that provides it', () => {
+      setupExtensionProvider()
+      renderComponent()
+      expect(
+        screen.getByText('providers:extensionManaged:Acme LLM')
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('providers:openExtensionSettings').closest('a')
+      ).toHaveAttribute('href', '/settings/extensions/acme.llm')
+    })
+
+    it('offers no delete, API key, refresh, add or per-model delete controls', () => {
+      setupExtensionProvider()
+      renderComponent()
+      expect(screen.queryByTestId('delete-provider')).not.toBeInTheDocument()
+      expect(screen.queryByText('providers:apiKeys.title')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('dynamic-ctrl')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('add-model')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('del-m1')).not.toBeInTheDocument()
+      expect(screen.queryByText('providers:limitedSupport')).not.toBeInTheDocument()
+      // The models it lists still show.
+      expect(screen.getByTestId('edit-m1')).toBeInTheDocument()
+    })
+
+    it('does not point at refresh or add buttons when it lists no models', () => {
+      setupExtensionProvider()
+      h.providerMap['acme.llm/local'].models = []
+      renderComponent()
+      expect(
+        screen.getByText('providers:noModelFoundExtensionDesc')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('providers:noModelFoundRemoteDesc')
+      ).not.toBeInTheDocument()
     })
   })
 
@@ -690,72 +792,6 @@ describe('ProviderDetail route', () => {
     })
   })
 
-  describe('Backend install / update (llamacpp)', () => {
-    beforeEach(() => {
-      h.params.providerName = 'llamacpp'
-    })
-
-    it('check-for-update shows info toast when no update available', async () => {
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:checkForBackendUpdates'))
-      })
-      await waitFor(() => {
-        expect(h.toastInfo).toHaveBeenCalled()
-      })
-    })
-
-    it('check-for-update shows error toast when the checker throws', async () => {
-      h.backendUpdater.checkForUpdate = vi.fn().mockRejectedValue(new Error('x'))
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:checkForBackendUpdates'))
-      })
-      await waitFor(() => {
-        expect(h.toastError).toHaveBeenCalled()
-      })
-      // restore
-      h.backendUpdater.checkForUpdate = vi.fn().mockResolvedValue(null)
-    })
-
-    it('install-from-file no-ops cleanly when dialog returns null', async () => {
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
-      })
-      // no toast fired because file selection was cancelled
-      expect(h.toastSuccess).not.toHaveBeenCalled()
-      expect(h.toastError).not.toHaveBeenCalled()
-    })
-
-    it('install-from-file calls installBackend and toasts success', async () => {
-      h.dialogSvc.open = vi.fn().mockResolvedValue('/some/path/My Backend.tar.gz')
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
-      })
-      await waitFor(() => {
-        expect(h.backendUpdater.installBackend).toHaveBeenCalledWith(
-          '/some/path/My Backend.tar.gz'
-        )
-      })
-      expect(h.toastSuccess).toHaveBeenCalled()
-    })
-
-    it('install-from-file toasts error when installBackend throws', async () => {
-      h.dialogSvc.open = vi.fn().mockResolvedValue('/some/path/bad.tar.gz')
-      h.backendUpdater.installBackend = vi.fn().mockRejectedValue(new Error('install fail'))
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
-      })
-      await waitFor(() => {
-        expect(h.toastError).toHaveBeenCalled()
-      })
-      h.backendUpdater.installBackend = vi.fn().mockResolvedValue(undefined)
-    })
-  })
-
   describe('Dynamic setting changes', () => {
     const setupCustomProvider = () => {
       const custom: any = {
@@ -803,12 +839,12 @@ describe('ProviderDetail route', () => {
       )
     })
 
-    it('for llamacpp, the llamacpp_version control also stops all running models on change', async () => {
+    it('for llamacpp, changing a setting also stops all running models', async () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       const dyns = screen.getAllByTestId('dynamic-ctrl')
       await act(async () => {
-        fireEvent.click(dyns[0]) // llamacpp_version
+        fireEvent.click(dyns[0])
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
     })

@@ -1,17 +1,25 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::HashMap;
+#[cfg(not(feature = "cli"))]
+use std::collections::HashSet;
+use std::sync::Arc;
 
-use crate::core::{
-    downloads::models::DownloadManagerState,
-    mcp::models::{McpSettings, ToolWithServer},
-    mcp::progress::JanClientHandler,
-};
+#[cfg(not(feature = "cli"))]
+use crate::core::downloads::models::DownloadManagerState;
+#[cfg(not(feature = "cli"))]
+use crate::core::mcp::models::{McpSettings, ToolWithServer};
+#[cfg(not(feature = "cli"))]
+use crate::core::mcp::progress::JanClientHandler;
+#[cfg(feature = "cli")]
+use rmcp::model::{CallToolRequestParams, CallToolResult, InitializeRequestParams, Tool};
+#[cfg(feature = "cli")]
+use rmcp::ServiceError;
 use rmcp::{service::RunningService, RoleClient};
-use tokio::sync::{oneshot, Mutex, Notify};
+use tokio::sync::Mutex;
+#[cfg(not(feature = "cli"))]
+use tokio::sync::{oneshot, Notify};
 
 /// Server handle type for managing the proxy server lifecycle
+#[cfg(not(feature = "cli"))]
 pub type ServerHandle =
     tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
 
@@ -34,6 +42,12 @@ pub struct ProviderConfig {
     /// the provider's native API.
     #[serde(default)]
     pub api_type: Option<String>,
+    /// Share of the context window a prompt may fill before a run routed
+    /// through this provider compacts ahead of dispatching. Overrides
+    /// `[agent].compaction_ratio`; `None` inherits it. Sized per provider
+    /// because windows differ by an order of magnitude across them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_ratio: Option<f64>,
 }
 
 impl ProviderConfig {
@@ -52,10 +66,54 @@ pub struct ProviderCustomHeader {
 }
 
 /// Every connection uses the same handler, so that progress notifications are
-/// observed at all -- rmcp drops them on the `()` handler.
+/// observed at all -- rmcp drops them on the `()` handler. Desktop-only: the
+/// handler emits through a Tauri `AppHandle`, which the CLI build doesn't have.
+#[cfg(not(feature = "cli"))]
 pub type RunningMcpService = RunningService<RoleClient, JanClientHandler>;
+#[cfg(not(feature = "cli"))]
 pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningMcpService>>>;
 
+/// CLI's MCP client has no progress-notification sink, so it can use either
+/// the plain handler or one seeded with an `initialize` response.
+#[cfg(feature = "cli")]
+pub enum RunningServiceEnum {
+    NoInit(RunningService<RoleClient, ()>),
+    WithInit(RunningService<RoleClient, InitializeRequestParams>),
+}
+#[cfg(feature = "cli")]
+pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
+
+#[cfg(feature = "cli")]
+impl RunningServiceEnum {
+    pub async fn list_all_tools(&self) -> Result<Vec<Tool>, ServiceError> {
+        match self {
+            Self::NoInit(s) => s.list_all_tools().await,
+            Self::WithInit(s) => s.list_all_tools().await,
+        }
+    }
+    pub async fn call_tool(
+        &self,
+        params: CallToolRequestParams,
+    ) -> Result<CallToolResult, ServiceError> {
+        match self {
+            Self::NoInit(s) => s.call_tool(params).await,
+            Self::WithInit(s) => s.call_tool(params).await,
+        }
+    }
+
+    /// The peer's handshake info: what the server said it implements. Read by
+    /// the `/mcp` detail screen for its capabilities and version lines.
+    pub fn peer_info(&self) -> Option<rmcp::model::ServerPeerInfo> {
+        match self {
+            Self::NoInit(s) => s.peer_info().map(|p| (*p).clone()),
+            Self::WithInit(s) => s.peer_info().map(|p| (*p).clone()),
+        }
+    }
+}
+
+/// Shared desktop application state owned by Tauri. The CLI builds its
+/// subsystems (MCP map, provider configs) directly instead.
+#[cfg(not(feature = "cli"))]
 pub struct AppState {
     pub app_token: Option<String>,
     pub mcp_servers: SharedMcpServers,
@@ -88,6 +146,7 @@ pub struct AppState {
     pub mcp_last_known_tools: Arc<Mutex<HashMap<String, Vec<ToolWithServer>>>>,
 }
 
+#[cfg(not(feature = "cli"))]
 impl Default for AppState {
     fn default() -> Self {
         Self {

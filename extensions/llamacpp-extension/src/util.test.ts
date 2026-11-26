@@ -3,10 +3,13 @@ import { logger } from '@janhq/core'
 import {
   buildEmbedBatches,
   detectMtpLayersFromGgufMeta,
+  detectExpertCountFromGgufMeta,
+  resolveSpecDraftKind,
   detectTemplateKwargsFromChatTemplate,
   estimateTokensFromText,
   getProxyConfig,
   truncateToTokenBudget,
+  fileName,
 } from './util'
 import { getBackendSetting } from './backend-settings'
 
@@ -565,6 +568,41 @@ describe('buildEmbedBatches', () => {
   })
 })
 
+describe('detectExpertCountFromGgufMeta', () => {
+  it('returns 0 for missing meta or a dense model', () => {
+    expect(detectExpertCountFromGgufMeta(undefined)).toBe(0)
+    expect(
+      detectExpertCountFromGgufMeta({ 'general.architecture': 'llama' })
+    ).toBe(0)
+  })
+
+  it('reads {arch}.expert_count, as a number or a string', () => {
+    expect(
+      detectExpertCountFromGgufMeta({
+        'general.architecture': 'qwen3moe',
+        'qwen3moe.expert_count': 128,
+      })
+    ).toBe(128)
+    expect(
+      detectExpertCountFromGgufMeta({
+        'general.architecture': 'gpt-oss',
+        'gpt-oss.expert_count': '32',
+      })
+    ).toBe(32)
+  })
+
+  // An arch-less key is not trusted: a draft or projector gguf can carry
+  // another architecture's metadata, and a false positive breaks the load.
+  it('ignores an expert_count under a different architecture', () => {
+    expect(
+      detectExpertCountFromGgufMeta({
+        'general.architecture': 'llama',
+        'other.expert_count': 8,
+      })
+    ).toBe(0)
+  })
+})
+
 describe('detectMtpLayersFromGgufMeta', () => {
   it('returns 0 for undefined or empty meta', () => {
     expect(detectMtpLayersFromGgufMeta(undefined)).toBe(0)
@@ -671,5 +709,83 @@ describe('detectTemplateKwargsFromChatTemplate', () => {
     expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
       { name: 'add_notes', type: 'boolean', default: true },
     ])
+  })
+})
+
+describe('resolveSpecDraftKind', () => {
+  // general.architecture is what llama.cpp itself keys on: `eagle3` and
+  // `dflash` are distinct architectures, and anything else carrying draft
+  // weights is an MTP head.
+  it('reads eagle3 straight off the architecture', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'eagle3' })).toBe(
+      'eagle3'
+    )
+  })
+
+  it('reads dflash off the architecture', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'dflash' })).toBe(
+      'dflash'
+    )
+  })
+
+  // DSpark shares the dflash architecture and is told apart by its Markov
+  // head, which is a tensor rather than a metadata key.
+  it('separates dspark from dflash by the markov head', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: true,
+      })
+    ).toBe('dspark')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: false,
+      })
+    ).toBe('dflash')
+  })
+
+  // The tensor is the evidence; the catalog's file naming is only a fallback
+  // for when it could not be read.
+  it('trusts the markov head over the file naming', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: false,
+        hint: 'dspark',
+      })
+    ).toBe('dflash')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hint: 'dspark',
+      })
+    ).toBe('dspark')
+  })
+
+  it('treats any other architecture as an MTP head', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'deepseek2' })).toBe(
+      'mtp'
+    )
+    expect(resolveSpecDraftKind({})).toBe('mtp')
+    expect(resolveSpecDraftKind(undefined)).toBe('mtp')
+  })
+
+  // The architecture wins: a misnamed file must not select a type the draft
+  // cannot implement, which fails the load with an unrelated message.
+  it('ignores a hint the architecture contradicts', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'glm4moe' }, { hint: 'dflash' })
+    ).toBe('mtp')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
+    ).toBe('dflash')
+  })
+})
+
+describe('fileName', () => {
+  it('takes the last segment of a POSIX or Windows path', () => {
+    expect(fileName('/jan/models/imported/qwen.yml')).toBe('qwen.yml')
+    expect(fileName('C:\\jan\\models\\qwen.gguf')).toBe('qwen.gguf')
+  })
+
+  it('returns a bare name unchanged', () => {
+    expect(fileName('qwen.yml')).toBe('qwen.yml')
   })
 })

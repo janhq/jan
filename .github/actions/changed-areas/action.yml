@@ -1,0 +1,62 @@
+name: Changed areas
+description: >-
+  Classify a pull request's changed files into the CI areas they can affect
+  (see .github/scripts/changed-areas.sh). Anything that is not a pull request,
+  or a pull request whose file list cannot be read, turns every area on.
+outputs:
+  ts:
+    description: lint + vitest
+    value: ${{ steps.classify.outputs.ts }}
+  mlx:
+    description: the macOS-only mlx-extension suite
+    value: ${{ steps.classify.outputs.mlx }}
+  rust:
+    description: the desktop app crate or a plugin
+    value: ${{ steps.classify.outputs.rust }}
+  cli:
+    description: app_lib in the cli feature set
+    value: ${{ steps.classify.outputs.cli }}
+  jan_cli:
+    description: the standalone jan-cli crate
+    value: ${{ steps.classify.outputs.jan_cli }}
+  adk:
+    description: the JavaScript and Python ADKs
+    value: ${{ steps.classify.outputs.adk }}
+  app:
+    description: JSON list of rust-check app configs to lint
+    value: ${{ steps.classify.outputs.app }}
+  crates:
+    description: JSON list of rust-check crates matrix entries to lint
+    value: ${{ steps.classify.outputs.crates }}
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        CHANGED: ${{ github.event.pull_request.changed_files }}
+        SCRIPT: ${{ github.action_path }}/../../scripts/changed-areas.sh
+      # The files endpoint rather than `gh pr diff`: the diff endpoint refuses
+      # large pull requests outright. The list stops at 3000 files without an
+      # error, so a list shorter than the PR's changed_files count is treated as
+      # unreadable. A rename counts on both sides, so moving a file out of an
+      # area still runs it.
+      run: |
+        files=""
+        if [ -n "$PR" ] && list=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+          --jq '.[] | "F\t\(.filename)", (.previous_filename // empty | "P\t\(.)")'); then
+          if [ "$(grep -c $'^F\t' <<< "$list")" -ge "${CHANGED:-0}" ]; then
+            files=$(cut -f2- <<< "$list")
+          else
+            echo "file list truncated; running every area"
+          fi
+        fi
+        if [ -n "$files" ]; then
+          areas=$(bash "$SCRIPT" <<< "$files")
+        else
+          areas=$(bash "$SCRIPT" --all)
+        fi
+        echo "$areas"
+        echo "$areas" >> "$GITHUB_OUTPUT"

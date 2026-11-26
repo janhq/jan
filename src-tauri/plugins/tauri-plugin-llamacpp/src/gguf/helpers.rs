@@ -4,9 +4,122 @@ use std::io::{self, BufReader, Read, Seek};
 
 use super::types::{GgufMetadata, GgufValueType};
 
+/// GGML_MAX_DIMS. A larger rank means the walk has desynchronised, not that a
+/// new tensor shape exists.
+const MAX_TENSOR_DIMS: u32 = 4;
+
+/// Bound on the tensor-info loop, so a corrupt count cannot spin. The largest
+/// real models are in the low thousands.
+const MAX_TENSORS: u64 = 1_000_000;
+
 pub fn read_gguf_metadata<R: Read + Seek>(reader: R) -> io::Result<GgufMetadata> {
     let mut file = BufReader::new(reader);
+    read_header(&mut file)
+}
 
+/// Which of `wanted` appear in the tensor-info block.
+///
+/// Exact names, mirroring llama.cpp's own `gguf_find_tensor`, because that is
+/// how the interesting facts are phrased: a DSpark draft is a DFlash one plus
+/// `markov_w1.weight`, and upstream detects an MTP head by
+/// `blk.<block_count-1>.nextn.eh_proj.weight`. Returning every name instead
+/// would put hundreds of kilobytes of strings through the IPC boundary on
+/// every import to answer a yes/no question.
+///
+/// Only the first split of a sharded model is read, so a tensor living in a
+/// later shard is reported absent -- the same limit upstream's
+/// `common_speculative_types_from_gguf` documents.
+pub fn find_gguf_tensors<R: Read + Seek>(
+    reader: R,
+    wanted: &[String],
+) -> io::Result<Vec<String>> {
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut found: Vec<String> = Vec::new();
+    walk_tensor_info(reader, |name, _type_id| {
+        if wanted.contains(&name) && !found.contains(&name) {
+            found.push(name);
+        }
+        found.len() < wanted.len()
+    })?;
+    Ok(found)
+}
+
+/// The distinct ggml type ids the tensor block uses, in ascending order.
+///
+/// Ground truth for which quantized kernels a load will exercise, as against
+/// inferring them from `general.file_type`: a file type names a *recipe*
+/// (Q4_K_M mixes q4_K, q5_K, q6_K and f32), and llama.cpp's mixture rules
+/// change, while the tensors themselves cannot be wrong.
+pub fn read_gguf_tensor_types<R: Read + Seek>(reader: R) -> io::Result<Vec<u32>> {
+    let mut types: Vec<u32> = Vec::new();
+    walk_tensor_info(reader, |_name, type_id| {
+        if !types.contains(&type_id) {
+            types.push(type_id);
+        }
+        true
+    })?;
+    types.sort_unstable();
+    Ok(types)
+}
+
+/// Walks the tensor-info block, calling `visit` with each tensor's name and
+/// ggml type. Stops early when `visit` returns false.
+fn walk_tensor_info<R: Read + Seek>(
+    reader: R,
+    mut visit: impl FnMut(String, u32) -> bool,
+) -> io::Result<()> {
+    let mut file = BufReader::new(reader);
+    let meta = read_header(&mut file)?;
+
+    // v1 sized strings and dimensions with u32s. llama.cpp refuses that
+    // version outright, and reading it as v2 would invent names.
+    if meta.version < 2 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("GGUF version {} has no readable tensor block", meta.version),
+        ));
+    }
+    if meta.tensor_count > MAX_TENSORS {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("tensor count {} is unreasonably large", meta.tensor_count),
+        ));
+    }
+
+    for i in 0..meta.tensor_count {
+        let name = read_gguf_string(&mut file).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to read name for tensor {}: {}", i, e),
+            )
+        })?;
+        let n_dims = file.read_u32::<LittleEndian>()?;
+        if n_dims > MAX_TENSOR_DIMS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("tensor {} claims {} dimensions", i, n_dims),
+            ));
+        }
+        // Read rather than seek: BufReader drops its buffer on every seek, so
+        // skipping this way costs a syscall per tensor on a large model.
+        for _ in 0..n_dims {
+            file.read_u64::<LittleEndian>()?;
+        }
+        let type_id = file.read_u32::<LittleEndian>()?;
+        file.read_u64::<LittleEndian>()?; // offset into the data section
+
+        if !visit(name, type_id) {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Header plus the whole KV section, leaving the reader positioned at the
+/// start of the tensor-info block.
+fn read_header<R: Read + Seek>(file: &mut BufReader<R>) -> io::Result<GgufMetadata> {
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;
     if &magic != b"GGUF" {
@@ -22,7 +135,7 @@ pub fn read_gguf_metadata<R: Read + Seek>(reader: R) -> io::Result<GgufMetadata>
 
     let mut metadata_map = std::collections::HashMap::new();
     for i in 0..metadata_count {
-        match read_metadata_entry(&mut file, i) {
+        match read_metadata_entry(file, i) {
             Ok((key, value)) => {
                 metadata_map.insert(key, value);
             }
@@ -150,4 +263,182 @@ fn skip_array_data<R: Read + Seek + ReadBytesExt>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use byteorder::WriteBytesExt;
+    use std::io::Cursor;
+
+    /// Builds a GGUF header with the given KV entries and tensor-info block.
+    /// Hand-assembled because the point is to pin the byte layout the reader
+    /// walks; a fixture file would hide it.
+    fn gguf(version: u32, kv: &[(&str, &str)], tensors: &[(&str, &[u64])]) -> Vec<u8> {
+        let typed: Vec<(&str, &[u64], u32)> =
+            tensors.iter().map(|(n, d)| (*n, *d, 0u32)).collect();
+        gguf_typed(version, kv, &typed)
+    }
+
+    fn gguf_typed(
+        version: u32,
+        kv: &[(&str, &str)],
+        tensors: &[(&str, &[u64], u32)],
+    ) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"GGUF");
+        b.write_u32::<LittleEndian>(version).unwrap();
+        b.write_u64::<LittleEndian>(tensors.len() as u64).unwrap();
+        b.write_u64::<LittleEndian>(kv.len() as u64).unwrap();
+
+        let string = |b: &mut Vec<u8>, s: &str| {
+            b.write_u64::<LittleEndian>(s.len() as u64).unwrap();
+            b.extend_from_slice(s.as_bytes());
+        };
+        for (k, v) in kv {
+            string(&mut b, k);
+            b.write_u32::<LittleEndian>(GgufValueType::String as u32).unwrap();
+            string(&mut b, v);
+        }
+        for (name, dims, type_id) in tensors {
+            string(&mut b, name);
+            b.write_u32::<LittleEndian>(dims.len() as u32).unwrap();
+            for d in *dims {
+                b.write_u64::<LittleEndian>(*d).unwrap();
+            }
+            b.write_u32::<LittleEndian>(*type_id).unwrap();
+            b.write_u64::<LittleEndian>(0).unwrap(); // offset
+        }
+        b
+    }
+
+    fn want(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn metadata_still_reads_with_a_tensor_block_present() {
+        let bytes = gguf(3, &[("general.architecture", "dflash")], &[("markov_w1.weight", &[4, 8])]);
+        let meta = read_gguf_metadata(Cursor::new(bytes)).expect("metadata");
+        assert_eq!(meta.version, 3);
+        assert_eq!(meta.tensor_count, 1);
+        assert_eq!(
+            meta.metadata.get("general.architecture").map(String::as_str),
+            Some("dflash")
+        );
+    }
+
+    // The Markov head is the only thing separating a DSpark draft from a
+    // DFlash one, and it is a tensor, not a metadata key.
+    #[test]
+    fn finds_a_requested_tensor_among_others() {
+        let bytes = gguf(
+            3,
+            &[("general.architecture", "dflash")],
+            &[
+                ("token_embd.weight", &[4096, 128]),
+                ("markov_w1.weight", &[4, 8]),
+                ("markov_w2.weight", &[4, 8]),
+            ],
+        );
+        let found = find_gguf_tensors(Cursor::new(bytes), &want(&["markov_w1.weight"]))
+            .expect("tensor scan");
+        assert_eq!(found, want(&["markov_w1.weight"]));
+    }
+
+    #[test]
+    fn reports_nothing_when_the_tensor_is_absent() {
+        let bytes = gguf(3, &[], &[("token_embd.weight", &[4096, 128])]);
+        let found = find_gguf_tensors(Cursor::new(bytes), &want(&["markov_w1.weight"]))
+            .expect("tensor scan");
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn finds_several_and_ignores_the_rest() {
+        let bytes = gguf(
+            3,
+            &[],
+            &[
+                ("blk.0.attn_q.weight", &[64]),
+                ("markov_w1.weight", &[4]),
+                ("blk.61.nextn.eh_proj.weight", &[64, 64]),
+            ],
+        );
+        let mut found = find_gguf_tensors(
+            Cursor::new(bytes),
+            &want(&["markov_w1.weight", "blk.61.nextn.eh_proj.weight", "nope"]),
+        )
+        .expect("tensor scan");
+        found.sort();
+        assert_eq!(
+            found,
+            want(&["blk.61.nextn.eh_proj.weight", "markov_w1.weight"])
+        );
+    }
+
+    // Every dimension count GGUF allows, so a 1-D bias or a 4-D tensor does
+    // not desynchronise the walk and lose everything after it.
+    #[test]
+    fn every_tensor_rank_keeps_the_walk_aligned() {
+        let bytes = gguf(
+            3,
+            &[],
+            &[
+                ("one.weight", &[8]),
+                ("two.weight", &[8, 8]),
+                ("three.weight", &[8, 8, 8]),
+                ("four.weight", &[8, 8, 8, 8]),
+                ("markov_w1.weight", &[4]),
+            ],
+        );
+        let found = find_gguf_tensors(Cursor::new(bytes), &want(&["markov_w1.weight"]))
+            .expect("tensor scan");
+        assert_eq!(found, want(&["markov_w1.weight"]));
+    }
+
+    // v1 put string lengths and dimensions in u32s. llama.cpp itself refuses
+    // that version, so misparsing it as v2 would invent tensor names.
+    #[test]
+    fn a_version_1_file_is_refused_rather_than_misread() {
+        let bytes = gguf(1, &[], &[("markov_w1.weight", &[4])]);
+        assert!(find_gguf_tensors(Cursor::new(bytes), &want(&["markov_w1.weight"])).is_err());
+    }
+
+    #[test]
+    fn asking_for_nothing_reads_nothing() {
+        let bytes = gguf(3, &[], &[("token_embd.weight", &[8])]);
+        assert!(find_gguf_tensors(Cursor::new(bytes), &[])
+            .expect("tensor scan")
+            .is_empty());
+    }
+
+    // A Q4_K_M file is a mixture, which is the whole reason the types are read
+    // off the tensors rather than inferred from `general.file_type`.
+    #[test]
+    fn the_distinct_tensor_types_are_reported_once_each_in_order() {
+        let bytes = gguf_typed(
+            3,
+            &[],
+            &[
+                ("token_embd.weight", &[8], 14),      // q6_K
+                ("blk.0.attn_norm.weight", &[8], 0),  // f32
+                ("blk.0.attn_q.weight", &[8, 8], 12), // q4_K
+                ("blk.1.attn_q.weight", &[8, 8], 12),
+                ("blk.0.ffn_down.weight", &[8, 8], 13), // q5_K
+            ],
+        );
+        assert_eq!(
+            read_gguf_tensor_types(Cursor::new(bytes)).expect("tensor types"),
+            vec![0, 12, 13, 14]
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_tensors_reports_no_types() {
+        let bytes = gguf(3, &[("general.architecture", "llama")], &[]);
+        assert!(read_gguf_tensor_types(Cursor::new(bytes))
+            .expect("tensor types")
+            .is_empty());
+    }
 }

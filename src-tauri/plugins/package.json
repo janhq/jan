@@ -2,7 +2,8 @@
   "private": true,
   "workspaces": {
     "packages": [
-      "**"
+      "**",
+      "!**/vendor/**"
     ]
   },
   "installConfig": {

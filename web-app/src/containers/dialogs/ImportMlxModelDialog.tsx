@@ -14,7 +14,7 @@ import {
   IconLoader2,
   IconCheck,
 } from '@tabler/icons-react'
-import { ExtensionManager } from '@/lib/extension'
+import { EngineManager } from '@janhq/core'
 
 type ImportMlxModelDialogProps = {
   provider: ModelProvider
@@ -89,7 +89,7 @@ export const ImportMlxModelDialog = ({
       console.log('[MLX Import] Starting import:', { modelName, selectedPath })
 
       // Get the MLX engine and call its import method
-      const engine = ExtensionManager.getInstance().getEngine('mlx')
+      const engine = EngineManager.instance().get('mlx')
       if (!engine) {
         throw new Error('MLX engine not found')
       }

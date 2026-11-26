@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
-  "version": "0.8.4",
+  "mainBinaryName": "Jan-Desktop",
+  "version": "0.8.8",
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
@@ -14,6 +15,7 @@
     "security": {
       "capabilities": [
         "default",
+        "extensions",
         "log-app-window",
         "logs-window",
         "system-monitor-window",
@@ -27,20 +29,25 @@
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data: https:",
         "media-src": "'self' asset: http://asset.localhost blob: data: https:",
+        "frame-src": "'self' preview: http://preview.localhost",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
-        "script-src": "'self' 'unsafe-eval' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
+        "script-src": "'self' 'wasm-unsafe-eval' https://eu-assets.i.posthog.com https://posthog.com",
+        "worker-src": "'self' blob:"
       },
       "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {
         "enable": true,
         "scope": {
           "requireLiteralLeadingDot": false,
-          "allow": ["**/*"]
+          "allow": []
         }
       }
     }
   },
   "plugins": {
+    "opener": {
+      "requireLiteralLeadingDot": false
+    },
     "os": {
       "version": "latest",
       "resolve": true
@@ -64,8 +71,8 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons-macos/icon.icns",
+      "icons-windows/icon.ico"
     ],
     "resources": ["resources/LICENSE"]
   }

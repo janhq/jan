@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
+import type { ExtensionTool } from '@/lib/extensions/tools'
 
 export type PromptProgress = {
   cache: number
@@ -35,6 +36,8 @@ type AppState = {
   tools: MCPTool[]
   ragToolNames: Set<string>
   mcpToolNames: Set<string>
+  /** Tools contributed by extensions, under their wire names. */
+  extensionTools: ExtensionTool[]
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
   showOutOfContextDialog?: boolean
@@ -55,6 +58,10 @@ type AppState = {
   busyThreads: Record<string, boolean>
   embeddingThreads: Record<string, boolean>
   currentStreamThreadId?: string
+  // The stream named by currentStreamThreadId is a Cowork run, so its
+  // load-progress events route to useCoworkRun's session mirror rather than
+  // this store's thread-keyed slots (which feed chat-thread active detection).
+  currentStreamIsCowork: boolean
   oomError?: string
   backendError?: string
 
@@ -67,6 +74,7 @@ type AppState = {
   updateTools: (tools: MCPTool[]) => void
   updateRagToolNames: (names: string[]) => void
   updateMcpToolNames: (names: string[]) => void
+  updateExtensionTools: (tools: ExtensionTool[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
   clearAppState: () => void
   setOutOfContextDialog: (show: boolean) => void
@@ -104,7 +112,10 @@ type AppState = {
     error: AppErrorMessage | undefined
   ) => void
   clearThreadState: (threadId: string) => void
-  setCurrentStreamThreadId: (threadId: string | undefined) => void
+  setCurrentStreamThreadId: (
+    threadId: string | undefined,
+    isCowork?: boolean
+  ) => void
   setThreadBusy: (threadId: string, busy: boolean) => void
   setThreadEmbedding: (threadId: string, embedding: boolean) => void
 }
@@ -115,6 +126,7 @@ export const useAppState = create<AppState>()((set) => ({
   tools: [],
   ragToolNames: new Set<string>(),
   mcpToolNames: new Set<string>(),
+  extensionTools: [],
   serverStatus: 'stopped',
   abortControllers: {},
   promptProgress: undefined,
@@ -130,7 +142,12 @@ export const useAppState = create<AppState>()((set) => ({
   busyThreads: {},
   embeddingThreads: {},
   currentStreamThreadId: undefined,
-  setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
+  currentStreamIsCowork: false,
+  setCurrentStreamThreadId: (threadId, isCowork = false) =>
+    set({
+      currentStreamThreadId: threadId,
+      currentStreamIsCowork: threadId ? isCowork : false,
+    }),
   setOomError: (line) => set({ oomError: line }),
   setBackendError: (line) => set({ backendError: line }),
   setThreadBusy: (threadId, busy) =>
@@ -168,6 +185,9 @@ export const useAppState = create<AppState>()((set) => ({
   },
   updateMcpToolNames: (names) => {
     set({ mcpToolNames: new Set(names) })
+  },
+  updateExtensionTools: (tools) => {
+    set({ extensionTools: tools })
   },
   setServerStatus: (value) => set({ serverStatus: value }),
   setAbortController: (threadId, controller) => {

@@ -11,6 +11,9 @@ fn main() {
         "get_status",
         "list_attachments",
         "get_chunks",
+        "memory_index",
+        "memory_search",
+        "memory_clear",
     ])
     .build();
 }

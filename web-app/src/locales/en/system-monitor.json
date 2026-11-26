@@ -16,6 +16,8 @@
   "actions": "Actions",
   "stop": "Stop",
   "activeGpus": "Active GPUs",
+  "gpus": "GPUs",
+  "vram": "VRAM",
   "noGpus": "No GPUs detected",
   "noActiveGpus": "No active GPUs. All GPUs are currently disabled.",
   "vramUsage": "VRAM Usage",

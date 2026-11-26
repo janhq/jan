@@ -296,8 +296,10 @@ describe('useAppUpdater', () => {
         await result.current.downloadAndInstallUpdate()
       })
 
-      expect(mockStopAllModels).toHaveBeenCalled()
-      expect(mockEventsEmit).toHaveBeenCalledWith('KILL_SIDECAR')
+      // Stopping the engine now happens in the updater service after the
+      // download has verified, so the hook itself must not touch it.
+      expect(mockStopAllModels).not.toHaveBeenCalled()
+      expect(mockEventsEmit).not.toHaveBeenCalled()
       expect(mockUpdaterDownloadAndInstallWithProgress).toHaveBeenCalled()
       expect(mockRelaunch).toHaveBeenCalled()
     })
@@ -345,7 +347,7 @@ describe('useAppUpdater', () => {
         await result.current.downloadAndInstallUpdate()
       })
 
-      expect(mockStopAllModels).not.toHaveBeenCalled()
+      expect(mockUpdaterDownloadAndInstallWithProgress).not.toHaveBeenCalled()
     })
 
     it('should emit progress events during download', async () => {

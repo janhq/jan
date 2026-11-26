@@ -2,23 +2,25 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tauri::{AppHandle, Manager, Runtime, State};
+#[cfg(not(feature = "cli"))]
+use tauri::{AppHandle, Runtime, State};
 
-use super::{
-    constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER},
-    helpers::copy_dir_recursive,
-    models::AppConfiguration,
-};
+use super::constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER};
+use super::models::AppConfiguration;
+use super::paths;
+#[cfg(not(feature = "cli"))]
+use super::helpers::copy_dir_recursive;
+#[cfg(not(feature = "cli"))]
 use crate::core::state::AppState;
 
 /// Canonical Jan app support directory (`%APPDATA%/Jan` on Windows).
 fn resolve_human_readable_app_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join(env!("CARGO_PKG_NAME")))
+    paths::data_dir().map(|d| d.join(env!("CARGO_PKG_NAME")))
 }
 
 /// Tauri bundle-id app support directory (e.g. `%APPDATA%/jan.ai.app` on Windows).
 fn resolve_bundle_app_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join(TAURI_BUNDLE_IDENTIFIER))
+    paths::data_dir().map(|d| d.join(TAURI_BUNDLE_IDENTIFIER))
 }
 
 /// Keep `%APPDATA%/Jan/settings.json` as canonical, but recover from legacy or
@@ -57,7 +59,7 @@ fn migrate_from_candidates(canonical: &Path, candidates: Vec<PathBuf>) -> std::i
     Ok(())
 }
 
-fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
+fn legacy_app_config_candidate_paths(_app_data_dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     if let Some(bundle_dir) = resolve_bundle_app_data_dir() {
@@ -69,7 +71,7 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
         let package_name = env!("CARGO_PKG_NAME");
         if let Some(config_dir) = dirs::config_dir() {
             let legacy = config_dir.join(package_name).join(CONFIGURATION_FILE_NAME);
-            if legacy != app_data_dir.join(CONFIGURATION_FILE_NAME) {
+            if legacy != _app_data_dir.join(CONFIGURATION_FILE_NAME) {
                 paths.push(legacy);
             }
         }
@@ -78,21 +80,23 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
     paths
 }
 
+#[cfg(not(feature = "cli"))]
 fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> PathBuf {
     let package_name = env!("CARGO_PKG_NAME");
-    app_handle.path().data_dir().unwrap_or_else(|err| {
-        log::error!("Failed to get data directory: {err}. Using home directory instead.");
+    paths::data_dir_for(app_handle)
+        .unwrap_or_else(|err| {
+            log::error!("Failed to get data directory: {err}. Using home directory instead.");
 
-        let home_dir = std::env::var(if cfg!(target_os = "windows") {
-            "USERPROFILE"
-        } else {
-            "HOME"
+            let home_dir = std::env::var(if cfg!(target_os = "windows") {
+                "USERPROFILE"
+            } else {
+                "HOME"
+            })
+            .expect("Failed to determine the home directory");
+
+            PathBuf::from(home_dir)
         })
-        .expect("Failed to determine the home directory");
-
-        PathBuf::from(home_dir)
-    })
-    .join(package_name)
+        .join(package_name)
 }
 
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
@@ -112,6 +116,29 @@ pub fn resolve_config_file_path() -> PathBuf {
     }
 
     app_data.join(CONFIGURATION_FILE_NAME)
+}
+
+/// Run `f` with `JAN_DATA_FOLDER` pointed at a fresh temp directory, restoring
+/// the previous value afterwards. Serialized on `SECRET_STORE_TEST_LOCK`, the
+/// one lock every `JAN_DATA_FOLDER` mutator takes: the env is process-wide and
+/// Rust runs tests on threads, so a private lock here would exclude only the
+/// other callers of this helper while the secret-store tests redirected the
+/// folder (and dropped its temp dir) underneath a run already in progress.
+#[cfg(all(test, feature = "cli"))]
+pub(crate) fn with_temp_data_folder<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+    let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prev = std::env::var_os("JAN_DATA_FOLDER");
+    std::env::set_var("JAN_DATA_FOLDER", dir.path());
+    let result = f(dir.path());
+    match prev {
+        Some(p) => std::env::set_var("JAN_DATA_FOLDER", p),
+        None => std::env::remove_var("JAN_DATA_FOLDER"),
+    }
+    result
 }
 
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
@@ -138,7 +165,7 @@ pub fn resolve_jan_data_folder() -> PathBuf {
 
     // Default: data_dir/Jan/data  (mirrors default_data_folder_path)
     let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Jan".to_string());
-    if let Some(data_dir) = dirs::data_dir() {
+    if let Some(data_dir) = paths::data_dir() {
         return data_dir.join(&app_name).join("data");
     }
     let home = std::env::var("HOME")
@@ -147,6 +174,7 @@ pub fn resolve_jan_data_folder() -> PathBuf {
     PathBuf::from(home).join(&app_name).join("data")
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> AppConfiguration {
     let mut app_default_configuration = AppConfiguration::default();
@@ -202,13 +230,30 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     }
 }
 
+/// Save the app configuration from the frontend.
+///
+/// `data_folder` is kept as stored: the folder every data-folder check is
+/// measured against only moves through [`change_app_data_folder`], which
+/// validates the target and copies the data across.
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn update_app_configuration<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     configuration: AppConfiguration,
 ) -> Result<(), String> {
+    let mut configuration = configuration;
+    configuration.data_folder = get_app_configurations(app_handle.clone()).data_folder;
+    write_app_configuration(app_handle, configuration)
+}
+
+/// Write the app configuration as given, `data_folder` included. Backend only.
+#[cfg(not(feature = "cli"))]
+pub(crate) fn write_app_configuration<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    configuration: AppConfiguration,
+) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
-    log::info!("update_app_configuration, configuration_file: {configuration_file:?}");
+    log::info!("write_app_configuration, configuration_file: {configuration_file:?}");
 
     fs::write(
         configuration_file,
@@ -217,6 +262,7 @@ pub fn update_app_configuration<R: Runtime>(
     .map_err(|e| e.to_string())
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     if cfg!(test) {
@@ -247,6 +293,7 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
     PathBuf::from(app_configurations.data_folder)
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_data_dir_with_fallback(&app_handle);
@@ -256,9 +303,10 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
     app_path.join(CONFIGURATION_FILE_NAME)
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
-    let mut path = app_handle.path().data_dir().unwrap_or_else(|err| {
+    let mut path = paths::data_dir_for(&app_handle).unwrap_or_else(|err| {
         log::error!("Failed to get data directory: {err}. Falling back to home directory.");
         let home = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"
@@ -283,11 +331,13 @@ pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
     path_str
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_user_home_path<R: Runtime>(app: AppHandle<R>) -> String {
     get_app_configurations(app.clone()).data_folder
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn change_app_data_folder<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -296,6 +346,7 @@ pub fn change_app_data_folder<R: Runtime>(
     // Get current data folder path
     let current_data_folder = get_jan_data_folder_path(app_handle.clone());
     let new_data_folder_path = PathBuf::from(&new_data_folder);
+    validate_new_data_folder(&new_data_folder_path, dirs::home_dir().as_deref())?;
 
     // Create the new data folder if it doesn't exist
     if !new_data_folder_path.exists() {
@@ -328,9 +379,102 @@ pub fn change_app_data_folder<R: Runtime>(
     configuration.data_folder = new_data_folder;
 
     // Save the updated configuration
-    update_app_configuration(app_handle, configuration)
+    write_app_configuration(app_handle, configuration)
 }
 
+/// Folders that hold the OS or installed programs. A data folder at or inside
+/// one is refused.
+#[cfg(any(test, not(feature = "cli")))]
+fn system_dirs() -> Vec<PathBuf> {
+    if cfg!(windows) {
+        let mut dirs = Vec::new();
+        for (var, fallback) in [
+            ("SystemRoot", r"C:\Windows"),
+            ("ProgramFiles", r"C:\Program Files"),
+            ("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+        ] {
+            dirs.push(PathBuf::from(fallback));
+            if let Some(v) = std::env::var_os(var) {
+                dirs.push(PathBuf::from(v));
+            }
+        }
+        dirs
+    } else {
+        [
+            "/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/etc", "/dev",
+            "/proc", "/sys", "/boot", "/lib", "/lib64", "/private/etc",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+    }
+}
+
+/// `path` with symlinks resolved as far as it exists: the deepest existing
+/// ancestor is canonicalized and the rest appended, so a target that is still
+/// to be created is judged by where it will really land.
+#[cfg(any(test, not(feature = "cli")))]
+fn resolve_existing_prefix(path: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut cur = path;
+    loop {
+        if let Ok(real) = fs::canonicalize(cur) {
+            return rest.iter().rev().fold(real, |acc, c| acc.join(c));
+        }
+        match (cur.parent(), cur.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_os_string());
+                cur = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Lower-cased on Windows, whose paths compare case-insensitively.
+#[cfg(any(test, not(feature = "cli")))]
+fn comparable(path: &Path) -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(path.to_string_lossy().to_lowercase())
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Refuse a data folder that would make the data-folder checks meaningless:
+/// a filesystem root, the home folder or one of its ancestors, or a system
+/// folder. Anything else keeps working as before.
+#[cfg(any(test, not(feature = "cli")))]
+fn validate_new_data_folder(path: &Path, home: Option<&Path>) -> Result<(), String> {
+    use std::path::Component;
+    if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("The data folder must be an absolute path".to_string());
+    }
+    let refuse = || Err(format!("{} cannot be used as the data folder", path.display()));
+    for candidate in [path.to_path_buf(), resolve_existing_prefix(path)] {
+        if candidate.parent().is_none() {
+            return refuse();
+        }
+        let candidate = comparable(&candidate);
+        if let Some(home) = home {
+            for h in [home.to_path_buf(), resolve_existing_prefix(home)] {
+                if comparable(&h).starts_with(&candidate) {
+                    return refuse();
+                }
+            }
+        }
+        for dir in system_dirs() {
+            for d in [resolve_existing_prefix(&dir), dir] {
+                if candidate.starts_with(comparable(&d)) {
+                    return refuse();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn app_token(state: State<'_, AppState>) -> Option<String> {
     state.app_token.clone()
@@ -341,6 +485,48 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use tempfile::tempdir;
+
+    #[test]
+    fn data_folder_refuses_roots_home_and_system_folders() {
+        let tmp = tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let mut bad = vec![
+            home.clone(),
+            home.parent().unwrap().to_path_buf(),
+            PathBuf::from("relative/data"),
+            home.join("x").join("..").join("..").join("y"),
+        ];
+        if cfg!(windows) {
+            bad.extend(
+                [r"C:\", r"D:\", r"C:\Windows", r"c:\windows\jan", r"C:\Program Files\Jan"]
+                    .map(PathBuf::from),
+            );
+        } else {
+            bad.extend(
+                ["/", "/usr", "/usr/local/jan", "/etc/jan", "/System", "/Library/Jan", "/bin"]
+                    .map(PathBuf::from),
+            );
+        }
+        for p in bad {
+            assert!(validate_new_data_folder(&p, Some(&home)).is_err(), "{p:?}");
+        }
+        for ok in [home.join("jan-data"), home.join("Documents").join("Jan"), tmp.path().join("elsewhere")] {
+            assert!(validate_new_data_folder(&ok, Some(&home)).is_ok(), "{ok:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn data_folder_follows_a_symlink_to_home() {
+        let tmp = tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&home, &link).unwrap();
+        assert!(validate_new_data_folder(&link, Some(&home)).is_err());
+        assert!(validate_new_data_folder(&link.join("jan"), Some(&home)).is_ok());
+    }
 
     #[test]
     fn migration_recovers_legacy_then_removes_stale_copy() {

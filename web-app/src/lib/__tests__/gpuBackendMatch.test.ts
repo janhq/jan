@@ -81,6 +81,18 @@ describe('backendGpuFamily', () => {
     expect(backendGpuFamily('macos-x64')).toBe('metal')
   })
 
+  // The setup screen names the backend after the device the engine enumerated
+  // (`metal`, from `MTL0`), not after a build asset, so Metal has to be
+  // recognised by that name too. It read as a CPU build, and a Mac with a GPU
+  // was told the GPU was unused.
+  it('recognises Metal by its device name', () => {
+    expect(backendGpuFamily('metal')).toBe('metal')
+    expect(backendGpuFamily('mtl')).toBe('metal')
+    expect(evaluateBackendGpuMatch([{ name: 'Apple M4' }], 'metal')).toEqual({
+      kind: 'ok',
+    })
+  })
+
   it('recognises the short cuda category names', () => {
     expect(backendGpuFamily('cuda-cu13.0')).toBe('cuda')
   })

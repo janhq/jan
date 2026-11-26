@@ -15,12 +15,14 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
   stop: (value: any) => Array.isArray(value) && value.every((v) => typeof v === 'string'),
   frequency_penalty: (value: any) => typeof value === 'number' && value >= -2 && value <= 2,
   presence_penalty: (value: any) => typeof value === 'number' && value >= -2 && value <= 2,
-  repeat_last_n: (value: any) => typeof value === 'number',
+  // Upstream throws on a negative window rather than clamping it.
+  repeat_last_n: (value: any) => typeof value === 'number' && value >= 0,
   repeat_penalty: (value: any) => typeof value === 'number',
   min_p: (value: any) => typeof value === 'number',
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
-  ngl: (value: any) => Number.isInteger(value) && value >= 0,
+  // -1 is auto (VRAM-aware) and -2 or below means all layers.
+  ngl: (value: any) => Number.isInteger(value) && value >= -2,
   embedding: (value: any) => typeof value === 'boolean',
   n_parallel: (value: any) => Number.isInteger(value) && value >= 0,
   cpu_threads: (value: any) => Number.isInteger(value) && value >= 0,

@@ -6,5 +6,6 @@
   "baseUrlPlaceholder": "https://il-tuo-endpoint/v1",
   "apiKeyLabel": "Chiave API (opzionale)",
   "apiKeyPlaceholder": "Incolla la tua chiave API",
-  "invalidBaseUrl": "L'URL di base deve essere un URL http(s) valido"
+  "invalidBaseUrl": "L'URL di base deve essere un URL http(s) valido",
+  "nameLabel": "Nome"
 }

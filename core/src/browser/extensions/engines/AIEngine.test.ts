@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { AIEngine } from './AIEngine'
+import { AIEngine, isEmbeddingEngine } from './AIEngine'
 import { events } from '../../events'
 import { ModelEvent, Model } from '../../../types'
 
@@ -8,8 +8,24 @@ vi.mock('./EngineManager')
 vi.mock('../../fs')
 
 class TestAIEngine extends AIEngine {
-  onUnload(): void {}
   provider = 'test-provider'
+  settings: any[] = [{ key: 'ctx', controllerProps: { value: 4096 } }]
+
+  async getSettings(): Promise<any[]> {
+    return this.settings
+  }
+
+  async updateSettings(): Promise<void> {}
+
+  async get(): Promise<undefined> {
+    return undefined
+  }
+
+  async update(): Promise<void> {}
+
+  async isToolSupported(): Promise<boolean> {
+    return false
+  }
 
   inference(data: any) {}
 
@@ -52,7 +68,7 @@ describe('AIEngine', () => {
   let engine: TestAIEngine
 
   beforeEach(() => {
-    engine = new TestAIEngine('', '')
+    engine = new TestAIEngine()
     vi.clearAllMocks()
   })
 
@@ -78,9 +94,41 @@ describe('AIEngine', () => {
     expect(result).toEqual([])
   })
 
+  it('reads one setting value, falling back to the default', async () => {
+    await expect(engine.getSetting('ctx', 0)).resolves.toBe(4096)
+    await expect(engine.getSetting('absent', 'dflt')).resolves.toBe('dflt')
+  })
+
   it('should get loaded models', async () => {
     const result = await engine.getLoadedModels()
 
     expect(result).toEqual([])
+  })
+})
+
+describe('isEmbeddingEngine', () => {
+  const full = {
+    embed: async () => ({ data: [] }),
+    getEmbeddingContextSize: async () => 512,
+    countEmbeddingTokens: async () => [1],
+  }
+
+  it('accepts an engine implementing all three members', () => {
+    expect(isEmbeddingEngine(full)).toBe(true)
+  })
+
+  // A partially implemented engine used to pass the callers' `if (!llm?.embed)`
+  // check and then throw on the first getEmbeddingContextSize call.
+  it('rejects an engine missing any member', () => {
+    for (const key of Object.keys(full)) {
+      const partial: Record<string, unknown> = { ...full }
+      delete partial[key]
+      expect(isEmbeddingEngine(partial), key).toBe(false)
+    }
+  })
+
+  it('rejects absent engines', () => {
+    expect(isEmbeddingEngine(undefined)).toBe(false)
+    expect(isEmbeddingEngine(null)).toBe(false)
   })
 })

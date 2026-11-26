@@ -12,10 +12,51 @@ export interface UnloadResult {
   error?: string
 }
 
-export interface DeviceInfo {
+/** Mirrors `engine::worker::DeviceIdentity`: a device without its memory. */
+export interface DeviceIdentity {
   id: string
   name: string
-  memory: number
+}
+
+/** Mirrors `engine::commands::EngineInfo`. */
+export interface EngineInfo {
+  port: number
+  api_key: string
+  pid: number
+  /** Model ids the worker registered from the preset. */
+  models: string[]
+  /**
+   * The devices the running worker itself initialised, or null when it did not
+   * say. `[]` means the machine has no GPU, which is a real answer. The worker
+   * lists its devices once, at start, so this is what a later enumeration is
+   * compared against to notice a GPU that appeared or vanished.
+   */
+  devices: DeviceIdentity[] | null
+}
+
+/** Mirrors `engine::commands::EngineVersion`. */
+export interface EngineVersion {
+  /** llama.cpp's own version, e.g. "1.0.0". */
+  version: string
+  /** Upstream build tag the source was taken from, e.g. "b12359". */
+  tag: string
+  /** The tag's build number, as a string. */
+  build_number: string
+  /** Full commit sha -- the tag is mutable upstream, this is the real pin. */
+  commit: string
+}
+
+/**
+ * Mirrors `engine::commands::ReloadReport`. Every model in the preset appears
+ * in exactly one list, so an empty `changed`/`removed` proves the reload left
+ * the models the user was using alone.
+ */
+export interface ReloadReport {
+  added: string[]
+  changed: string[]
+  removed: string[]
+  kept: string[]
+  models_max: number
 }
 
 export interface ModelProps {
@@ -31,65 +72,63 @@ export interface GgufMetadata {
   metadata: Record<string, string>
 }
 
-// llama.cpp settings
+/**
+ * The engine-level (provider-wide) settings, mirroring
+ * `extensions/llamacpp-extension/settings.json` exactly.
+ *
+ * Kept in lockstep on purpose: `this.config` is built only from those keys, so a
+ * field declared here with no settings.json entry is permanently `undefined` --
+ * which is how two dead `[*]` preset branches (`ctx_size`, `n_gpu_layers`) came
+ * to typecheck. Per-model settings are a different type (`ModelConfig`).
+ */
 export type LlamacppConfig = {
-  llamacpp_version: string
-  llamacpp_backend: string
-  /** Composed from llamacpp_version + llamacpp_backend as `${version}/${backend}`. Not user-settable. */
-  version_backend: string
-  auto_update_engine: boolean
-  check_for_updates: boolean
-  verify_backend_deps: boolean
-  auto_unload: boolean
+  llamacpp_env: string
   models_max: string | number
   timeout: number
-  llamacpp_env: string
   fit: boolean
   fit_target: string
   fit_ctx: string
-  chat_template: string
-  n_gpu_layers: number
-  offload_mmproj: boolean
-  cpu_moe: boolean
-  n_cpu_moe: number
-  override_tensor_buffer_t: string
-  ctx_size: number
   threads: number
   threads_batch: number
+  ctx_shift: boolean
   n_predict: number
   batch_size: number
   ubatch_size: number
+  n_cpu_moe: number
+  n_cpu_ffn: number
+  no_kv_offload: boolean
   device: string
   split_mode: string
   main_gpu: number
+  tensor_split: string
+  no_op_offload: boolean
   flash_attn: string
+  parallel: number
   cont_batching: boolean
-  no_mmap: boolean
-  mlock: boolean
-  no_kv_offload: boolean
+  /** How weights are read: `auto` | `none` | `mmap` | `mlock` | `mmap+mlock` | `dio`. */
+  load_mode: string
   cache_type_k: string
   cache_type_v: string
   rope_scaling: string
-  rope_scale: number
   rope_freq_base: number
   rope_freq_scale: number
-  ctx_shift: boolean
-  parallel: number
-  reasoning: string
   cache_ram: number
+  /** Keep each thread's prompt cache on disk across sessions. */
+  persist_thread_cache: boolean
+  /** Disk budget for the above, in MiB. */
+  thread_cache_size: number
   cache_reuse: number
+  ctx_checkpoints: number
+  checkpoint_min_step: number
   swa_full: boolean
-  keep: number
   kv_unified: string
-}
-
-export type ModelPlan = {
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj?: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
+  /** Per-slot cap on the shared KV pool, in tokens. 0 = unset. */
+  kv_unified_per_slot: number
+  /** Keep reasoning for the whole history, not just the last assistant turn. */
+  reasoning_preserve: boolean
+  /** On-demand reading of arch-marked tensors: `auto` | `on` | `off`. */
+  lazy_mode: string
+  keep: number
 }
 
 export interface DownloadItem {
@@ -146,81 +185,148 @@ export interface DeviceList {
   free: number
 }
 
-export interface SystemMemory {
-  totalVRAM: number
-  totalRAM: number
-  totalMemory: number
-}
 
-// backend types
-export type BackendVersion = { version: string; backend: string }
+// The ggml op diagnostic. These mirror `engine::diagnose::RootEvent` and
+// `engine::diag`; see docs/llamacpp-diagnostics/event-schema.md.
 
-export type BackendFeatures = {
-  cuda11: boolean
-  cuda12: boolean
-  cuda13: boolean
-  vulkan: boolean
-  hip: boolean
-}
+/** Bump in lockstep with `engine::diagnose::SCHEMA_VERSION`. */
+export const DIAGNOSTICS_SCHEMA = 2
 
-export type SupportedFeatures = {
-  avx: boolean
-  avx2: boolean
-  avx512: boolean
-  cuda11: boolean
-  cuda12: boolean
-  cuda13: boolean
-  vulkan: boolean
-}
-export type NvidiaInfo = {
-  compute_capability: string
-}
+/**
+ * `model` runs only the families one gguf's graph contains, at its own
+ * shapes, and needs the model id passed with it.
+ */
+export type DiagnosticsPreset = 'quick' | 'full' | 'model'
 
-export type VulkanInfo = {
-  api_version: string
-}
+/**
+ * A case outcome. `not_supported` is not a failure: the device is saying ggml
+ * will run that op somewhere else, which explains slowness rather than a wrong
+ * answer.
+ */
+export type DiagnosticsCaseStatus =
+  | 'ok'
+  | 'fail'
+  | 'not_supported'
+  | 'skipped'
 
-export type GpuInfo = {
-  driver_version: string
-  nvidia_info?: NvidiaInfo | null
-  vulkan_info?: VulkanInfo | null
-}
-
-export interface BestBackendResult {
-  backend_string: string
-  version: string
-  backend_type: string
-}
-
-export interface UpdateCheckResult {
-  update_needed: boolean
-  new_version: string
-  target_backend?: string
-}
-
-export interface SettingUpdateResult {
-  backend_type_updated: boolean
-  effective_backend_type?: string
-  needs_backend_installation: boolean
-  version?: string
-  backend?: string
-}
-
-/** One ggml GPU library that failed to load, with the cause. */
-export interface LoadProbeFailure {
-  library: string
-  /** Raw loader message. */
-  error: string
-  /** Names parsed out of `error`, for install advice. */
-  missing_libraries: string[]
-}
-
-export interface LoadProbeResult {
-  loaded: string[]
-  failures: LoadProbeFailure[]
+/**
+ * A family outcome. Only `fail` means a kernel computed the wrong answer; the
+ * other three are the leaf process itself going wrong.
+ */
+export type DiagnosticsFamilyStatus =
+  | 'ok'
+  | 'fail'
   /**
-   * The probe could not run, so an empty `failures` list must not be read as a
-   * healthy backend.
+   * The family ran cleanly and tested nothing, because its shape filter
+   * matched no case. Inconclusive, never a pass.
    */
-  inconclusive: boolean
+  | 'no_cases'
+  | 'crashed'
+  | 'hung'
+  | 'cancelled'
+
+export type DiagnosticsDeviceKind =
+  | 'cpu'
+  | 'gpu'
+  | 'igpu'
+  | 'accel'
+  | 'meta'
+  | 'unknown'
+
+export interface DiagnosticsDevice {
+  name: string
+  description: string
+  type: DiagnosticsDeviceKind
+  reg: string
+  memory_total_mib?: number
+  memory_free_mib?: number
+}
+
+export interface DiagnosticsEngineBuild {
+  version: string
+  tag: string
+  commit: string
+}
+
+interface DiagnosticsEventBase {
+  job: string
+}
+
+export type DiagnosticsEvent = DiagnosticsEventBase &
+  (
+    | {
+        event: 'start'
+        schema: number
+        preset: DiagnosticsPreset
+        engine: DiagnosticsEngineBuild
+        families: string[]
+        /** The model file this run was built for, on the `model` preset. */
+        model?: string
+        support_probe: boolean
+        backend_modules: string[]
+        units: number
+        family_timeout_secs: number
+        deadline_secs: number
+      }
+    | ({ event: 'device' } & DiagnosticsDevice)
+    | {
+        event: 'family_start'
+        device: string
+        family: string
+        mode: 'test' | 'support'
+      }
+    | {
+        event: 'case'
+        device: string
+        family: string
+        backend: string
+        op: string
+        params: string
+        mode: string
+        status: DiagnosticsCaseStatus
+        error?: string
+        detail?: string
+      }
+    | {
+        event: 'family_end'
+        device: string
+        family: string
+        status: DiagnosticsFamilyStatus
+        ok: number
+        failed: number
+        not_supported: number
+        millis: number
+        exit?: string
+        last_lines?: string[]
+        unparsed?: string[]
+      }
+    | {
+        event: 'summary'
+        device: string
+        ok: number
+        failed: number
+        not_supported: number
+        families_crashed: number
+        families_hung: number
+        /** Families whose filter matched no case, so they tested nothing. */
+        families_no_cases?: number
+        /** Families the run never reached, because it was cancelled or timed out. */
+        families_cancelled?: number
+      }
+    | {
+        event: 'done'
+        ok: boolean
+        cancelled: boolean
+        /**
+         * At least one family tested nothing, so the run did not cover what
+         * it was asked to. `ok` is false in this case too -- read this flag
+         * to tell it apart from a real failure.
+         */
+        inconclusive?: boolean
+        error?: string
+      }
+  )
+
+export interface DiagnosticsJob {
+  id: string
 }

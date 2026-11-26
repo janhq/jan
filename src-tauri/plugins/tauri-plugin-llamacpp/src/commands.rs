@@ -1,14 +1,15 @@
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager, Runtime, State};
 
-use crate::device::{get_devices_from_backend, DeviceInfo};
+use crate::diagnostics;
+use crate::engine::preset;
+use crate::engine::worker::FitMark;
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
-use crate::state::{LlamacppState, SessionInfo};
+use crate::state::{EngineLease, LlamacppState, SessionInfo};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -23,22 +24,340 @@ struct ModelRequestBody<'a> {
     model: &'a str,
 }
 
-async fn router_endpoint<R: Runtime>(
+/// The loopback endpoint every model-lifecycle command talks to.
+///
+/// One place resolves the worker, so `load_llama_model`, `unload_llama_model`,
+/// `ensure_session_ready`, `find_session_by_model`, `get_loaded_models` and the
+/// health probes all reach it the same way.
+///
+/// The lease comes back with the address and must be held until the request
+/// that uses it is done: without it a device-change restart can stop this
+/// worker between the lookup and the send.
+async fn engine_endpoint<R: Runtime>(
     app_handle: &tauri::AppHandle<R>,
-) -> Result<(u16, String, u32), String> {
+) -> Result<(u16, String, u32, EngineLease), String> {
     let state: State<Arc<LlamacppState>> = app_handle.state();
-    let guard = state.router.lock().await;
-    let h = guard.as_ref().ok_or_else(|| "router not started".to_string())?;
-    Ok((h.port, h.api_key.clone(), h.pid))
+    let lease = state.lease().await;
+    let guard = state.engine.lock().await;
+    let h = guard
+        .as_ref()
+        .ok_or_else(|| "no llama.cpp engine is running".to_string())?;
+    Ok((h.port, h.api_key.clone(), h.pid, lease))
 }
 
-const ROUTER_HEALTH_TIMEOUT_SECS: u64 = 5;
-
+/// Loopback only, so never through a proxy; see `loopback_client_builder`.
 async fn http_client() -> reqwest::Client {
-    reqwest::Client::builder()
+    crate::engine::worker::loopback_client_builder()
         .timeout(Duration::from_secs(600))
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .expect("a reqwest client without proxies builds")
+}
+
+/// True when a request to the worker never got a response: refused, reset, or
+/// timed out before it answered. Only these say anything about the worker
+/// itself -- an HTTP error status means it is alive and talking.
+fn never_reached_worker(e: &reqwest::Error) -> bool {
+    e.status().is_none() && (e.is_connect() || e.is_timeout() || e.is_request())
+}
+
+/// The error with its causes. reqwest's own text stops at "error sending
+/// request for url (...)", and whether that was a refusal, a reset or a proxy
+/// is only in the source chain.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if !out.contains(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        source = cause.source();
+    }
+    out
+}
+
+/// What became of the worker a failed request was aimed at.
+#[derive(Debug)]
+enum WorkerFate {
+    /// Its process has exited, and this is how.
+    Exited(crate::engine::worker::ExitReport),
+    /// No longer the registered worker -- already reaped, or replaced -- so
+    /// there is no exit status left to report.
+    Gone,
+    /// Still running, yet its port did not answer.
+    Running,
+}
+
+/// How long a worker that looks alive is watched before it is called
+/// unreachable. A worker that crashes mid-request has its sockets closed by the
+/// kernel a moment before its exit can be collected, so the client can see the
+/// reset first; without this grace that crash would be blamed on a VPN or a
+/// proxy instead of being reported with its exit code and stderr.
+const EXIT_GRACE: Duration = Duration::from_millis(500);
+const EXIT_POLL: Duration = Duration::from_millis(50);
+
+/// How long a failed load waits for the worker's fit-failure line. fit prints
+/// it before the load starts, but stderr is drained on its own task, so it can
+/// still be in the pipe when the HTTP answer arrives.
+const FIT_NOTE_WAIT: Duration = Duration::from_millis(100);
+
+/// Where the worker on `port` is in its fit-failure lines, taken before a load
+/// so that only a line printed during it counts.
+async fn fit_mark(state: &LlamacppState, port: u16) -> Option<FitMark> {
+    let guard = state.engine.lock().await;
+    guard.as_ref().filter(|h| h.port == port).map(|h| h.fit_mark())
+}
+
+/// The fit-failure line the worker on `port` printed after `mark`, plus the
+/// preset it runs from.
+async fn fit_failure_since(
+    state: &LlamacppState,
+    port: u16,
+    mark: FitMark,
+) -> (Option<String>, Option<std::path::PathBuf>) {
+    let guard = state.engine.lock().await;
+    match guard.as_ref().filter(|h| h.port == port) {
+        Some(h) => (h.fit_failure_since(mark), Some(h.preset_path.clone())),
+        None => (None, None),
+    }
+}
+
+/// Rewords a failed load that auto-fit could not place. Without this the user
+/// sees an out-of-memory error whose advice is a smaller context, when fit has
+/// already shrunk the context as far as `fit-ctx` allows.
+///
+/// Two signals, because fit.cpp only gives up loudly without a GPU: there it
+/// prints a "unable to fit model into system memory" line. With a GPU it never
+/// fails; it shrinks the context, moves layers to the CPU and loads, so a model
+/// too big for the device fails as a plain out-of-memory load. That is read as
+/// not fitting only when fit owned the context for this model; a pinned
+/// `ctx-size` is left alone by fit, and lowering it is real advice.
+async fn explain_load_failure(
+    state: &LlamacppState,
+    port: u16,
+    model_id: &str,
+    mark: Option<FitMark>,
+    err: LlamacppError,
+) -> LlamacppError {
+    let Some(mark) = mark else { return err };
+    let (mut line, mut preset) = fit_failure_since(state, port, mark).await;
+    if line.is_none() {
+        tokio::time::sleep(FIT_NOTE_WAIT).await;
+        (line, preset) = fit_failure_since(state, port, mark).await;
+    }
+    let output = err.details.clone().unwrap_or_default();
+    if let Some(line) = line {
+        let details = if output.trim().is_empty() {
+            line
+        } else {
+            format!("{line}; {output}")
+        };
+        return LlamacppError::model_does_not_fit(details);
+    }
+    if !matches!(err.code, ErrorCode::OutOfMemory) {
+        return err;
+    }
+    let ini = match preset {
+        Some(path) => tokio::fs::read_to_string(&path).await.ok(),
+        None => None,
+    };
+    match ini {
+        Some(ini) if preset::fit_owns_context(&ini, model_id) => {
+            LlamacppError::model_does_not_fit(output)
+        }
+        _ => err,
+    }
+}
+
+/// A failed load with everything a bug report needs attached: the settings the
+/// preset asked for, the model's architecture and quantization, the machine's
+/// GPUs, the backends the worker loaded, the engine build and the worker's log
+/// since the load began. Best effort throughout: a piece that cannot be read is
+/// left out rather than hiding the failure it describes.
+async fn diagnose_load_failure(
+    state: &LlamacppState,
+    port: u16,
+    model_id: &str,
+    mark: Option<FitMark>,
+    err: LlamacppError,
+) -> LlamacppError {
+    let mut err = explain_load_failure(state, port, model_id, mark, err).await;
+    let (ini_path, log, log_cut, backends) = {
+        let guard = state.engine.lock().await;
+        match guard.as_ref().filter(|h| h.port == port) {
+            Some(h) => {
+                let (lines, cut) = mark.map(|m| h.log_since(m)).unwrap_or_default();
+                (Some(h.preset_path.clone()), lines, cut, h.backends())
+            }
+            None => (None, Vec::new(), false, Vec::new()),
+        }
+    };
+    let ini = match &ini_path {
+        Some(path) => tokio::fs::read_to_string(path).await.unwrap_or_default(),
+        None => String::new(),
+    };
+    let model_path = preset::value(&ini, model_id, "model");
+    let (architecture, quantization) = match &model_path {
+        Some(path) => match crate::gguf::utils::read_gguf_metadata_internal(path.clone()).await {
+            Ok(meta) => diagnostics::model_traits(&meta.metadata),
+            Err(_) => (None, None),
+        },
+        None => (None, None),
+    };
+    let gpus = tokio::task::spawn_blocking(machine_gpus)
+        .await
+        .unwrap_or_default();
+    let (log, log_truncated) = diagnostics::cap_log(&log, diagnostics::MAX_LOG_BYTES, log_cut);
+    err.diagnostics = Some(Box::new(diagnostics::LoadDiagnostics {
+        model_file: model_path.as_deref().map(diagnostics::file_name),
+        architecture,
+        quantization,
+        request: diagnostics::LoadRequest::from_preset(&ini, model_id),
+        gpus,
+        backends,
+        engine: diagnostics::EngineBuild::pinned(),
+        log,
+        log_truncated,
+    }));
+    err
+}
+
+/// The GPUs the machine reports, with their driver and memory. Blocking: the
+/// vendor libraries are queried for current usage.
+fn machine_gpus() -> Vec<diagnostics::GpuReport> {
+    tauri_plugin_hardware::get_system_info()
+        .gpus
+        .iter()
+        .map(|gpu| {
+            let usage = gpu.get_usage();
+            diagnostics::GpuReport {
+                name: gpu.name.clone(),
+                driver_version: gpu.driver_version.clone(),
+                total_mib: gpu.total_memory,
+                free_mib: (usage.total_memory > 0)
+                    .then(|| usage.total_memory.saturating_sub(usage.used_memory)),
+            }
+        })
+        .collect()
+}
+
+/// Checks the process, which is the one thing that tells the two causes of an
+/// unreachable worker apart: a crash, or something between Jan and 127.0.0.1.
+///
+/// A worker found dead is reaped here, as `get_engine_info` does, so the next
+/// load starts a fresh one instead of failing against the same closed port.
+/// One still running is re-checked for up to [`EXIT_GRACE`] before it counts
+/// as running; the engine lock is released between checks.
+async fn worker_fate(state: &LlamacppState, port: u16) -> WorkerFate {
+    let deadline = tokio::time::Instant::now() + EXIT_GRACE;
+    loop {
+        {
+            let mut guard = state.engine.lock().await;
+            let Some(handle) = guard.as_mut().filter(|h| h.port == port) else {
+                return WorkerFate::Gone;
+            };
+            if handle.exited().is_some() {
+                // Reaped under the lock, reported outside it: the report waits
+                // briefly for the rest of the worker's stderr.
+                let mut dead = guard.take().expect("checked above");
+                drop(guard);
+                let report = dead.exit_report().await.expect("it has exited");
+                log::error!(
+                    "jan-llama-worker exited unexpectedly ({}); last output: {:?}",
+                    report.status,
+                    report.last_lines
+                );
+                return WorkerFate::Exited(report);
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return WorkerFate::Running;
+        }
+        tokio::time::sleep(EXIT_POLL).await;
+    }
+}
+
+/// The error for a worker that did not answer. `message` is the full English
+/// account; `details` is the evidence the UI shows beside its localized text
+/// for the code, so it leads with what a support thread would ask for.
+fn unreachable_worker_error(port: u16, fate: WorkerFate, cause: &str) -> LlamacppError {
+    match fate {
+        WorkerFate::Exited(report) => {
+            let mut details = report.status.clone();
+            if !report.last_lines.is_empty() {
+                details.push_str(". Last output: ");
+                details.push_str(&report.last_lines.join(" / "));
+            }
+            LlamacppError::new(
+                ErrorCode::EngineStopped,
+                format!(
+                    "The llama.cpp engine stopped unexpectedly ({}).",
+                    report.status
+                ),
+                Some(details),
+            )
+        }
+        WorkerFate::Gone => LlamacppError::new(
+            ErrorCode::EngineStopped,
+            "The llama.cpp engine stopped unexpectedly.".into(),
+            Some(cause.to_string()),
+        ),
+        WorkerFate::Running => LlamacppError::new(
+            ErrorCode::EngineUnreachable,
+            format!(
+                "The llama.cpp engine is running, but Jan cannot connect to it on \
+                 127.0.0.1:{port}. A VPN, proxy or security software may be blocking \
+                 local connections."
+            ),
+            Some(format!("127.0.0.1:{port}: {cause}")),
+        ),
+    }
+}
+
+/// Turns a failed request to the worker into the error the user sees. A
+/// request that never reached it is explained from the worker's own state;
+/// anything else keeps `context` and reqwest's text as before.
+async fn worker_request_error(
+    state: &LlamacppState,
+    port: u16,
+    context: &str,
+    e: reqwest::Error,
+) -> LlamacppError {
+    let generic = |e: &reqwest::Error| {
+        LlamacppError::new(
+            ErrorCode::InternalError,
+            context.to_string(),
+            Some(error_chain(e)),
+        )
+    };
+    if !never_reached_worker(&e) {
+        return generic(&e);
+    }
+    let fate = worker_fate(state, port).await;
+    // A live worker that merely took too long -- a slow load, a busy machine
+    // -- was reached; blaming a VPN or a proxy for that would send the user
+    // looking in the wrong place. A connect timeout still counts as unreached.
+    if matches!(fate, WorkerFate::Running) && e.is_timeout() && !e.is_connect() {
+        return generic(&e);
+    }
+    unreachable_worker_error(port, fate, &error_chain(&e))
+}
+
+/// For the commands that return `String` errors: the structured error as JSON,
+/// which `parseEngineError` on the web side recovers from a message string, so
+/// it is shown from its code like any other engine error.
+fn into_string_error(err: LlamacppError) -> String {
+    serde_json::to_string(&err).unwrap_or(err.message)
+}
+
+/// [`into_string_error`] for a [`ServerError`]: an engine error keeps its code
+/// as JSON, anything else is its plain text as before.
+fn server_error_string(err: ServerError) -> String {
+    match err {
+        ServerError::Llamacpp(err) => into_string_error(err),
+        other => other.to_string(),
+    }
 }
 
 /// Payload for the `llamacpp-model-load-progress` event, mirrored from the
@@ -168,9 +487,20 @@ fn spawn_load_progress_listener<R: Runtime>(
     api_key: String,
     model_id: String,
     fail_tx: tokio::sync::oneshot::Sender<Option<i64>>,
+    subscribed_tx: tokio::sync::oneshot::Sender<()>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         use futures_util::StreamExt;
+
+        // Fires on every exit from the connect, success or not, so a caller
+        // waiting to be subscribed is never left waiting on a feed that will
+        // not arrive.
+        let mut subscribed_tx = Some(subscribed_tx);
+        let mut announce = move || {
+            if let Some(tx) = subscribed_tx.take() {
+                let _ = tx.send(());
+            }
+        };
 
         let client = http_client().await;
         let url = format!("http://127.0.0.1:{}/models/sse", port);
@@ -178,6 +508,7 @@ fn spawn_load_progress_listener<R: Runtime>(
             Ok(r) => r,
             Err(e) => {
                 log::debug!("model load progress: failed to connect to /models/sse: {}", e);
+                announce();
                 return;
             }
         };
@@ -187,8 +518,12 @@ fn spawn_load_progress_listener<R: Runtime>(
                  falling back to the plain loading indicator",
                 resp.status()
             );
+            announce();
             return;
         }
+        // Headers are in, so the server has already subscribed us: no
+        // transition can be missed from here on.
+        announce();
 
         let mut stream = resp.bytes_stream();
         let mut buf = String::new();
@@ -219,117 +554,36 @@ fn spawn_load_progress_listener<R: Runtime>(
     })
 }
 
-/// Payload for the `llamacpp-model-unloaded` event: any model transition to
-/// `status: "unloaded"` seen on `/models/sse`, regardless of cause (explicit
-/// unload, LRU eviction under `models_max`, or a crash - `exit_code` is 0 for
-/// the first two, nonzero for a crash). Forwarded unconditionally; the
-/// frontend already knows about unloads it requested itself, so reconciling
-/// already-correct state is a harmless no-op.
-#[derive(serde::Serialize, Clone)]
-pub struct UnloadEventPayload {
-    pub model: String,
-    pub exit_code: Option<i64>,
+/// The engine's own message out of the worker's `{"error":{...}}` envelope.
+/// The HTTP status only says the load was refused; this is the part that names
+/// the cause, and it is what the user needs to see.
+fn engine_error_message(body: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let msg = v
+        .pointer("/error/message")
+        .and_then(serde_json::Value::as_str)?
+        .trim();
+    (!msg.is_empty()).then(|| msg.to_string())
 }
 
-/// Parses one SSE event block, returning an unload payload only for a
-/// `status_change` event whose `data.status` is `"unloaded"`. `None` for any
-/// other event/status or malformed input.
-fn parse_unload_event(block: &str) -> Option<UnloadEventPayload> {
-    for line in block.lines() {
-        let data = line
-            .strip_prefix("data: ")
-            .or_else(|| line.strip_prefix("data:"))?;
-        let json: serde_json::Value = serde_json::from_str(data).ok()?;
-        if json.get("event").and_then(|v| v.as_str()) != Some("status_change") {
-            continue;
-        }
-        let model = json.get("model").and_then(|v| v.as_str())?;
-        let status = json
-            .get("data")
-            .and_then(|d| d.get("status"))
-            .and_then(|v| v.as_str())?;
-        if status != "unloaded" {
-            continue;
-        }
-        let exit_code = json
-            .get("data")
-            .and_then(|d| d.get("exit_code"))
-            .and_then(|v| v.as_i64());
-        return Some(UnloadEventPayload {
-            model: model.to_string(),
-            exit_code,
-        });
-    }
-    None
+/// A refused `/models/load` reported as the engine failure it is: the code the
+/// UI localizes comes from llama.cpp's own text, and `details` carries that
+/// text verbatim rather than a bare status line.
+fn load_rejection_error(status: u16, body: &str) -> LlamacppError {
+    let reason = engine_error_message(body).unwrap_or_else(|| body.trim().to_string());
+    let mut err = LlamacppError::from_load_failure(&reason);
+    err.details = Some(if reason.is_empty() {
+        format!("HTTP {status} from /models/load")
+    } else {
+        reason
+    });
+    err
 }
 
-/// Subscribes to the router's `/models/sse` feed for the router's entire
-/// lifetime, re-emitting every model-unload transition (explicit unload, LRU
-/// eviction, crash) as `llamacpp-model-unloaded`. Unlike
-/// `spawn_load_progress_listener` (per-model, aborted once loading finishes)
-/// this runs continuously and reconnects with backoff on a dropped
-/// connection, since the router process can outlive many individual loads.
-///
-/// `/models/sse` itself was introduced upstream in build b9688 (#23976); on
-/// an older backend the initial connection succeeds at the TCP/HTTP layer
-/// but the route 404s, so we give up permanently after the first failed
-/// connection instead of retrying forever against a route that will never
-/// exist. A transient connection error (router mid-restart) is retried with
-/// exponential backoff instead, since that's recoverable.
-fn spawn_unload_watcher<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    port: u16,
-    api_key: String,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        use futures_util::StreamExt;
-
-        let client = http_client().await;
-        let url = format!("http://127.0.0.1:{}/models/sse", port);
-        let mut backoff = Duration::from_millis(500);
-        const MAX_BACKOFF: Duration = Duration::from_secs(30);
-
-        loop {
-            let resp = match client.get(&url).bearer_auth(&api_key).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::debug!(
-                        "model unload watcher: failed to connect to /models/sse: {}; retrying in {:?}",
-                        e,
-                        backoff
-                    );
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(MAX_BACKOFF);
-                    continue;
-                }
-            };
-            if !resp.status().is_success() {
-                log::debug!(
-                    "model unload watcher: /models/sse returned {} (backend predates b9688?); giving up",
-                    resp.status()
-                );
-                return;
-            }
-            backoff = Duration::from_millis(500);
-
-            let mut stream = resp.bytes_stream();
-            let mut buf = String::new();
-            while let Some(chunk) = stream.next().await {
-                let Ok(bytes) = chunk else { break };
-                buf.push_str(&String::from_utf8_lossy(&bytes));
-                while let Some(pos) = buf.find("\n\n") {
-                    let event_block: String = buf.drain(..pos + 2).collect();
-                    if let Some(payload) = parse_unload_event(&event_block) {
-                        let _ = app_handle.emit("llamacpp-model-unloaded", payload);
-                    }
-                }
-            }
-            // Stream ended (router restarted or connection dropped); briefly
-            // pause then reconnect.
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-    })
-}
+/// How long a load waits to be subscribed to `/models/sse` before giving up on
+/// the feed. Generous enough for a loopback round trip, short enough that a
+/// backend without the endpoint costs nothing noticeable.
+const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 async fn post_load<R: Runtime>(
     app_handle: &tauri::AppHandle<R>,
@@ -337,6 +591,28 @@ async fn post_load<R: Runtime>(
     api_key: &str,
     model_id: &str,
 ) -> ServerResult<()> {
+    // Subscribed before the POST, not after: the engine answers `/models/load`
+    // only once the load has finished, so a listener started afterwards would
+    // join a stream on which every transition for this attempt has already
+    // been sent.
+    let (fail_tx, fail_rx) = tokio::sync::oneshot::channel();
+    let (subscribed_tx, subscribed_rx) = tokio::sync::oneshot::channel();
+    let progress_task = spawn_load_progress_listener(
+        app_handle.clone(),
+        port,
+        api_key.to_string(),
+        model_id.to_string(),
+        fail_tx,
+        subscribed_tx,
+    );
+    // Bounded: a backend without the feed still answers, but a hang here must
+    // not become a hang in the load.
+    if tokio::time::timeout(SUBSCRIBE_TIMEOUT, subscribed_rx).await.is_err() {
+        log::debug!("/models/sse did not answer within {SUBSCRIBE_TIMEOUT:?}; loading anyway");
+    }
+
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let mark = fit_mark(&state, port).await;
     let client = http_client().await;
     let url = format!("http://127.0.0.1:{}/models/load", port);
     let resp = client
@@ -344,34 +620,31 @@ async fn post_load<R: Runtime>(
         .bearer_auth(api_key)
         .json(&ModelRequestBody { model: model_id })
         .send()
-        .await
-        .map_err(|e| {
-            ServerError::Llamacpp(LlamacppError::new(
-                ErrorCode::InternalError,
-                "Failed to call router /models/load".into(),
-                Some(e.to_string()),
-            ))
-        })?;
+        .await;
+    let resp = match resp {
+        Ok(r) => r,
+        Err(e) => {
+            progress_task.abort();
+            let err = worker_request_error(
+                &state,
+                port,
+                "Failed to call the engine's /models/load",
+                e,
+            )
+            .await;
+            return Err(ServerError::Llamacpp(err));
+        }
+    };
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         if !body.to_lowercase().contains("already") {
-            return Err(ServerError::Llamacpp(LlamacppError::new(
-                ErrorCode::InternalError,
-                format!("Router rejected model load (status {})", status),
-                Some(body),
-            )));
+            progress_task.abort();
+            let err = load_rejection_error(status.as_u16(), &body);
+            let err = diagnose_load_failure(&state, port, model_id, mark, err).await;
+            return Err(ServerError::Llamacpp(err));
         }
     }
-
-    let (fail_tx, fail_rx) = tokio::sync::oneshot::channel();
-    let progress_task = spawn_load_progress_listener(
-        app_handle.clone(),
-        port,
-        api_key.to_string(),
-        model_id.to_string(),
-        fail_tx,
-    );
 
     // Definitive failure signal from the SSE stream; pends forever if the
     // listener ends without one (older backend, dropped connection) so the
@@ -383,18 +656,24 @@ async fn post_load<R: Runtime>(
         }
     };
 
-    // /models/load returns success once loading is *initiated*; poll /models
-    // until the entry transitions from "loading" to "loaded" (or fails).
+    // The engine answers only once the load has finished, so this normally
+    // resolves on the first poll. It stays as the fallback for the case where
+    // the answer said "already loading" and someone else owns the attempt.
     let result = tokio::select! {
-        r = wait_until_loaded(port, api_key, model_id, Duration::from_secs(600)) => r,
+        r = wait_until_loaded(&state, port, api_key, model_id, Duration::from_secs(600)) => r,
         exit_code = sse_failure => Err(ServerError::Llamacpp(LlamacppError::new(
-            ErrorCode::InternalError,
+            ErrorCode::ModelLoadFailed,
             format!("Model {} failed to load", model_id),
             Some(format!("exit_code={:?}", exit_code)),
         ))),
     };
     progress_task.abort();
-    result
+    match result {
+        Err(ServerError::Llamacpp(err)) => Err(ServerError::Llamacpp(
+            diagnose_load_failure(&state, port, model_id, mark, err).await,
+        )),
+        other => other,
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -456,6 +735,7 @@ fn evaluate_load_poll(
 const STALE_FAILURE_GRACE: Duration = Duration::from_secs(20);
 
 async fn wait_until_loaded(
+    state: &LlamacppState,
     port: u16,
     api_key: &str,
     model_id: &str,
@@ -468,18 +748,16 @@ async fn wait_until_loaded(
     let mut saw_loading = false;
 
     loop {
-        let resp = client
-            .get(&url)
-            .bearer_auth(api_key)
-            .send()
-            .await
-            .map_err(|e| {
-                ServerError::Llamacpp(LlamacppError::new(
-                    ErrorCode::InternalError,
-                    "Failed to poll router /models".into(),
-                    Some(e.to_string()),
-                ))
-            })?;
+        // A worker that dies mid-load (a GPU init crash, antivirus) surfaces
+        // here, as the next poll failing to connect.
+        let resp = match client.get(&url).bearer_auth(api_key).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let err =
+                    worker_request_error(state, port, "Failed to poll router /models", e).await;
+                return Err(ServerError::Llamacpp(err));
+            }
+        };
 
         let json: serde_json::Value = resp.json().await.map_err(|e| {
             ServerError::Llamacpp(LlamacppError::new(
@@ -506,7 +784,7 @@ async fn wait_until_loaded(
             LoadPoll::Pending => {}
             LoadPoll::Failed { exit_code } => {
                 return Err(ServerError::Llamacpp(LlamacppError::new(
-                    ErrorCode::InternalError,
+                    ErrorCode::ModelLoadFailed,
                     format!("Model {} failed to load", model_id),
                     Some(format!("exit_code={:?}", exit_code)),
                 )));
@@ -610,62 +888,27 @@ async fn wait_until_unloaded(
     }
 }
 
-async fn unload_busy_router_models(port: u16, api_key: &str) -> Result<(), String> {
-    let client = http_client().await;
-    let list_url = format!("http://127.0.0.1:{}/models", port);
-    let resp = client
-        .get(&list_url)
-        .bearer_auth(api_key)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let data = json
-        .get("data")
-        .and_then(|d| d.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let unload_url = format!("http://127.0.0.1:{}/models/unload", port);
-    for m in &data {
-        let Some(id) = m.get("id").and_then(|v| v.as_str()) else { continue };
-        let status = m
-            .get("status")
-            .and_then(|s| s.get("value"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("unloaded");
-        if status.eq_ignore_ascii_case("unloaded") {
-            continue;
-        }
-        let body = serde_json::json!({ "model": id });
-        match client
-            .post(&unload_url)
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .await
-        {
-            Ok(r) if r.status().is_success() => {
-                log::info!("OOM unload: {} ({})", id, status);
-            }
-            Ok(r) => log::warn!("OOM unload {} returned {}", id, r.status()),
-            Err(e) => log::warn!("OOM unload {} failed: {}", id, e),
-        }
-    }
-    Ok(())
-}
-
-async fn router_loaded_model_ids(port: u16, api_key: &str) -> Result<Vec<String>, String> {
+async fn engine_loaded_model_ids(
+    state: &LlamacppState,
+    port: u16,
+    api_key: &str,
+) -> Result<Vec<String>, String> {
     // Router-aware listing: `/models` (not `/v1/models`, which is OAI-compat
     // and returns a single element). Each entry has a `status` object whose
     // `value` is one of "loaded" / "loading" / "unloaded" / "sleeping".
+    //
+    // This is the first request of every model start (the frontend asks what
+    // is loaded before loading), so a dead or unreachable worker is reported
+    // from here more often than from anywhere else.
     let client = http_client().await;
     let url = format!("http://127.0.0.1:{}/models", port);
-    let resp = client
-        .get(&url)
-        .bearer_auth(api_key)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to query /models: {}", e))?;
+    let resp = match client.get(&url).bearer_auth(api_key).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = worker_request_error(state, port, "Failed to query /models", e).await;
+            return Err(into_string_error(err));
+        }
+    };
     if !resp.status().is_success() {
         return Err(format!("/models returned {}", resp.status()));
     }
@@ -702,7 +945,7 @@ pub async fn load_llama_model<R: Runtime>(
     model_id: String,
     is_embedding: bool,
 ) -> ServerResult<SessionInfo> {
-    let (port, api_key, pid) = router_endpoint(&app_handle)
+    let (port, api_key, pid, _lease) = engine_endpoint(&app_handle)
         .await
         .map_err(ServerError::InvalidArgument)?;
     post_load(&app_handle, port, &api_key, &model_id).await?;
@@ -720,21 +963,13 @@ pub async fn unload_llama_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: String,
 ) -> ServerResult<UnloadResult> {
-    let (port, api_key, _pid) = router_endpoint(&app_handle)
+    let (port, api_key, _pid, _lease) = engine_endpoint(&app_handle)
         .await
         .map_err(ServerError::InvalidArgument)?;
     match post_unload(port, &api_key, &model_id).await {
         Ok(()) => Ok(UnloadResult { success: true, error: None }),
         Err(e) => Ok(UnloadResult { success: false, error: Some(e) }),
     }
-}
-
-#[tauri::command]
-pub async fn get_devices(
-    backend_path: &str,
-    envs: HashMap<String, String>,
-) -> ServerResult<Vec<DeviceInfo>> {
-    get_devices_from_backend(backend_path, envs).await
 }
 
 #[tauri::command]
@@ -754,10 +989,10 @@ pub async fn ensure_session_ready<R: Runtime>(
     model_id: String,
     is_embedding: bool,
 ) -> Result<SessionInfo, String> {
-    let (port, api_key, pid) = router_endpoint(&app_handle).await?;
+    let (port, api_key, pid, _lease) = engine_endpoint(&app_handle).await?;
     post_load(&app_handle, port, &api_key, &model_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(server_error_string)?;
     Ok(SessionInfo {
         pid: pid as i32,
         port: port as i32,
@@ -772,11 +1007,12 @@ pub async fn find_session_by_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: String,
 ) -> Result<Option<SessionInfo>, String> {
-    let (port, api_key, pid) = match router_endpoint(&app_handle).await {
+    let (port, api_key, pid, _lease) = match engine_endpoint(&app_handle).await {
         Ok(v) => v,
         Err(_) => return Ok(None),
     };
-    let ids = router_loaded_model_ids(port, &api_key).await?;
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let ids = engine_loaded_model_ids(&state, port, &api_key).await?;
     if ids.iter().any(|id| id == &model_id) {
         Ok(Some(SessionInfo {
             pid: pid as i32,
@@ -794,343 +1030,472 @@ pub async fn find_session_by_model<R: Runtime>(
 pub async fn get_loaded_models<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Vec<String>, String> {
-    let (port, api_key, _pid) = match router_endpoint(&app_handle).await {
+    let (port, api_key, _pid, _lease) = match engine_endpoint(&app_handle).await {
         Ok(v) => v,
         Err(_) => return Ok(Vec::new()),
     };
-    router_loaded_model_ids(port, &api_key).await
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-pub struct RouterInfo {
-    pub port: u16,
-    pub api_key: String,
-    pub pid: u32,
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn start_router<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    backend_exe: String,
-    preset_path: String,
-    log_dir: String,
-    port: u16,
-    api_key: String,
-    models_max: u32,
-    default_args: Vec<String>,
-    envs: HashMap<String, String>,
-) -> Result<RouterInfo, String> {
     let state: State<Arc<LlamacppState>> = app_handle.state();
-    let mut guard = state.router.lock().await;
-    if guard.is_some() {
-        return Err("Router is already running.".to_string());
+    engine_loaded_model_ids(&state, port, &api_key).await
+}
+
+#[cfg(test)]
+mod unreachable_worker_tests {
+    use super::*;
+    use crate::engine::worker::{self, ExitReport};
+    use std::path::Path;
+
+    fn json(err: &LlamacppError) -> serde_json::Value {
+        serde_json::to_value(err).unwrap()
     }
 
-    let on_error: Option<crate::router::ErrorCallback> = {
-        let app = app_handle.clone();
-        let err_port = port;
-        let err_api_key = api_key.clone();
-        Some(Arc::new(move |kind: &'static str, line: String| {
-            let event = match kind {
-                "oom" => "llamacpp-router-oom",
-                _ => "llamacpp-router-backend-error",
-            };
-            let _ = app.emit(event, line);
-            let port = err_port;
-            let api_key = err_api_key.clone();
-            tokio::spawn(async move {
-                if let Err(e) = unload_busy_router_models(port, &api_key).await {
-                    log::warn!("router error unload sweep failed: {}", e);
-                }
-            });
-        }))
-    };
-
-    let handle = crate::router::start_router(
-        std::path::PathBuf::from(backend_exe),
-        std::path::PathBuf::from(preset_path),
-        std::path::PathBuf::from(log_dir),
-        port,
-        api_key,
-        models_max,
-        default_args,
-        envs,
-        on_error,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let info = RouterInfo {
-        port: handle.port,
-        api_key: handle.api_key.clone(),
-        pid: handle.pid,
-    };
-    state
-        .router_pid
-        .store(handle.pid, std::sync::atomic::Ordering::SeqCst);
-    *guard = Some(handle);
-
-    let watcher = spawn_unload_watcher(app_handle.clone(), info.port, info.api_key.clone());
-    *state.unload_watcher.lock().await = Some(watcher);
-
-    Ok(info)
-}
-
-/// Reuse a router that outlived its UI, or kill it if it no longer matches.
-///
-/// Returns the adopted endpoint, or `None` when the caller should spawn a
-/// fresh router. `api_secret` is used to re-derive the router's key from the
-/// port recorded in the lock file, so the key never has to be persisted.
-#[tauri::command]
-pub async fn adopt_router<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    backend_exe: String,
-    preset_path: String,
-    models_max: u32,
-    api_secret: String,
-) -> Result<Option<RouterInfo>, String> {
-    let state: State<Arc<LlamacppState>> = app_handle.state();
-    let mut guard = state.router.lock().await;
-    if guard.is_some() {
-        return Err("Router is already running.".to_string());
+    #[test]
+    fn a_worker_that_exited_is_reported_as_stopped_with_its_exit_and_last_words() {
+        let fate = WorkerFate::Exited(ExitReport {
+            status: "exit code 0xC0000005".into(),
+            last_lines: vec![
+                "ggml_cuda_init: found 1 CUDA devices".into(),
+                "CUDA error: unspecified launch failure".into(),
+            ],
+        });
+        let err = unreachable_worker_error(51825, fate, "error sending request");
+        let v = json(&err);
+        assert_eq!(v["code"], "ENGINE_STOPPED");
+        assert_eq!(
+            err.message,
+            "The llama.cpp engine stopped unexpectedly (exit code 0xC0000005)."
+        );
+        let details = err.details.unwrap();
+        assert!(details.starts_with("exit code 0xC0000005"), "{details}");
+        assert!(details.contains("unspecified launch failure"), "{details}");
     }
 
-    let preset_path = std::path::PathBuf::from(preset_path);
-    let backend_exe = std::path::PathBuf::from(backend_exe);
+    #[test]
+    fn a_silent_exit_reports_just_the_status() {
+        let fate = WorkerFate::Exited(ExitReport {
+            status: "killed by SIGKILL".into(),
+            last_lines: vec![],
+        });
+        let err = unreachable_worker_error(1, fate, "refused");
+        assert_eq!(err.details.as_deref(), Some("killed by SIGKILL"));
+    }
 
-    let Some(lock) = crate::router::read_lock(&preset_path) else {
-        return Ok(None);
-    };
-    let api_key = generate_api_key(format!("router{}", lock.port), api_secret)?;
+    #[test]
+    fn a_worker_already_reaped_is_still_reported_as_stopped() {
+        let err = unreachable_worker_error(1, WorkerFate::Gone, "connection refused");
+        assert_eq!(json(&err)["code"], "ENGINE_STOPPED");
+        assert_eq!(err.details.as_deref(), Some("connection refused"));
+    }
 
-    match crate::router::try_adopt_router(&preset_path, &backend_exe, models_max, api_key).await {
-        crate::router::AdoptOutcome::Adopted(handle) => {
-            let handle = *handle;
-            let info = RouterInfo {
-                port: handle.port,
-                api_key: handle.api_key.clone(),
-                pid: handle.pid,
-            };
-            state
-                .router_pid
-                .store(handle.pid, std::sync::atomic::Ordering::SeqCst);
-            *guard = Some(handle);
-
-            // The SSE subscriber is a plain HTTP client, so it reattaches to an
-            // adopted router exactly as it would to one we spawned.
-            let watcher =
-                spawn_unload_watcher(app_handle.clone(), info.port, info.api_key.clone());
-            *state.unload_watcher.lock().await = Some(watcher);
-
-            Ok(Some(info))
+    // The case a VPN or proxy produces: nothing wrong with the engine, so the
+    // message has to point away from it, at what sits in between.
+    #[test]
+    fn a_live_worker_that_cannot_be_reached_points_at_what_is_in_between() {
+        let err = unreachable_worker_error(51825, WorkerFate::Running, "connection refused");
+        assert_eq!(json(&err)["code"], "ENGINE_UNREACHABLE");
+        assert!(err.message.contains("127.0.0.1:51825"), "{}", err.message);
+        for hint in ["VPN", "proxy", "security software"] {
+            assert!(err.message.contains(hint), "{}", err.message);
         }
-        crate::router::AdoptOutcome::NothingToAdopt => Ok(None),
-        crate::router::AdoptOutcome::Killed(reason) => {
-            log::info!("Router not adopted ({}); caller will spawn a fresh one", reason);
-            Ok(None)
-        }
+        assert_eq!(
+            err.details.as_deref(),
+            Some("127.0.0.1:51825: connection refused")
+        );
     }
-}
 
-async fn stop_unload_watcher(state: &LlamacppState) {
-    if let Some(handle) = state.unload_watcher.lock().await.take() {
-        handle.abort();
+    // `engineError.ts` recovers this from a message string, so it has to be
+    // the same JSON a structured Tauri error would have been.
+    #[test]
+    fn a_string_error_carries_the_structured_error_as_json() {
+        let err = unreachable_worker_error(1, WorkerFate::Gone, "x");
+        let v: serde_json::Value = serde_json::from_str(&into_string_error(err)).unwrap();
+        assert_eq!(v["code"], "ENGINE_STOPPED");
+        assert!(v["message"].is_string());
     }
-}
 
-#[tauri::command]
-pub async fn stop_router<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Result<(), String> {
-    let state: State<Arc<LlamacppState>> = app_handle.state();
-    stop_unload_watcher(&state).await;
-    let mut guard = state.router.lock().await;
-    if let Some(handle) = guard.take() {
-        state
-            .router_pid
-            .store(0, std::sync::atomic::Ordering::SeqCst);
-        crate::router::stop_router(handle)
+    // `ensure_session_ready` returns a String, and its load can fail with an
+    // engine error; the code has to survive as JSON, not thiserror's Display.
+    #[test]
+    fn a_string_command_keeps_an_engine_errors_code() {
+        let err = ServerError::Llamacpp(unreachable_worker_error(1, WorkerFate::Gone, "x"));
+        let text = server_error_string(err);
+        let v: serde_json::Value = serde_json::from_str(&text).expect(&text);
+        assert_eq!(v["code"], "ENGINE_STOPPED");
+
+        let other = server_error_string(ServerError::InvalidArgument("bad".into()));
+        assert_eq!(other, "Invalid argument: bad");
+    }
+
+    /// A loopback port nothing listens on.
+    fn closed_port() -> u16 {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    }
+
+    #[tokio::test]
+    async fn a_refused_connection_counts_as_never_reaching_the_worker() {
+        let port = closed_port();
+        let e = worker::loopback_client()
+            .get(format!("http://127.0.0.1:{port}/models"))
+            .send()
             .await
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn get_router_info<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-) -> Result<Option<RouterInfo>, String> {
-    let state: State<Arc<LlamacppState>> = app_handle.state();
-    let guard = state.router.lock().await;
-    Ok(guard.as_ref().map(|h| RouterInfo {
-        port: h.port,
-        api_key: h.api_key.clone(),
-        pid: h.pid,
-    }))
-}
-
-/// Live-reload the router's preset (`GET /models?reload=1`) without restarting
-/// the process. The router diffs the regenerated `router.preset.ini` against the
-/// running set: models with unchanged presets stay loaded, only changed/removed
-/// ones are unloaded, and newly-added ones are registered. Requires a backend
-/// with the reload diff path (upstream b9023+); the TS caller gates on build.
-#[tauri::command]
-pub async fn reload_router_models<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-) -> Result<(), String> {
-    let (port, api_key, _pid) = router_endpoint(&app_handle).await?;
-    let client = http_client().await;
-    let url = format!("http://127.0.0.1:{}/models", port);
-    let resp = client
-        .get(&url)
-        .query(&[("reload", "1")])
-        .bearer_auth(&api_key)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!(
-            "router reload returned HTTP {}",
-            resp.status().as_u16()
-        ));
+            .expect_err("nothing listens there");
+        assert!(never_reached_worker(&e), "{e:?}");
+        let chain = error_chain(&e);
+        assert!(chain.len() > e.to_string().len(), "the cause is appended: {chain}");
     }
 
-    // The process is now running the regenerated preset, so the hash recorded
-    // at spawn no longer describes it.
-    let state: State<Arc<LlamacppState>> = app_handle.state();
-    let preset_path = state
-        .router
-        .lock()
-        .await
-        .as_ref()
-        .map(|h| h.preset_path.clone());
-    if let Some(path) = preset_path {
-        crate::router::refresh_lock_preset_hash(&path);
+    #[cfg(unix)]
+    async fn spawn_fake(dir: &Path, body: &str) -> worker::WorkerHandle {
+        let exe = worker::tests::fake_worker(dir, body);
+        worker::tests::spawn_script(&exe)
+            .await
+            .expect("the fake worker prints a handshake")
     }
-    Ok(())
-}
 
-/// Probe `GET /health`. With `port`/`api_key` omitted, targets the router this
-/// process owns; supplying them probes an arbitrary endpoint (used to decide
-/// whether a router surviving a UI crash is adoptable). Never errors -- an
-/// unreachable or non-200 endpoint is simply not healthy.
-///
-/// The short timeout is deliberate: `http_client()`'s 600s budget is sized for
-/// inference, but a health gate must fail fast enough to roll back.
-#[tauri::command]
-pub async fn router_health<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    port: Option<u16>,
-    api_key: Option<String>,
-) -> Result<bool, String> {
-    let (port, api_key) = match (port, api_key) {
-        (Some(p), Some(k)) => (p, k),
-        _ => match router_endpoint(&app_handle).await {
-            Ok((p, k, _)) => (p, k),
-            Err(_) => return Ok(false),
-        },
-    };
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(ROUTER_HEALTH_TIMEOUT_SECS))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return Ok(false),
-    };
-    let url = format!("http://127.0.0.1:{}/health", port);
-    match client.get(&url).bearer_auth(&api_key).send().await {
-        Ok(resp) => Ok(resp.status().is_success()),
-        Err(e) => {
-            log::debug!("router health probe on port {} failed: {}", port, e);
-            Ok(false)
+    // End to end through the command path: a worker that handshakes, then
+    // crashes, is reported from its exit status and stderr rather than as
+    // "error sending request for url", and is reaped so the next load can
+    // start a fresh one.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn listing_models_on_a_crashed_worker_says_the_engine_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = closed_port();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!(
+                "echo '{{\"port\":{port},\"pid\":'$$'}}'\n\
+                 echo 'CUDA error: unspecified launch failure' >&2\n\
+                 exit 3"
+            ),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while state.engine.lock().await.as_mut().unwrap().exited().is_none() {
+            assert!(std::time::Instant::now() < deadline, "fake worker did not exit");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let err = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
+        let v: serde_json::Value = serde_json::from_str(&err).expect(&err);
+        assert_eq!(v["code"], "ENGINE_STOPPED", "{v}");
+        assert!(v["message"].as_str().unwrap().contains("exit code 3"), "{v}");
+        assert!(
+            v["details"].as_str().unwrap().contains("unspecified launch failure"),
+            "{v}"
+        );
+        assert!(state.engine.lock().await.is_none(), "a dead worker is reaped");
+
+        let again = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
+        assert!(again.contains("ENGINE_STOPPED"), "{again}");
+    }
+
+    // The crash reason is the last thing a dying worker writes, and its exit
+    // can be collected before the stderr drain has read it. A request made the
+    // moment the worker is seen dead must still carry that line. The line is
+    // written by a child that outlives the worker by a moment, which makes
+    // "exited, but stderr not yet read" certain instead of a race.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_request_right_after_a_crash_still_carries_its_last_words() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = closed_port();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!(
+                "echo '{{\"port\":{port},\"pid\":'$$'}}'\n\
+                 (sleep 0.1; echo 'CUDA error: unspecified launch failure' >&2) &\n\
+                 exit 3"
+            ),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while state.engine.lock().await.as_mut().unwrap().exited().is_none() {
+            assert!(std::time::Instant::now() < deadline, "fake worker did not exit");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        let err = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
+        let v: serde_json::Value = serde_json::from_str(&err).expect(&err);
+        assert_eq!(v["code"], "ENGINE_STOPPED", "{v}");
+        assert!(v["message"].as_str().unwrap().contains("exit code 3"), "{v}");
+        assert!(
+            v["details"].as_str().unwrap().contains("unspecified launch failure"),
+            "{v}"
+        );
+        assert!(state.engine.lock().await.is_none(), "a dead worker is reaped");
+    }
+
+    // A worker that dies mid-request can drop its connection a moment before
+    // its exit is collectable. Seen alive at first, it must still be reported
+    // as stopped once it exits within the grace window, not as unreachable.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_worker_that_exits_just_after_the_failed_request_is_reported_as_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = closed_port();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!(
+                "echo '{{\"port\":{port},\"pid\":'$$'}}'\n\
+                 sleep 0.15\n\
+                 exit 3"
+            ),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+        assert!(
+            state.engine.lock().await.as_mut().unwrap().exited().is_none(),
+            "still running when the request fails"
+        );
+
+        match worker_fate(&state, port).await {
+            WorkerFate::Exited(report) => assert!(report.status.contains('3'), "{report:?}"),
+            other => panic!("expected Exited, got {other:?}"),
+        }
+        assert!(state.engine.lock().await.is_none(), "a dead worker is reaped");
+    }
+
+    // A worker that accepts the connection but has not answered yet -- a long
+    // model load -- is reachable, so the message must not blame a proxy.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_slow_answer_from_a_live_worker_is_not_blamed_on_the_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Accepts and then says nothing, like a worker busy loading.
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!("echo '{{\"port\":{port},\"pid\":'$$'}}'\nexec sleep 30"),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+
+        let e = worker::loopback_client_builder()
+            .timeout(Duration::from_millis(300))
+            .build()
+            .unwrap()
+            .get(format!("http://127.0.0.1:{port}/models"))
+            .send()
+            .await
+            .expect_err("the server never answers");
+        assert!(e.is_timeout(), "{e:?}");
+        let err = worker_request_error(&state, port, "Failed to query /models", e).await;
+        assert_eq!(json(&err)["code"], "INTERNAL_ERROR", "{err:?}");
+        assert_eq!(err.message, "Failed to query /models");
+
+        server.abort();
+        state.engine.lock().await.take().unwrap().kill().await;
+    }
+
+    // A worker that is alive but whose port refuses: what a firewall, a VPN or
+    // a proxy capturing loopback looks like from here.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn listing_models_on_a_live_but_unreachable_worker_blames_the_connection() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = closed_port();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!("echo '{{\"port\":{port},\"pid\":'$$'}}'\nexec sleep 30"),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+
+        let err = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
+        let v: serde_json::Value = serde_json::from_str(&err).expect(&err);
+        assert_eq!(v["code"], "ENGINE_UNREACHABLE", "{v}");
+        assert!(
+            v["message"].as_str().unwrap().contains(&format!("127.0.0.1:{port}")),
+            "{v}"
+        );
+
+        let handle = state.engine.lock().await.take();
+        assert!(handle.is_some(), "a live worker is left in place");
+        handle.unwrap().kill().await;
+    }
+
+    /// The worker's answer to a load llama.cpp could not allocate, as
+    /// `http.rs` sends it: the shim's message plus the ERROR lines it caught.
+    const OOM_BODY: &str = r#"{"error":{"message":"failed to load model; ggml_backend_cuda_buffer_type_alloc_buffer: allocating 9000.00 MiB on device 0: cudaMalloc failed: out of memory","code":400}}"#;
+
+    const FIT_LINE: &str = "common_fit_params: failed to fit params to free device memory: was unable to fit model into system memory by reducing context, abort";
+
+    /// A live fake worker whose stderr runs `stderr` after the handshake,
+    /// installed as the engine and pointed at a preset holding `ini`.
+    #[cfg(unix)]
+    async fn fit_worker(dir: &Path, stderr: &str, ini: &str) -> (LlamacppState, u16) {
+        let port = closed_port();
+        let mut handle = spawn_fake(
+            dir,
+            &format!("echo '{{\"port\":{port},\"pid\":'$$'}}'\n{stderr}\nexec sleep 30"),
+        )
+        .await;
+        let preset = dir.join("router.preset.ini");
+        std::fs::write(&preset, ini).unwrap();
+        handle.preset_path = preset;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+        (state, port)
+    }
+
+    /// Waits until the worker's stderr drain has seen a fit-failure line
+    /// printed after `mark`, so the assertion is not a race with the pipe.
+    #[cfg(unix)]
+    async fn wait_for_fit_line(state: &LlamacppState, port: u16, mark: FitMark) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while fit_failure_since(state, port, mark).await.0.is_none() {
+            assert!(std::time::Instant::now() < deadline, "fit line never arrived");
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
-}
 
-/// Best-effort idle check; returns `Ok(true)` on any error so callers
-/// never block on a transient `/slots` failure.
-#[tauri::command]
-pub async fn router_slots_idle<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    model_id: Option<String>,
-) -> Result<bool, String> {
-    let (port, api_key, _pid) = match router_endpoint(&app_handle).await {
-        Ok(r) => r,
-        Err(_) => return Ok(true),
-    };
-    let client = http_client().await;
-    let url = format!("http://127.0.0.1:{}/slots", port);
-    let mut req = client.get(&url).bearer_auth(&api_key);
-    if let Some(m) = model_id.as_deref() {
-        req = req.query(&[("model", m)]);
+    #[cfg(unix)]
+    async fn stop(state: LlamacppState) {
+        state.engine.lock().await.take().unwrap().kill().await;
     }
-    let resp = match req.send().await {
-        Ok(r) => r,
-        Err(_) => return Ok(true),
-    };
-    if !resp.status().is_success() {
-        return Ok(true);
-    }
-    let slots: Vec<serde_json::Value> = match resp.json().await {
-        Ok(v) => v,
-        Err(_) => return Ok(true),
-    };
-    Ok(slots.iter().all(|s| {
-        s.get("is_processing")
-            .and_then(|v| v.as_bool())
-            .map(|b| !b)
-            .unwrap_or(true)
-    }))
-}
 
-/// `Ok(Some(busy))` on deadline; handle is restored to state.
-#[tauri::command]
-pub async fn try_graceful_stop_router<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    deadline_secs: u64,
-) -> Result<Option<Vec<String>>, String> {
-    let state: State<Arc<LlamacppState>> = app_handle.state();
-    let maybe_handle = {
-        let mut guard = state.router.lock().await;
-        guard.take()
-    };
-    let Some(handle) = maybe_handle else {
-        return Ok(None);
-    };
-    match crate::router::try_graceful_stop_router(handle, Duration::from_secs(deadline_secs)).await {
-        Ok(()) => {
-            state
-                .router_pid
-                .store(0, std::sync::atomic::Ordering::SeqCst);
-            stop_unload_watcher(&state).await;
-            Ok(None)
+    // The bug report for a failed load: what was asked, what the worker said
+    // while it ran, and no directory of the user's in the model name.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failed_load_carries_the_request_the_backends_and_the_worker_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, port) = fit_worker(
+            dir.path(),
+            "echo 'load_backend: loaded CPU backend from /home/bob/jan/libggml-cpu.so' >&2\n\
+             sleep 0.2\n\
+             echo 'llama_model_load: error loading model: bad tensor' >&2",
+            "[*]\nctx-size = 8192\n[m]\nmodel = /home/bob/models/qwen.gguf\nn-gpu-layers = 12\n",
+        )
+        .await;
+        // The backend line is printed at start, before the load's mark.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mark = fit_mark(&state, port).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        let failed = LlamacppError::from_load_failure("failed to load model");
+        let err = diagnose_load_failure(&state, port, "m", mark, failed).await;
+        let d = err.diagnostics.expect("diagnostics are attached");
+        assert_eq!(d.model_file.as_deref(), Some("qwen.gguf"));
+        assert_eq!(d.request.ctx_size.as_deref(), Some("8192"));
+        assert_eq!(d.request.n_gpu_layers.as_deref(), Some("12"));
+        assert_eq!(d.backends, ["CPU (libggml-cpu.so)"]);
+        assert!(d.log.contains("bad tensor"), "{}", d.log);
+        assert!(!d.log.contains("load_backend"), "printed before the mark: {}", d.log);
+        assert_eq!(d.engine.tag, crate::engine::PINNED_TAG);
+        let wire = serde_json::to_string(&json(&LlamacppError {
+            diagnostics: Some(d),
+            ..LlamacppError::from_load_failure("x")
+        }))
+        .unwrap();
+        assert!(!wire.contains("/home/bob"), "{wire}");
+        stop(state).await;
+    }
+
+    // No GPU: fit gives up out loud, and the load that follows fails with
+    // whatever llama.cpp hit next. The fit line is the cause.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_load_after_fit_gave_up_on_system_memory_does_not_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        // Printed once the mark is taken, as during a real load.
+        let (state, port) = fit_worker(
+            dir.path(),
+            &format!("sleep 0.2; echo '{FIT_LINE}' >&2"),
+            "[*]\nfit = off\nctx-size = 8192\n[m]\n",
+        )
+        .await;
+        let mark = fit_mark(&state, port).await;
+        wait_for_fit_line(&state, port, mark.unwrap()).await;
+
+        let failed = LlamacppError::from_load_failure("failed to load model");
+        let err = explain_load_failure(&state, port, "m", mark, failed).await;
+        let v = json(&err);
+        assert_eq!(v["code"], "MODEL_DOES_NOT_FIT", "{v}");
+        let details = v["details"].as_str().unwrap();
+        assert!(details.starts_with(FIT_LINE), "{details}");
+        assert!(details.ends_with("failed to load model"), "{details}");
+        stop(state).await;
+    }
+
+    // With a GPU fit never fails: it shrinks the context and offloads, and a
+    // model still too big runs out of memory. With fit owning the context that
+    // is the model not fitting, not a context the user could lower.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_out_of_memory_load_with_fit_owning_the_context_does_not_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, port) =
+            fit_worker(dir.path(), "", "[*]\nfit-ctx = 4096\n\n[m]\nmodel = /m.gguf\n").await;
+        let mark = fit_mark(&state, port).await;
+
+        let err = load_rejection_error(400, OOM_BODY);
+        assert_eq!(json(&err)["code"], "OUT_OF_MEMORY", "the plain classification");
+        let err = explain_load_failure(&state, port, "m", mark, err).await;
+        let v = json(&err);
+        assert_eq!(v["code"], "MODEL_DOES_NOT_FIT", "{v}");
+        assert!(
+            v["details"].as_str().unwrap().contains("cudaMalloc failed: out of memory"),
+            "{v}"
+        );
+        stop(state).await;
+    }
+
+    // Fit off, or a context the user pinned (fit leaves it alone): a smaller
+    // context is real advice, so the out-of-memory error stands.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_out_of_memory_load_fit_did_not_size_stays_out_of_memory() {
+        for ini in [
+            "[*]\nfit = off\nctx-size = 8192\n\n[m]\nmodel = /m.gguf\n",
+            "[*]\n\n[m]\nmodel = /m.gguf\nctx-size = 32768\n",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (state, port) = fit_worker(dir.path(), "", ini).await;
+            let mark = fit_mark(&state, port).await;
+
+            let err = load_rejection_error(400, OOM_BODY);
+            let err = explain_load_failure(&state, port, "m", mark, err).await;
+            assert_eq!(json(&err)["code"], "OUT_OF_MEMORY", "{ini}");
+            stop(state).await;
         }
-        Err((h, busy)) => {
-            let mut guard = state.router.lock().await;
-            *guard = Some(h);
-            Ok(Some(busy))
-        }
     }
-}
 
-#[tauri::command]
-pub async fn force_kill_router_tree<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-) -> Result<(), String> {
-    let state: State<Arc<LlamacppState>> = app_handle.state();
-    let pid = state
-        .router_pid
-        .swap(0, std::sync::atomic::Ordering::SeqCst);
-    let maybe_handle = {
-        let mut guard = state.router.lock().await;
-        guard.take()
-    };
-    stop_unload_watcher(&state).await;
-    match (maybe_handle, pid) {
-        (Some(handle), _) => crate::router::force_kill_router_tree(handle).await,
-        (None, p) if p != 0 => crate::router::force_kill_router_tree_by_pid(p),
-        _ => {}
+    // A fit line from an earlier load must not be blamed for this one, and a
+    // failure that is not about memory keeps its own code.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_earlier_loads_fit_line_does_not_explain_this_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, port) = fit_worker(
+            dir.path(),
+            &format!("echo '{FIT_LINE}' >&2"),
+            "[*]\n[m]\n",
+        )
+        .await;
+        let before = fit_mark(&state, port).await.unwrap();
+        wait_for_fit_line(&state, port, before).await;
+        let mark = fit_mark(&state, port).await;
+
+        let failed = LlamacppError::from_load_failure("error loading model architecture: unknown");
+        let err = explain_load_failure(&state, port, "m", mark, failed).await;
+        assert_eq!(json(&err)["code"], "MODEL_ARCH_NOT_SUPPORTED", "{err:?}");
+        stop(state).await;
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1385,84 +1750,160 @@ mod load_progress_tests {
 }
 
 #[cfg(test)]
-mod unload_watcher_tests {
-    use super::parse_unload_event;
+mod load_rejection_tests {
+    use super::{engine_error_message, load_rejection_error};
+    use crate::error::ErrorCode;
 
-    fn sse_block(model: &str, event: &str, data: serde_json::Value) -> String {
-        let payload = serde_json::json!({ "model": model, "event": event, "data": data });
-        format!("data: {}\n\n", payload)
+    fn envelope(message: &str) -> String {
+        serde_json::json!({ "error": { "code": 400, "message": message } }).to_string()
     }
 
     #[test]
-    fn parses_an_unload_event_with_exit_code() {
-        let block = sse_block(
-            "model-1",
-            "status_change",
-            serde_json::json!({ "status": "unloaded", "exit_code": 137 }),
+    fn reads_the_engine_message_out_of_the_envelope() {
+        assert_eq!(
+            engine_error_message(&envelope("failed to load model")).as_deref(),
+            Some("failed to load model")
         );
-        let payload = parse_unload_event(&block).expect("should parse");
-        assert_eq!(payload.model, "model-1");
-        assert_eq!(payload.exit_code, Some(137));
+        assert!(engine_error_message("not json").is_none());
+        assert!(engine_error_message(&envelope("   ")).is_none());
     }
 
+    // The whole point: a VRAM exhaustion has to reach the UI as OUT_OF_MEMORY,
+    // not as INTERNAL_ERROR plus an HTTP status the user cannot act on.
     #[test]
-    fn parses_a_clean_unload_with_zero_exit_code() {
-        // LRU eviction / explicit unload: clean stop, exit_code 0.
-        let block = sse_block(
-            "model-1",
-            "status_change",
-            serde_json::json!({ "status": "unloaded", "exit_code": 0 }),
+    fn a_cuda_oom_is_classified_and_keeps_the_engine_text() {
+        let body = envelope(
+            "could not start the llama.cpp engine: failed to load model; \
+             ggml_backend_cuda_buffer_type_alloc_buffer: allocating 2375.91 MiB on device 0: \
+             cudaMalloc failed: out of memory",
         );
-        let payload = parse_unload_event(&block).expect("should parse");
-        assert_eq!(payload.exit_code, Some(0));
+        let err = load_rejection_error(400, &body);
+
+        assert!(matches!(err.code, ErrorCode::OutOfMemory), "{:?}", err.code);
+        let details = err.details.expect("details");
+        assert!(details.contains("cudaMalloc failed: out of memory"), "{details}");
+        assert!(!details.contains("400"), "{details}");
     }
 
     #[test]
-    fn ignores_non_unloaded_status() {
-        let block = sse_block(
-            "model-1",
-            "status_change",
-            serde_json::json!({ "status": "loading" }),
+    fn an_unrecognized_reason_is_a_failed_load_not_an_internal_error() {
+        let err = load_rejection_error(400, &envelope("no such preset: ghost"));
+
+        assert!(matches!(err.code, ErrorCode::ModelLoadFailed), "{:?}", err.code);
+        assert_eq!(err.details.as_deref(), Some("no such preset: ghost"));
+    }
+
+    #[test]
+    fn a_bodyless_rejection_still_names_the_status() {
+        let err = load_rejection_error(503, "");
+
+        assert!(matches!(err.code, ErrorCode::ModelLoadFailed), "{:?}", err.code);
+        assert_eq!(
+            err.details.as_deref(),
+            Some("HTTP 503 from /models/load")
         );
-        assert!(parse_unload_event(&block).is_none());
+    }
+}
+
+/// The two sides of `/models/sse` in one place: what the worker serializes
+/// (`engine::events`) against what the desktop parses. They are separate
+/// modules with no shared type, so nothing but a test keeps them in step --
+/// and a drift here is silent, costing every load its full 600s timeout
+/// instead of an error.
+#[cfg(test)]
+mod sse_contract_tests {
+    use super::{parse_load_progress_event, parse_load_status_change, LoadStatusChange};
+    use crate::engine::events::{ModelEvent, Transition};
+
+    fn frame(model: &str, status: Transition) -> String {
+        ModelEvent {
+            model: model.to_string(),
+            status,
+        }
+        .to_sse_frame()
     }
 
     #[test]
-    fn ignores_non_status_change_events() {
-        let block = sse_block(
-            "model-1",
-            "model_remove",
-            serde_json::json!({}),
+    fn the_parser_reads_every_transition_the_engine_emits() {
+        assert_eq!(
+            parse_load_status_change(&frame("m", Transition::Loading), "m"),
+            Some(LoadStatusChange::Loading)
         );
-        assert!(parse_unload_event(&block).is_none());
-    }
-
-    #[test]
-    fn defaults_missing_exit_code_to_none() {
-        let block = sse_block(
-            "model-1",
-            "status_change",
-            serde_json::json!({ "status": "unloaded" }),
+        assert_eq!(
+            parse_load_status_change(&frame("m", Transition::Loaded), "m"),
+            Some(LoadStatusChange::Loaded)
         );
-        let payload = parse_unload_event(&block).expect("should parse");
-        assert_eq!(payload.exit_code, None);
+        assert_eq!(
+            parse_load_status_change(&frame("m", Transition::Unloaded { exit_code: 1 }), "m"),
+            Some(LoadStatusChange::Unloaded { exit_code: Some(1) })
+        );
+        assert_eq!(
+            parse_load_status_change(&frame("m", Transition::Unloaded { exit_code: 0 }), "m"),
+            Some(LoadStatusChange::Unloaded { exit_code: Some(0) })
+        );
+    }
+
+    // Only a nonzero code fails the load; an eviction or a deliberate unload
+    // must not be mistaken for this attempt's failure.
+    #[test]
+    fn only_a_nonzero_exit_code_reads_as_a_failure() {
+        let failed = parse_load_status_change(&frame("m", Transition::Unloaded { exit_code: 1 }), "m");
+        let evicted = parse_load_status_change(&frame("m", Transition::Unloaded { exit_code: 0 }), "m");
+
+        assert!(matches!(
+            failed,
+            Some(LoadStatusChange::Unloaded { exit_code: Some(c) }) if c != 0
+        ));
+        assert!(matches!(
+            evicted,
+            Some(LoadStatusChange::Unloaded { exit_code: Some(0) })
+        ));
     }
 
     #[test]
-    fn ignores_malformed_json() {
-        let block = "data: not json\n\n".to_string();
-        assert!(parse_unload_event(&block).is_none());
+    fn another_models_transition_is_ignored() {
+        assert_eq!(
+            parse_load_status_change(&frame("other", Transition::Loading), "m"),
+            None
+        );
     }
 
+    // A lifecycle transition carries no fraction, so the parser must find
+    // nothing rather than emitting a 0% event that would stall the bar.
     #[test]
-    fn ignores_missing_status_field() {
-        let block = sse_block("model-1", "status_change", serde_json::json!({}));
-        assert!(parse_unload_event(&block).is_none());
+    fn no_lifecycle_transition_carries_a_progress_payload() {
+        for status in [
+            Transition::Loading,
+            Transition::Loaded,
+            Transition::Unloaded { exit_code: 0 },
+        ] {
+            assert!(parse_load_progress_event(&frame("m", status), "m").is_none());
+        }
     }
 
+    // The two halves of the progress chain are written apart -- the engine
+    // publishes the transition, the desktop parses the frame -- so this pins
+    // that they still agree on the shape.
     #[test]
-    fn ignores_blocks_with_no_data_line() {
-        let block = "event: ping\n\n".to_string();
-        assert!(parse_unload_event(&block).is_none());
+    fn a_progress_transition_round_trips_to_a_payload() {
+        let status = Transition::LoadProgress(serde_json::json!({
+            "stages": ["text_model", "spec_model"],
+            "current": "spec_model",
+            "value": 0.75,
+        }));
+        let payload = parse_load_progress_event(&frame("m", status), "m")
+            .expect("a progress payload");
+
+        assert_eq!(payload.model, "m");
+        assert_eq!(payload.value, 0.75);
+        assert_eq!(payload.stage.as_deref(), Some("spec_model"));
+        assert_eq!(payload.stages, vec!["text_model", "spec_model"]);
+    }
+
+    // Another model loading concurrently must not move this model's bar.
+    #[test]
+    fn a_progress_transition_for_another_model_is_ignored() {
+        let status = Transition::LoadProgress(serde_json::json!({ "value": 0.5 }));
+        assert!(parse_load_progress_event(&frame("other", status), "m").is_none());
     }
 }

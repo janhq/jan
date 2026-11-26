@@ -235,10 +235,6 @@
       "cancel": "Annuler",
       "changeLocation": "Changer l'emplacement"
     },
-    "deleteAllThreads": {
-      "title": "Supprimer toutes les discussions",
-      "description": "Toutes les discussions seront supprimées. Cette action ne peut pas être annulée."
-    },
     "deleteThread": {
       "description": "Êtes-vous sûr de vouloir supprimer cette discussion ? Cette action ne peut pas être annulée."
     },
@@ -247,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Métadonnées du message"
+    },
+    "deleteAllChats": {
+      "title": "Supprimer les conversations hors projets",
+      "description": "Cela supprime les conversations qui ne sont pas dans un projet. Les conversations de projet, les conversations favorites et les tâches sont conservées. Cette action est irréversible."
     }
   },
   "projects": {
@@ -267,9 +267,8 @@
     "projectNotFoundDesc": "Le projet que vous recherchez n'existe pas ou a été supprimé.",
     "deleteProjectDialog": {
       "title": "Supprimer le projet",
-      "permanentDelete": "Cela supprimera définitivement toutes les discussions.",
+      "permanentDelete": "Cela supprimera définitivement « {{projectName}} » et toutes ses conversations. Cette action est irréversible.",
       "permanentDeleteWarning": "Cette action supprimera définitivement TOUTES les discussions au sein du projet !",
-      "deleteEmptyProject": "Cette action supprimera le projet \"{{projectName}}\".",
       "saveThreadsAdvice": "Pour sauvegarder les discussions, déplacez-les vers votre liste de discussions ou un autre projet avant de les supprimer.",
       "starredWarning": "Vous avez encore des discussions favorites dans le projet.",
       "deleteButton": "Supprimer",
@@ -290,7 +289,6 @@
       "renameSuccess": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\""
     },
     "noConversationsIn": "Aucune conversation dans {{projectName}}",
-    "startNewConversation": "Commencez une nouvelle conversation avec {{projectName}} ci-dessous",
     "conversationsIn": "Conversations dans {{projectName}}",
     "conversationsDescription": "Cliquez sur n'importe quelle conversation pour continuer à discuter, ou commencez-en une nouvelle ci-dessous.",
     "thread": "discussion",
@@ -303,7 +301,9 @@
     "noProjectsFound": "Aucun projet trouvé",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "uploadingFiles": "Traitement des fichiers…",
-    "processButton": "Ajouter"
+    "processButton": "Ajouter",
+    "viewProject": "Afficher le projet",
+    "sendMessageToStart": "Envoyez un message ci-dessus pour en démarrer une."
   },
   "errorDialog": {
     "titleFallback": "Une erreur s'est produite",
@@ -397,6 +397,14 @@
     "threadRemovedFromProject": {
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
+    },
+    "threadProjectMoveFailed": {
+      "title": "Échec du déplacement",
+      "description": "Cette conversation n'a pas pu être déplacée. Sa session est indisponible."
+    },
+    "deleteAllChats": {
+      "title": "Conversations supprimées",
+      "description": "Les conversations hors projets ont été supprimées. Les conversations de projet et les tâches ont été conservées."
     }
   },
   "attachmentInjectedIndicator": "Injecté dans la discussion",
@@ -409,5 +417,165 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Rien n'a encore été produit. Les fichiers créés dans vos conversations apparaissent ici.",
+  "workspace": {
+    "chatFootnote": "Jan lit ce dossier librement et vous demande avant chaque modification ou commande exécutée dedans.",
+    "saveFailed": "Impossible d'enregistrer le dossier de ce chat"
+  },
+  "budget": {
+    "stoppedTokens": "Arrêté : cette conversation a atteint son budget de jetons."
+  },
+  "coworkSync": {
+    "journalUnreadableTitle": "Certaines conversations Cowork importées sont masquées",
+    "journalUnreadableDescription": "Jan ne peut pas lire son registre de suppressions : les conversations importées d'une ancienne version restent donc masquées plutôt que de risquer de restaurer celles que vous avez déjà supprimées, et la suppression d'une conversation Cowork est temporairement bloquée. Vos données sont intactes. Pour rétablir la situation : quittez d'abord complètement Jan, car il réécrit settings.json depuis la mémoire pendant son exécution et annulerait votre modification. Corrigez ou supprimez ensuite l'entrée 'cowork_deleted_ids' dans settings.json. La supprimer restaure toutes les conversations importées, y compris celles que vous aviez supprimées.",
+    "missingThreadTitle": "Une conversation Cowork n'a pas pu être enregistrée",
+    "missingThreadDescription": "Son fil enregistré est introuvable, les modifications ne sont donc plus enregistrées. Vous pouvez toujours le lire, l'exporter ou le supprimer.",
+    "writeRefusedTitle": "Une conversation Cowork ne peut pas être enregistrée",
+    "writeRefusedDescription": "Jan ne peut pas enregistrer cette conversation sous son identifiant actuel, les modifications ne sont donc pas enregistrées. Vous pouvez toujours la lire, l'exporter ou la supprimer.",
+    "closeFailedTitle": "Jan n'a pas pu tout enregistrer et est resté ouvert",
+    "closeFailedDescription": "Vos dernières modifications sont encore en mémoire. Fermez à nouveau la fenêtre pour réessayer l'enregistrement.",
+    "closeForceDescription": "L'enregistrement échoue toujours. Vous pouvez fermer sans enregistrer, ce qui perd les modifications qui n'ont pas pu être écrites.",
+    "closeAnyway": "Fermer sans enregistrer",
+    "quitFailedDescription": "Vos dernières modifications sont encore en mémoire. Quittez à nouveau pour réessayer l'enregistrement.",
+    "quitAnyway": "Quitter sans enregistrer"
+  },
+  "messageWrites": {
+    "failedTitle": "Certains messages n'ont pas pu être enregistrés",
+    "failedDescription": "Jan continue de réessayer. Tant que cela échoue, les messages récents n'existent que dans cette fenêtre.",
+    "retry": "Réessayer maintenant"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Cette conversation n'est pas encore prête",
+    "notReadyDescription": "Jan n'a pas pu confirmer si cette conversation est un chat ou une tâche Cowork. Réessayez ; si le problème persiste, redémarrez l'application.",
+    "retry": "Réessayer"
+  },
+  "agentSettings": "Agent",
+  "artifacts": "Artefacts",
+  "skills": "Compétences",
+  "coworkSessionUnavailable": "Cette conversation n'a encore rien à afficher.",
+  "deleteSessionTitle": "Supprimer la session ?",
+  "deleteSessionBody": "« {{title}} » et sa transcription seront supprimées définitivement. Cette action est irréversible.",
+  "sidebar": {
+    "more": "Plus",
+    "toggle": "Afficher ou masquer la barre latérale",
+    "navigation": "Navigation",
+    "navigationDescription": "Accéder aux discussions, projets, artefacts, compétences et paramètres."
+  },
+  "composer": {
+    "addControls": "Ajouter des pièces jointes et des commandes",
+    "assistant": "Assistant",
+    "allTools": "Tous les outils",
+    "samplingParameters": "Paramètres d'échantillonnage",
+    "openAssistantSettings": "Ouvrir les paramètres de l'assistant",
+    "samplingSaveFailed": "Impossible d'enregistrer les paramètres d'échantillonnage. Veuillez réessayer.",
+    "context": "Contexte : {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Sélectionner un modèle",
+    "none": "Aucun",
+    "triggerLabel": "Sélectionner un modèle : {{name}}",
+    "dialogLabel": "Choisir un modèle",
+    "searchLabel": "Rechercher des modèles ou des fournisseurs",
+    "searchPlaceholder": "Rechercher des modèles ou des fournisseurs…",
+    "listLabel": "Modèles",
+    "noMatches": "Aucun modèle correspondant",
+    "noModels": "Aucun modèle configuré",
+    "optionsLabel": "Options du modèle",
+    "reasoning": "Raisonnement",
+    "reasoningMode": "Mode de raisonnement",
+    "reasoningEffort": "Effort de raisonnement",
+    "thinkingBudget": "Budget de réflexion",
+    "modelSettings": "Paramètres du modèle",
+    "manageModels": "Gérer les modèles",
+    "effort": {
+      "default": "Par défaut",
+      "auto": "Auto",
+      "on": "Activé",
+      "off": "Désactivé",
+      "low": "Faible",
+      "medium": "Moyen",
+      "high": "Élevé",
+      "xhigh": "Très élevé",
+      "unlimited": "Illimité"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Ajouter à un projet",
+    "newProject": "Nouveau projet",
+    "noProjects": "Aucun projet pour le moment",
+    "addFolderAction": "Ajouter un dossier"
+  },
+  "conversationScope": {
+    "folderSelectModel": "Sélectionnez un modèle compatible avec les outils avant d’ajouter l’accès à un dossier.",
+    "folderUnsupported": "Ce modèle ne peut pas utiliser d’outils : impossible d’ajouter un dossier. La discussion normale fonctionne toujours.",
+    "removeProject": "Retirer la sélection du projet",
+    "temporary": "Une discussion temporaire ne conserve aucun accès aux dossiers."
+  },
+  "skillDestination": "Enregistrer les nouvelles compétences dans",
+  "skillDestinationFolder": "Ce dossier",
+  "skillDestinationGlobal": "Global (toutes les conversations)",
+  "overview": {
+    "title": "Aperçu de la conversation",
+    "description": "Progression, fichiers et tâches en arrière-plan de cette conversation.",
+    "resize": "Redimensionner le panneau latéral",
+    "close": "Masquer l'aperçu de la conversation",
+    "progress": "Progression",
+    "files": "Fichiers",
+    "backgroundTasks": "Tâches en arrière-plan",
+    "monitorCount_one": "{{count}} moniteur",
+    "monitorCount_other": "{{count}} moniteurs",
+    "noProgress": "Les étapes apparaîtront au fur et à mesure du travail de Jan.",
+    "noFiles": "Les fichiers apparaîtront ici."
+  },
+  "artifactsLibraryDescription": "Les fichiers créés dans vos conversations, réunis au même endroit.",
+  "artifactsLibraryCount_one": "{{count}} fichier",
+  "artifactsLibraryCount_other": "{{count}} fichiers",
+  "artifactsLibraryFilter": "Filtrer par type de fichier",
+  "artifactsLibraryReset": "Effacer les filtres",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Cette tâche n'a pas pu être importée",
+      "body": "Jan n'a pas pu transférer cette tâche depuis la version précédente et a cessé d'essayer. Rien n'a été perdu : l'original est toujours conservé. Vous pouvez réessayer ou l'exporter dans un fichier."
+    },
+    "id-collision": {
+      "title": "Cette tâche n'a pas pu être importée",
+      "body": "Une autre discussion utilise déjà le même identifiant. Cette tâche est donc affichée en lecture seule, et l'autre discussion reste intacte. Exportez-la pour en garder une copie."
+    },
+    "missing-sidecar": {
+      "title": "L'historique de cette tâche est introuvable",
+      "body": "L'historique enregistré de cette tâche est introuvable. Elle est donc affichée en lecture seule. Ses fichiers sur le disque sont conservés tels quels."
+    },
+    "unreadable-sidecar": {
+      "title": "L'historique de cette tâche est illisible",
+      "body": "L'historique enregistré de cette tâche est endommagé ou provient d'une version plus récente de Jan. Elle est donc affichée en lecture seule et ne sera jamais écrasée."
+    },
+    "missing-thread": {
+      "title": "Cette tâche a été supprimée du stockage",
+      "body": "La discussion de cette tâche ne se trouve plus sur le disque. Ce qui est affiché est la copie encore en mémoire ; exportez-la pour la conserver."
+    },
+    "reason": "Raison : {{reason}}",
+    "retry": "Réessayer",
+    "retrying": "Nouvelle tentative...",
+    "export": "Exporter",
+    "exported": "Tâche exportée",
+    "exportFailed": "Impossible d'exporter la tâche",
+    "imported": "Tâche importée",
+    "retryFailed": "La tâche n'a toujours pas pu être importée",
+    "revealFailed": "Impossible d'ouvrir le dossier",
+    "leftOut": {
+      "title": "Certains fichiers n'ont pas été copiés",
+      "body_one": "{{count}} élément de l'ancien dossier de cette tâche (un lien, ou un fichier que Jan n'était pas autorisé à lire) n'a pas été copié. Le dossier d'origine est conservé tel quel.",
+      "body_other": "{{count}} éléments de l'ancien dossier de cette tâche (des liens, ou des fichiers que Jan n'était pas autorisé à lire) n'ont pas été copiés. Le dossier d'origine est conservé tel quel.",
+      "show": "Afficher le dossier d'origine"
+    }
+  },
+  "deleteThreadFailed": "Impossible de supprimer la discussion. Elle pourrait réapparaître après un redémarrage.",
+  "continueAsTask": {
+    "action": "Continuer en tâche",
+    "title": "Continuer cette discussion en tâche ?",
+    "description": "Jan conserve cette conversation et la poursuit en tâche Cowork. Une tâche peut utiliser des outils, écrire des fichiers et exécuter des commandes dans son propre espace de travail sans demander à chaque étape. Elle ne peut pas redevenir une discussion.",
+    "descriptionFolder": "Jan conserve cette conversation et la poursuit en tâche Cowork. Une tâche peut modifier des fichiers et exécuter des commandes dans {{folder}} sans demander à chaque modification. Elle ne peut pas redevenir une discussion.",
+    "confirm": "Continuer en tâche"
   }
 }

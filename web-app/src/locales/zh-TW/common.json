@@ -242,7 +242,6 @@
     "addToProject": "加入專案",
     "removeFromProject": "從專案中移除",
     "noConversationsIn": "{{projectName}} 中尚無對話",
-    "startNewConversation": "在下方開始與 {{projectName}} 的新對話",
     "conversationsIn": "{{projectName}} 中的對話",
     "conversationsDescription": "點擊任何對話以繼續聊天，或在下方開始新的對話。",
     "thread": "執行緒",
@@ -260,9 +259,8 @@
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
-      "permanentDelete": "這將永久刪除所有執行緒。",
+      "permanentDelete": "這將永久刪除「{{projectName}}」及其所有對話。此操作無法復原。",
       "permanentDeleteWarning": "此操作將永久刪除專案內的所有執行緒！",
-      "deleteEmptyProject": "此操作將刪除專案「{{projectName}}」。",
       "saveThreadsAdvice": "要儲存執行緒，請在刪除前將它們移至您的執行緒清單或另一個專案。",
       "starredWarning": "您在專案內仍有已加星號的執行緒。",
       "deleteButton": "刪除",
@@ -281,7 +279,9 @@
       "alreadyExists": "專案「{{projectName}}」已存在",
       "createSuccess": "專案「{{projectName}}」已成功建立",
       "renameSuccess": "專案已從「{{oldName}}」重新命名為「{{newName}}」"
-    }
+    },
+    "viewProject": "檢視專案",
+    "sendMessageToStart": "在上方傳送訊息即可開始。"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -292,10 +292,6 @@
       "cancel": "取消",
       "changeLocation": "變更位置"
     },
-    "deleteAllThreads": {
-      "title": "刪除所有對話",
-      "description": "所有對話將被刪除。此操作無法復原。"
-    },
     "deleteThread": {
       "description": "您確定要刪除此對話嗎？此操作無法復原。"
     },
@@ -304,6 +300,10 @@
     },
     "messageMetadata": {
       "title": "訊息元資料"
+    },
+    "deleteAllChats": {
+      "title": "刪除專案以外的對話",
+      "description": "這會刪除不屬於任何專案的對話。專案中的對話、已加星號的對話和任務都會保留。此動作無法復原。"
     }
   },
   "errorDialog": {
@@ -398,6 +398,14 @@
     "threadRemovedFromProject": {
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
+    },
+    "threadProjectMoveFailed": {
+      "title": "移動失敗",
+      "description": "無法移動這個對話，因為它的工作階段無法使用。"
+    },
+    "deleteAllChats": {
+      "title": "已刪除對話",
+      "description": "已刪除專案以外的對話。專案中的對話和任務都已保留。"
     }
   },
   "llamacppBusyOnExit": {
@@ -406,5 +414,165 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "尚未產生任何內容。對話中建立的檔案會顯示在這裡。",
+  "workspace": {
+    "chatFootnote": "Jan 可以自由讀取此資料夾，在其中進行任何編輯或執行任何指令前都會先詢問你。",
+    "saveFailed": "無法儲存此聊天的資料夾"
+  },
+  "budget": {
+    "stoppedTokens": "已停止：此對話已達到權杖預算上限。"
+  },
+  "artifacts": "成品",
+  "skills": "技能",
+  "deleteSessionTitle": "要刪除工作階段嗎？",
+  "deleteSessionBody": "「{{title}}」及其紀錄將被永久刪除，此操作無法復原。",
+  "sidebar": {
+    "more": "更多",
+    "toggle": "切換側邊欄",
+    "navigation": "導覽",
+    "navigationDescription": "快速前往聊天、專案、成品、技能和設定。"
+  },
+  "coworkSessionUnavailable": "這個對話目前還沒有可顯示的內容。",
+  "coworkSync": {
+    "journalUnreadableTitle": "部分匯入的 Cowork 對話已隱藏",
+    "journalUnreadableDescription": "Jan 無法讀取刪除紀錄。為了避免還原你已經刪除的對話，從舊版匯入的對話會保持隱藏，而且暫時無法刪除任何 Cowork 對話。你的資料完全沒有受到影響。復原方式：請先完全結束 Jan，因為 Jan 執行時會用記憶體中的內容覆寫 settings.json，導致你的修改被還原。接著修正或移除 settings.json 中的「cowork_deleted_ids」項目。移除這個項目會還原所有匯入的對話，包括你曾經刪除的對話。",
+    "missingThreadTitle": "無法儲存某個 Cowork 對話",
+    "missingThreadDescription": "它儲存的對話串遺失了，因此之後的變更不會再被儲存。你仍然可以閱讀、匯出或刪除它。",
+    "writeRefusedTitle": "無法儲存某個 Cowork 對話",
+    "writeRefusedDescription": "Jan 無法以目前的 ID 儲存這個對話，因此變更不會被儲存。你仍然可以閱讀、匯出或刪除它。",
+    "closeFailedTitle": "Jan 無法儲存所有內容，因此沒有關閉",
+    "closeFailedDescription": "你最近的變更仍保留在記憶體中。請再次關閉視窗，重新嘗試儲存。",
+    "closeForceDescription": "儲存一直失敗。你可以不儲存直接關閉，但無法寫入的變更將會遺失。",
+    "closeAnyway": "不儲存直接關閉",
+    "quitFailedDescription": "你最近的變更仍保留在記憶體中。請再次結束，重新嘗試儲存。",
+    "quitAnyway": "不儲存直接結束"
+  },
+  "messageWrites": {
+    "failedTitle": "部分訊息無法儲存",
+    "failedDescription": "Jan 會持續重試。在成功之前，最近的訊息只存在於這個視窗中。",
+    "retry": "立即重試"
+  },
+  "threadRoute": {
+    "notReadyTitle": "這個對話還沒準備好",
+    "notReadyDescription": "Jan 無法確認這個對話是聊天還是 Cowork 任務。請重試；如果問題持續發生，請重新啟動應用程式。",
+    "retry": "重試"
+  },
+  "agentSettings": "代理",
+  "composer": {
+    "addControls": "新增附件和控制項",
+    "assistant": "助理",
+    "allTools": "所有工具",
+    "samplingParameters": "取樣參數",
+    "openAssistantSettings": "開啟助理設定",
+    "samplingSaveFailed": "無法儲存取樣參數，請再試一次。",
+    "context": "上下文：{{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "選擇模型",
+    "none": "無",
+    "triggerLabel": "選擇模型：{{name}}",
+    "dialogLabel": "選擇模型",
+    "searchLabel": "搜尋模型或供應商",
+    "searchPlaceholder": "搜尋模型或供應商...",
+    "listLabel": "模型",
+    "noMatches": "沒有符合的模型",
+    "noModels": "尚未設定任何模型",
+    "optionsLabel": "模型選項",
+    "reasoning": "推理",
+    "reasoningMode": "推理模式",
+    "reasoningEffort": "推理強度",
+    "thinkingBudget": "思考預算",
+    "modelSettings": "模型設定",
+    "manageModels": "管理模型",
+    "effort": {
+      "default": "預設",
+      "auto": "自動",
+      "on": "開啟",
+      "off": "關閉",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "非常高",
+      "unlimited": "無限制"
+    }
+  },
+  "homeMode": {
+    "addToProject": "加入專案",
+    "newProject": "新專案",
+    "noProjects": "尚無專案",
+    "addFolderAction": "新增資料夾"
+  },
+  "conversationScope": {
+    "folderSelectModel": "新增資料夾存取權之前，請先選擇支援工具的模型。",
+    "folderUnsupported": "這個模型無法使用工具，因此無法新增資料夾。一般聊天仍可正常使用。",
+    "removeProject": "移除專案選擇",
+    "temporary": "臨時聊天不會保留資料夾存取權。"
+  },
+  "skillDestination": "將新技能儲存至",
+  "skillDestinationFolder": "這個資料夾",
+  "skillDestinationGlobal": "全域（所有對話）",
+  "overview": {
+    "title": "對話概覽",
+    "description": "這個對話的進度、檔案和背景工作。",
+    "resize": "調整側邊面板大小",
+    "close": "隱藏對話概覽",
+    "progress": "進度",
+    "files": "檔案",
+    "backgroundTasks": "背景工作",
+    "monitorCount_one": "{{count}} 個監控器",
+    "monitorCount_other": "{{count}} 個監控器",
+    "noProgress": "Jan 開始工作後，步驟會顯示在這裡。",
+    "noFiles": "檔案會顯示在這裡。"
+  },
+  "artifactsLibraryDescription": "所有對話中建立的檔案，全都集中在這裡。",
+  "artifactsLibraryCount_one": "{{count}} 個檔案",
+  "artifactsLibraryCount_other": "{{count}} 個檔案",
+  "artifactsLibraryFilter": "依檔案類型篩選",
+  "artifactsLibraryReset": "清除篩選條件",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "無法匯入這個任務",
+      "body": "Jan 無法從舊版移轉這個任務，已停止嘗試。沒有任何資料遺失，原始內容仍然保留。你可以再試一次，或將它匯出成檔案。"
+    },
+    "id-collision": {
+      "title": "無法匯入這個任務",
+      "body": "另一個對話已經使用相同的 ID，因此這個任務會以唯讀方式顯示，另一個對話則不受影響。你可以匯出這個任務來保留副本。"
+    },
+    "missing-sidecar": {
+      "title": "這個任務的紀錄遺失了",
+      "body": "找不到這個任務儲存的紀錄，因此會以唯讀方式顯示。它在磁碟上的檔案會維持原樣。"
+    },
+    "unreadable-sidecar": {
+      "title": "無法讀取這個任務的紀錄",
+      "body": "這個任務儲存的紀錄已損毀，或來自較新版本的 Jan，因此會以唯讀方式顯示，且不會被覆寫。"
+    },
+    "missing-thread": {
+      "title": "這個任務已從儲存空間中移除",
+      "body": "這個任務的對話已不在磁碟上。目前顯示的是仍保留在記憶體中的副本，請匯出以保留它。"
+    },
+    "reason": "原因：{{reason}}",
+    "retry": "再試一次",
+    "retrying": "正在嘗試...",
+    "export": "匯出",
+    "exported": "已匯出任務",
+    "exportFailed": "無法匯出任務",
+    "imported": "已匯入任務",
+    "retryFailed": "仍然無法匯入這個任務",
+    "revealFailed": "無法開啟資料夾",
+    "leftOut": {
+      "title": "部分檔案未複製",
+      "body_one": "這個任務舊資料夾中有 {{count}} 個項目（連結，或 Jan 沒有權限讀取的檔案）未被複製。原始資料夾維持原樣。",
+      "body_other": "這個任務舊資料夾中有 {{count}} 個項目（連結，或 Jan 沒有權限讀取的檔案）未被複製。原始資料夾維持原樣。",
+      "show": "顯示原始資料夾"
+    }
+  },
+  "deleteThreadFailed": "無法刪除對話。重新啟動後它可能會再次出現。",
+  "continueAsTask": {
+    "action": "以任務繼續",
+    "title": "要將此聊天以任務繼續嗎?",
+    "description": "Jan 會保留此對話,並將其作為 Cowork 任務繼續。任務可以在自己的工作區中使用工具、寫入檔案和執行命令,而不必在每一步詢問。它無法再改回聊天。",
+    "descriptionFolder": "Jan 會保留此對話,並將其作為 Cowork 任務繼續。任務可以在 {{folder}} 中編輯檔案和執行命令,而不必在每次變更時詢問。它無法再改回聊天。",
+    "confirm": "以任務繼續"
   }
 }

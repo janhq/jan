@@ -223,6 +223,44 @@ fix: resolve memory leak in model loading
 docs: update installation instructions
 ```
 
+### Signed Commits
+
+**Signed commits are required on `main`.** A PR with any commit that isn't verified can't be merged, and a bot will comment on the PR listing the commits that need fixing. A commit counts as signed when GitHub shows a green **Verified** badge, which needs two things:
+- the key that signed it is added to your GitHub account as a **signing key**, and
+- the commit email (`git config user.email`) is a verified email on that same account.
+
+**SSH signing (quickest, needs Git 2.34+)** — reuse the SSH key you already push with (use whichever key that is, e.g. `id_rsa`):
+```bash
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519   # the private key; use the .pub path only if the key is loaded in ssh-agent
+git config --global commit.gpgsign true
+```
+Then go to GitHub → **Settings** → **SSH and GPG keys** → **New SSH key**, choose **Key type: Signing Key**, and paste the contents of `~/.ssh/id_ed25519.pub`. A key added only as an authentication key won't verify signatures, so add it again as a signing key even if it's already there.
+
+**GPG signing** — if you'd rather use GPG:
+```bash
+gpg --full-generate-key                      # follow the prompts, use your GitHub email
+gpg --list-secret-keys --keyid-format=long   # copy the key ID
+gpg --armor --export YOUR_KEY_ID             # paste into GitHub → New GPG key
+git config --global gpg.format openpgp
+git config --global user.signingkey YOUR_KEY_ID
+git config --global commit.gpgsign true
+```
+
+With `commit.gpgsign true`, every `git commit` is signed automatically. See [GitHub's commit signing docs](https://docs.github.com/en/authentication/managing-commit-signature-verification) for details.
+
+**Already opened a PR with unsigned commits?** Set up signing as above, then replace your branch's commits with one signed commit that has exactly the same content, and force-push:
+```bash
+git status --short   # must print nothing: commit or stash your changes first
+git fetch upstream
+git branch -f unsigned-backup   # replaces any older backup with this branch
+git reset --soft "$(git merge-base HEAD upstream/main)"
+git commit -S -m "<your PR title>"
+git diff unsigned-backup HEAD   # must print nothing
+git push --force-with-lease origin HEAD
+```
+`upstream` is whatever your remote for `janhq/jan` is called and `origin` is your fork (check with `git remote -v`). PRs are squash-merged, so collapsing them into one commit loses nothing. Unlike a rebase, this keeps changes made in merge commits. If `git diff` prints anything, stop and restore with `git reset --hard unsigned-backup`. After the push, every commit on the PR's **Commits** tab shows a **Verified** badge and the bot comment disappears.
+
 ### Pull Request Requirements
 - Include a screenshot or screen recording in your PR description showing the change in action
 - For bug fixes: show both the **before** (broken behavior) and **after** (fixed behavior)

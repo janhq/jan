@@ -17,6 +17,9 @@ describe('fs module', () => {
         copyFile: vi.fn(),
         getGgufFiles: vi.fn(),
         fileStat: vi.fn(),
+        readYaml: vi.fn(),
+        writeYaml: vi.fn(),
+        decompress: vi.fn(),
       },
     }
   })
@@ -93,5 +96,31 @@ describe('fs module', () => {
     const path = 'path/to/file'
     await fs.fileStat(path)
     expect(globalThis.core.api.fileStat).toHaveBeenCalledWith({ args: path })
+  })
+
+  it('should call readYaml with a named path argument', async () => {
+    await fs.readYaml('models/foo/model.yml')
+    expect(globalThis.core.api.readYaml).toHaveBeenCalledWith({
+      path: 'models/foo/model.yml',
+    })
+  })
+
+  // The Rust command is `write_yaml(data, save_path)`, so the argument object
+  // must carry both keys even though the wrapper takes the path first.
+  it('should call writeYaml with data and savePath', async () => {
+    const data = { model_path: 'a.gguf' }
+    await fs.writeYaml('models/foo/model.yml', data)
+    expect(globalThis.core.api.writeYaml).toHaveBeenCalledWith({
+      data,
+      savePath: 'models/foo/model.yml',
+    })
+  })
+
+  it('should call decompress with path and outputDir', async () => {
+    await fs.decompress('/tmp/a.tar.gz', '/out')
+    expect(globalThis.core.api.decompress).toHaveBeenCalledWith({
+      path: '/tmp/a.tar.gz',
+      outputDir: '/out',
+    })
   })
 })

@@ -44,7 +44,6 @@ const ENGINE_SETTINGS_CHANGED = 'settingsChanged'
 // `missingLibrary` is the same symptom as `runtimeUnreachable` with the cause
 // identified, so it gets its own message naming the dependency.
 const ENGINE_REASON_KEYS: Record<GpuOffloadReason, string> = {
-  noGpuHardware: 'checkEngineNoGpuHardware',
   runtimeUnreachable: 'checkEngineRuntimeUnreachable',
   missingLibrary: 'checkEngineMissingLibrary',
 }
@@ -77,9 +76,10 @@ function gpuVerdict(
   const label = describeGpus(gpus)
   if (!report || report.pending || report.unavailable) return { label }
 
-  // Metal is compiled into every macOS build and always present, so the engine
-  // never reports it as "a GPU build" and never enumerates it as a device.
-  // Reading those absences literally told Apple Silicon users they were on CPU.
+  // Metal is compiled into every macOS build and always present, so a Mac is
+  // never "a CPU build that found no GPU". The engine lists the Accelerate BLAS
+  // device ahead of Metal, which is why the backend is named after the first
+  // accelerator rather than the first device (see `backendFromDeviceIds`).
   if (backendGpuFamily(report.backend) === 'metal') {
     return { willUse: true, label }
   }
@@ -152,14 +152,17 @@ function engineStage(
     // report the inverse, so a GPU left idle by a CPU-only build -- or a build
     // for the wrong vendor -- is caught here instead.
     const match = evaluateBackendGpuMatch(gpus, report.backend)
-    // On a fresh install the engine is still downloading a backend, so there is
-    // nothing to judge yet. Reported as in-progress, never as a warning: it
-    // resolves on its own and the checklist re-runs when it does.
+    // `unknown` means the backend name told us nothing -- which, now that the
+    // backend is read off the device the engine enumerated, means it enumerated
+    // no device at all. That is a settled CPU verdict, not work in progress.
+    // Reporting 'running' here left onboarding waiting forever on any machine
+    // without a usable GPU, because nothing was ever going to change.
     if (match.kind === 'unknown') {
       return {
         id: 'engine',
-        status: 'running',
-        messageKey: 'checkEnginePreparing',
+        status: 'ok',
+        messageKey: 'checkEngineCpu',
+        values: { backend: report.backend },
       }
     }
     if (match.kind === 'gpuUnused') {

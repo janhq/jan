@@ -3,7 +3,9 @@ import { resolveToolOrigin } from '../toolOrigin'
 
 const context = {
   isRagTool: false,
+  isAgentTool: false,
   webSearchProviderLabel: 'Exa',
+  webSearchEnabled: true,
 }
 
 describe('resolveToolOrigin', () => {
@@ -41,11 +43,32 @@ describe('resolveToolOrigin', () => {
     ).toEqual({ kind: 'mcp', detail: 'filesystem' })
   })
 
-  // Mirrors the thread route's execution order, where native web tools are
-  // dispatched before any MCP tool of the same name.
-  it('prefers the native web tool over a same-named MCP tool', () => {
+  // Mirrors the thread route: while web search is on the native tool is what
+  // was offered and what runs, even when an MCP server has the same name.
+  it('prefers the native web tool over a same-named MCP tool while web search is on', () => {
     expect(
       resolveToolOrigin('web_search', { ...context, mcpServer: 'someserver' })
+    ).toEqual({ kind: 'web-search', detail: 'Exa' })
+  })
+
+  // With it off the MCP server's tool is the one that ran (#9458); labelling
+  // it as the built-in provider would credit a search Exa never saw.
+  it.each(['web_search', 'web_fetch'])(
+    'credits a same-named MCP %s to its server while web search is off',
+    (name) => {
+      expect(
+        resolveToolOrigin(name, {
+          ...context,
+          webSearchEnabled: false,
+          mcpServer: 'parallel',
+        })
+      ).toEqual({ kind: 'mcp', detail: 'parallel' })
+    }
+  )
+
+  it('keeps the built-in label for a recorded web call no server provides', () => {
+    expect(
+      resolveToolOrigin('web_search', { ...context, webSearchEnabled: false })
     ).toEqual({ kind: 'web-search', detail: 'Exa' })
   })
 
@@ -57,6 +80,24 @@ describe('resolveToolOrigin', () => {
         mcpServer: 'someserver',
       })
     ).toEqual({ kind: 'rag' })
+  })
+
+  it('recognises a built-in agent tool', () => {
+    expect(
+      resolveToolOrigin('memory', { ...context, isAgentTool: true })
+    ).toEqual({ kind: 'agent' })
+  })
+
+  // Mirrors the thread route, where agent tools are dispatched before MCP, so a
+  // filesystem server exposing `read` does not claim the built-in one's card.
+  it('prefers the built-in agent tool over a same-named MCP tool', () => {
+    expect(
+      resolveToolOrigin('read', {
+        ...context,
+        isAgentTool: true,
+        mcpServer: 'filesystem',
+      })
+    ).toEqual({ kind: 'agent' })
   })
 
   it('is undefined for an unknown tool', () => {

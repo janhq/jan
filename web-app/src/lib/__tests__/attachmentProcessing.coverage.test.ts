@@ -66,8 +66,8 @@ describe('processAttachmentsForSend - additional coverage', () => {
       threadId,
       serviceHub: hub as any,
       parsePreference: 'auto',
-      contextThreshold: 100,
-      estimateTokens: vi.fn().mockResolvedValue(200),
+      // 'parsed text' is 4 estimated tokens.
+      contextThreshold: 3,
     })
     expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
   })
@@ -79,48 +79,52 @@ describe('processAttachmentsForSend - additional coverage', () => {
       threadId,
       serviceHub: hub as any,
       parsePreference: 'auto',
-      contextThreshold: 500,
-      estimateTokens: vi.fn().mockResolvedValue(50),
+      contextThreshold: 4,
     })
     expect(result.processedAttachments[0].injectionMode).toBe('inline')
   })
 
-  it('auto mode without estimateTokens defaults to autoFallbackMode', async () => {
+  it('auto mode spends one budget across all documents in a send', async () => {
+    // Each 'parsed text' is 4 estimated tokens: two fit alone, not together.
     const hub = createMockServiceHub()
+    const result = await processAttachmentsForSend({
+      attachments: [
+        { name: 'a.txt', type: 'document' as const, path: '/a.txt' },
+        { name: 'b.txt', type: 'document' as const, path: '/b.txt' },
+      ],
+      threadId,
+      serviceHub: hub as any,
+      parsePreference: 'auto',
+      contextThreshold: 6,
+    })
+    expect(result.processedAttachments.map((a) => a.injectionMode)).toEqual([
+      'inline',
+      'embeddings',
+    ])
+  })
+
+  it('auto mode without a context budget embeds without parsing', async () => {
+    const parseDocument = vi.fn().mockResolvedValue('parsed text')
+    const hub = { ...createMockServiceHub(), rag: () => ({ parseDocument }) }
     const result = await processAttachmentsForSend({
       attachments: [{ name: 'doc.txt', type: 'document' as const, path: '/doc.txt' }],
       threadId,
       serviceHub: hub as any,
       parsePreference: 'auto',
-      autoFallbackMode: 'inline',
     })
-    // Without estimateTokens, uses autoFallbackMode
-    expect(result.processedAttachments[0].injectionMode).toBe('inline')
+    expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
+    expect(parseDocument).not.toHaveBeenCalled()
   })
 
-  it('prompt mode uses perFileChoices', async () => {
-    const hub = createMockServiceHub()
-    const choices = new Map([[ '/doc.txt', 'inline' as const ]])
-    const result = await processAttachmentsForSend({
-      attachments: [{ name: 'doc.txt', type: 'document' as const, path: '/doc.txt' }],
-      threadId,
-      serviceHub: hub as any,
-      parsePreference: 'prompt',
-      perFileChoices: choices,
-    })
-    expect(result.processedAttachments[0].injectionMode).toBe('inline')
-  })
-
-  it('prompt mode defaults to autoFallbackMode when no perFileChoice', async () => {
+  it('prompt mode without a recorded choice falls back to embeddings', async () => {
     const hub = createMockServiceHub()
     const result = await processAttachmentsForSend({
       attachments: [{ name: 'doc.txt', type: 'document' as const, path: '/doc.txt' }],
       threadId,
       serviceHub: hub as any,
       parsePreference: 'prompt',
-      autoFallbackMode: 'inline',
     })
-    expect(result.processedAttachments[0].injectionMode).toBe('inline')
+    expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
   })
 
   it('skips already-processed inline documents', async () => {
@@ -145,23 +149,8 @@ describe('processAttachmentsForSend - additional coverage', () => {
       serviceHub: hub as any,
       parsePreference: 'auto',
       contextThreshold: NaN,
-      estimateTokens: vi.fn().mockResolvedValue(50),
     })
     // NaN threshold means no threshold -> defaults to embeddings
-    expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
-  })
-
-  it('handles non-positive token estimate', async () => {
-    const hub = createMockServiceHub()
-    const result = await processAttachmentsForSend({
-      attachments: [{ name: 'doc.txt', type: 'document' as const, path: '/doc.txt' }],
-      threadId,
-      serviceHub: hub as any,
-      parsePreference: 'auto',
-      contextThreshold: 500,
-      estimateTokens: vi.fn().mockResolvedValue(-1),
-    })
-    // Non-positive estimate -> defaults to embeddings
     expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
   })
 
@@ -293,7 +282,7 @@ describe('processAttachmentsForSend - additional coverage', () => {
       threadId,
       serviceHub: hub as any,
       parsePreference: 'auto',
-      estimateTokens: vi.fn().mockResolvedValue(50),
+      contextThreshold: 500,
     })
     expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
   })

@@ -1,0 +1,26 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• general-4
+  └ Upstream request failed: connection reset by the peer while reading
+• general-4
+  └ Upstream request failed: 502; retrying
+-- collapsed
+
+• general-4
+  └ Upstream request failed: connection reset by the peer while reading
+• general-4
+  └ Upstream request failed: 502; retrying
+-- narrow (28)
+
+• general-4
+  └ Upstream request
+    failed: connection
+    reset by the peer
+    while reading
+• general-4
+  └ Upstream request
+    failed: 502; retrying

@@ -70,6 +70,7 @@ mod server_tests {
             host: "localhost".to_string(),
             port: 1337,
             enable_server_tool_execution: false,
+            cors_enabled: true,
         };
         assert_eq!(config.prefix, "/v1");
         assert_eq!(config.proxy_api_key, "test-key");
@@ -87,6 +88,7 @@ mod server_tests {
             host: "127.0.0.1".to_string(),
             port: 8080,
             enable_server_tool_execution: false,
+            cors_enabled: true,
         };
         assert_eq!(config.prefix, "");
         assert_eq!(config.proxy_api_key, "");
@@ -308,7 +310,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["url"]["type"], json!("string"));
     }
@@ -319,7 +321,7 @@ mod server_tests {
             "type": "object"
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"], json!({}));
     }
@@ -349,11 +351,17 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
-        assert_eq!(schema["properties"]["payload"]["properties"]["title"]["type"], json!("string"));
+        assert_eq!(
+            schema["properties"]["payload"]["properties"]["title"]["type"],
+            json!("string")
+        );
         assert_eq!(schema["properties"]["filters"]["properties"], json!({}));
-        assert_eq!(schema["properties"]["items"]["items"]["properties"], json!({}));
+        assert_eq!(
+            schema["properties"]["items"]["items"]["properties"],
+            json!({})
+        );
     }
 
     #[test]
@@ -376,7 +384,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["name"]["type"], json!("integer"));
         assert!(schema["properties"]["container"].get("type").is_none());
@@ -396,7 +404,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["name"], json!({"type": "string"}));
         assert_eq!(schema["properties"]["count"], json!({"type": "integer"}));
@@ -411,7 +419,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(
             schema["properties"]["tags"]["items"],
@@ -428,7 +436,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(
             schema["properties"]["value"]["anyOf"],
@@ -445,7 +453,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(
             schema["properties"]["mode"]["enum"],
@@ -471,7 +479,7 @@ mod server_tests {
         });
 
         let original = schema.clone();
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema, original);
     }
@@ -494,11 +502,14 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["count"]["type"], json!("integer"));
         assert_eq!(schema["properties"]["title"]["type"], json!("string"));
-        assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
+        assert_eq!(
+            schema["properties"]["metadata"]["description"],
+            json!("Optional metadata")
+        );
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
     }
 
@@ -513,7 +524,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert!(schema["properties"]["start"].get("format").is_none());
         assert!(schema["properties"]["stop"].get("format").is_none());
@@ -531,7 +542,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["id"]["format"], json!("uuid"));
         assert_eq!(schema["properties"]["url"]["format"], json!("uri"));
@@ -547,7 +558,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert!(schema["properties"]["when"].get("pattern").is_none());
         assert_eq!(schema["properties"]["alpha"]["pattern"], json!("^[A-Z]+$"));
@@ -563,7 +574,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert!(schema["properties"]["until"].get("format").is_none());
         assert_eq!(schema["properties"]["until"]["type"], json!("string"));
@@ -575,12 +586,22 @@ mod server_tests {
     #[test]
     fn http_status_indicates_api_key_retry_matrix() {
         use hyper::StatusCode;
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::UNAUTHORIZED));
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::FORBIDDEN));
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::TOO_MANY_REQUESTS));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::OK));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::BAD_REQUEST));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::UNAUTHORIZED
+        ));
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::FORBIDDEN
+        ));
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(StatusCode::OK));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::BAD_REQUEST
+        ));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
     }
 
     #[test]
@@ -620,7 +641,10 @@ mod server_tests {
             {"type": "text", "text": "second"},
             {"type": "image", "source": {}}
         ]);
-        assert_eq!(proxy::extract_tool_result_content(Some(&v)), "first\nsecond");
+        assert_eq!(
+            proxy::extract_tool_result_content(Some(&v)),
+            "first\nsecond"
+        );
     }
 
     #[test]
@@ -649,7 +673,10 @@ mod server_tests {
         proxy::convert_media_block(&block, &mut parts);
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0]["type"], "image_url");
-        assert_eq!(parts[0]["image_url"]["url"], "data:image/png;base64,BASE64DATA");
+        assert_eq!(
+            parts[0]["image_url"]["url"],
+            "data:image/png;base64,BASE64DATA"
+        );
     }
 
     #[test]
@@ -876,18 +903,28 @@ mod server_tests {
     }
 
     #[test]
-    fn parse_openai_messages_non_string_content_errors() {
-        let msgs = json!([{"role": "user", "content": [{"type": "text", "text": "hi"}]}]);
+    fn parse_openai_messages_passes_multimodal_array_through() {
+        let msgs = json!([{"role": "user", "content": [
+            {"type": "text", "text": "hi"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}},
+        ]}]);
+        let out = proxy::parse_openai_messages(&msgs).unwrap();
+        assert_eq!(out[0]["content"], msgs[0]["content"]);
+    }
+
+    #[test]
+    fn parse_openai_messages_non_string_non_array_content_errors() {
+        let msgs = json!([{"role": "user", "content": 42}]);
         assert!(proxy::parse_openai_messages(&msgs).is_err());
     }
 
     #[test]
-    fn set_system_prompt_replaces_existing_system() {
+    fn replace_system_prompt_replaces_existing_system() {
         let mut messages = vec![
             json!({"role": "system", "content": "old"}),
             json!({"role": "user", "content": "hi"}),
         ];
-        proxy::set_system_prompt(&mut messages, "new");
+        proxy::replace_system_prompt(&mut messages, "new");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "new");
@@ -895,9 +932,9 @@ mod server_tests {
     }
 
     #[test]
-    fn set_system_prompt_inserts_when_absent() {
+    fn replace_system_prompt_inserts_when_absent() {
         let mut messages = vec![json!({"role": "user", "content": "hi"})];
-        proxy::set_system_prompt(&mut messages, "system!");
+        proxy::replace_system_prompt(&mut messages, "system!");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "system!");
@@ -987,7 +1024,7 @@ mod server_tests {
                 }
             }]
         });
-        proxy::normalize_openai_tools_in_chat_body(&mut body);
+        crate::core::openai_schema::normalize_openai_tools_in_chat_body(&mut body);
         assert_eq!(
             body["tools"][0]["function"]["parameters"]["properties"]["url"]["type"],
             json!("string")
@@ -998,7 +1035,7 @@ mod server_tests {
     fn normalize_openai_tools_in_chat_body_no_tools_is_noop() {
         let mut body = json!({"messages": []});
         let original = body.clone();
-        proxy::normalize_openai_tools_in_chat_body(&mut body);
+        crate::core::openai_schema::normalize_openai_tools_in_chat_body(&mut body);
         assert_eq!(body, original);
     }
 
@@ -1012,7 +1049,9 @@ mod server_tests {
             "http://localhost:3000",
             &trusted,
         );
-        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
+        let resp = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(h.contains_key("access-control-allow-headers"));
@@ -1034,7 +1073,9 @@ mod server_tests {
             "http://evil.example.com",
             &trusted,
         );
-        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
+        let resp = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(!h.contains_key("access-control-allow-origin"));
@@ -1042,16 +1083,39 @@ mod server_tests {
     }
 
     #[test]
+    fn add_cors_headers_reflects_a_listed_opaque_origin() {
+        for (origin, entry) in [("null", "null"), ("file://", "file://")] {
+            let resp = proxy::add_cors_headers_with_host_and_origin(
+                hyper::Response::builder(),
+                "127.0.0.1:1337",
+                origin,
+                &[vec![entry.to_string()]],
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+            assert_eq!(resp.headers().get("access-control-allow-origin").unwrap(), origin);
+
+            let resp = proxy::add_cors_headers_with_host_and_origin(
+                hyper::Response::builder(),
+                "127.0.0.1:1337",
+                origin,
+                &[vec![]],
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+            assert!(!resp.headers().contains_key("access-control-allow-origin"));
+        }
+    }
+
+    #[test]
     fn add_cors_headers_with_empty_origin_omits_origin() {
         let trusted = vec![vec!["localhost".to_string()]];
         let builder = hyper::Response::builder();
-        let builder = proxy::add_cors_headers_with_host_and_origin(
-            builder,
-            "localhost",
-            "",
-            &trusted,
-        );
-        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
+        let builder =
+            proxy::add_cors_headers_with_host_and_origin(builder, "localhost", "", &trusted);
+        let resp = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));
     }
@@ -1072,6 +1136,7 @@ mod server_tests {
             host: "h".to_string(),
             port: 1,
             enable_server_tool_execution: true,
+            cors_enabled: true,
         };
         let cloned = cfg.clone();
         assert_eq!(cloned.prefix, "/p");
@@ -1102,7 +1167,7 @@ mod server_tests {
             ]
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["anyOf"][0]["properties"], json!({}));
         assert_eq!(schema["anyOf"][1]["type"], json!("string"));
@@ -1150,7 +1215,10 @@ mod server_tests {
         assert_eq!(body["system"], json!(PROMPT));
         assert_eq!(body["messages"][0]["content"], json!("first"));
         // Only the first message is touched.
-        assert_eq!(body["messages"][1]["content"], json!(format!("{header}second")));
+        assert_eq!(
+            body["messages"][1]["content"],
+            json!(format!("{header}second"))
+        );
     }
 
     #[test]
@@ -1183,5 +1251,308 @@ mod server_tests {
         });
         proxy::strip_billing_header_in_body(&mut body);
         assert_eq!(body["messages"][0]["content"][0]["text"], json!(PROMPT));
+    }
+
+    // ---- Origin gate and /orchestrations opt-in, against a running server ----
+
+    fn trusted(hosts: &[&str]) -> Vec<Vec<String>> {
+        vec![hosts.iter().map(|h| h.to_string()).collect()]
+    }
+
+    #[test]
+    fn request_origin_refuses_a_non_ascii_origin_header() {
+        let mut headers = hyper::HeaderMap::new();
+        assert_eq!(proxy::request_origin(&headers), Some(""));
+        headers.insert(
+            hyper::header::ORIGIN,
+            hyper::header::HeaderValue::from_static("http://localhost:3000"),
+        );
+        assert_eq!(
+            proxy::request_origin(&headers),
+            Some("http://localhost:3000")
+        );
+        headers.insert(
+            hyper::header::ORIGIN,
+            hyper::header::HeaderValue::from_bytes(b"http://\xffevil.com").unwrap(),
+        );
+        assert_eq!(proxy::request_origin(&headers), None);
+    }
+
+    #[test]
+    fn origin_allowed_absent_origin_always_passes() {
+        assert!(proxy::origin_allowed("", "127.0.0.1:1337", &trusted(&[]), true));
+        assert!(proxy::origin_allowed("", "192.168.1.10:1337", &trusted(&[]), false));
+    }
+
+    #[test]
+    fn origin_allowed_matrix() {
+        let t = trusted(&[]);
+        let h = "127.0.0.1:1337";
+        assert!(proxy::origin_allowed("http://localhost:3000", h, &t, true));
+        assert!(proxy::origin_allowed("tauri://localhost", h, &t, true));
+        assert!(!proxy::origin_allowed("https://evil.com", h, &t, true));
+        assert!(!proxy::origin_allowed("null", h, &t, true));
+        assert!(!proxy::origin_allowed("file://", h, &t, true));
+        // Opaque origins only with an explicit entry, and only with CORS on.
+        assert!(proxy::origin_allowed("null", h, &trusted(&["null"]), true));
+        assert!(proxy::origin_allowed("file://", h, &trusted(&["file://"]), true));
+        assert!(!proxy::origin_allowed("file://", h, &trusted(&["null"]), true));
+        assert!(!proxy::origin_allowed("null", h, &trusted(&["null"]), false));
+        // Private-IP pages on the LAN are not trusted unless listed.
+        assert!(!proxy::origin_allowed("http://192.168.1.20:3000", h, &t, true));
+        assert!(proxy::origin_allowed(
+            "http://192.168.1.20:3000",
+            h,
+            &trusted(&["192.168.1.20"]),
+            true
+        ));
+        // CORS off: only the app webview and same-origin pages.
+        assert!(!proxy::origin_allowed("http://localhost:3000", h, &t, false));
+        assert!(proxy::origin_allowed("tauri://localhost", h, &t, false));
+        assert!(proxy::origin_allowed("http://127.0.0.1:1337", h, &t, false));
+        // Same-origin needs a valid Host: a rebinding hostname does not count.
+        assert!(!proxy::origin_allowed(
+            "http://evil.com:1337",
+            "evil.com:1337",
+            &t,
+            true
+        ));
+    }
+
+    #[test]
+    fn orchestrations_follow_tool_execution_opt_in() {
+        let mut cfg = proxy::ProxyConfig {
+            prefix: "/v1".to_string(),
+            proxy_api_key: String::new(),
+            trusted_hosts: vec![vec![]],
+            host: "127.0.0.1".to_string(),
+            port: 1337,
+            enable_server_tool_execution: false,
+            cors_enabled: true,
+        };
+        assert!(!proxy::orchestrations_allowed(&cfg));
+        cfg.enable_server_tool_execution = true;
+        assert!(proxy::orchestrations_allowed(&cfg));
+    }
+
+    async fn start_test_server(
+        enable_server_tool_execution: bool,
+        cors_enabled: bool,
+    ) -> (u16, std::sync::Arc<tokio::sync::Mutex<Option<crate::core::state::ServerHandle>>>) {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let handle = Arc::new(Mutex::new(None));
+        let data = std::env::temp_dir().to_string_lossy().into_owned();
+        proxy::start_server(
+            handle.clone(),
+            Arc::new(tauri_plugin_llamacpp::state::LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            "127.0.0.1".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec![]],
+            30,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            data,
+            enable_server_tool_execution,
+            cors_enabled,
+        )
+        .await
+        .expect("server starts");
+        (port, handle)
+    }
+
+    async fn post(
+        port: u16,
+        path: &str,
+        origin: Option<&str>,
+        content_type: &str,
+    ) -> reqwest::StatusCode {
+        let mut req = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/v1{path}"))
+            .header("Content-Type", content_type)
+            .body(r#"{"model":"nope","messages":[{"role":"user","content":"hi"}]}"#);
+        if let Some(o) = origin {
+            req = req.header("Origin", o);
+        }
+        req.send().await.expect("request sent").status()
+    }
+
+    #[tokio::test]
+    async fn untrusted_origin_post_is_refused_before_handlers() {
+        let (port, handle) = start_test_server(false, true).await;
+
+        // A cross-site "simple" request (no preflight) is refused.
+        for path in ["/chat/completions", "/messages", "/orchestrations", "/models"] {
+            assert_eq!(
+                post(port, path, Some("https://evil.example"), "text/plain").await,
+                reqwest::StatusCode::FORBIDDEN,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            post(port, "/chat/completions", Some("http://192.168.1.20:3000"), "text/plain").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        // No Origin (curl, SDKs) and loopback origins reach the handler: no
+        // model is loaded, so the handler answers, just not with the gate's 403.
+        for origin in [None, Some("http://localhost:3000")] {
+            let status = post(port, "/chat/completions", origin, "application/json").await;
+            assert_ne!(status, reqwest::StatusCode::FORBIDDEN, "{origin:?}");
+        }
+
+        proxy::stop_server(handle).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn orchestrations_refused_without_opt_in() {
+        let (port, handle) = start_test_server(false, true).await;
+        assert_eq!(
+            post(port, "/orchestrations", None, "application/json").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        proxy::stop_server(handle).await.unwrap();
+
+        let (port, handle) = start_test_server(true, true).await;
+        assert_ne!(
+            post(port, "/orchestrations", None, "application/json").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        proxy::stop_server(handle).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cors_toggle_off_refuses_loopback_pages() {
+        let (port, handle) = start_test_server(false, false).await;
+        assert_eq!(
+            post(port, "/chat/completions", Some("http://localhost:3000"), "application/json")
+                .await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        assert_ne!(
+            post(port, "/chat/completions", None, "application/json").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        proxy::stop_server(handle).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn public_bind_without_api_key_is_refused_before_binding() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let handle = Arc::new(Mutex::new(None));
+        let err = proxy::start_server(
+            handle.clone(),
+            Arc::new(tauri_plugin_llamacpp::state::LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            "0.0.0.0".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec![]],
+            30,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            false,
+            true,
+        )
+        .await
+        .expect_err("an open public bind must be refused");
+
+        let msg = err.to_string();
+        assert!(msg.contains("API key") && msg.contains("127.0.0.1"), "{msg}");
+        // Nothing was started and nothing is listening.
+        assert!(handle.lock().await.is_none());
+        assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_ok());
+    }
+
+    /// A `*` in Trusted Hosts opens the API to any web page (CORS), but the
+    /// Host header must still name this server: a DNS-rebinding page reaches
+    /// it under its own hostname.
+    #[tokio::test]
+    async fn wildcard_trusted_hosts_still_refuse_a_foreign_host_header() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let handle = Arc::new(Mutex::new(None));
+        proxy::start_server(
+            handle.clone(),
+            Arc::new(tauri_plugin_llamacpp::state::LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            "127.0.0.1".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec!["*".to_string()]],
+            30,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            false,
+            true,
+        )
+        .await
+        .expect("server starts");
+
+        let get = |host: String, origin: Option<&'static str>| async move {
+            let mut req = reqwest::Client::new()
+                .get(format!("http://127.0.0.1:{port}/v1/models"))
+                .header("Host", host);
+            if let Some(o) = origin {
+                req = req.header("Origin", o);
+            }
+            req.send().await.expect("request sent").status()
+        };
+
+        // The rebinding shape: attacker hostname in Host and as Origin.
+        assert_eq!(
+            get("attacker.example".into(), Some("http://attacker.example")).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            get("attacker.example:1337".into(), None).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        // `*` keeps its CORS meaning: a page on another origin may call the
+        // API through the server's own address.
+        assert_ne!(
+            get(format!("127.0.0.1:{port}"), Some("https://any-web-app.example")).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        assert_ne!(
+            get(format!("127.0.0.1:{port}"), None).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+
+        proxy::stop_server(handle).await.unwrap();
     }
 }

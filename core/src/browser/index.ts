@@ -17,16 +17,28 @@ export * from './events'
 export * from './fs'
 
 /**
- * Export Extension module.
+ * Export app settings module.
  * @module
  */
-export * from './extension'
+export * from './settings'
+
+/**
+ * Export download module.
+ * @module
+ */
+export * from './download'
 
 /**
  * Export all base extensions.
  * @module
  */
 export * from './extensions'
+
+/**
+ * Export the extension host's internal tier.
+ * @module
+ */
+export * from './host'
 
 /**
  * Export all base models.
