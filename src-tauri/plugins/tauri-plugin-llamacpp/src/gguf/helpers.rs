@@ -215,7 +215,17 @@ fn read_gguf_value<R: Read + Seek + ReadBytesExt>(
                 ));
             }
 
-            if len > 24 {
+            // Per-layer numeric and boolean metadata arrays (such as
+            // `<arch>.attention.head_count_kv` or
+            // `<arch>.attention.sliding_window_pattern`) carry one entry per
+            // layer (24-128+ in hybrid models like LFM2/LFM3/Gemma 4), while
+            // vocabulary string/score arrays hold tens of thousands of entries.
+            let max_read_len = match elem_type {
+                GgufValueType::String | GgufValueType::Array => 24,
+                _ => 256,
+            };
+
+            if len > max_read_len {
                 skip_array_data(reader, elem_type, len)?;
                 return Ok(format!(
                     "<Array of type {:?} with {} elements, data skipped>",
@@ -440,5 +450,82 @@ mod tests {
         assert!(read_gguf_tensor_types(Cursor::new(bytes))
             .expect("tensor types")
             .is_empty());
+    }
+
+    #[test]
+    fn reads_per_layer_primitive_arrays_above_24_elements_and_skips_huge_ones() {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"GGUF");
+        b.write_u32::<LittleEndian>(3).unwrap();
+        b.write_u64::<LittleEndian>(0).unwrap(); // tensor_count
+        b.write_u64::<LittleEndian>(4).unwrap(); // metadata_count
+
+        let write_str = |buf: &mut Vec<u8>, s: &str| {
+            buf.write_u64::<LittleEndian>(s.len() as u64).unwrap();
+            buf.extend_from_slice(s.as_bytes());
+        };
+
+        // 1) 30-layer uint32 head_count_kv array (> 24, <= 256)
+        write_str(&mut b, "lfm3.attention.head_count_kv");
+        b.write_u32::<LittleEndian>(GgufValueType::Array as u32)
+            .unwrap();
+        b.write_u32::<LittleEndian>(GgufValueType::Uint32 as u32)
+            .unwrap();
+        b.write_u64::<LittleEndian>(30).unwrap();
+        for i in 0..30u32 {
+            b.write_u32::<LittleEndian>(if i % 4 == 2 { 4 } else { 0 })
+                .unwrap();
+        }
+
+        // 2) 30-layer bool sliding_window_pattern array (> 24, <= 256)
+        write_str(&mut b, "lfm3.attention.sliding_window_pattern");
+        b.write_u32::<LittleEndian>(GgufValueType::Array as u32)
+            .unwrap();
+        b.write_u32::<LittleEndian>(GgufValueType::Bool as u32)
+            .unwrap();
+        b.write_u64::<LittleEndian>(30).unwrap();
+        for i in 0..30u32 {
+            b.write_u8(u8::from(i % 4 == 0 && i > 0)).unwrap();
+        }
+
+        // 3) 300-element float32 array (> 256 -> skipped cleanly)
+        write_str(&mut b, "tokenizer.ggml.scores");
+        b.write_u32::<LittleEndian>(GgufValueType::Array as u32)
+            .unwrap();
+        b.write_u32::<LittleEndian>(GgufValueType::Float32 as u32)
+            .unwrap();
+        b.write_u64::<LittleEndian>(300).unwrap();
+        for _ in 0..300 {
+            b.write_f32::<LittleEndian>(0.0).unwrap();
+        }
+
+        // 4) Trailing scalar key proves stream remained aligned after skipping
+        write_str(&mut b, "general.architecture");
+        b.write_u32::<LittleEndian>(GgufValueType::String as u32)
+            .unwrap();
+        write_str(&mut b, "lfm3");
+
+        let meta = read_gguf_metadata(Cursor::new(b)).expect("metadata");
+        let kv = meta.metadata.get("lfm3.attention.head_count_kv").unwrap();
+        assert!(kv.starts_with("[0, 0, 4, 0,"), "unexpected kv array: {kv}");
+        let swa = meta
+            .metadata
+            .get("lfm3.attention.sliding_window_pattern")
+            .unwrap();
+        assert!(
+            swa.starts_with("[false, false, false, false, true,"),
+            "unexpected swa array: {swa}"
+        );
+        let scores = meta.metadata.get("tokenizer.ggml.scores").unwrap();
+        assert!(
+            scores.contains("data skipped"),
+            "expected skipped: {scores}"
+        );
+        assert_eq!(
+            meta.metadata
+                .get("general.architecture")
+                .map(String::as_str),
+            Some("lfm3")
+        );
     }
 }
