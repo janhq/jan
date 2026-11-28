@@ -399,4 +399,66 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.martllm.com/v1',
+    explore_models_url: 'https://martllm.com/models',
+    provider: 'martllm',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The MartLLM API uses API keys for authentication. Visit your [API Keys](https://martllm.com/dashboard/keys) page to create the key you'll use in your requests. See the [MartLLM documentation](https://martllm.com/docs) for more information.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek/deepseek-v4.1-flash',
+        name: 'DeepSeek V4.1 Flash',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'z-ai/glm-5.2',
+        name: 'GLM-5.2',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'moonshotai/kimi-k3',
+        name: 'Kimi K3',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'google/gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+    ],
+    custom_header: [
+      {
+        header: 'HTTP-Referer',
+        value: 'https://jan.ai',
+      },
+      {
+        header: 'X-Title',
+        value: 'Jan',
+      },
+    ],
+  },
 ]
