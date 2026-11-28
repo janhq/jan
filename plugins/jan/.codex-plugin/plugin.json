@@ -1,0 +1,43 @@
+{
+  "name": "jan",
+  "version": "1.0.0",
+  "description": "Agent skills for Jan, the offline ChatGPT alternative: serving local models with the jan CLI, the desktop Local API Server, and headless Jan Agent runs.",
+  "author": {
+    "name": "Menlo Research",
+    "url": "https://jan.ai"
+  },
+  "homepage": "https://jan.ai",
+  "repository": "https://github.com/janhq/jan",
+  "license": "Apache-2.0",
+  "keywords": [
+    "jan",
+    "local-llm",
+    "llama.cpp",
+    "mlx",
+    "openai-compatible",
+    "offline-ai",
+    "agent-skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Jan",
+    "shortDescription": "Local models, local API, Jan Agent",
+    "longDescription": "Skills for Jan, the open-source assistant that runs models fully offline. Covers serving LlamaCPP or MLX models with jan serve and wiring Claude Code or OpenClaw to them with jan launch; configuring and calling the desktop app's OpenAI-compatible Local API Server (API key, trusted hosts, CORS, server-side MCP tools); and running Jan Agent headless in scripts and CI with safety flags, turn and budget limits, JSON output and exit codes.",
+    "developerName": "Menlo Research",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://jan.ai",
+    "defaultPrompt": [
+      "Serve a local Qwen model with Jan and point my app at it",
+      "Expose Jan's API server to my phone on the LAN safely",
+      "Run Jan Agent in CI with a turn limit and parse the JSON result"
+    ],
+    "brandColor": "#F0C020",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "jan",
+  "version": "1.0.0",
+  "description": "Agent skills for Jan, the offline ChatGPT alternative: serving local models with the jan CLI, the desktop Local API Server, and headless Jan Agent runs.",
+  "author": {
+    "name": "Menlo Research",
+    "url": "https://jan.ai"
+  },
+  "homepage": "https://jan.ai",
+  "repository": "https://github.com/janhq/jan",
+  "license": "Apache-2.0",
+  "keywords": [
+    "jan",
+    "local-llm",
+    "llama.cpp",
+    "mlx",
+    "openai-compatible",
+    "offline-ai",
+    "agent-skills"
+  ],
+  "skills": "./skills/"
+}
