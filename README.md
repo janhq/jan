@@ -171,6 +171,12 @@ If things go sideways:
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
 
+## Agent Skills
+
+An agent-agnostic plugin marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) registers
+[`plugins/jan`](plugins/jan), with [agent skills](https://agentskills.io/) for serving local models with the `jan` CLI,
+the Local API Server and headless Jan Agent runs.
+
 ## Contributing
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.

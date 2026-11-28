@@ -1,0 +1,20 @@
+{
+  "name": "jan",
+  "interface": {
+    "displayName": "Jan"
+  },
+  "plugins": [
+    {
+      "name": "jan",
+      "source": {
+        "source": "local",
+        "path": "./plugins/jan"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
